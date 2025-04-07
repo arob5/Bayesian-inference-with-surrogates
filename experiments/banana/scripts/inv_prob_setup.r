@@ -25,7 +25,7 @@ get_inv_prob <- function() {
   # Ground truth parameters.
   # ------------------------------------------------------------------------------
   
-  par_true <- c(0.5, -0.3)
+  par_true <- c(2.0, 1.0)
   sig2_true <- 1.0
   
   # ------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ get_inv_prob <- function() {
       stop("`U` must have 2 columns.")
     }
     
-    matrix(U[,1] + U[,2]^2, ncol=1L)
+    matrix(4*U[,1] + U[,2]^2, ncol=1L)
   }
   
   

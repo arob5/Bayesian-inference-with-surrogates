@@ -1,0 +1,130 @@
+---
+title: "summarize_exact_post"
+output: html_document
+---
+
+```{r}
+library(data.table)
+
+experiment_tag <- "banana"
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(code_dir, "src")
+experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
+out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
+plt_dir <- file.path(out_dir, "plots")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+```
+
+# MCMC Diagnostics
+```{r}
+# Read data/plots saved to file.
+samp_dt <- fread(file.path(out_dir, "samp_exact.csv"))
+inv_prob <- readRDS(file.path(out_dir, "inv_prob_list.rds"))
+test_info_prior <- readRDS(file.path(out_dir, "test_info_prior.rds"))
+test_info_post <- readRDS(file.path(out_dir, "test_info_post.rds"))
+```
+
+## Trace Plots
+```{r}
+trace_plots <- get_trace_plots(samp_dt)
+for(plt in trace_plots) plot(plt)
+```
+
+## 1d Marginals
+```{r}
+hist_plots <- get_hist_plots(samp_dt)
+for(plt in hist_plots) plot(plt)
+```
+## Rhat diagnostic
+```{r}
+rhat_info <- calc_R_hat(samp_dt)
+print(rhat_info$R_hat_vals)
+```
+
+# 2d Contour plots
+```{r}
+# 2d grid for plotting.
+test_info_grid <- get_init_design_list(inv_prob, 
+                                       design_method="tensor_product_grid",
+                                       N_design=50^2)
+
+# Data for plotting.
+plt_df <- data.frame(test_info_grid$input, lprior=test_info_grid$lprior,
+                     llik=test_info_grid$llik, lpost=test_info_grid$lpost,
+                     fwd=test_info_grid$fwd)
+```
+
+```{r}
+# Plot contours of forward model, log prior, log likelihood, log posterior,
+# and posterior density.
+
+plt_fwd <- ggplot(plt_df, aes(x=u1, y=u2, z=fwd)) +
+              geom_contour_filled() +
+              ggtitle("Forward model")
+plt_lprior <- ggplot(plt_df, aes(x=u1, y=u2, z=lprior)) +
+                geom_contour_filled() +
+                ggtitle("Log Prior Density")
+plt_llik <- ggplot(plt_df, aes(x=u1, y=u2, z=llik)) +
+              geom_contour_filled() +
+              ggtitle("Log Likelihood")
+plt_post <- ggplot(plt_df, aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_contour_filled() +
+              ggtitle("Posterior density")
+plt_lpost <- ggplot(plt_df, aes(x=u1, y=u2, z=lpost)) +
+              geom_contour_filled() +
+              ggtitle("Log Posterior density")
+
+
+plot(plt_fwd)
+plot(plt_lprior)
+plot(plt_llik)
+plot(plt_lpost)
+plot(plt_post)
+```
+
+```{r}
+post_samp_subset <- as.data.frame(select_mcmc_samp_mat(samp_dt, thin=100L))
+
+# Overlay posterior samples on contour plot.
+plt_post_samp <- ggplot() +
+              geom_contour_filled(data=plt_df, mapping=aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_point(aes(x=u1, y=u2), data=post_samp_subset, color="grey", alpha=0.1) +
+              ggtitle("Posterior density with exact MCMC samples")
+
+plot(plt_post_samp)
+```
+
+```{r}
+# Overlay prior and posterior test points on plot.
+plt_post_test_pts <- ggplot() +
+              geom_contour_filled(data=plt_df, mapping=aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_point(aes(x=u1, y=u2), data=as.data.frame(test_info_prior$input), color="red", alpha=0.5) +
+              geom_point(aes(x=u1, y=u2), data=as.data.frame(test_info_post$input), color="grey", alpha=0.3) +
+              ggtitle("Posterior density with prior vs. posterior test points")
+
+plot(plt_post_test_pts)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

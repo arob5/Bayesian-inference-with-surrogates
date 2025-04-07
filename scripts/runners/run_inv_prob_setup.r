@@ -130,6 +130,7 @@ fwrite(samp_dt, file=file.path(out_dir, "samp_exact.csv"))
 
 # Save prior samples.
 prior_samp <- sample_prior(inv_prob$par_prior, n=n_samp_prior)
+colnames(prior_samp) <- rownames(inv_prob$par_prior)
 prior_samp_dt <- format_samples_mat(prior_samp, param_type="par", 
                                     test_label="prior", chain_idx=1L)
 fwrite(prior_samp_dt, file=file.path(out_dir, "prior_samp.csv"))
@@ -143,9 +144,10 @@ test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_pri
 saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.rds"))
 
 # Validation inputs sub-sampled from true posterior.
+samp_post_mat <- select_mcmc_samp_mat(samp_dt, param_type="par")
 test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
-                                       design_candidates=samp_dt)
+                                       design_candidates=samp_post_mat)
 saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))
 
 
@@ -166,5 +168,33 @@ stats_multivariate <- compute_mcmc_param_stats_multivariate(samp_dt,
                                                             param_names=inv_prob$par_names)
 saveRDS(stats_multivariate, file.path(out_dir, "mcmc_exact_stats_multivariate.rds"))
 
+# ------------------------------------------------------------------------------
+# Save MCMC diagnostics.
+# ------------------------------------------------------------------------------
 
+plt_dir <- file.path(out_dir, "plots")
+dir.create(plt_dir)
 
+# R-hat.
+rhat_info <- calc_R_hat(samp_dt)
+saveRDS(rhat_info, file.path(out_dir, "rhat_info_exact_mcmc.rds"))
+
+# Trace Plots.
+trace_plots <- get_trace_plots(samp_dt)
+saveRDS(trace_plots, file.path(out_dir, "trace_plots_exact_mcmc.rds"))
+
+for(i in seq_along(trace_plots)) {
+  plt <- trace_plots[[i]]
+  lbl <- names(trace_plots)[i]
+  ggsave(file.path(plt_dir, paste0("trace_exact_mcmc_", lbl, ".png")), plt)
+}
+
+# Histograms.
+hist_plots <- get_hist_plots(samp_dt)
+saveRDS(hist_plots, file.path(out_dir, "hist_plots_exact_mcmc.rds"))
+
+for(i in seq_along(hist_plots)) {
+  plt <- hist_plots[[i]]
+  lbl <- names(hist_plots)[i]
+  ggsave(file.path(plt_dir, paste0("hist_exact_mcmc_", lbl, ".png")), plt)
+}
