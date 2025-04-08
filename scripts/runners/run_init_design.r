@@ -11,7 +11,7 @@
 #     with directory name set to the design ID. Each subdirectory will contain
 #     a file `design_info.rds` storing the design information. Within the 
 #     design tag subdirectory a file called `design_info.rds` is also saved
-#     storing metadata for the design. An additional file `design_ids.csv` is
+#     storing metadata for the design. An additional file `id_map.csv` is
 #     also saved in this file which provides a full list of the design IDs
 #     within that design tag.
 #
@@ -28,7 +28,7 @@
 # created in this file, a single random seed is specified, that is associated
 # with the design tag. This seed can thus be used to reproduce all of the
 # replicates. To have more fine-grained control, an additional seed is defined
-# for each replicate, and stored in the `design_ids.csv` file.
+# for each replicate, and stored in the `id_map.csv` file.
 #
 # Andrew Roberts
 #
@@ -130,7 +130,7 @@ seeds <- sample.int(n=.Machine$integer.max, size=settings$n_rep)
 # Save ID map file.
 dt <- data.table(design_tag=design_tag, design_id=seq_len(settings$n_rep),
                  seed=seeds)
-fwrite(dt, file.path(out_dir, "design_ids.csv"))
+fwrite(dt, file.path(out_dir, "id_map.csv"))
 
 # Generate replicate designs.
 for(i in seq_along(seeds)) {
