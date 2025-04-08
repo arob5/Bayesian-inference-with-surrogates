@@ -65,6 +65,9 @@ get_emulator_settings <- function() {
     return(llik_em)
   }
   
+  # Set list names to the labels for convenience.
+  names(em_list) <- sapply(em_list, function(x) x$em_label)
+  
   return(em_list)
 }
 
@@ -104,37 +107,44 @@ get_mcmc_settings <- function(experiment_dir) {
   
   # List of MCMC settings.
   mcmc_settings_list <- list(
-    c(list(test_label="mean-rect", approx_type="mean", adjustment="rectified"),
+    c(list(test_label="mean", approx_type="mean", adjustment="none"),
       common_settings, common_dens_settings),
-    c(list(test_label="marginal-rect", approx_type="marginal", adjustment="rectified"),
+    c(list(test_label="marginal", approx_type="marginal", adjustment="none"),
       common_settings, common_dens_settings),
-    c(list(test_label="mcwmh-joint-rect", mode="mcwmh", use_joint=TRUE, adjustment="rectified"),
+    c(list(test_label="mcwmh-joint", mode="mcwmh", use_joint=TRUE, adjustment="none"),
       common_settings, common_noisy_settings),
-    c(list(test_label="mcwmh-ind-rect", mode="mcwmh", use_joint=FALSE, adjustment="rectified"),
+    c(list(test_label="mcwmh-ind", mode="mcwmh", use_joint=FALSE, adjustment="none"),
       common_settings, common_noisy_settings),
-    c(list(test_label="pm-joint-rect", mode="pseudo-marginal", use_joint=TRUE, adjustment="rectified"),
+    c(list(test_label="pm-joint", mode="pseudo-marginal", use_joint=TRUE, adjustment="none"),
       common_settings, common_noisy_settings),
-    c(list(test_label="pm-ind-rect", mode="pseudo-marginal", use_joint=FALSE, adjustment="rectified"),
+    c(list(test_label="pm-ind", mode="pseudo-marginal", use_joint=FALSE, adjustment="none"),
       common_settings, common_noisy_settings)
   )
   
-  # Repeat all algorithms without the rectified adjustment.
-  mcmc_settings_list_unadjusted <- mcmc_settings_list
-  for(i in seq_along(mcmc_settings_list_unadjusted)) {
-    mcmc_settings_list_unadjusted[[i]]$adjustment <- "none"
+  # Repeat all algorithms with the rectified adjustment.
+  mcmc_settings_list_rect <- mcmc_settings_list
+  for(i in seq_along(mcmc_settings_list_rect)) {
+    mcmc_settings_list_rect[[i]]$adjustment <- "rectified"
+    old_label <- mcmc_settings_list[[i]]$test_label
+    mcmc_settings_list_rect[[i]]$test_label <- paste0(old_label, "-rect")
   }
   
   # Combine into single list.
-  mcmc_settings_list <- c(mcmc_settings_list, mcmc_settings_list_unadjusted)
+  mcmc_settings_list <- c(mcmc_settings_list, mcmc_settings_list_rect)
+  names(mcmc_settings_list) <- sapply(mcmc_settings_list, function(x) x$test_label)
   
   return(mcmc_settings_list) 
 }
 
 
-save_design_settings <- function(experiment_dir) {
+get_design_settings <- function(experiment_dir) {
   # Returns a list, with each element a sublist defining a sequential design
   # method/acquisition function. The "acq_label" element of each sub-list
-  # serves as a unique identifier for the method.
+  # serves as a unique identifier for the method. For acquisition functions,
+  # the "name" argument stored in the settings lists is used to identify 
+  # a function of the form `acq_<name>`. The exception is `name = "sample"`,
+  # which will instead utilize `get_batch_design()` to sample points, rather
+  # than optimizing.
   
   # In this simple 2d example, we optimize over equally spaced grid-points.
   # Note that the "tensor_product_grid" method is deterministic, so this will
@@ -152,18 +162,18 @@ save_design_settings <- function(experiment_dir) {
   # The number of integration grid points is partitioned between points sampled
   # from the prior and points sampled from an MCMC run, `n_prior` and `n_mcmc`,
   # respectively.
-  prior_grid <- list(n_prior=200L, n_mcmc=0L, method="subsample", subsample_method="support")
-  post_grid <- list(n_prior=0L, n_mcmc=200L, method="subsample", subsample_method="support")
-  mix_grid <- list(n_prior=50L, n_mcmc=150L, method="subsample", subsample_method="support")
+  prior_grid <- list(n_prior=200L, n_mcmc=0L, sample_method="subsample", subsample_method="support")
+  post_grid <- list(n_prior=0L, n_mcmc=200L, sample_method="subsample", subsample_method="support")
+  mix_grid <- list(n_prior=50L, n_mcmc=150L, sample_method="subsample", subsample_method="support")
   
   # Baseline strategies that simply require sampling from prior or approximate
   # posterior (no optimization performed). Note that the `sample_ratios` will 
   # be normalized to sum to one - they do not determine the number of points
   # sampled, only the proportions.
   l_baseline <- list(
-    list(acq_label="sample_prior", name="simple"), # Simple random sample from prior.
-    list(acq_label="subsample_post", name="subsample", sample_ratios=post_grid),
-    list(acq_label="subsample_mix", name="subsample", sample_ratios=mix_grid)
+    list(acq_label="sample_prior", name="sample", sample_settings=list(sample_method="simple")), # Simple random sample from prior.
+    list(acq_label="subsample_post", name="sample", sample_settings=post_grid),
+    list(acq_label="subsample_mix", name="sample", sample_settings=mix_grid)
   )
   
   # Pure sequential design strategies (requires running forward model after
@@ -203,6 +213,8 @@ save_design_settings <- function(experiment_dir) {
 
   # Combine into single list and return.  
   l <- c(l_baseline, l_pure, l_pure_rect, l_batch)
+  names(l) <- sapply(l, function(x) x$acq_label)
+  
   return(l)
 }
 
