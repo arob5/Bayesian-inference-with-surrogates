@@ -44,7 +44,6 @@ Options:
   --experiment_tag=<experiment_tag>         The experiment tag.
   --em_tag=<em_tag>                         The emulator tag.
   --design_tag=<design_tag>                 The initial design tag.
-  --seed=<seed>                             Seed for random number generator.
 " -> doc
 
 # ------------------------------------------------------------------------------
@@ -56,15 +55,11 @@ cmd_args <- docopt(doc)
 experiment_tag <- cmd_args$experiment_tag
 em_tag <- cmd_args$em_tag
 design_tag <- cmd_args$design_tag
-seed <- cmd_args$seed
-
-set.seed(seed)
 
 print("--------------------Running `init_emulator.r` --------------------")
 print(paste0("Experiment tag: ", experiment_tag))
 print(paste0("Emulator tag: ", em_tag))
 print(paste0("Design tag: ", design_tag))
-print(paste0("Seed: ", seed))
 
 # ------------------------------------------------------------------------------
 # Setup 
@@ -79,21 +74,17 @@ setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
 design_dir <- file.path(experiment_dir, "output", "round1", "design", design_tag)
 base_out_dir <- file.path(experiment_dir, "output", "round1", "em", em_tag)
 em_settings_path <- file.path(experiment_dir, "output", "alg_settings", "em_settings.rds")
-design_ids_path <- file.path(experiment_dir, "output", "round1", "design", 
-                             design_tag, "id_map.csv")
+em_ids_path <- file.path(experiment_dir, "output", "round1", "em", 
+                         em_tag, "id_map.csv")
 
 print(paste0("Using emulator settings: ", em_settings_path))
 em_settings <- readRDS(em_settings_path)
 
-print(paste0("Using design ids: ", design_ids_path))
-design_ids <- fread(design_ids_path)
+print(paste0("Using em ids: ", em_ids_path))
+em_ids <- fread(em_ids_path)
 
 print(paste0("Creating output directory: ", base_out_dir))
 dir.create(base_out_dir, recursive=TRUE)
-
-if(anyDuplicated(design_ids$design_id)) {
-  stop("Found duplicate design IDs. Design ID should be unique within the design tag.")
-}
 
 # Source required files.
 source(file.path(src_dir, "general_helper_functions.r"))
@@ -116,37 +107,44 @@ llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
 
 
 # ------------------------------------------------------------------------------
+# Select design IDs that will be used to fit emulators.
+# ------------------------------------------------------------------------------
+
+d_tag <- design_tag
+e_tag <- em_tag
+em_ids <- em_ids[(design_tag==d_tag) & (em_tag==e_tag)]
+
+if(anyDuplicated(em_ids$design_id)) {
+  stop("Found duplicate design IDs. Design ID should be unique within the design tag.")
+}
+
+
+# ------------------------------------------------------------------------------
 # Fit emulators, and save results to file.
 # ------------------------------------------------------------------------------
 
 print("-------------- Fitting emulators --------------")
 
-for(id in design_ids$design_id) {
+for(i in 1:nrow(em_ids)) {
   
   # Locate the correct design.
-  print(paste0("-----> Design ID: ", id))
-  design_path <- file.path(design_dir, paste0("design_", id), "design_info.rds")
+  design_id <- em_ids[i, design_id]
+  em_id <- em_ids[i, em_id]
+  seed <- em_ids[i, seed]
+  print(paste0("-----> Design ID: ", design_id))
+  print(paste0("Seed: ", seed))
+  design_name <- paste0("design_", design_id)
+  design_path <- file.path(design_dir, design_name, "design_info.rds")
   print(paste0("Loading design: ", design_path))
   design_info <- readRDS(design_path)
   
   # Create output directory.
+  save_dir <- file.path(base_out_dir, paste0("em_", em_id))
+  print(paste0("Output dir: ", save_dir))
   
-  
-  
-  for(tag in em_tags) {
-    
-    # Create output directory.
-    print(paste0("Emulator tag: ", tag))
-    out_dir <- file.path(base_out_dir, id, tag)
-    print(paste0("Creating output directory: ", out_dir))
-    dir.create(out_dir, recursive=TRUE)
-    
-    # Fit and save emulator.
-    em_llik <- em_list[[tag]]$fit_em(design_info)
-    saveRDS(em_llik, file=file.path(out_dir, "em_llik.rds"))
-    
-    # Compute emulator predictions at test points and save to file.
-    test_llik_em(em_llik, out_dir)
-  }
+  # Fit and save emulator.
+  set.seed(seed)
+  em_llik <- em_settings[[em_tag]]$fit_em(design_info, inv_prob)
+  saveRDS(em_llik, file=file.path(save_dir, "em_llik.rds"))
 }
 

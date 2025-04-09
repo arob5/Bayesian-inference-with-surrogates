@@ -36,9 +36,9 @@ get_emulator_settings <- function() {
     
     # Instantiate and save log-likelihood emulator object.
     llik_em <- llikEmulatorGP("em_llik", gp_obj, default_conditional=FALSE, 
-                              default_normalize=TRUE, lik_par=inv_prob$sig2_model, 
-                              llik_bounds=inv_prob$llik_obj$get_llik_bounds(),
-                              input_names=inv_prob$par_names)
+                              default_normalize=TRUE, 
+                              lik_par=inv_prob$llik_obj$get_lik_par(), 
+                              llik_bounds=inv_prob$llik_obj$get_llik_bounds())
     
     return(llik_em)
   }
@@ -57,10 +57,9 @@ get_emulator_settings <- function() {
     # Instantiate and save log-likelihood emulator object.
     llik_em <- llikEmulatorGPFwdGaussDiag("em_fwd", gp_obj,
                                           y_obs=inv_prob$llik_obj$y,
-                                          sig2=inv_prob$sig2_model,
+                                          sig2=inv_prob$llik_obj$get_lik_par(), 
                                           default_conditional=FALSE,
-                                          default_normalize=TRUE,
-                                          par_names=inv_prob$par_names)
+                                          default_normalize=TRUE)
 
     return(llik_em)
   }
