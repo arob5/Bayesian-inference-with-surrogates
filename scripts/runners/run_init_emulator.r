@@ -12,7 +12,7 @@
 # `scripts/helper/init_emulator.r` and `scripts/bash/init_emulator.sh`. 
 # Emulator IDs (which are unique within each round/emulator tag) are created
 # in this script and saved to 
-# `experiments/<experiment_tag>/output/round1/em/<em_tag>/id_map.csv`. These
+# `experiments/<experiment_tag>/output/round1/em//id_map.csv`. These
 # ID map files provide the information to determine which design was used
 # to fit each emulator. They are read in by the helper files mentioned above
 # when fitting the emulators.
@@ -69,8 +69,6 @@ if(length(invalid_tags) > 0L) {
 # Create ID map file and write to file. 
 # ------------------------------------------------------------------------------
 
-# ID map is saved separately for each tag, but we concatenate them here for use
-# below when running the qsub jobs.
 id_map <- data.table(design_id=integer(), design_tag=character(),
                      em_tag=character(), em_id=integer(), seed=integer())
 
@@ -86,16 +84,16 @@ for(em_tag in em_tags) {
     em_id_map <- rbindlist(list(em_id_map, design_ids), use.names=TRUE)
   }
   
+  # Set em_ids here so that they are unique within each em_tag.
   seeds <- sample.int(n=.Machine$integer.max, size=nrow(em_id_map))
   em_id_map[, `:=`(em_tag=em_tag, em_id=1:.N, seed=seeds)]
-  em_tag_dir <- file.path(em_dir, em_tag)
-  dir.create(em_tag_dir)
-  em_id_map_path <- file.path(em_tag_dir, "id_map.csv")
-  print(paste0("Saving em tag IDs: ", em_id_map_path))
-  fwrite(em_id_map, em_id_map_path)
-  
   id_map <- rbindlist(list(id_map, em_id_map), use.names=TRUE)
 }
+
+# Save id_map to file.
+id_map_path <- file.path(em_dir, "id_map.csv")
+print(paste0("Saving ID map: ", id_map_path))
+fwrite(id_map, id_map_path)
 
 # ------------------------------------------------------------------------------
 # Create qsub jobs to fit emulators. 
