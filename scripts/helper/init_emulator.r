@@ -11,15 +11,15 @@
 # emulator fitting round, so this file is only used for "round 1".
 #
 # Fit emulators are saved to 
-# experiments/<experiment_tag>/round1/em/<em_tag>/<em_id>/em_llik.rds
+# experiments/<experiment_tag>/round1/em/<em_tag>/<design_tag>/design_<design_id>/<em_id>/em_llik.rds
 # Recall that emulator IDs are defined to be unique within each emulator tag.
-# A file `id_map.csv` is saved to the <em_tag> dir that contains the columns
-# "em_tag", "em_id", "design_tag", "design_id", "seed". This provides 
-# information on which design was used to fit a specific emulator, as well as 
-# the random seed that was used in the fitting.
+# The `id_map.csv` is saved to experiments/<experiment_tag>/round1/em/
+# contains the columns "em_tag", "em_id", "design_tag", "design_id", "seed". 
+# This provides information on which design was used to fit a specific emulator, 
+# as well as the random seed that was used in the fitting.
 #
-# It is assumed that the `id_map.csv` file in the `<em_tag>` directory has
-# already been saved. This file is used to identify the design IDs to run, 
+# It is assumed that the `id_map.csv` file has been saved before this script
+# is run. This file is used to identify the design IDs to run, 
 # and the em_ids determine where the outputs are saved. Note that `id_map.csv`
 # is saved by the runner script `run_init_emulator.r`.
 #
@@ -36,8 +36,8 @@ library(docopt)
 # -----------------------------------------------------------------------------
 
 "Usage:
-  test_docopt.r [options]
-  test_docopt.r (-h | --help)
+  init_emulator.r [options]
+  init_emulator.r (-h | --help)
 
 Options:
   -h --help                                 Show this screen.
@@ -46,15 +46,15 @@ Options:
   --design_tag=<design_tag>                 The initial design tag.
 " -> doc
 
-# ------------------------------------------------------------------------------
-# Settings 
-# ------------------------------------------------------------------------------
-
 # Read command line arguments.
 cmd_args <- docopt(doc)
 experiment_tag <- cmd_args$experiment_tag
 em_tag <- cmd_args$em_tag
 design_tag <- cmd_args$design_tag
+
+# ------------------------------------------------------------------------------
+# Settings 
+# ------------------------------------------------------------------------------
 
 print("--------------------Running `init_emulator.r` --------------------")
 print(paste0("Experiment tag: ", experiment_tag))
@@ -72,10 +72,9 @@ src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
 design_dir <- file.path(experiment_dir, "output", "round1", "design", design_tag)
-base_out_dir <- file.path(experiment_dir, "output", "round1", "em", em_tag)
+base_out_dir <- file.path(experiment_dir, "output", "round1", "em", em_tag, design_tag)
 em_settings_path <- file.path(experiment_dir, "output", "alg_settings", "em_settings.rds")
-em_ids_path <- file.path(experiment_dir, "output", "round1", "em", 
-                         em_tag, "id_map.csv")
+em_ids_path <- file.path(experiment_dir, "output", "round1", "em", "id_map.csv")
 
 print(paste0("Using emulator settings: ", em_settings_path))
 em_settings <- readRDS(em_settings_path)
@@ -101,10 +100,6 @@ source(file.path(src_dir, "basis_function_emulation.r"))
 
 # Load inverse problem setup information.
 inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
-
-# Log-likelihood bounds.
-llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
-
 
 # ------------------------------------------------------------------------------
 # Select design IDs that will be used to fit emulators.
@@ -139,8 +134,8 @@ for(i in 1:nrow(em_ids)) {
   design_info <- readRDS(design_path)
   
   # Create output directory.
-  save_dir <- file.path(base_out_dir, paste0("em_", em_id))
-  dir.create(save_dir)
+  save_dir <- file.path(base_out_dir, design_name, paste0("em_", em_id))
+  dir.create(save_dir, recursive=TRUE)
   print(paste0("Output dir: ", save_dir))
   
   # Fit and save emulator.

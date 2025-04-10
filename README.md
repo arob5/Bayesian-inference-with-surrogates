@@ -86,13 +86,14 @@ round1/
 |   ├── id_map.csv
 │   ├── <em_tag>/
 │   |   ├── <design_tag>/
-│   |   |   ├── <design_id>/
+│   |   |   ├── design_<design_id>/
 │   |   |   |   └── em_<em_id>/
+│   |   |   |   |   └── em_llik.rds
 ├── mcmc/
 |   ├── id_map.csv
 │   ├── <mcmc_tag>/
 |   |   ├── <em_tag>/
-|   |   |   ├── <em_id>/
+|   |   |   ├── em_<em_id>/
 |   |   |  |   ├── mcmc_<mcmc_id>/
 |   |   |  |   |   └── mcmc_samp.rds
 ```
@@ -114,20 +115,21 @@ round2/
 |   ├── id_map.csv
 │   ├── <acq_tag>/
 │   |   ├── <mcmc_tag>/
-│   |   |   ├── <mcmc_id>/
+│   |   |   ├── mcmc_<mcmc_id>/
 │   |   |   |   |── design_<acq_id>/
 │   |   |   |   |   └── design_info.rds
 ├── em/
 |   ├── id_map.csv
 │   ├── <em_tag>/
 │   |   ├── <design_tag>/
-│   |   |   ├── <design_id>/
+│   |   |   ├── design_<design_id>/
 │   |   |   |   └── em_<em_id>/
+│   |   |   |   |   └── em_llik.rds
 ├── mcmc/
 |   ├── id_map.csv
 │   ├── <mcmc_tag>/
 |   |   ├── <em_tag>/
-|   |   |   ├── <em_id>/
+|   |   |   ├── em_<em_id>/
 |   |   |  |   ├── mcmc_<mcmc_id>/
 |   |   |  |   |   └── mcmc_samp.rds
 ```

@@ -1,18 +1,15 @@
 #
-# approx_mcmc.r
+# run_approx_mcmc.r
 # Runs the MCMC step in the simulation study workflow (this script is used
-# for all rounds, including round one). Each MCMC run is given an ID which 
-# is unique within the round/MCMC tag. Recall that the MCMC ID requires 
-# an emulator tag/emulator ID as input to select the emulator that will 
-# be used within approximate MCMC. This script is set up to run for a specific
-# experiment, round, emulator tag, emulator ID, and a set of MCMC tags. The
-# first four identifiers uniquely point to a specific fit emulator model that
-# will be used in the MCMC. One MCMC run will be produced per MCMC tag.
-# All of this information is supplied by command line arguments. 
+# for all rounds, including round one). Currently, the user specifies an 
+# experiment tag, round, set of emulator tags, and MCMC tags, and this script 
+# will dispatch jobs to run each MCMC algorithm on each emulator ID within the 
+# specified emulator tag. This could be expanded to provide more control; e.g., 
+# control which algs are run for different emulators tags; or only choose 
+# emulators associated with a certain initial design tag.
 #
-# The script is intended to be called by approx_mcmc.sh, which is in turn
-# called by run_approx_mcmc.r. Outputs are saved to:
-# experiments/<experiment_tag>/output/round<round>/mcmc/<mcmc_tag>/<em_tag>/em_<em_id>/mcmc_<mcmc_id>/samp.rds
+# MCMC outputs are saved to:
+# experiments/<experiment_tag>/output/round_<round>/mcmc/<mcmc_tag>/<em_tag>/em_<em_id>/em_llik.rds
 #
 # Andrew Roberts
 #
@@ -20,80 +17,42 @@
 library(ggplot2)
 library(data.table)
 library(assertthat)
-library(docopt)
 
-# -----------------------------------------------------------------------------
-# docopt string for parsing command line arguments.  
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Settings 
+# ------------------------------------------------------------------------------
 
-"Usage:
-  run_approx_mcmc.r [options]
-  run_approx_mcmc.r (-h | --help)
+# Paths
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
-Options:
-  -h --help                                 Show this screen.
-  --experiment_tag=<experiment_tag>         The experiment tag.
-  --round=<round>                           Round number (integer)
-  --em_tag=<em_tag>                         The emulator tag (string)
-  --em_id=<em_id>                           Emulator ID (integer)
-  --mcmc_tags=<mcmc_tags>                   Comma-separated list of MCMC tags (no spaces)
-" -> doc
+# Experiment and round.
+experiment_tag <- "banana"
+round <- 1L
 
-# Read command line arguments.
-cmd_args <- docopt(doc)
-experiment_tag <- cmd_args$experiment_tag
-round <- as.integer(cmd_args$round)
-em_tag <- cmd_args$em_tag
-em_id <- as.integer(cmd_args$em_id)
-mcmc_tags <- cmd_args$mcmc_tags
+# Determine emulators and designs to use. If `mcmc_tags` is NULL, will run
+# all MCMC algorithms.
+em_tags <- c("em_llik", "em_fwd")
+mcmc_tags <- NULL
 
 # ------------------------------------------------------------------------------
 # Setup 
 # ------------------------------------------------------------------------------
 
-print("--------------------Running `approx_mcmc.r` --------------------")
-print(paste0("Experiment tag: ", experiment_tag))
-print(paste0("Round: ", round))
-print(paste0("Emulator tag: ", em_tag))
-print(paste0("Emulator ID: ", em_id))
-print(paste0("MCMC tags: ", mcmc_tags))
-
-# Convert comma-separated list to vector.
-mcmc_tags <- strsplit(mcmc_tags, ",", fixed=TRUE)[[1]]
-
-# String versions of IDs.
 round_name <- paste0("round", round)
-em_id_name <- paste0("em_", em_id)
 
-# Filepath definitions.
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
-code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
-src_dir <- file.path(code_dir, "src")
+# Directories.
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
-setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
+src_dir <- file.path(code_dir, "src")
+em_dir <- file.path(experiment_dir, "output", round_name, "em")
 mcmc_dir <- file.path(experiment_dir, "output", round_name, "mcmc")
+bash_path <- file.path(base_dir, "scripts", "bash", "approx_mcmc.sh")
 
-print(paste0("Creating MCMC directory: ", mcmc_dir))
-dir.create(mcmc_dir, recursive=TRUE)
-
-# Source required files.
-source(file.path(src_dir, "general_helper_functions.r"))
-source(file.path(src_dir, "inv_prob_test_functions.r"))
-source(file.path(src_dir, "statistical_helper_functions.r"))
-source(file.path(src_dir, "plotting_helper_functions.r"))
-source(file.path(src_dir, "seq_design.r"))
-source(file.path(src_dir, "gp_helper_functions.r"))
-source(file.path(src_dir, "gpWrapper.r"))
-source(file.path(src_dir, "llikEmulator.r"))
-source(file.path(src_dir, "mcmc_helper_functions.r"))
-source(file.path(src_dir, "gp_mcmc_functions.r"))
-source(file.path(src_dir, "basis_function_emulation.r"))
-
-# Load inverse problem setup information.
-inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
+# Required input files.
+em_settings_path <- file.path(experiment_dir, "output", "alg_settings", "em_settings.rds")
 
 # ------------------------------------------------------------------------------
-# Load MCMC settings 
+# Ensure MCMC tags are valid
 # ------------------------------------------------------------------------------
 
 mcmc_settings_path <- file.path(experiment_dir, "output", 
@@ -101,90 +60,139 @@ mcmc_settings_path <- file.path(experiment_dir, "output",
 print(paste0("Reading MCMC settings: ", mcmc_settings_path))
 mcmc_settings <- readRDS(mcmc_settings_path)
 valid_mcmc_tags <- sapply(mcmc_settings, function(x) x$test_label)
-invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
 
-if(length(invalid_tags) > 0L) {
-  stop("MCMC tags not found in emulator settings: ", paste0(invalid_tags, collapse=", "))
-}
-
-mcmc_settings <- mcmc_settings[mcmc_tags]
-
-# ------------------------------------------------------------------------------
-# Load fit emulator model. 
-# ------------------------------------------------------------------------------
-
-# Read ID map.
-em_id_path <- file.path(experiment_dir, "output", round_name, "em", "id_map.csv")
-print(paste0("Reading emulator IDs from: ", em_id_path))
-em_ids <- fread(em_id_path)
-
-# Select the design tag/design ID for the emulator ID, which is used to locate
-# the path of the emulator.
-e_tag <- em_tag
-e_id <- em_id
-em_ids <- em_ids[(em_tag==e_tag) & (em_id==e_id)]
-if(nrow(em_ids) != 1L) {
-  stop("Subsetting the emulator ID map should select exactly one row.")
-}
-
-design_tag <- em_ids$design_tag
-design_id_name <- paste0("design_", em_ids$design_id)
-
-# Load emulator
-em_path <- file.path(experiment_dir, "output", round_name, "em", em_tag,
-                     design_tag, design_id_name, em_id_name, "em_llik.rds")
-print(paste0("Reading emulator from: ", em_path))
-llik_em <- readRDS(em_path)
-
-# ------------------------------------------------------------------------------
-# Run MCMC ID map.
-# ------------------------------------------------------------------------------
-
-mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
-print(paste0("Reading MCMC ID map: ", mcmc_ids_path))
-mcmc_ids <- fread(mcmc_ids_path)
-
-# TODO: left off here.
-
-
-
-# ------------------------------------------------------------------------------
-# Run MCMC 
-# ------------------------------------------------------------------------------
-
-print("-------------------- Running MCMC --------------------")
-
-# Prior distribution.
-par_prior <- inv_prob$par_prior
-
-# Setting initial proposal covariance based on prior.
-print("-----> Setting initial proposal covariance:")
-cov_prop_init <- cov(llik_em$get_design_inputs())
-print("Initial proposal covariance:")
-print(cov_prop_init)
-
-# Algorithms using BayesianTools wrapper use their own form of adaptation, 
-# so only set proposal covariance for non-BayesianTools algorithms.
-for(i in seq_along(mcmc_settings)) {
-  if(mcmc_settings[[i]]$mcmc_func_name != "mcmc_bt_wrapper") {
-    mcmc_settings[[i]]$cov_prop <- cov_prop_init
+if(is.null(mcmc_tags)) {
+  mcmc_tags <- valid_mcmc_tags
+} else {
+  invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
+  
+  if(length(invalid_tags) > 0L) {
+    stop("MCMC tags not found in emulator settings: ", paste0(invalid_tags, collapse=", "))
   }
 }
 
-# Define output directories.
-out_dirs <- file.path(mcmc_dir, mcmc_tags, em_tag, em_id, mcmc_ids)
-print("Output directories:")
-for(dir in out_dirs) print(dir)
 
-print("Calling `run_mcmc_comparison()`:")
-run_mcmc_comparison(llik_em, par_prior, mcmc_settings, 
-                    save_dir=out_dir, return=FALSE)
+# ------------------------------------------------------------------------------
+# Create new MCMC IDs and save ID map file.
+# ------------------------------------------------------------------------------
+
+# Read emulator ID map.
+em_ids_path <- file.path(em_dir, "id_map.csv")
+print(paste0("Reading emulator ID map: ", em_ids_path))
+em_ids <- fread(em_ids_path)[, .(em_tag, em_id)]
+
+invalid_em_tags <- setdiff(em_tags, unique(em_ids$em_tag))
+if(length(invalid_em_tags) > 0L) {
+  stop("Em tags not found in emulator ID map file: ", paste0(invalid_em_tags, collapse=", "))
+}
+
+em_ids <- em_ids[em_tag %in% em_tags]
+
+# Create MCMC IDs/ID map.
+mcmc_id_map <- data.table(mcmc_id=integer(), mcmc_tag=character(), 
+                          em_tag=character(), em_id=integer(), seed=integer())
+
+for(mcmc_tag in mcmc_tags) {
+  id_map_tag <- copy(em_ids)
+  seeds <- sample.int(n=.Machine$integer.max, size=nrow(id_map_tag))
+  id_map_tag[, `:=`(mcmc_id=1:.N, mcmc_tag=mcmc_tag, seed=seeds)]
+  mcmc_id_map <- rbindlist(list(mcmc_id_map, id_map_tag), use.names=TRUE)
+}
+
+# Save to file.
+print(paste0("Creating MCMC directory: ", mcmc_dir))
+dir.create(mcmc_dir, recursive=TRUE)
+
+mcmc_id_map_path <- file.path(mcmc_dir, "id_map.csv")
+print(paste0("Saving MCMC ID map: ", mcmc_id_map_path))
+fwrite(mcmc_id_map, mcmc_id_map_path)
+
+# ------------------------------------------------------------------------------
+# Batch out jobs.
+#   Currently sending each em_tag/em_id combo to a node. For more expensive 
+#   MCMC algorithms, will probably want to also split the MCMC algorithms
+#   across multiple nodes, even with a single em_id.
+# ------------------------------------------------------------------------------
+
+# Batch by em_tag/em_id.
+batch_ids <- unique(mcmc_id_map[, .(em_tag, em_id)])
+print(paste0("Preparing to submit ", nrow(batch_ids), " jobs."))
+
+# Comma-separated format for MCMC tags to pass via commandline argument.
+mcmc_tags_str <- paste0(mcmc_tags, collapse=",")
+
+# Start jobs.
+print("-----> Starting jobs with em_tag/em_ids:")
+base_cmd <- paste("qsub", bash_path, experiment_tag, round)
+
+for(i in 1:nrow(batch_ids)) {
+  em_tag <- batch_ids[i, em_tag]
+  em_id <- batch_ids[i, em_id]
+
+  print(paste(em_tag, em_id, sep=" / "))  
+  cmd <- paste(base_cmd, em_tag, em_id, mcmc_tags_str)
+  system(cmd)
+}
 
 
 
 
 
 
+
+
+
+
+
+
+# Base directory: all paths are relative to this directory.
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+bash_path <- file.path(base_dir, "scripts", "gp_post_approx_paper", 
+                       "sim_study", "bash_files", "run_approx_mcmc.sh")
+
+# Directory to source code.
+src_dir <- file.path(base_dir, "src")
+
+# Set variables controlling filepaths.
+experiment_tag <- "vsem"
+run_id <- "mcmc_round1"
+em_dir <- "init_emulator/LHS_200"
+
+# Specify specific emulator/design IDs. If NULL, will automatically select 
+# all found within directory `<experiment_tag>/<em_dir>`.
+em_ids <- NULL
+
+output_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag, em_dir)
+
+print(paste0("experiment_tag: ", experiment_tag))
+print(paste0("run_id: ", run_id))
+print(paste0("em_dir: ", em_dir))
+print(paste0("output_dir: ", output_dir))
+
+
+# ------------------------------------------------------------------------------
+# Dispatch job for each emulator/design.
+# ------------------------------------------------------------------------------
+
+# If not explicitly specified, select all emulators/designs found in 
+# directory.
+if(is.null(em_ids)) {
+  em_ids <- list.files(output_dir)
+  em_id_dir_sel <- !grepl(".o", em_ids)
+  em_ids <- em_ids[em_id_dir_sel]
+}
+
+print(paste0("Number of em_ids: ", length(em_ids)))
+
+# Start jobs.
+print("-----> Starting jobs with em_ids:")
+base_cmd <- paste("qsub", bash_path, experiment_tag, run_id, em_dir)
+
+for(em_id in em_ids) {
+  print(em_id)
+  cmd <- paste(base_cmd, em_id)
+  system(cmd)
+}
 
 
 
