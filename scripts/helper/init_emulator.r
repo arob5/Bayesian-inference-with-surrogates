@@ -140,6 +140,7 @@ for(i in 1:nrow(em_ids)) {
   
   # Create output directory.
   save_dir <- file.path(base_out_dir, paste0("em_", em_id))
+  dir.create(save_dir)
   print(paste0("Output dir: ", save_dir))
   
   # Fit and save emulator.
