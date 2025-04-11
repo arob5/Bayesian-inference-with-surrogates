@@ -144,9 +144,9 @@ mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
 print(paste0("Reading MCMC ID map: ", mcmc_ids_path))
 mcmc_ids <- fread(mcmc_ids_path)
 
-# TODO: left off here.
-
-
+# Restrict to specified emulator and MCMC algorithms.
+mcmc_ids <- mcmc_ids[(em_tag==e_tag) & (em_id==e_id) & (mcmc_tag %in% mcmc_tags)]
+print(paste0("Preparing to run ", nrow(mcmc_ids), " MCMC algorithms."))
 
 # ------------------------------------------------------------------------------
 # Run MCMC 
@@ -172,13 +172,14 @@ for(i in seq_along(mcmc_settings)) {
 }
 
 # Define output directories.
-out_dirs <- file.path(mcmc_dir, mcmc_tags, em_tag, em_id, mcmc_ids)
+out_dirs <- file.path(mcmc_dir, mcmc_ids$mcmc_tag, em_tag, paste0("em_", em_id), 
+                      paste0("mcmc_", mcmc_ids$mcmc_id))
 print("Output directories:")
 for(dir in out_dirs) print(dir)
 
 print("Calling `run_mcmc_comparison()`:")
 run_mcmc_comparison(llik_em, par_prior, mcmc_settings, 
-                    save_dir=out_dir, return=FALSE)
+                    save_dirs=out_dirs, return=FALSE)
 
 
 

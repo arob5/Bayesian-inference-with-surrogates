@@ -89,18 +89,21 @@ get_mcmc_settings <- function(experiment_dir) {
   # Common settings that will be applied to all algorithms using the 
   # `mcmc_noisy_llik()`.
   common_noisy_settings <- list(mcmc_func_name="mcmc_noisy_llik", 
-                                ic_settings=list(approx_type="quantile", 
+                                ic_settings=list(approx_type="quantile",
+                                                 design_method="simple",
                                                  n_test_inputs=500L,
                                                  alpha=0.8,
                                                  n_ic_by_method=c(design_max=2, 
                                                                   approx_max=2)))
   
   # Common settings that will be applied to all algorithms using the 
-  # `mcmc_gp_unn_post_dens_approx()`.
+  # `mcmc_gp_unn_post_dens_approx()`. The approx_type used in the initial
+  # condition method will depend on the specific algorithm.
   common_dens_settings <- list(mcmc_func_name="mcmc_gp_unn_post_dens_approx", 
-                               ic_settings=list(approx_type="",
+                               ic_settings=list(approx_type=NULL,
                                                 n_test_inputs=500L,
                                                 alpha=0.8,
+                                                design_method="simple",
                                                 n_ic_by_method=c(design_max=2, 
                                                                  approx_max=2)))
   
@@ -119,6 +122,14 @@ get_mcmc_settings <- function(experiment_dir) {
     c(list(test_label="pm-ind", mode="pseudo-marginal", use_joint=FALSE, adjustment="none"),
       common_settings, common_noisy_settings)
   )
+  
+  # Update the initial condition methods for algs using `mcmc_gp_unn_post_dens_approx()`.
+  for(i in seq_along(mcmc_settings_list)) {
+    if(mcmc_settings_list[[i]]$mcmc_func_name == "mcmc_gp_unn_post_dens_approx") {
+      approx_type <- mcmc_settings_list[[i]]$approx_type
+      mcmc_settings_list[[i]]$ic_settings$approx_type <- approx_type
+    }
+  }
   
   # Repeat all algorithms with the rectified adjustment.
   mcmc_settings_list_rect <- mcmc_settings_list
