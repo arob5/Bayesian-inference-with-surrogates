@@ -89,10 +89,9 @@ get_mcmc_settings <- function(experiment_dir) {
   # Common settings that will be applied to all algorithms using the 
   # `mcmc_noisy_llik()`.
   common_noisy_settings <- list(mcmc_func_name="mcmc_noisy_llik", 
-                                ic_settings=list(approx_type="quantile",
+                                ic_settings=list(approx_type="marginal",
                                                  design_method="simple",
                                                  n_test_inputs=500L,
-                                                 alpha=0.8,
                                                  n_ic_by_method=c(design_max=2, 
                                                                   approx_max=2)))
   
@@ -137,6 +136,11 @@ get_mcmc_settings <- function(experiment_dir) {
     mcmc_settings_list_rect[[i]]$adjustment <- "rectified"
     old_label <- mcmc_settings_list[[i]]$test_label
     mcmc_settings_list_rect[[i]]$test_label <- paste0(old_label, "-rect")
+    
+    # Also add rectified adjustment to IC selection method.
+    if(mcmc_settings_list_rect[[i]]$mcmc_func_name == "mcmc_noisy_llik") {
+      mcmc_settings_list_rect[[i]]$ic_settings$adjustment <- "rectified"
+    }
   }
   
   # Combine into single list.

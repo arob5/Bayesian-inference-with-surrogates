@@ -36,7 +36,7 @@ Options:
   --round=<round>                           Round number (integer)
   --em_tag=<em_tag>                         The emulator tag (string)
   --em_id=<em_id>                           Emulator ID (integer)
-  --mcmc_tags=<mcmc_tags>                   Comma-separated list of MCMC tags (no spaces)
+  --mcmc_tags=<mcmc_tags>                   Comma-separated list of MCMC tags (no spaces). Or 'all' to run all algs found in ID map.
 " -> doc
 
 # Read command line arguments.
@@ -100,14 +100,6 @@ mcmc_settings_path <- file.path(experiment_dir, "output",
                                 "alg_settings", "mcmc_settings.rds")
 print(paste0("Reading MCMC settings: ", mcmc_settings_path))
 mcmc_settings <- readRDS(mcmc_settings_path)
-valid_mcmc_tags <- sapply(mcmc_settings, function(x) x$test_label)
-invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
-
-if(length(invalid_tags) > 0L) {
-  stop("MCMC tags not found in emulator settings: ", paste0(invalid_tags, collapse=", "))
-}
-
-mcmc_settings <- mcmc_settings[mcmc_tags]
 
 # ------------------------------------------------------------------------------
 # Load fit emulator model. 
@@ -137,15 +129,31 @@ print(paste0("Reading emulator from: ", em_path))
 llik_em <- readRDS(em_path)
 
 # ------------------------------------------------------------------------------
-# Run MCMC ID map.
+# Read MCMC ID map and select specified MCMC tags.
 # ------------------------------------------------------------------------------
 
+# Read MCMC ID map
 mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
 print(paste0("Reading MCMC ID map: ", mcmc_ids_path))
 mcmc_ids <- fread(mcmc_ids_path)
 
-# Restrict to specified emulator and MCMC algorithms.
-mcmc_ids <- mcmc_ids[(em_tag==e_tag) & (em_id==e_id) & (mcmc_tag %in% mcmc_tags)]
+# Restrict to specified emulator.
+mcmc_ids <- mcmc_ids[(em_tag==e_tag) & (em_id==e_id)]
+
+# Restrict to set of specified MCMC tags.
+valid_mcmc_tags <- sapply(mcmc_settings, function(x) x$test_label)
+if(mcmc_tags == "all") mcmc_tags <- unique(mcmc_ids$mcmc_tag)
+
+# Check for invalid tags.
+invalid_tags <- setdiff(mcmc_tags, valid_mcmc_tags)
+
+if(length(invalid_tags) > 0L) {
+  stop("MCMC tags not found in emulator settings: ", paste0(invalid_tags, collapse=", "))
+}
+
+# Restrict to specified MCMC algorithms.
+mcmc_ids <- mcmc_ids[mcmc_tag %in% mcmc_tags]
+mcmc_settings <- mcmc_settings[mcmc_tags]
 print(paste0("Preparing to run ", nrow(mcmc_ids), " MCMC algorithms."))
 
 # ------------------------------------------------------------------------------
@@ -179,14 +187,6 @@ for(dir in out_dirs) print(dir)
 
 print("Calling `run_mcmc_comparison()`:")
 run_mcmc_comparison(llik_em, par_prior, mcmc_settings, 
-                    save_dirs=out_dirs, return=FALSE)
-
-
-
-
-
-
-
-
+                    save_dirs=out_dirs, seeds=mcmc_ids$seed, return=FALSE)
 
 
