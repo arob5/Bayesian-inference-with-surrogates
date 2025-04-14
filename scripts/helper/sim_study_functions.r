@@ -1,51 +1,104 @@
 # sim_study_functions.r
 # 
-# Functions related to conducting a large-scale simulation study aimed at 
-# testing methods for posterior approximation and sequential design using 
-# surrogate models.
+# General helper functions used to process simulation experiment results.
 #
+# Andrew Roberts
 
 # ------------------------------------------------------------------------------
 # MCMC Processing
 # ------------------------------------------------------------------------------
   
+process_mcmc_round <- function(experiment_dir, round, mcmc_ids, 
+                               rhat_threshold=1.05, min_itr_threshold=500L) {
+  # Processes MCMC output within a specific round of a specific experiment.
+  # Will process all MCMC runs specified in `mcmc_ids`, which is a data.table
+  # with columns "mcmc_tag", "em_tag", "em_id", "mcmc_id". Assumes MCMC output
+  # for a specific run is stored at path:
+  # <experiment_dir>/round_<round>/mcmc/<mcmc_tag>/<em_tag>/em_<em_id>/mcmc_<mcmc_id>/mcmc_samp.rds
+  
+  mcmc_results <- copy(mcmc_ids)
+  mcmc_dir <- file.path(experiment_dir, paste0("round",round), "mcmc")
+  
+  for(i in 1:nrow(mcmc_ids)) {
+    # Read MCMC output.
+    mcmc_tag <- mcmc_ids[i, "mcmc_tag"]
+    mcmc_id <- mcmc_ids[i, "mcmc_id"]
+    em_tag <- mcmc_ids[i, "em_tag"]
+    em_id <- mcmc_ids[i, "em_id"]
+    samp_list <- try(readRDS(file.path(mcmc_dir, mcmc_tag, em_tag, 
+                                       paste0("em_", em_id),
+                                       paste0("mcmc_", mcmc_id),
+                                       "mcmc_samp.rds")))
+    
+    if(class(samp_list) != "try-error") {
+      results <- process_mcmc_run(samp_list, rhat_threshold=rhat_threshold, 
+                                  min_itr_threshold=min_itr_threshold, ...)
+    } else {
+      mcmc_results[i, `:=`(n_chains=0L, max_rhat=NA, status="rds_read_error")]
+    }
+  }
+  
+  return(list(mcmc_summary=mcmc_results, chain_summary=chain_results,
+              param_summary=param_results))
+}
+
 process_mcmc_run <- function(samp_list, rhat_threshold=1.05, 
                              min_itr_threshold=500L, ...) {
   # Post-processing for a single MCMC run (with potentially multiple chains).
-  # A chain is defined as "valid" if the within-chain split R-hat values for 
-  # all parameters do not exceed `rhat_threshold`. `n_itr` is the total number  
-  # of iterations with non-NA values across all valid chains. An MCMC run 
-  # (test_label) is marked as valid if it has at least one valid chain and 
-  # at least one valid iteration.
+  # The processing logic goes as follows:
+  # 1.) First checks if an error occurred during the MCMC run. If it did, then
+  #     the whole run is marked as invalid.
+  # 2.) Next conducts diagnostics to assess across-chain mixing. Increases
+  #     burn-in gradually in attempt to satisfy across-chain Rhat threshold,
+  #     also subject to a minimum iteration threshold.
+  # 3.) If no burnin is found to be able to satisfy both requirements, we 
+  #     loosen the requirements to allow for only within-chain mixing. The
+  #     same tests are then conducted on a chain-by-chain basis, allowing for 
+  #     different burn-ins for each chain. If a chain still fails to satisfy
+  #     the requirements, then it is marked as invalid. This means that some
+  #     chains within an MCMC run may be "valid", while others are "invalid".
+  # 4.) An MCMC run is marked as valid if it has at least one valid chain.
   #
+  # Args: 
   # `samp_list` is a list returned by the MCMC code, with elements "samp", 
   # "info", and "output_list". `min_itr_threshold` is the minimum number of 
-  # samples we allow for a single chain. 
+  # samples we allow for a single chain.
+  #
+  # Returns:
+  # Returns list with elements "summary", "chain_info", and "rhat".
 
   # Check to see if error occurred during run.
   err_occurred <- !is.null(samp_list$output_list[[1]]$condition)
   if(err_occurred) {
-    mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, status="mcmc_err")
+    mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, status="mcmc_err",
+                               chain_group=NA)
     return(list(summary=mcmc_summary, chain_info=NULL, rhat=NULL))
   }
   
-  if(length(unique(samp_list$samp$test_label)) > 1L) {
+  if(length(unique(samp_list$samp$test_label)) != 1L) {
     stop("`process_mcmc_run` is defined to operate on a single test label.")
   }
   
   # MCMC samples.
   samp_dt <- samp_list$samp
   
-  # Process chain by chain: increase burn-in until each chain individually 
-  # satisfies rhat threshold. If a chain fails to meet threshold for any 
-  # tried burnin, then `process_mcmc_chain` returns empty data.table.
-  chains <- unique(samp_dt$chain_idx)
-  chain_list <- lapply(chains, function(i) process_mcmc_chain(samp_dt, i, 
-                                                              rhat_threshold=rhat_threshold, 
-                                                              min_itr_threshold=min_itr_threshold, ...))
-  samp_dt <- rbindlist(chain_list, use.names=TRUE)
-  if(nrow(samp_dt) == 0L) {
-    mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, status="processing_failed")
+  
+  samp_dt_group <- get_chain_groups(samp_dt, rhat_threshold=rhat_threshold, 
+                                    min_itr_threshold=min_itr_threshold, ...)
+  
+  
+
+  
+  
+  
+  
+  
+  
+  
+  # If all chains are invalid, then the whole run is marked as invalid.
+  if(nrow(samp_dt_burned_in) == 0L) {
+    mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, 
+                               status="processing_failed", chain_group=NA)
     return(list(summary=mcmc_summary, chain_info=NULL, rhat=NULL))
   }
   
@@ -63,8 +116,9 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
                                              by=c("test_label", "chain_idx"))
 
   # Calculate chain weights. Note that any invalid chains have been dropped at 
-  # this point, so the weights will sum to one only over the remaining valid
-  # chains. First need to subset `info_dt` to align with the adjustments
+  # this point, so the weights are defined only for valid chains (i.e., after
+  # normalizing the weights, they should sum to one only over the valid
+  # chains). First need to subset `info_dt` to align with the adjustments
   # to `samp_dt`.
   info_dt <- samp_list$info
   info_dt <- select_mcmc_samp(info_dt, chain_idcs=chain_info$chain_idx)
@@ -81,41 +135,136 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
                                              by=c("test_label", "chain_idx"))
   
   
-  # Compute MCMC run summary.
-  mcmc_summary <- data.table(n_chains = nrow(chain_info),
-                             max_rhat = max(chain_info$rhat),
-                             status = "valid")
+  # Compute MCMC run summary. If across-chain diagnostics passed, then all
+  # chains are valid.
+  if(within_chain) {
+    mcmc_summary <- data.table(n_chains = nrow(chain_info),
+                               max_rhat = max(chain_info$rhat),
+                               status = "valid")
+  } else {
+    n_chains <- nrow(chain_info)
+    mcmc_summary <- data.table(n_chains = n_chains,
+                               max_rhat = max(chain_info$rhat),
+                               status = "valid",
+                               chain_group = paste(rep("1", n_chains), collapse="-"))
+  }
   
   return(list(summary=mcmc_summary, chain_info=chain_info, rhat=rhat_dt))
 }
 
 
-process_mcmc_chain <- function(samp_dt, chain_idx, rhat_threshold=1.05, 
-                               min_itr_threshold=500L, itr_start=1L,
-                               n_tries=10L) {
+get_chain_groups <- function(samp_dt, rhat_threshold=1.05, 
+                             min_itr_threshold=500L, ...) {
+  # A wrapper around `set_mcmc_burnin()`. The logic is as follows:
+  # 1.) First runs across-chain diagnostics (Rhat). If `samp_dt` passes, then
+  #     the chains are all considered mixed, and thus they are all assigned to
+  #     the same "group".
+  # 2.) If the above diagnostics don't pass, then tries to identify "groups"
+  #     of well-mixed chains. First runs within-chain diagnostics, and keeps
+  #     only valid chains (chains that meet the within-chain split Rhat
+  #     threshold and the minimum iteration threshold). 
+  # 3.) Among the valid chains, determines whether any chains can be "merged" 
+  #     (i.e., determine if a subset of the chains are well-mixed). If there 
+  #     are N valid chains, then first tries to identify groups of size N-1 
+  #     that are well-mixed; continues like this through groups of size 2. Note 
+  #     that this is quite inefficient for large numbers of chains, but is 
+  #     reasonable for the typical ~4 chains. The same Rhat/minimum iteration
+  #     thresholds are used to determine if chains can be merged.
+  # 4.) Uses `calc_chain_weights()` to assign a weight to each group. If the
+  #     tests in step 1 pass then no weight calculation is needed.
+  #
+  # Note that in steps 1 and 2, the burn-in is also determined; this is done
+  # via calls to `set_mcmc_burnin()`.
+
+  if(length(unique(samp_dt$test_label)) != 1L) {
+    stop("`get_chain_groups` is defined to operate on a single test label.")
+  }
+  
+  # Step 1: First try to satisfy diagnostic thresholds across chains (i.e., 
+  # across-chain rhat). If fails, will loosen restrictions and attempt to  
+  # satisfy the diagnostic thresholds within chains.
+  samp_dt_burned_in <- set_mcmc_burnin(samp_dt, rhat_threshold=rhat_threshold, 
+                                       min_itr_threshold=min_itr_threshold, ...)
+  
+  # Step 2: If across chain diagnostics failed, compute within-chain diagnostics.
+  # Drop invalid chains.
+  within_chain <- FALSE
+  if(nrow(samp_dt_burned_in) == 0L) {
+    within_chain <- TRUE
+    chains <- unique(samp_dt$chain_idx)
+    chain_list <- lapply(chains, function(i) set_mcmc_burnin(samp_dt, chain_idcs=i, 
+                                                             rhat_threshold=rhat_threshold, 
+                                                             min_itr_threshold=min_itr_threshold, ...))
+    samp_dt_burned_in <- rbindlist(chain_list, use.names=TRUE)
+    if(nrow(samp_dt_burned_in) > 0L) samp_dt_burned_in[, group := chain_idx]
+  } else {
+    # Only a single group in this case.
+    samp_dt_burned_in[, group := 1L]
+  }
+  
+  # If all chains are invalid, then the whole run is marked as invalid.
+  if(nrow(samp_dt_burned_in) == 0L) {
+    return(NULL)
+  }
+  
+  # Step 3: Determine if some valid chains can be merged. Only run if across
+  # chain diagnostics failed. Note that if this is true and there are only
+  # 2 valid chains, then we have already determined they aren't mixed. So 
+  # only run for 3 or more chains.
+  chains <- unique(samp_dt_burned_in$chain_idx)
+  if(within_chain && (length(chains) > 2L)) {
+    samp_dt_burned_in <- merge_chains(samp_dt_burned_in, 
+                                      rhat_threshold=rhat_threshold,
+                                      min_itr_threshold=min_itr_threshold, 
+                                      starting_group_size=length(chains)-1L, ...)
+  }
+
+}
+
+
+set_mcmc_burnin <- function(samp_dt, chain_idcs=NULL, rhat_threshold=1.05, 
+                            min_itr_threshold=500L, itr_start=1L,
+                            n_tries=10L) {
+  # Processes an MCMC run, or optionally a subset of the chains in the MCMC
+  # run. Increases burn-in until a diagnostic threshold is satisfied or 
+  # stopping condition is met. Diagnostic condition is currently just within 
+  # chain (split) Rhat. If multiple chains are included, then the burn-in 
+  # cutoffs are the same for all chains; the diagnostic tests target the goal
+  # of all chains being well-mixed. In settings where non-mixing MCMC chains
+  # are to be expected, then can instead test for within-chain mixing and apply
+  # chain-by-chain burn-in cutoffs by calling this function once for each chain,
+  # using the `chain_idcs` argument. Only a single "test_label" should be 
+  # included in `samp_dt`; i.e., this function is designed to process a single
+  # MCMC run.
+  #
   # `itr_start` can be used to specify an initial burn-in, before computing 
   # any Rhat statistics. `n_tries` is the maximum number of adjustments 
   # that will be made to the burn-in before giving up.
 
-  chain_dt <- select_mcmc_samp(samp_dt, itr_start=itr_start, chain_idcs=chain_idx)
+  dt <- select_mcmc_samp(samp_dt, itr_start=itr_start, chain_idcs=chain_idcs)
   
-  if(nrow(unique(chain_dt[, .(test_label, chain_idx)])) > 1L) {
-    stop("`process_mcmc_chain` is defined to operate on a single chain and test label.")
+  # Ensure samp_dt includes exactly one MCMC run.
+  if(length(unique(dt$test_label)) != 1L) {
+    stop("set_mcmc_burnin() requires `samp_dt` have exactly one test_label.")
   }
   
-  # If the chain passed as argument already doesn't meet the min itr 
-  # threshold, return empty data.table.
-  if(!chain_meets_min_itr_threshold(chain_dt, min_itr_threshold)) {
+  # Determine whether within or across chain Rhat is to be used. For now,
+  # always uses across chain if there are multiple chains in `dt`.
+  within_chain <- FALSE
+  if(length(unique(dt$chain_idx)) == 1L) within_chain <- TRUE
+
+  # If the MCMC samples already don't meet the min itr threshold, return 
+  # empty data.table.
+  if(!samp_dt_meets_min_itr_threshold(dt, min_itr_threshold)) {
     return(get_empty_samp_dt())
   }
   
   # Maximum rhat over all parameters.
-  rhat <- calc_R_hat(chain_dt, within_chain=TRUE)$R_hat_vals[,max(R_hat)]
+  rhat <- calc_R_hat(dt, within_chain=within_chain)$R_hat_vals[,max(R_hat)]
   
   # Compute candidate burn-in values to try sequentially until rhat threshold
-  # is met
-  itr_cutoffs <- round(seq(chain_dt[,min(itr)], chain_dt[,max(itr)], 
-                       length.out=n_tries))
+  # is met.
+  itr_cutoffs <- round(seq(dt[,min(itr)], dt[,max(itr)], length.out=n_tries))
   i <- 2L
   
   # Note that the condition on minimum iteration threshold prevents infinite 
@@ -124,37 +273,88 @@ process_mcmc_chain <- function(samp_dt, chain_idx, rhat_threshold=1.05,
   while(isTRUE(rhat > rhat_threshold)) {
     
     # Increase burn-in size.
-    chain_dt <- select_mcmc_itr(chain_dt, itr_start=itr_cutoffs[i])
+    dt <- select_mcmc_itr(dt, itr_start=itr_cutoffs[i])
     
-    # If the chain doesn't meet the min itr threshold, return empty data.table.
-    if(!chain_meets_min_itr_threshold(chain_dt, min_itr_threshold)) {
+    # If the run doesn't meet the min itr threshold, return empty data.table.
+    if(!samp_dt_meets_min_itr_threshold(dt, min_itr_threshold)) {
       return(get_empty_samp_dt())
     }
     
     # Maximum rhat over all parameters.
-    rhat <- calc_R_hat(chain_dt, within_chain=TRUE)$R_hat_vals[,max(R_hat)]
+    rhat <- calc_R_hat(dt, within_chain=within_chain)$R_hat_vals[,max(R_hat)]
     
     i <- i + 1L
   } 
   
-  return(chain_dt)
+  return(dt)
 }
 
 
-chain_meets_min_itr_threshold <- function(chain_dt, min_itr_threshold) {
-  if(nrow(unique(chain_dt[, .(test_label, chain_idx)])) > 1L) {
-    stop("`process_mcmc_chain` is defined to operate on a single chain and test label.")
+samp_dt_meets_min_itr_threshold <- function(samp_dt, min_itr_threshold) {
+  # Ensure samp_dt includes exactly one MCMC run.
+  if(length(unique(samp_dt$test_label)) != 1L) {
+    stop("samp_dt_meets_min_itr_threshold() requires `samp_dt` have exactly one test_label.")
   }
   
-  n_itr_by_par <- chain_dt[, .N, by=.(param_type, param_name)]
+  n_itr_by_par <- samp_dt[, .N, by=.(param_type, param_name, chain_idx)]
   n_itr_by_par <- unique(n_itr_by_par$N)
   
-  if(length(n_itr_by_par) > 1) {
-    stop("Different parameters within MCMC chain have different number of iterations.")
+  if(length(n_itr_by_par) > 1L) {
+    stop("Different parameters/chains within MCMC run have different number of iterations.")
   }
   
   n_itr_by_par >= min_itr_threshold
 }
+
+
+merge_chains <- function(samp_dt, rhat_threshold=1.05, min_itr_threshold=500L, 
+                         starting_group_size=NULL, ...) {
+  # The merging process may alter the burn-ins, so the returned data.table
+  # may contain different numbers of iterations than the argument `samp_dt`.
+  
+  samp_dt <- copy(samp_dt)
+  
+  # Ensure samp_dt includes exactly one MCMC run.
+  if(length(unique(samp_dt$test_label)) != 1L) {
+    stop("samp_dt_meets_min_itr_threshold() requires `samp_dt` have exactly one test_label.")
+  }
+  
+  # Determine the (sub)set of chains to try to merge. If there is no potential
+  # for merging, return `samp_dt` unchanged.
+  chains_unmerged <- unique(samp_dt$chain_idx)
+  if(is.null(starting_group_size)) {
+    n_merge <- length(chains_unmerged)
+  } else {
+    n_merge <- starting_group_size
+  }
+  
+  stopifnot(n_merge <= length(chains_unmerged))  
+  if(n_merge < 2L) return(samp_dt)
+  
+  # Start with empty data.table, and build up sequentially by adding back
+  # the (potentially merged) chains.
+  samp_dt_merged <- get_empty_samp_dt()
+  for(n in seq(n_merge, 2L)) {
+    chain_combs <- combn(chains_unmerged, n, simplify=FALSE)
+  }
+
+  
+  n_merge <- length(chains_unmerged) - 1L
+  
+  comb_list <- list()
+  for(comb in chain_combs) {
+    if(all(comb %in% chains_unmerged)) {
+      samp_dt_comb <- set_mcmc_burnin(samp_dt_burned_in, chain_idcs=comb,
+                                      rhat_threshold=rhat_threshold, 
+                                      min_itr_threshold=min_itr_threshold, ...)
+      if(nrow(samp_dt_comb) > 0L) {
+        comb_list <- c(comb_list, list(comb))
+        chains_unmerged <- setdiff(chains_unmerged, comb)
+      }
+    }
+  }
+}
+
 
 
 # ------------------------------------------------------------------------------

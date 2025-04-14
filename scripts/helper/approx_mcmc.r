@@ -151,9 +151,10 @@ if(length(invalid_tags) > 0L) {
   stop("MCMC tags not found in emulator settings: ", paste0(invalid_tags, collapse=", "))
 }
 
-# Restrict to specified MCMC algorithms.
+# Restrict to specified MCMC algorithms. `mcmc_ids` row order determines order
+# in which MCMC algorithms will be run.
 mcmc_ids <- mcmc_ids[mcmc_tag %in% mcmc_tags]
-mcmc_settings <- mcmc_settings[mcmc_tags]
+mcmc_settings <- mcmc_settings[mcmc_ids$mcmc_tag]
 print(paste0("Preparing to run ", nrow(mcmc_ids), " MCMC algorithms."))
 
 # ------------------------------------------------------------------------------

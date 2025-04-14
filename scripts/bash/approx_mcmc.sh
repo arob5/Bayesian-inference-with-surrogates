@@ -4,6 +4,7 @@
 #$ -P dietzelab                 # Specify project. 
 #$ -l buyin                     # Request buyin node. 
 #$ -j y                         # Merge the error and output streams into a single file.
+#$ -pe omp 4                    # Request 4 processors on the node. Note that this is hard-coded as I usually run 4 MCMC chains in parallel.
 
 # Runs the R script `approx_mcmc.r`. Intended to be called from 
 # `run_approx_mcmc.r`. See these two files for details.

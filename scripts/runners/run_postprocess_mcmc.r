@@ -1,11 +1,14 @@
 #
 # postprocess_approx_mcmc.r
 # This script is intended to be run after `run_approx_mcmc.r` to identify 
-# potential issues with MCMC runs. See `run_approx_mcmc.r` for details on 
-# specifying filepaths, etc., as this script uses the same setup. This script 
-# should be run before `analyze_approx_mcmc.r`, as this latter script assumes 
-# individual chains are well-mixed, burn-in has already been dropped, issues 
-# corrected, etc.
+# potential issues with MCMC runs, as well as conduct MCMC post-processing.
+# This includes computation of diagnostics (R-hat), determiming burn-ins,
+# and computing chain weights for nonmixing chains. This script should be
+# run before `run_analyze_mcmc.r`.
+#
+# The main inputs to this script are an experiment tag and round. It then
+# processes all MCMC output found in:
+# experiments/<experiment_tag>/round_<round>/mcmc
 # 
 # Andrew Roberts
 #
@@ -18,67 +21,78 @@ library(assertthat)
 # Settings 
 # ------------------------------------------------------------------------------
 
+# Paths
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+
+# Experiment and round.
+experiment_tag <- "banana"
+round <- 1L
+
 # Settings for defining what constitutes a valid MCMC run. The R-hat threshold
-# is for the maximum R-hat over all parameters on a per-chain basis.
+# is for the maximum R-hat over all parameters with an MCMC run (or within
+# a single MCMC chain for within-chain diagnostics used for nonmixing chains).
 # The min itr threshold is the minimum number of samples a chain is allowed
 # to have.
 rhat_threshold <- 1.05
 min_itr_threshold <- 500L
 
-# Base directory: all paths are relative to this directory.
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
-# Directory to source code.
-src_dir <- file.path(base_dir, "src")
+# ------------------------------------------------------------------------------
+# Setup 
+# ------------------------------------------------------------------------------
 
-# Set variables controlling filepaths.
-experiment_tag <- "vsem"
-round <- 1L
+round_name <- paste0("round", round)
 
-print(paste0("experiment_tag: ", experiment_tag))
-print(paste0("round: ", round))
+# Directories.
+experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
+src_dir <- file.path(code_dir, "src")
+mcmc_dir <- file.path(experiment_dir, "output", round_name, "mcmc")
 
-# Define directories
-round_tag <- paste0("round", round)
-experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
-mcmc_dir <- file.path(experiment_dir, round_tag, "mcmc")
-
-# Ensure required paths exist.
-mcmc_settings_path <- file.path(experiment_dir, "mcmc_approx_settings.rds")
-inv_prob_path <- file.path(experiment_dir, "inv_prob_setup", "inv_prob_list.rds")
-
-print("-----> Checking required files exist:")
-assert_that(file.exists(mcmc_settings_path))
-assert_that(file.exists(inv_prob_path))
-
-print("-----> Settings:")
-print(paste0("rhat_threshold: ", rhat_threshold))
-print(paste0("min_itr_threshold: ", min_itr_threshold))
-
-mcmc_settings_list <- readRDS(mcmc_settings_path)
+# Paths.
+mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
 
 # Source required scripts.
 source(file.path(src_dir, "general_helper_functions.r"))
-source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "seq_design.r"))
-source(file.path(src_dir, "gp_helper_functions.r"))
-source(file.path(src_dir, "gpWrapper.r"))
-source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
-source(file.path(src_dir, "gp_mcmc_functions.r"))
-source(file.path(src_dir, "sim_study_functions.r"))
-
-# Load R project. 
-# renv::load(base_dir)
-# print(".libPaths()")
-# print(.libPaths())
-# renv::status()
+source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 
 # ------------------------------------------------------------------------------
-# Define helper function to process a single MCMC run.
+# Identify MCMC runs to process.
 # ------------------------------------------------------------------------------
+
+# Load MCMC ID map. Unique by columns "mcmc_id", "mcmc_tag".
+# TODO: I messed up and rows are actually unique by "mcmc_id", "mcmc_tag",
+# "em_tag". Need to fix this.
+mcmc_ids <- fread(mcmc_ids_path)[, .(mcmc_tag, em_tag, em_id, mcmc_id)]
+print(paste0("Preparing to process ", nrow(mcmc_ids), " MCMC runs."))
+
+process_mcmc_round(experiment_dir, round, mcmc_ids, 
+                   rhat_threshold=rhat_threshold,
+                   min_itr_threshold=min_itr_threshold)
+
+
+samp_list <- try(readRDS(file.path(mcmc_dir, "mean", "em_fwd", 
+                                   paste0("em_", 3),
+                                   paste0("mcmc_", 3),
+                                   "mcmc_samp.rds")))
+
+samp_dt <- samp_list$samp
+
+
+
+
+
+
+
+
+
+
+
+
 
 # TODO: 
 #   write function that iteratively increases the burn-in (on a chain-by-chain)
