@@ -80,17 +80,17 @@ samp_list <- try(readRDS(file.path(mcmc_dir, "mean", "em_fwd",
                                    paste0("mcmc_", 3),
                                    "mcmc_samp.rds")))
 
-samp_dt <- samp_list$samp
+test <- process_mcmc_run(samp_list, rhat_threshold=1.00002)
 
+test$chain_group_map
+test$group_weights
+test$samp[, .N, by=chain_idx]
+test$samp[, .N, by=group]
+test$samp[, min(itr), by=group]
+test$samp[, min(itr), by=.(chain_idx, group)]
 
-
-
-
-
-
-
-
-
+rhat1 <- calc_R_hat(test$samp, within_chain=FALSE)
+rhat2 <- calc_R_hat(test$samp, within_chain=TRUE)
 
 
 
