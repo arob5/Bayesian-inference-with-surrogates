@@ -153,7 +153,7 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
 }
 
 
-get_chain_groups <- function(samp_dt, rhat_threshold=1.05, 
+get_chain_groups <- function(samp_dt, info_dt, rhat_threshold=1.05, 
                              min_itr_threshold=500L, ...) {
   # A wrapper around `set_mcmc_burnin()`. The logic is as follows:
   # 1.) First runs across-chain diagnostics (Rhat). If `samp_dt` passes, then
@@ -196,7 +196,6 @@ get_chain_groups <- function(samp_dt, rhat_threshold=1.05,
                                                              rhat_threshold=rhat_threshold, 
                                                              min_itr_threshold=min_itr_threshold, ...))
     samp_dt_burned_in <- rbindlist(chain_list, use.names=TRUE)
-    if(nrow(samp_dt_burned_in) > 0L) samp_dt_burned_in[, group := chain_idx]
   } else {
     # Only a single group in this case.
     samp_dt_burned_in[, group := 1L]
@@ -217,6 +216,12 @@ get_chain_groups <- function(samp_dt, rhat_threshold=1.05,
                                       rhat_threshold=rhat_threshold,
                                       min_itr_threshold=min_itr_threshold, 
                                       starting_group_size=length(chains)-1L, ...)
+  }
+  
+  # Step 4: compute chain weights by group. Only required if across chain
+  # diagnostics failed.
+  if(within_chain) {
+    .NotYetImplemented()
   }
 
 }
@@ -309,8 +314,33 @@ samp_dt_meets_min_itr_threshold <- function(samp_dt, min_itr_threshold) {
 
 merge_chains <- function(samp_dt, rhat_threshold=1.05, min_itr_threshold=500L, 
                          starting_group_size=NULL, ...) {
-  # The merging process may alter the burn-ins, so the returned data.table
-  # may contain different numbers of iterations than the argument `samp_dt`.
+  # Given MCMC samples `samp_dt` potentially containing multiple nonmixing 
+  # chains, tries to identify subsets of chains that are well-mixed (e.g., 
+  # sampling the same mode of a multi-modal distribution). Typically, this 
+  # function is called after it has already been established that each 
+  # individual chain in `samp_dt` is well-mixed. This function is then called
+  # to determined subsets of chains that are collectively well-mixed; i.e.,
+  # if chains can be "merged". The function proceeds as follows:
+  # 1.) Let `n` be the number of chains. The process starts by looking for
+  #     groups of size `starting_group_size` < n to merge. The default 
+  #     behavior is to start with groups of size `n - 1`. If a group of this
+  #     size is found to pass the diagnostics (determined via a call to
+  #     `set_mcmc_burnin()`), then a group index is defined indicating that 
+  #     the chains belong to the same group.
+  # 2.) The process repeats for each group size decreasing until size 2. Once
+  #     chains are grouped, they are removed from consideration.
+  # 3.) At the end of the loop, chains may be remaining if they were unable 
+  #     to be merged. Each of these chains are assigned their own group ID.
+  #
+  # A modified version of `samp_dt` is returned that includes a column `group`.
+  # Note that the merging process may alter the burn-ins 
+  # (see `set_mcmc_burnin()`), so the returned data.table may contain different 
+  # numbers of iterations than the argument `samp_dt`. If no merges are able to
+  # be made, then the returned table will be identical to `samp_dt`, with the
+  # addition of the `group`, which will equal the `chain_idx` column in this
+  # case. Note also that the process of looping over all combinations of all 
+  # sizes is an expensive operation if the number of chains is large. This
+  # function is written for the typical case of a small number (~4) chains.
   
   samp_dt <- copy(samp_dt)
   
@@ -334,27 +364,38 @@ merge_chains <- function(samp_dt, rhat_threshold=1.05, min_itr_threshold=500L,
   # Start with empty data.table, and build up sequentially by adding back
   # the (potentially merged) chains.
   samp_dt_merged <- get_empty_samp_dt()
+  samp_dt_merged[, group := character(0)] 
+  group_idx <- 1L
+  
   for(n in seq(n_merge, 2L)) {
     chain_combs <- combn(chains_unmerged, n, simplify=FALSE)
-  }
-
-  
-  n_merge <- length(chains_unmerged) - 1L
-  
-  comb_list <- list()
-  for(comb in chain_combs) {
-    if(all(comb %in% chains_unmerged)) {
-      samp_dt_comb <- set_mcmc_burnin(samp_dt_burned_in, chain_idcs=comb,
-                                      rhat_threshold=rhat_threshold, 
-                                      min_itr_threshold=min_itr_threshold, ...)
-      if(nrow(samp_dt_comb) > 0L) {
-        comb_list <- c(comb_list, list(comb))
-        chains_unmerged <- setdiff(chains_unmerged, comb)
+    for(comb in chain_combs) {
+      if(all(comb %in% chains_unmerged)) {
+        samp_dt_comb <- set_mcmc_burnin(samp_dt, chain_idcs=comb,
+                                        rhat_threshold=rhat_threshold, 
+                                        min_itr_threshold=min_itr_threshold, ...)
+        if(nrow(samp_dt_comb) > 0L) {
+          samp_dt_comb[, group := group_idx]
+          samp_dt_merged <- rbindlist(list(samp_dt_merged, samp_dt_comb), use.names=TRUE)
+          chains_unmerged <- setdiff(chains_unmerged, comb)
+          group_idx <- group_idx + 1L
+        }
       }
+      
+      if(length(chains_unmerged) < 2L) break
     }
+    if(length(chains_unmerged) < 2L) break
   }
-}
 
+  # Any chains that failed to merge will be added as their own group.
+  if(length(chains_unmerged) > 0L) {
+    samp_dt <- samp_dt[chain_idx %in% chains_unmerged]
+    samp_dt[, group := as.integer(.GRP + group_idx - 1L), by=chain_idx]
+    samp_dt_merged <- rbindlist(list(samp_dt_merged, samp_dt), use.names=TRUE)
+  }
+
+  return(samp_dt_merged)
+}
 
 
 # ------------------------------------------------------------------------------
