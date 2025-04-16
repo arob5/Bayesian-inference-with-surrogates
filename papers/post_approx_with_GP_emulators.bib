@@ -1,0 +1,1248 @@
+
+%  ---------------------------------------------------------------------------------------------------
+% General/Background
+%  ---------------------------------------------------------------------------------------------------
+
+@misc{MinkaMatrixLectures,
+  author = {Thomas P. Minka},
+  title = {Old and New Matrix Algebra Useful for Statistics},
+  month = {December},
+  year = {2000}
+}
+
+%  ---------------------------------------------------------------------------------------------------
+% General Gaussian Processes (GPs) and Bayesian Optimization
+%  ---------------------------------------------------------------------------------------------------
+
+% Gaussian Processes for Machine Learning
+@Inbook{gpML,
+author="Rasmussen, Carl Edward",
+editor="Bousquet, Olivier
+and von Luxburg, Ulrike
+and R{\"a}tsch, Gunnar",
+title="Gaussian Processes in Machine Learning",
+bookTitle="Advanced Lectures on Machine Learning: ML Summer Schools 2003, Canberra, Australia, February 2 - 14, 2003, T{\"u}bingen, Germany, August 4 - 16, 2003, Revised Lectures",
+year="2004",
+publisher="Springer Berlin Heidelberg",
+address="Berlin, Heidelberg",
+pages="63--71",
+abstract="We give a basic introduction to Gaussian Process regression models. We focus on understanding the role of the stochastic process and how it is used to define a distribution over functions. We present the simple equations for incorporating training data and examine how to learn the hyperparameters using the marginal likelihood. We explain the practical advantages of Gaussian Process and end with conclusions and a look at the current trends in GP work.",
+isbn="978-3-540-28650-9",
+doi="10.1007/978-3-540-28650-9_4",
+url="https://doi.org/10.1007/978-3-540-28650-9_4"
+}
+
+% Review of BayesOpt
+@ARTICLE{reviewBayesOpt,
+  author={Shahriari, Bobak and Swersky, Kevin and Wang, Ziyu and Adams, Ryan P. and de Freitas, Nando},
+  journal={Proceedings of the IEEE}, 
+  title={Taking the Human Out of the Loop: A Review of Bayesian Optimization}, 
+  year={2016},
+  volume={104},
+  number={1},
+  pages={148-175},
+  keywords={Big data;Bayes methods;Linear programming;Decision making;Design of experiments;Optimization;Genomes;Statistical analysis;decision making;design of experiments;optimization;response surface methodology;statistical learning;genomic medicine;Decision making;design of experiments;optimization;response surface methodology;statistical learning},
+  doi={10.1109/JPROC.2015.2494218}}
+
+% Bayesian Quadrature
+@article{BayesQuadrature,
+title = {Bayes–Hermite quadrature},
+journal = {Journal of Statistical Planning and Inference},
+volume = {29},
+number = {3},
+pages = {245-260},
+year = {1991},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/0378-3758(91)90002-V},
+url = {https://www.sciencedirect.com/science/article/pii/037837589190002V},
+author = {A. O'Hagan},
+keywords = {Bayesian quadrature, numerical integration, Gaussian process, product rule, Gaussian quadrature},
+abstract = {Bayesian quadrature treats the problem of numerical integration as one of statistical inference. A prior Gaussian process distribution is assumed for the integrand, observations arise from evaluating the integrand at selected points, and a posterior distribution is derived for the integrand and the integral. Methods are developed for quadrature in Rp. A particular application is integrating the posterior density arising from some other Bayesian analysis. Simulation results are presented, to show that the resulting Bayes–Hermite quadrature rules may perform better than the conventional Gauss–Hermite rules for this application. A key result is derived for product designs, which makes Bayesian quadrature practically useful for integrating in several dimensions. Although the method does not at present provide a solution to the more difficult problem of quadrature in high dimensions, it does seem to offer real improvements over existing methods in relatively low dimensions.}
+}
+
+% Stepwise uncertainty reduction 
+@article{SURThesis,
+author = {Chevalier, Clément},
+year = {2013},
+month = {09},
+pages = {},
+title = {Fast uncertainty reduction strategies relying on Gaussian process models}
+}
+
+% Supermartingale approach to stepwise uncertainty reduction for GPs. 
+@article{supermartingaleSUR,
+author = {Julien Bect and Fran{\c{c}}ois Bachoc and David Ginsbourger},
+title = {{A supermartingale approach to Gaussian process based sequential design of experiments}},
+volume = {25},
+journal = {Bernoulli},
+number = {4A},
+publisher = {Bernoulli Society for Mathematical Statistics and Probability},
+pages = {2883 -- 2919},
+keywords = {Active learning, convergence, sequential design of experiments, stepwise uncertainty reduction, supermartingale, uncertainty functional},
+year = {2019},
+doi = {10.3150/18-BEJ1074},
+URL = {https://doi.org/10.3150/18-BEJ1074}
+}
+
+% TODO: need to read. Study whether or not hyperparameters ought to be updated in sequential design methods.
+@ARTICLE{gpHyperparameters,
+AUTHOR={Sinsbeck, Michael  and Höge, Marvin  and Nowak, Wolfgang },
+TITLE={Exploratory-Phase-Free Estimation of GP Hyperparameters in Sequential Design Methods—At the Example of Bayesian Inverse Problems},
+JOURNAL={Frontiers in Artificial Intelligence},
+VOLUME={3},
+YEAR={2020},
+URL={https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2020.00052},
+DOI={10.3389/frai.2020.00052},
+ISSN={2624-8212}}
+
+
+%  ---------------------------------------------------------------------------------------------------
+% MCMC
+%  ---------------------------------------------------------------------------------------------------
+
+% Pseudo-marginal. 
+@article{pseudoMarginalMCMC,
+author = {Christophe Andrieu and Gareth O. Roberts},
+title = {{The pseudo-marginal approach for efficient Monte Carlo computations}},
+volume = {37},
+journal = {The Annals of Statistics},
+number = {2},
+publisher = {Institute of Mathematical Statistics},
+pages = {697 -- 725},
+keywords = {auxiliary variable, convergence, marginal, Markov chain Monte Carlo},
+year = {2009},
+doi = {10.1214/07-AOS574},
+URL = {https://doi.org/10.1214/07-AOS574}
+}
+
+% Stability of Noisy Metropolis-Hastings
+@misc{stabilityNoisyMH,
+      title={Stability of Noisy Metropolis-Hastings}, 
+      author={Felipe J. Medina-Aguayo and Anthony Lee and Gareth O. Roberts},
+      year={2015},
+      eprint={1503.07066},
+      archivePrefix={arXiv},
+      primaryClass={stat.CO}
+}
+
+% Noisy Monte Carlo: approximate transition kernels
+@misc{noisyMCMC,
+      title={Noisy Monte Carlo: Convergence of Markov chains with approximate transition kernels}, 
+      author={P. Alquier and N. Friel and R. Everitt and A. Boland},
+      year={2014},
+      eprint={1403.5496},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Survey of noisy Monte Carlo 
+@misc{noisyMCSurvey,
+      title={A survey of Monte Carlo methods for noisy and costly densities with application to reinforcement learning}, 
+      author={F. Llorente and L. Martino and J. Read and D. Delgado},
+      year={2021},
+      eprint={2108.00490},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+
+
+%  ---------------------------------------------------------------------------------------------------
+% General computer modeling
+%  ---------------------------------------------------------------------------------------------------
+
+@article{modularization,
+author = {Liu, F. and Bayarri, M. and Berger, J.},
+year = {2009},
+month = {03},
+pages = {},
+title = {Modularization in Bayesian analysis, with emphasis on analysis of computer models},
+volume = {4},
+journal = {Bayesian Analysis},
+doi = {10.1214/09-BA404}
+}
+
+@article{design_analysis_computer_experiments,
+author = {Jerome Sacks and William J. Welch and Toby J. Mitchell and Henry P. Wynn},
+title = {{Design and Analysis of Computer Experiments}},
+volume = {4},
+journal = {Statistical Science},
+number = {4},
+publisher = {Institute of Mathematical Statistics},
+pages = {409 -- 423},
+keywords = {computer-aided design, Experimental design, kriging, response surface, spatial statistics},
+year = {1989},
+doi = {10.1214/ss/1177012413},
+URL = {https://doi.org/10.1214/ss/1177012413}
+}
+
+@book{gramacy2020surrogates,
+  title = {Surrogates: {G}aussian Process Modeling, Design and \
+    Optimization for the Applied Sciences},
+  author = {Robert B. Gramacy},
+  publisher = {Chapman Hall/CRC},
+  address = {Boca Raton, Florida},
+  note = {\url{http://bobby.gramacy.com/surrogates/}},
+  year = {2020}
+}
+
+@article{SanterCompExp,
+author = {Thomas J. Satner and Brian J. Williams and William I. Notz},
+title = {{The Design and Analysis of Computer Experiments}},
+publisher = {Springer},
+address = {New York, NY},
+note = {\url{https://doi.org/10.1007/978-1-4939-8847-1}},
+year = {2018}
+}
+
+% Entropy-based adaptive design for contour finding
+@misc{cole2021entropybased,
+      title={Entropy-based adaptive design for contour finding and estimating reliability}, 
+      author={D. Austin Cole and Robert B. Gramacy and James E. Warner and Geoffrey F. Bomarito and Patrick E. Leser and William P. Leser},
+      year={2021},
+      eprint={2105.11357},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Contour Estimation
+@article{contourEstimation,
+author = {Pritam Ranjan, Derek Bingham and George Michailidis},
+title = {Sequential Experiment Design for Contour Estimation From Complex Computer Codes},
+journal = {Technometrics},
+volume = {50},
+number = {4},
+pages = {527--541},
+year = {2008},
+publisher = {Taylor \& Francis},
+doi = {10.1198/004017008000000541},
+URL = { 
+        https://doi.org/10.1198/004017008000000541
+},
+eprint = { 
+    
+        https://doi.org/10.1198/004017008000000541
+}
+}
+
+% Kennedy and O'Hagan
+@article{KOH,
+author = {Kennedy, Marc C. and O'Hagan, Anthony},
+title = {Bayesian calibration of computer models},
+journal = {Journal of the Royal Statistical Society: Series B (Statistical Methodology)},
+volume = {63},
+number = {3},
+pages = {425-464},
+keywords = {Calibration, Computer experiments, Deterministic models, Gaussian process, Interpolation, Model inadequacy, Sensitivity analysis, Uncertainty analysis},
+doi = {https://doi.org/10.1111/1467-9868.00294},
+url = {https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/1467-9868.00294},
+eprint = {https://rss.onlinelibrary.wiley.com/doi/pdf/10.1111/1467-9868.00294},
+year = {2001}
+}
+
+
+%  ---------------------------------------------------------------------------------------------------
+% Log-Likelihood (or unnormalized log posterior) emulation with GPs
+%  ---------------------------------------------------------------------------------------------------
+
+% Emulate unnormalized log-posterior. The focus is on sequential design schemes that take the form of a modified upper confidence 
+% bound optimization. Numerical examples (only in 1d and 3d) focused on parameter estimation for ODEs. Consider 
+% GP mean approximation of posterior density. 
+@misc{gp_surrogates_random_exploration,
+      title={Enhancing Gaussian Process Surrogates for Optimization and Posterior Approximation via Random Exploration}, 
+      author={Hwanwoo Kim and Daniel Sanz-Alonso},
+      year={2024},
+      eprint={2401.17037},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2401.17037}
+}
+
+% Emulate the likelihood. Propose a GP-accelerated MCMC scheme that tries to sample trajectories from the GP. 
+@article{trainDynamics,
+title = {Statistical inverse identification for nonlinear train dynamics using a surrogate model in a Bayesian framework},
+journal = {Journal of Sound and Vibration},
+volume = {458},
+pages = {158-176},
+year = {2019},
+issn = {0022-460X},
+doi = {https://doi.org/10.1016/j.jsv.2019.06.024},
+url = {https://www.sciencedirect.com/science/article/pii/S0022460X19303633},
+author = {D. Lebel and C. Soize and C. Fünfschilling and G. Perrin},
+keywords = {Statistical inverse problem, Bayesian calibration, Surrogate model, High-speed train dynamics, Uncertainty quantification},
+abstract = {This paper presents a Bayesian calibration method for a simulation-based model with stochastic functional input and output. The originality of the method lies in an adaptation involving the representation of the likelihood function by a Gaussian process surrogate model, to cope with the high computational cost of the simulation, while avoiding the surrogate modeling of the functional output. The adaptation focuses on taking into account the uncertainty introduced by the use of a surrogate model when estimating the parameters posterior probability distribution by MCMC. To this end, trajectories of the random surrogate model of the likelihood function are drawn and injected in the MCMC algorithm. An application on a train suspension monitoring case is presented.}
+}
+
+% Emulate unnormalized log posterior. Use delayed-acceptance HMC. GP only used for proposal, exact posterior used for acceptance ratio. Uses GP classifier
+% to find regions of parameter space where physical assumptions are violated. Adapt HMC parameters using BayesOpt. 
+@article{MCMC_GP_proposal,
+author = {Paun, L. Mihaela and Husmeier, Dirk},
+title = {Markov chain Monte Carlo with Gaussian processes for fast parameter estimation and uncertainty quantification in a 1D fluid-dynamics model of the pulmonary circulation},
+journal = {International Journal for Numerical Methods in Biomedical Engineering},
+volume = {37},
+number = {2},
+pages = {e3421},
+keywords = {classification, emulation, Gaussian processes, MCMC, pulmonary circulation, uncertainty quantification},
+doi = {https://doi.org/10.1002/cnm.3421},
+url = {https://onlinelibrary.wiley.com/doi/abs/10.1002/cnm.3421},
+eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1002/cnm.3421},
+abstract = {Abstract The past few decades have witnessed an explosive synergy between physics and the life sciences. In particular, physical modelling in medicine and physiology is a topical research area. The present work focuses on parameter inference and uncertainty quantification in a 1D fluid-dynamics model for quantitative physiology: the pulmonary blood circulation. The practical challenge is the estimation of the patient-specific biophysical model parameters, which cannot be measured directly. In principle this can be achieved based on a comparison between measured and predicted data. However, predicting data requires solving a system of partial differential equations (PDEs), which usually have no closed-form solution, and repeated numerical integrations as part of an adaptive estimation procedure are computationally expensive. In the present article, we demonstrate how fast parameter estimation combined with sound uncertainty quantification can be achieved by a combination of statistical emulation and Markov chain Monte Carlo (MCMC) sampling. We compare a range of state-of-the-art MCMC algorithms and emulation strategies, and assess their performance in terms of their accuracy and computational efficiency. The long-term goal is to develop a method for reliable disease prognostication in real time, and our work is an important step towards an automatic clinical decision support system.},
+year = {2021}
+}
+
+% Utilize a plug-in estimator for the likelihood which computes a quantile of the emulator distribution, the idea being that something like the 90th percentile represents 
+% a conservative estimate of the true likelihood. They also incorporate bound constraints to account for the fact that they are emulating a non-negative quantity (in their 
+% case, the unnormalized log Gaussian likelihood). 
+% Sequential design is based on optimizing a Cauchy-Schwarz divergence. 
+@misc{quantileApprox,
+      title={Solving Bayesian Inverse Problems With Expensive Likelihoods Using Constrained Gaussian Processes and Active Learning}, 
+      author={Maximilian Dinkel and Carolin M. Geitner and Gil Robalo Rei and Jonas Nitzler and Wolfgang A. Wall},
+      year={2023},
+      eprint={2312.08085},
+      archivePrefix={arXiv},
+      primaryClass={cs.CE}
+}
+
+% Emulate log-posterior. 
+@article{llikRBF,
+author = {Nikolay Bliznyuk and David Ruppert and Christine Shoemaker and Rommel Regis and Stefan Wild and Pradeep Mugunthan},
+title = {Bayesian Calibration and Uncertainty Analysis for Computationally Expensive Models Using Optimization and Radial Basis Function Approximation},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {17},
+number = {2},
+pages = {270-294},
+year  = {2008},
+publisher = {Taylor & Francis},
+doi = {10.1198/106186008X320681},
+URL = {https://doi.org/10.1198/106186008X320681},
+eprint = { https://doi.org/10.1198/106186008X320681}
+}
+
+% Bayesian quadrature. Emulate log-integrand with GP. 
+@inproceedings{BayesQuadratureAL,
+ author = {Osborne, Michael and Garnett, Roman and Ghahramani, Zoubin and Duvenaud, David K and Roberts, Stephen J and Rasmussen, Carl},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {F. Pereira and C.J. Burges and L. Bottou and K.Q. Weinberger},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Active Learning of Model Evidence Using Bayesian Quadrature},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2012/file/6364d3f0f495b6ab9dcf8d3b5c6e0b01-Paper.pdf},
+ volume = {25},
+ year = {2012}
+}
+
+% Bayesian quadrature for ratios
+@InProceedings{BayesQuadRatios,
+  title = 	 {Bayesian Quadrature for Ratios},
+  author = 	 {Osborne, Michael and Garnett, Roman and Roberts, Stephen and Hart, Christopher and Aigrain, Suzanne and Gibson, Neale},
+  booktitle = 	 {Proceedings of the Fifteenth International Conference on Artificial Intelligence and Statistics},
+  pages = 	 {832--840},
+  year = 	 {2012},
+  editor = 	 {Lawrence, Neil D. and Girolami, Mark},
+  volume = 	 {22},
+  series = 	 {Proceedings of Machine Learning Research},
+  address = 	 {La Palma, Canary Islands},
+  month = 	 {21--23 Apr},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v22/osborne12/osborne12.pdf},
+  url = 	 {https://proceedings.mlr.press/v22/osborne12.html},
+  abstract = 	 {We describe a novel approach to quadrature for ratios of probabilistic integrals, such as are used to compute posterior probabilities. It offers performance superior to Monte Carlo methods by exploiting a Bayesian quadrature framework. We improve upon previous Bayesian quadrature techniques by explicitly modelling the non-negativity of our integrands, and the correlations that exist between them. It offers most where the integrand is multi-modal and expensive to evaluate, as is commonplace in exoplanets research; we demonstrate the efficacy of our method on data from the Kepler spacecraft.}
+}
+
+
+% Istem paper using noisy Monte Carlo approach. 
+@Article{FerEmulation,
+AUTHOR = {Fer, I. and Kelly, R. and Moorcroft, P. R. and Richardson, A. D. and Cowdery, E. M. and Dietze, M. C.},
+TITLE = {Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation},
+JOURNAL = {Biogeosciences},
+VOLUME = {15},
+YEAR = {2018},
+NUMBER = {19},
+PAGES = {5801--5830},
+URL = {https://bg.copernicus.org/articles/15/5801/2018/},
+DOI = {10.5194/bg-15-5801-2018}
+}
+
+% Log-likelihood emulation. MCMC scheme that runs exact model if GP variance is larger than a pre-set threshold, otherwise 
+% uses GP mean approximation.
+@misc{ActiveLearningMCMC,
+      title={Integration of Active Learning and MCMC Sampling for Efficient Bayesian Calibration of Mechanical Properties}, 
+      author={Leon Riccius and Iuri B. C. M. Rocha and Joris Bierkens and Hanne Kekkonen and Frans P. van der Meer},
+      year={2024},
+      eprint={2411.13361},
+      archivePrefix={arXiv},
+      primaryClass={physics.comp-ph},
+      url={https://arxiv.org/abs/2411.13361}
+}
+
+
+%  ---------------------------------------------------------------------------------------------------
+% Forward model emulation: marginal approximation
+%  ---------------------------------------------------------------------------------------------------
+
+% First consider an approach from propagating uncertainty in GP hyperparameters. Consider adding GP cov to the observation cov. 
+% Then consider using a secondary GP fit to the residuals to correct the first one. 
+% They also use a sequential design scheme based on optimizing a Cauchy-Schwarz divergence. 
+@article{hydrologicalModel,
+author = {Zhang, Jiangjiang and Zheng, Qiang and Chen, Dingjiang and Wu, Laosheng and Zeng, Lingzao},
+title = {Surrogate-Based Bayesian Inverse Modeling of the Hydrological System: An Adaptive Approach Considering Surrogate Approximation Error},
+journal = {Water Resources Research},
+volume = {56},
+number = {1},
+pages = {e2019WR025721},
+doi = {https://doi.org/10.1029/2019WR025721},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2019WR025721},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2019WR025721},
+note = {e2019WR025721 2019WR025721},
+abstract = {Abstract Bayesian inverse modeling is important for a better understanding of hydrological processes. However, this approach can be computationally demanding, as it usually requires a large number of model evaluations. To address this issue, one can take advantage of surrogate modeling techniques. Nevertheless, when approximation error of the surrogate model is neglected, the inversion result will be biased. In this paper, we develop a surrogate-based Bayesian inversion framework that explicitly quantifies and gradually reduces the approximation error of the surrogate. Specifically, two strategies are proposed to quantify the surrogate error. The first strategy works by quantifying the surrogate prediction uncertainty with a Bayesian method, while the second strategy uses another surrogate to simulate and correct the approximation error of the primary surrogate. By adaptively refining the surrogate over the posterior distribution, we can gradually reduce the surrogate approximation error to a small level. Demonstrated with three case studies involving high dimensionality, multimodality, and a real-world application, it is found that both strategies can reduce the bias introduced by surrogate approximation error, while the second strategy that integrates two methods (i.e., polynomial chaos expansion and Gaussian process in this work) that complement each other shows the best performance.},
+year = {2020}
+}
+
+
+% Consider multiple posterior approximations and provide error bounds. 
+@misc{StuartTeck1,
+      title={Posterior Consistency for Gaussian Process Approximations of Bayesian Posterior Distributions}, 
+      author={Andrew M. Stuart and Aretha L. Teckentrup},
+      year={2016},
+      eprint={1603.02004},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+% Consider llik and forward model emulation for PDE inverse problems. 
+@misc{GP_PDE_priors,
+      title={Gaussian processes for Bayesian inverse problems associated with linear partial differential equations}, 
+      author={Tianming Bai and Aretha L. Teckentrup and Konstantinos C. Zygalakis},
+      year={2023},
+      eprint={2307.08343},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+
+% Random Forward Models: lot's of theory
+@article{random_fwd_models,
+   title={Random Forward Models and Log-Likelihoods in Bayesian Inverse Problems},
+   volume={6},
+   ISSN={2166-2525},
+   url={http://dx.doi.org/10.1137/18M1166523},
+   DOI={10.1137/18m1166523},
+   number={4},
+   journal={SIAM/ASA Journal on Uncertainty Quantification},
+   publisher={Society for Industrial & Applied Mathematics (SIAM)},
+   author={Lie, H. C. and Sullivan, T. J. and Teckentrup, A. L.},
+   year={2018},
+   month=jan, pages={1600–1629} 
+ }
+   
+% Example application of Emulate, calibrate, sample approach. 
+@article{idealizedGCM,
+author = {Dunbar, Oliver R. A. and Garbuno-Inigo, Alfredo and Schneider, Tapio and Stuart, Andrew M.},
+title = {Calibration and Uncertainty Quantification of Convective Parameters in an Idealized GCM},
+journal = {Journal of Advances in Modeling Earth Systems},
+volume = {13},
+number = {9},
+pages = {e2020MS002454},
+keywords = {uncertainty quantification, model calibration, machine learning, general circulation model, parametric uncertainty, inverse problem},
+doi = {https://doi.org/10.1029/2020MS002454},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2020MS002454},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2020MS002454},
+note = {e2020MS002454 2020MS002454},
+abstract = {Abstract Parameters in climate models are usually calibrated manually, exploiting only small subsets of the available data. This precludes both optimal calibration and quantification of uncertainties. Traditional Bayesian calibration methods that allow uncertainty quantification are too expensive for climate models; they are also not robust in the presence of internal climate variability. For example, Markov chain Monte Carlo (MCMC) methods typically require model runs and are sensitive to internal variability noise, rendering them infeasible for climate models. Here we demonstrate an approach to model calibration and uncertainty quantification that requires only model runs and can accommodate internal climate variability. The approach consists of three stages: (a) a calibration stage uses variants of ensemble Kalman inversion to calibrate a model by minimizing mismatches between model and data statistics; (b) an emulation stage emulates the parameter-to-data map with Gaussian processes (GP), using the model runs in the calibration stage for training; (c) a sampling stage approximates the Bayesian posterior distributions by sampling the GP emulator with MCMC. We demonstrate the feasibility and computational efficiency of this calibrate-emulate-sample (CES) approach in a perfect-model setting. Using an idealized general circulation model, we estimate parameters in a simple convection scheme from synthetic data generated with the model. The CES approach generates probability distributions of the parameters that are good approximations of the Bayesian posteriors, at a fraction of the computational cost usually required to obtain them. Sampling from this approximate posterior allows the generation of climate predictions with quantified parametric uncertainties.},
+year = {2021}
+}
+
+%  ---------------------------------------------------------------------------------------------------
+% Log-likelihood emulation with non-GP models. 
+%  ---------------------------------------------------------------------------------------------------
+
+% Log likelihood emulation (as well as emulation of its gradient and Hessian) using neural operator. 
+@misc{cao2024efficient,
+      title={Efficient geometric Markov chain Monte Carlo for nonlinear Bayesian inversion enabled by derivative-informed neural operators}, 
+      author={Lianghao Cao and Thomas O'Leary-Roseberry and Omar Ghattas},
+      year={2024},
+      eprint={2403.08220},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+%  ---------------------------------------------------------------------------------------------------
+% Sequential design which seeks to target true posterior. 
+%  ---------------------------------------------------------------------------------------------------
+
+% Suggest choosing design points based on the posterior density, but oversampling the tails. 
+@misc{briol2017sampling,
+      title={On the Sampling Problem for Kernel Quadrature}, 
+      author={Francois-Xavier Briol and Chris J. Oates and Jon Cockayne and Wilson Ye Chen and Mark Girolami},
+      year={2017},
+      eprint={1706.03369},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+
+% Provide justification for selecting design points in regions of significant posterior mass. 
+@misc{StuartTeck2,
+      title={Introduction To Gaussian Process Regression In Bayesian Inverse Problems, With New Results On Experimental Design For Weighted Error Measures}, 
+      author={Tapio Helin and Andrew Stuart and Aretha Teckentrup and Konstantinos Zygalakis},
+      year={2023},
+      eprint={2302.04518},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+
+% Solving optimization problem. Emulate the log Euclidean error of a simulator with time-series output using BART. 
+% Expected improvement sequential design. 
+@misc{ranjan2016inverse,
+      title={Inverse problem for time-series valued computer model via scalarization}, 
+      author={Pritam Ranjan and Mark Thomas and Holger Teismann and Sujay Mukhoti},
+      year={2016},
+      eprint={1605.09503},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Calibrate, Emulate, Sample. 
+% Utilize Ensemble Kalman Inversion (EKI) or Ensemble Kalman Sampling (EKI) as cheap design method for 
+% fititng a GP emulator. 
+@article{CES,
+	doi = {10.1016/j.jcp.2020.109716},
+	url = {https://doi.org/10.1016\%2Fj.jcp.2020.109716},  
+	year = 2021,
+	month = {jan},  
+	publisher = {Elsevier {BV}},  
+	volume = {424},  
+	pages = {109716},  
+	author = {Emmet Cleary and Alfredo Garbuno-Inigo and Shiwei Lan and Tapio Schneider and Andrew M. Stuart},  
+	title = {Calibrate, emulate, sample},  
+	journal = {Journal of Computational Physics}
+}
+
+% Log-likelihood emulation. Sequential design using entropy of lognormal likelihood approx. They mention plugging 
+ % in approximation to the density and running MCMC but don't explain how. 
+@article{landslideCalibration,
+	doi = {https://doi.org/10.1007/s10346-022-01857-z},
+	url = {https://doi.org/10.1007/s10346-022-01857-z},  
+	year = 2022,
+	month = {April},  
+	volume = {19},  
+	pages = {2033–2045},  
+	author = {Zhao, H. and Kowalski, J.},  
+	title = {Bayesian active learning for parameter calibration of landslide run-out models.},  
+	journal = {Landslides}
+}
+
+% Unnormalized log-posterior emulation. Sequential design using exponentiated variance and negative expected 
+% divergence. The latter is typically computationally intractable. 
+@article{Kandasamy_2017,
+   title={Query efficient posterior estimation in scientific experiments via Bayesian active learning},
+   volume={243},
+   ISSN={0004-3702},
+   url={http://dx.doi.org/10.1016/j.artint.2016.11.002},
+   DOI={10.1016/j.artint.2016.11.002},
+   journal={Artificial Intelligence},
+   publisher={Elsevier BV},
+   author={Kandasamy, Kirthevasan and Schneider, Jeff and Póczos, Barnabás},
+   year={2017},
+   month=feb, pages={45–56} }
+
+% Requires density estimation. Propose an approach to deal with fast-varying densities that may not be conducive 
+% to GP modeling. Active learning approach maximizing the log-normal entropy (entropy of unnormalized log-posterior
+% emulator. 
+@misc{wang2018adaptive,
+      title={Adaptive Gaussian process approximation for Bayesian inference with expensive likelihood functions}, 
+      author={Hongqiao Wang and Jinglai Li},
+      year={2018},
+      eprint={1703.09930},
+      archivePrefix={arXiv},
+      primaryClass={stat.CO}
+}
+
+
+% ---------------------------------------------------------------------------------------------------
+% Emulating simulators with high-dimensional output: Basis functions
+% ---------------------------------------------------------------------------------------------------
+
+% Higdon et al PCA basis function approach to high-dim outputs. 
+@article{HigdonBasis,
+author = {Dave Higdon and James Gattiker and Brian Williams and Maria Rightley},
+title = {Computer Model Calibration Using High-Dimensional Output},
+journal = {Journal of the American Statistical Association},
+volume = {103},
+number = {482},
+pages = {570-583},
+year  = {2008},
+publisher = {Taylor & Francis},
+doi = {10.1198/016214507000000888},
+URL = {   
+        https://doi.org/10.1198/016214507000000888
+},
+eprint = { 
+        https://doi.org/10.1198/016214507000000888
+}
+}
+
+% Wavelet basis. 
+@article{emulate_functional_output,
+author = {M. J. Bayarri and D. Walsh and J. O. Berger and J. Cafeo and G. Garcia-Donato and F. Liu and J. Palomo and R. J. Parthasarathy and R. Paulo and J. Sacks},
+title = {{Computer model validation with functional output}},
+volume = {35},
+journal = {The Annals of Statistics},
+number = {5},
+publisher = {Institute of Mathematical Statistics},
+pages = {1874 -- 1906},
+keywords = {Bayesian analysis, bias, Computer models, functional data, uncertain inputs, validation},
+year = {2007},
+doi = {10.1214/009053607000000163},
+URL = {https://doi.org/10.1214/009053607000000163}
+}
+
+% Emulate coefficients in KL expansion, then use delayed-acceptance MCMC. 
+@Article{functionValuedModels,
+AUTHOR = {Albert, Christopher G. and Callies, Ulrich and Toussaint, Udo von},
+TITLE = {Surrogate-Enhanced Parameter Inference for Function-Valued Models},
+JOURNAL = {Physical Sciences Forum},
+VOLUME = {3},
+YEAR = {2021},
+NUMBER = {1},
+ARTICLE-NUMBER = {11},
+URL = {https://www.mdpi.com/2673-9984/3/1/11},
+ISSN = {2673-9984},
+ABSTRACT = {We present an approach to enhance the performance and flexibility of the Bayesian inference of model parameters based on observations of the measured data. Going beyond the usual surrogate-enhanced Monte-Carlo or optimization methods that focus on a scalar loss, we place emphasis on a function-valued output of a formally infinite dimension. For this purpose, the surrogate models are built on a combination of linear dimensionality reduction in an adaptive basis of principal components and Gaussian process regression for the map between reduced feature spaces. Since the decoded surrogate provides the full model output rather than only the loss, it is re-usable for multiple calibration measurements as well as different loss metrics and, consequently, allows for flexible marginalization over such quantities and applications to Bayesian hierarchical models. We evaluate the method&rsquo;s performance based on a case study of a toy model and a simple riverine diatom model for the Elbe river. As input data, this model uses six tunable scalar parameters as well as silica concentrations in the upper reach of the river together with the continuous time-series of temperature, radiation, and river discharge over a specific year. The output consists of continuous time-series data that are calibrated against corresponding measurements from the Geesthacht Weir station at the Elbe river. For this study, only two scalar inputs were considered together with a function-valued output and compared to an existing model calibration using direct simulation runs without a surrogate.},
+DOI = {10.3390/psf2021003011}
+}
+
+% Use proper orthogonal decomposition
+@article{PODemulation,
+author = {Yeh, Shiang-Ting and Wang, Xingjian and Sung, Chih-Li and Mak, Simon and Chang, Yu-Hung and Zhang, Liwei and Wu, Chi-Fang and Yang, Vigor},
+year = {2017},
+month = {07},
+pages = {},
+title = {Data-Driven Analysis and Common Proper Orthogonal Decomposition (CPOD)-Based Spatio-Temporal Emulator for Design Exploration}
+}
+
+% ---------------------------------------------------------------------------------------------------
+% Parameter estimation for dynamical models. 
+% ---------------------------------------------------------------------------------------------------
+
+% Discuss calibrating parameters to time averages of state variables. 
+@article{ESM_modeling_2pt0,
+author = {Schneider, Tapio and Lan, Shiwei and Stuart, Andrew and Teixeira, João},
+title = {Earth System Modeling 2.0: A Blueprint for Models That Learn From Observations and Targeted High-Resolution Simulations},
+journal = {Geophysical Research Letters},
+volume = {44},
+number = {24},
+pages = {12,396-12,417},
+keywords = {Earth system models, parameterizations, data assimilation, machine learning, Kalman inversion, Markov chain Monte Carlo},
+doi = {https://doi.org/10.1002/2017GL076101},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2017GL076101},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101},
+abstract = {Abstract Climate projections continue to be marred by large uncertainties, which originate in processes that need to be parameterized, such as clouds, convection, and ecosystems. But rapid progress is now within reach. New computational tools and methods from data assimilation and machine learning make it possible to integrate global observations and local high-resolution simulations in an Earth system model (ESM) that systematically learns from both and quantifies uncertainties. Here we propose a blueprint for such an ESM. We outline how parameterization schemes can learn from global observations and targeted high-resolution simulations, for example, of clouds and convection, through matching low-order statistics between ESMs, observations, and high-resolution simulations. We illustrate learning algorithms for ESMs with a simple dynamical system that shares characteristics of the climate system; and we discuss the opportunities the proposed framework presents and the challenges that remain to realize it.},
+year = {2017}
+}
+
+
+% ---------------------------------------------------------------------------------------------------
+% Other emulation techniques for dynamical models. 
+% ---------------------------------------------------------------------------------------------------
+
+% TODO: need to read
+@article{dynamic_nonlinear_simulators_GP,
+title = {Emulating dynamic non-linear simulators using Gaussian processes},
+journal = {Computational Statistics \& Data Analysis},
+volume = {139},
+pages = {178-196},
+year = {2019},
+issn = {0167-9473},
+doi = {https://doi.org/10.1016/j.csda.2019.05.006},
+url = {https://www.sciencedirect.com/science/article/pii/S0167947319301173},
+author = {Hossein Mohammadi and Peter Challenor and Marc Goodfellow}
+}
+
+% TODO: need to read
+@article{GP_dynamic_emulation,
+    author = {Conti, S. and Gosling, J. P. and Oakley, J. E. and O'Hagan, A.},
+    title = "{Gaussian process emulation of dynamic computer codes}",
+    journal = {Biometrika},
+    volume = {96},
+    number = {3},
+    pages = {663-676},
+    year = {2009},
+    month = {06},
+    abstract = "{Computer codes are used in scientific research to study and predict the behaviour of complex systems. Their run times often make uncertainty and sensitivity analyses impractical because of the thousands of runs that are conventionally required, so efficient techniques have been developed based on a statistical representation of the code. The approach is less straightforward for dynamic codes, which represent time-evolving systems. We develop a novel iterative system to build a statistical model of dynamic computer codes, which is demonstrated on a rainfall-runoff simulator.}",
+    issn = {0006-3444},
+    doi = {10.1093/biomet/asp028},
+    url = {https://doi.org/10.1093/biomet/asp028},
+    eprint = {https://academic.oup.com/biomet/article-pdf/96/3/663/709193/asp028.pdf}
+}
+
+% TODO: need to read
+@article{Bayesian_emulation_dynamic,
+title = {Bayesian emulation of complex multi-output and dynamic computer models},
+journal = {Journal of Statistical Planning and Inference},
+volume = {140},
+number = {3},
+pages = {640-651},
+year = {2010},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/j.jspi.2009.08.006},
+url = {https://www.sciencedirect.com/science/article/pii/S0378375809002559},
+author = {Stefano Conti and Anthony O’Hagan},
+keywords = {Bayesian inference, Computer experiments, Dynamic models, Hierarchical models},
+abstract = {Computer models are widely used in scientific research to study and predict the behaviour of complex systems. The run times of computer-intensive simulators are often such that it is impractical to make the thousands of model runs that are conventionally required for sensitivity analysis, uncertainty analysis or calibration. In response to this problem, highly efficient techniques have recently been developed based on a statistical meta-model (the emulator) that is built to approximate the computer model. The approach, however, is less straightforward for dynamic simulators, designed to represent time-evolving systems. Generalisations of the established methodology to allow for dynamic emulation are here proposed and contrasted. Advantages and difficulties are discussed and illustrated with an application to the Sheffield Dynamic Global Vegetation Model, developed within the UK Centre for Terrestrial Carbon Dynamics.}
+}
+
+% TODO: need to read
+@article{emulate_dynamic_epidemic_model,
+author = {Marian Farah and Paul Birrell and Stefano Conti and Daniela De Angelis},
+title = {Bayesian Emulation and Calibration of a Dynamic Epidemic Model for A/H1N1 Influenza},
+journal = {Journal of the American Statistical Association},
+volume = {109},
+number = {508},
+pages = {1398-1411},
+year  = {2014},
+publisher = {Taylor & Francis},
+doi = {10.1080/01621459.2014.934453},
+URL = { 
+    
+        https://doi.org/10.1080/01621459.2014.934453
+},
+eprint = { 
+        https://doi.org/10.1080/01621459.2014.934453
+}
+}
+
+% TODO: need to read
+@article{Liu_West_dynamic_emulation,
+author = {Fei Liu and Mike West},
+title = {{A dynamic modelling strategy for Bayesian computer model emulation}},
+volume = {4},
+journal = {Bayesian Analysis},
+number = {2},
+publisher = {International Society for Bayesian Analysis},
+pages = {393 -- 411},
+keywords = {Backward sampling, computer model emulation, Dynamic linear model, Forwarding filtering, Gaussian process, Markov chain Monte Carlo, time-varying autoregression},
+year = {2009},
+doi = {10.1214/09-BA415},
+URL = {https://doi.org/10.1214/09-BA415}
+}
+
+% ---------------------------------------------------------------------------------------------------
+% Integrated variance and related criteria
+% ---------------------------------------------------------------------------------------------------
+
+% Integrated variance criterion targeting the GP directly, but weighted by the approx posterior; accompanying theory. 
+% Also utilize marginal approximation in Gaussian forward model emulation setting. 
+@misc{weightedIVAR,
+      title={Sequential design for surrogate modeling in Bayesian inverse problems}, 
+      author={Paul Lartaud and Philippe Humbert and Josselin Garnier},
+      year={2024},
+      eprint={2402.16520},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Log-likelihood emulation with IEVAR criterion. Marginal posterior approximation. 
+@article{VehtariParallelGP,
+author = {Marko J{\"a}rvenp{\"a}{\"a} and Michael U. Gutmann and Aki Vehtari and Pekka Marttinen},
+title = {{Parallel Gaussian Process Surrogate Bayesian Inference with Noisy Likelihood Evaluations}},
+volume = {16},
+journal = {Bayesian Analysis},
+number = {1},
+publisher = {International Society for Bayesian Analysis},
+pages = {147 -- 178},
+keywords = {expensive likelihoods, Gaussian processes, likelihood-free inference, parallel computing, sequential experiment design, surrogate modelling},
+year = {2021},
+doi = {10.1214/20-BA1200},
+URL = {https://doi.org/10.1214/20-BA1200}
+}
+
+% Propose gradient-based optimization for sample-sum approximation of IVAR. 
+@article{Mercer_kernels_IVAR,
+author = {Gorodetsky, Alex and Marzouk, Youssef},
+title = {Mercer Kernels and Integrated Variance Experimental Design: Connections Between Gaussian Process Regression and Polynomial Approximation},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {4},
+number = {1},
+pages = {796-828},
+year = {2016},
+doi = {10.1137/15M1017119},
+URL = { 
+    
+        https://doi.org/10.1137/15M1017119
+},
+eprint = { 
+        https://doi.org/10.1137/15M1017119
+}
+}
+
+% KL based criteria. Emulate forward model.
+@misc{VillaniAdaptiveGP,
+      title={Adaptive Gaussian Process Regression for Bayesian inverse problems}, 
+      author={Paolo Villani and Jörg Unger and Martin Weiser},
+      year={2024},
+      eprint={2404.19459},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2404.19459}
+}
+
+% Active Learning Cohn
+@article{COHN19961071,
+title = {Neural Network Exploration Using Optimal Experiment Design},
+journal = {Neural Networks},
+volume = {9},
+number = {6},
+pages = {1071-1083},
+year = {1996},
+issn = {0893-6080},
+doi = {https://doi.org/10.1016/0893-6080(95)00137-9},
+url = {https://www.sciencedirect.com/science/article/pii/0893608095001379},
+author = {David A. Cohn},
+keywords = {Active learning, Exploration, Optimal experiment design, Queries, Uncertainty},
+abstract = {I consider the question “How should one act when the only goal is to learn as much as possible?”. Building on the theoretical results of Fedorov (1972, Theory of Optimal Experiments, Academic Press) and MacKay (1992, Neural Computation, 4, 590–604), I apply techniques from optimal experiment design (OED) to guide the query/action selection of a neural network learner. I demonstrate that these techniques allow the learner to minimize its generalization error by exploring its domain efficiently and completely. I conclude that, while not a panacea, OED-based query/action selection has much to offer, especially in domains where its high computational costs can be tolerated. Copyright © 1996 Elsevier Science Ltd}
+}
+
+% Propose EIVAR-type criterion. 
+@article{SinsbeckNowak,
+author = {Sinsbeck, Michael and Nowak, Wolfgang},
+title = {Sequential Design of Computer Experiments for the Solution of Bayesian Inverse Problems},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {5},
+number = {1},
+pages = {640-664},
+year = {2017},
+doi = {10.1137/15M1047659},
+URL = { 
+    
+        https://doi.org/10.1137/15M1047659
+},
+eprint = {     
+        https://doi.org/10.1137/15M1047659
+},
+abstract = { We present a sequential design strategy for efficient sampling of model functions during the solution of Bayesian inverse problems. The model function is assumed to be computationally expensive and therefore is described by a random field (such as a Gaussian process emulator). The sequential design strategy is a greedy one-step look ahead method, minimizing the Bayes risk with respect to a loss function measuring the quadratic \$L^2\$-error in the likelihood estimate. Four numerical examples demonstrate that the proposed sampling method is more efficient than space-filling, prior-based designs. }
+}
+
+% EIVAR paper; computes EIVAR for the Higdon et al PCA-based emulation approach. 
+@misc{Surer2023sequential,
+      title={Sequential Bayesian experimental design for calibration of expensive simulation models}, 
+      author={Özge Sürer and Matthew Plumlee and Stefan M. Wild},
+      year={2023},
+      eprint={2305.16506},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Proposes an EIVAR-like acquisition but uses KL-divergence instead of prior-weighted L2 
+@inproceedings{KandasamyActiveLearning2015,
+author = {Kandasamy, Kirthevasan and Schneider, Jeff and P\'{o}czos, Barnab\'{a}s},
+title = {Bayesian Active Learning for Posterior Estimation},
+year = {2015},
+isbn = {9781577357384},
+publisher = {AAAI Press},
+abstract = {This paper studies active posterior estimation in a Bayesian setting when the likelihood is expensive to evaluate. Existing techniques for posterior estimation are based on generating samples representative of the posterior. Such methods do not consider efficiency in terms of likelihood evaluations. In order to be query efficient we treat posterior estimation in an active regression framework. We propose two myopic query strategies to choose where to evaluate the likelihood and implement them using Gaussian processes. Via experiments on a series of synthetic and real examples we demonstrate that our approach is significantly more query efficient than existing techniques and other heuristics for posterior estimation.},
+booktitle = {Proceedings of the 24th International Conference on Artificial Intelligence},
+pages = {3605–3611},
+numpages = {7},
+location = {Buenos Aires, Argentina},
+series = {IJCAI'15}
+}
+
+% Lot's of closed-form IVAR calculations. 
+@article{Binois_2018,
+   title={Replication or Exploration? Sequential Design for Stochastic Simulation Experiments},
+   volume={61},
+   ISSN={1537-2723},
+   url={http://dx.doi.org/10.1080/00401706.2018.1469433},
+   DOI={10.1080/00401706.2018.1469433},
+   number={1},
+   journal={Technometrics},
+   publisher={Informa UK Limited},
+   author={Binois, Mickaël and Huang, Jiangeng and Gramacy, Robert B. and Ludkovski, Mike},
+   year={2018},
+   month=sep, pages={7–23} 
+  }
+
+
+% Some closed-form IVAR expressions
+% TODO: need to read this more closely 
+@article{parallelSURExcursionSet,
+author = {Clément Chevalier and Julien Bect and David Ginsbourger and Emmanuel Vazquez and Victor Picheny and Yann Richet},
+title = {Fast Parallel Kriging-Based Stepwise Uncertainty Reduction With Application to the Identification of an Excursion Set},
+journal = {Technometrics},
+volume = {56},
+number = {4},
+pages = {455--465},
+year = {2014},
+publisher = {Taylor \& Francis},
+doi = {10.1080/00401706.2013.860918},
+URL = { 
+        https://doi.org/10.1080/00401706.2013.860918
+},
+eprint = { 
+        https://doi.org/10.1080/00401706.2013.860918
+}
+}
+
+%  ---------------------------------------------------------------------------------------------------
+% Ecological Applications
+%  ---------------------------------------------------------------------------------------------------
+
+@Manual{vsem,
+    title = {BayesianTools: General-Purpose MCMC and SMC Samplers and Tools for Bayesian
+Statistics},
+    author = {Florian Hartig and Francesco Minunno and Stefan { Paul}},
+    year = {2023},
+    note = {R package version 0.1.8},
+    url = {https://CRAN.R-project.org/package=BayesianTools}
+  }
+
+@article{FATES_CES,
+   title={Inferring parameters in a complex land surface model by combining data assimilation and machine learning.},
+   DOI={DOI: 10.22541/essoar.172070530.05098424/v1},
+   journal={ESS Open Archive},
+   author={Lasse Torben Keetz and Kristoffer Aalstad and Rosie A. Fisher and Christian Poppe Teran and Bibi S. Naz and Norbert Pirk and Yeliz Yilmaz and Olav Skarpaas},
+   year={2024},
+   month={July}
+  }
+
+%  ---------------------------------------------------------------------------------------------------
+% Uncertainty Propagation for surrogates
+%  ---------------------------------------------------------------------------------------------------
+
+% Utilize an adaptive scheme somewhat resembling likelihood tempering. Their adaptive approach requires constructing an approximate density function. 
+% They utilize an information-based acquisition criterion. 
+@article{article,
+author = {Wang, Hongqiao and Li, Jinglai},
+year = {2017},
+month = {03},
+pages = {},
+title = {Adaptive Gaussian Process Approximation for Bayesian Inference with Expensive Likelihood Functions},
+volume = {30},
+journal = {Neural Computation},
+doi = {10.1162/neco_a_01127}
+}
+
+@article{BurknerSurrogate,
+  title={Uncertainty Quantification and Propagation in Surrogate-based Bayesian Inference},
+  author={Philipp Reiser and Javier Enrique Aguilar and Anneli Guthke and Paul-Christian Burkner},
+  journal={ArXiv},
+  year={2023},
+  volume={abs/2312.05153},
+  url={https://api.semanticscholar.org/CorpusID:266149965}
+}
+
+
+
+%
+%
+% TODO: not yet categorized
+%
+%
+%
+
+
+% ---------------------------------------------------------------------------------------------------
+% Emulating dynamic simulators / simulators with high-dimensional output
+% ---------------------------------------------------------------------------------------------------
+
+@Article{acp-11-12253-2011,
+AUTHOR = {Lee, L. A. and Carslaw, K. S. and Pringle, K. J. and Mann, G. W. and Spracklen, D. V.},
+TITLE = {Emulation of a complex global aerosol model to quantify sensitivity to uncertain parameters},
+JOURNAL = {Atmospheric Chemistry and Physics},
+VOLUME = {11},
+YEAR = {2011},
+NUMBER = {23},
+PAGES = {12253--12273},
+URL = {https://acp.copernicus.org/articles/11/12253/2011/},
+DOI = {10.5194/acp-11-12253-2011}
+}
+
+
+
+@article{REICHERT20111638,
+title = {Mechanism-based emulation of dynamic simulation models: Concept and application in hydrology},
+journal = {Computational Statistics & Data Analysis},
+volume = {55},
+number = {4},
+pages = {1638-1655},
+year = {2011},
+issn = {0167-9473},
+doi = {https://doi.org/10.1016/j.csda.2010.10.011},
+url = {https://www.sciencedirect.com/science/article/pii/S0167947310003993},
+author = {P. Reichert and G. White and M.J. Bayarri and E.B. Pitman},
+keywords = {Dynamic model, Emulator, Optimization, Sensitivity analysis, Statistical inference},
+abstract = {Many model-based investigation techniques, such as sensitivity analysis, optimization, and statistical inference, require a large number of model evaluations to be performed at different input and/or parameter values. This limits the application of these techniques to models that can be implemented in computationally efficient computer codes. Emulators, by providing efficient interpolation between outputs of deterministic simulation models, can considerably extend the field of applicability of such computationally demanding techniques. So far, the dominant techniques for developing emulators have been priors in the form of Gaussian stochastic processes (GASP) that were conditioned with a design data set of inputs and corresponding model outputs. In the context of dynamic models, this approach has two essential disadvantages: (i) these emulators do not consider our knowledge of the structure of the model, and (ii) they run into numerical difficulties if there are a large number of closely spaced input points as is often the case in the time dimension of dynamic models. To address both of these problems, a new concept of developing emulators for dynamic models is proposed. This concept is based on a prior that combines a simplified linear state space model of the temporal evolution of the dynamic model with Gaussian stochastic processes for the innovation terms as functions of model parameters and/or inputs. These innovation terms are intended to correct the error of the linear model at each output step. Conditioning this prior to the design data set is done by Kalman smoothing. This leads to an efficient emulator that, due to the consideration of our knowledge about dominant mechanisms built into the simulation model, can be expected to outperform purely statistical emulators at least in cases in which the design data set is small. The feasibility and potential difficulties of the proposed approach are demonstrated by the application to a simple hydrological model.}
+}
+
+@article{doi:10.1198/106186008X384032,
+author = {Jonathan Rougier},
+title = {Efficient Emulators for Multivariate Deterministic Functions},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {17},
+number = {4},
+pages = {827-843},
+year  = {2008},
+publisher = {Taylor & Francis},
+doi = {10.1198/106186008X384032},
+URL = { 
+        https://doi.org/10.1198/106186008X384032
+},
+eprint = {     
+        https://doi.org/10.1198/106186008X384032
+}
+}
+
+@article{doi:10.1137/120900915,
+author = {Williamson, Daniel and Blaker, Adam T.},
+title = {Evolving Bayesian Emulators for Structured Chaotic Time Series, with Application to Large Climate Models},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {2},
+number = {1},
+pages = {1-28},
+year = {2014},
+doi = {10.1137/120900915},
+URL = { 
+        https://doi.org/10.1137/120900915
+},
+eprint = {   
+        https://doi.org/10.1137/120900915
+},
+    abstract = { We develop Bayesian dynamic linear model Gaussian processes for emulation of time series output for computer models that may exhibit chaotic behavior, but where this behavior retains some underlying structure. The statistical technology is particularly suited to emulating the time series output of large climate models that exhibit this feature and where we want samples from the posterior of the emulator to evolve in the same way as dynamic processes in the computer model do. The methodology combines key features of good uncertainty quantification (UQ) methods such as using complex mean functions to capture large-scale signals within parameter space, with dynamic linear models in a way that allows UQ to borrow strength from the Bayesian time series literature. We present an MCMC algorithm for sampling from the posterior of the emulator parameters when the roughness lengths of the Gaussian process are unknown. We discuss an interpretation of the results of this algorithm that allows us to use MCMC to fix the correlation lengths, making future online samples from the emulator tractable when used in practical applications where online MCMC is infeasible. We apply this methodology to emulate the Atlantic Meridional Overturning Circulation (AMOC) as a time series output of the fully coupled non--flux-adjusted atmosphere-ocean general circulation model HadCM3. }
+}
+
+
+@article{doi:10.1080/00401706.2013.775897,
+author = { Matthew T.   Pratola  and  Stephan R.   Sain  and  Derek   Bingham  and  Michael   Wiltberger  and  E.   Joshua   Rigler },
+title = {Fast Sequential Computer Model Calibration of Large Nonstationary Spatial-Temporal Processes},
+journal = {Technometrics},
+volume = {55},
+number = {2},
+pages = {232-242},
+year  = {2013},
+publisher = {Taylor & Francis},
+doi = {10.1080/00401706.2013.775897},
+URL = { 
+        https://doi.org/10.1080/00401706.2013.775897
+},
+eprint = { 
+    
+        https://doi.org/10.1080/00401706.2013.775897
+}
+}
+
+@article{PERRIN2020106728,
+title = {Adaptive calibration of a computer code with time-series output},
+journal = {Reliability Engineering & System Safety},
+volume = {196},
+pages = {106728},
+year = {2020},
+issn = {0951-8320},
+doi = {https://doi.org/10.1016/j.ress.2019.106728},
+url = {https://www.sciencedirect.com/science/article/pii/S0951832018311232},
+author = {G. Perrin},
+keywords = {Bayesian framework, Computer experiment, Dynamic simulator, Gaussian process, Multi-output},
+abstract = {Simulation plays a major role in the conception, the optimization and the certification of complex systems. Of particular interest here is the calibration of the parameters of computer models from high-dimensional physical observations. When the run times of these computer codes is high, this work focuses on the numerical challenges associated with the statistical inference. In particular, several adaptations of the Gaussian Process Regression (GPR) to the high-dimensional or functional output case are presented for the emulation of computer codes from limited data. Then, an adaptive procedure is detailed to minimize the calibration parameters uncertainty at the minimal computational cost. The proposed method is eventually applied to two applications that are based on dynamic simulators.}
+}
+
+
+
+
+% ---------------------------------------------------------------------------------------------------
+% Scaling GPs. 
+% ---------------------------------------------------------------------------------------------------
+
+% TODO: need to read
+@misc{cole2021locally,
+      title={Locally induced Gaussian processes for large-scale simulation experiments}, 
+      author={D. Austin Cole and Ryan Christianson and Robert B. Gramacy},
+      year={2021},
+      eprint={2008.12857},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% TODO: need to read 
+@article{doi:10.1080/10618600.2014.914442,
+author = {Robert B. Gramacy and Daniel W. Apley},
+title = {Local Gaussian Process Approximation for Large Computer Experiments},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {24},
+number = {2},
+pages = {561-578},
+year  = {2015},
+publisher = {Taylor & Francis},
+doi = {10.1080/10618600.2014.914442},
+URL = { 
+    
+        https://doi.org/10.1080/10618600.2014.914442
+},
+eprint = {    
+        https://doi.org/10.1080/10618600.2014.914442
+}
+}
+
+
+
+% Classic paper on batch BayesOpt; Kriging believer and constant liar heuristics for approximating multi-points EI. 
+@Inbook{Ginsbourger2010,
+author="Ginsbourger, David
+and Le Riche, Rodolphe
+and Carraro, Laurent",
+editor="Tenne, Yoel
+and Goh, Chi-Keong",
+title="Kriging Is Well-Suited to Parallelize Optimization",
+bookTitle="Computational Intelligence in Expensive Optimization Problems",
+year="2010",
+publisher="Springer Berlin Heidelberg",
+address="Berlin, Heidelberg",
+pages="131--162",
+abstract="The optimization of expensive-to-evaluate functions generally relies on metamodel-based exploration strategies. Many deterministic global optimization algorithms used in the field of computer experiments are based on Kriging (Gaussian process regression). Starting with a spatial predictor including a measure of uncertainty, they proceed by iteratively choosing the point maximizing a criterion which is a compromise between predicted performance and uncertainty. Distributing the evaluation of such numerically expensive objective functions on many processors is an appealing idea. Here we investigate a multi-points optimization criterion, the multipoints expected improvement ({\$}q-{\{}{\backslash}mathbb E{\}}I{\$}), aimed at choosing several points at the same time. An analytical expression of the {\$}q-{\{}{\backslash}mathbb E{\}}I{\$}is given when q{\thinspace}={\thinspace}2, and a consistent statistical estimate is given for the general case. We then propose two classes of heuristic strategies meant to approximately optimize the {\$}q-{\{}{\backslash}mathbb E{\}}I{\$}, and apply them to the classical Branin-Hoo test-case function. It is finally demonstrated within the covered example that the latter strategies perform as good as the best Latin Hypercubes and Uniform Designs ever found by simulation (2000 designs drawn at random for every q{\thinspace}∈ [1,10]).",
+isbn="978-3-642-10701-6",
+doi="10.1007/978-3-642-10701-6_6",
+url="https://doi.org/10.1007/978-3-642-10701-6_6"
+}
+
+
+% Orthogonal array based LHS; discussion of different methods for batch sequential design. Emphasis on space-filling. 
+@article{LOEPPKY20101452,
+title = {Batch sequential designs for computer experiments},
+journal = {Journal of Statistical Planning and Inference},
+volume = {140},
+number = {6},
+pages = {1452-1464},
+year = {2010},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/j.jspi.2009.12.004},
+url = {https://www.sciencedirect.com/science/article/pii/S0378375809003747},
+author = {Jason L. Loeppky and Leslie M. Moore and Brian J. Williams},
+keywords = {Computer experiment, Gaussian process, Random function, Latin hypercube sample, Maximin distance, Entropy},
+abstract = {Computer models simulating a physical process are used in many areas of science. Due to the complex nature of these codes it is often necessary to approximate the code, which is typically done using a Gaussian process. In many situations the number of code runs available to build the Gaussian process approximation is limited. When the initial design is small or the underlying response surface is complicated this can lead to poor approximations of the code output. In order to improve the fit of the model, sequential design strategies must be employed. In this paper we introduce two simple distance based metrics that can be used to augment an initial design in a batch sequential manner. In addition we propose a sequential updating strategy to an orthogonal array based Latin hypercube sample. We show via various real and simulated examples that the distance metrics and the extension of the orthogonal array based Latin hypercubes work well in practice.}
+}
+
+% Deep Gaussian Processes via MCMC sampling; estimates IMSPE and ALC criteria using the MCMC samples. 
+@misc{sauer2021active,
+      title={Active Learning for Deep Gaussian Process Surrogates}, 
+      author={Annie Sauer and Robert B. Gramacy and David Higdon},
+      year={2021},
+      eprint={2012.08015},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Likelihood-free inference perspective. Emulate likelihood with neural network ensemble. Use MaxVar and mutual information acquisitions to acquire new points. 
+@article{Lueckmann2018LikelihoodfreeIW,
+  title={Likelihood-free inference with emulator networks},
+  author={Jan-Matthis Lueckmann and Giacomo Bassetto and Theofanis Karaletsos and Jakob H. Macke},
+  journal={ArXiv},
+  year={2018},
+  volume={abs/1805.09294},
+  url={https://api.semanticscholar.org/CorpusID:43920918}
+}
+
+% TODO: need to read
+@article{PANDITA2021114007,
+title = {Surrogate-based sequential Bayesian experimental design using non-stationary Gaussian Processes},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {385},
+pages = {114007},
+year = {2021},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2021.114007},
+url = {https://www.sciencedirect.com/science/article/pii/S0045782521003388},
+author = {Piyush Pandita and Panagiotis Tsilifis and Nimish M. Awalgaonkar and Ilias Bilionis and Jitesh Panchal},
+keywords = {Design of experiments, Non-stationary Gaussian Processes, Expected Information Gain, Sequential designs, Bayesian inference},
+abstract = {Inferring arbitrary quantities of interest (QoI) using limited computational or, in realistic scenarios, financial budgets, is a challenging problem that requires sophisticated strategies for the optimal allocation of the available resources. Bayesian optimal experimental design identifies the optimal set of design locations for the purpose of solving a parameter inference problem and the optimality criterion is typically associated with maximizing the worth of information in the experimental measurements. Sequential design strategies further identify the optimal design in a sequential manner, starting from a initial budget and iteratively selecting new optimal points until either an accuracy threshold is reached, or a cost limit is exceeded. In this paper, we present a generic sequential Bayesian experimental design framework that relies on maximizing an information theoretic design criterion, namely the Expected Information Gain, in order to infer QoIs formed as nonlinear operators acting on black-box functions. Our framework relies on modeling the underlying response function using non-stationary Gaussian Processes, thus enabling efficient sampling from the QoI in order to provide Monte Carlo estimators for the design criterion. We demonstrate the performance of our method on an engineering problem of steel wire manufacturing and compare it with two classic approaches: uncertainty sampling and expected improvement.}
+}
+
+
+% TODO: need to read
+@article{article,
+author = {Joseph, V. Roshan and Dasgupta, Tirthankar and Tuo, Rui and Wu, Chi-Fang},
+year = {2014},
+month = {11},
+pages = {00-00},
+title = {Sequential Exploration of Complex Surfaces Using Minimum Energy Designs},
+volume = {57},
+journal = {Technometrics},
+doi = {10.1080/00401706.2014.881749}
+}
+
+% TODO: need to read
+@article{Huan2013,
+	doi = {10.1016/j.jcp.2012.08.013},
+	url = {https://doi.org/10.1016%2Fj.jcp.2012.08.013},  
+	year = 2013,
+	month = {jan},  
+	publisher = {Elsevier {BV}},  
+	volume = {232},  
+	number = {1},  
+	pages = {288--317},
+	author = {Xun Huan and Youssef M. Marzouk},  
+	title = {Simulation-based optimal Bayesian experimental design for nonlinear systems},  
+	journal = {Journal of Computational Physics}
+}
+
+% TODO: need to read
+@misc{gramacy2010particle,
+      title={Particle learning of Gaussian process models for sequential design and optimization}, 
+      author={Robert B. Gramacy and Nicholas G. Polson},
+      year={2010},
+      eprint={0909.5262},
+      archivePrefix={arXiv},
+      primaryClass={stat.CO}
+}
+
+% TODO: need to read 
+@misc{zhang2019distancedistributed,
+      title={Distance-distributed design for Gaussian process surrogates}, 
+      author={Boya Zhang and D. Austin Cole and Robert B. Gramacy},
+      year={2019},
+      eprint={1812.02794},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% TODO: need to read 
+@misc{koermer2023active,
+      title={Active Learning for Simulator Calibration}, 
+      author={Scott Koermer and Justin Loda and Aaron Noble and Robert B. Gramacy},
+      year={2023},
+      eprint={2301.10228},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+% Derive closed-form expression for multi-point EI. 
+@inproceedings{Chevalier2013,
+author = {Chevalier, Clément},
+year = {2013},
+month = {01},
+pages = {},
+title = {Fast Computation of the Multi-Points Expected Improvement with Applications in Batch Selection},
+isbn = {978-3-642-44972-7},
+doi = {10.1007/978-3-642-44973-4_7}
+}
+
+% Derive an expression for the gradient of the closed-form multi-point EI. 
+@inproceedings{Marmin2015,
+author = {Marmin, Sébastien and Chevalier, Clément and Ginsbourger, David},
+year = {2015},
+month = {03},
+pages = {},
+title = {Differentiating the Multipoint Expected Improvement for Optimal Batch Design},
+isbn = {978-3-319-27925-1},
+doi = {10.1007/978-3-319-27926-8_4}
+}
+
+% Hierarchical EI
+@misc{chen2023hierarchical,
+      title={A hierarchical expected improvement method for Bayesian optimization}, 
+      author={Zhehui Chen and Simon Mak and C. F. Jeff Wu},
+      year={2023},
+      eprint={1911.07285},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME}
+}
+
+
+
+
+
