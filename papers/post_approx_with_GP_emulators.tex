@@ -29,8 +29,6 @@
 % Tables. 
 \usepackage{multirow}
 
-
-
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_gp_inv_prob}
@@ -42,7 +40,7 @@
 \setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
 
 % For embedding images
-\graphicspath{{../output/gp_post_approx_paper/}}
+\graphicspath{{./figures/}}
 
 % Specifically for paper formatting 
 \renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
@@ -148,18 +146,216 @@ While much of the discussion here is agnostic to the specifics of the underlying
 to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
 using dynamic ecological models of the carbon cycle.
 
+% Background
+\section{Background}
+In this section we introduce the Bayesian inference setting of interest, with an emphasis on Bayesian inverse problems
+stemming from mechanistic dynamical models. We provide a concrete example of parameter estimation for ordinary 
+differential equations, and introduce the two regimes of forward model and log-likelihood emulation. The section concludes
+with a brief review of Gaussian processes.
+ 
+ \subsection{Bayesian Inverse Problems}
+We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
+density 
+\begin{equation}
+\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par) \label{post_dens_generic}
+\end{equation}
+are available, but expensive owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
+commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
+Consider a \textit{forward model} $\fwd: \R^{\dimPar} \to \R^{\dimObs}$ describing some system of interest, 
+parameterized by input parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$. In addition, we suppose that 
+we have noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ 
+seeks to approximate. The \textit{inverse problem} concerns learning the parameter values $\Par$ such
+ that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating} the model so that it agrees with the observations. 
+ The statistical approach to this problem assumes that the link between model outputs and 
+observations is governed by a probability distribution on $\obs \given \Par$. We assume that this distribution 
+admits a density with corresponding log-likelihood 
+\begin{align}
+\llik: \parSpace \to \R, \label{log_likelihood}
+\end{align}
+such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
+on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
+calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
+are fixed. We discuss inference for such nuisance parameters in \Cref{section_lik_par}.
 
+The Bayesian approach completes this specification with a prior distribution 
+on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
+by the posterior distribution $\postDensNorm(\Par) \Def p(\Par \given \obs)$. The posterior density is computed by Bayes' rule 
+\begin{align}
+\postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) \Def \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
+\end{align}
+with normalizing constant given by 
+\begin{align}
+\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
+\end{align}
+We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
+posterior density. When relevant, we will make explicit the dependence on the forward 
+model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to considering 
+generic likelihoods, we will give special attention to the additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\end{align}
+with corresponding log-likelihood 
+\begin{align}
+\llik(\Par; \fwd) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
+= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)), \label{llik_Gaussian}
+\end{align}
+as this model features prominently in the inverse problems literature.
+In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
+standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
+algorithm. Such algorithms are serial in nature, often requiring $\BigO(10^6)$ iterations, with each 
+iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
+In the inverse problem context, this computational requirement is often prohibitive when the forward model 
+evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
+expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
+cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
+an approximation of the latter). We focus on surrogate models that take the form of statistical 
+regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \llik(\Par)$.
+\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling) for $\fwd$ 
+that exploit the specific structure of the forward model; see, e.g., \todo.}
+We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
+model the latter as \textit{log-likelihood emulation}.
 
+\subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
+We now demonstrate how the problem of estimating the parameters of differential equation models 
+ can be cast within the Bayesian inverse problem framework. Our primary motivating applications 
+ stem from the use of dynamical models in Earth system modeling  \citep{ESM_modeling_2pt0,paramLSM}.
+Consider an initial value problem 
+\begin{align}
+\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
+\end{align}
+describing the time evolution of $\dimState$ state variables 
+$\state(\Time) \Def \left[\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)\right]^\top \in \mathbb{R}^{\dimState}$,
+with dynamics depending on parameters $\Par \in \parSpace$. As our focus will be on estimating these parameters 
+from observations, we consider the parameter-to-state map
+\begin{align}
+\Par &\mapsto \left\{\state(\Time, \Par) :  \Time \in [\timeStart, \timeEnd] \right\}.
+\end{align}
+In practice, the solution is typically approximated via a numerical discretization of the form 
+\begin{align}
+\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
+\end{align}
+Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
+and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
+values $\state(\Time, \Par)$ at a finite set of time points in $[\timeStart, \timeEnd]$. 
+Going forward, we focus on the discrete-time operator $\solutionOp$, neglecting discretization error
+for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
+noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
+$\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the state trajectory to a 
+$\dimObs$-dimensional observable quantity. We assume the observations are generated as 
+\begin{align}
+\obs &= (\obsOp \circ \solutionOp)(\ParTrue) + \noise \label{ode_inv_prob} \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\end{align}
+for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this falls within the generic 
+inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
+Generalizations can be considered to settings with non-additive or non-Gaussian noise, or the 
+presence of model discrepancy. In our numerical experiments we consider two problems of the 
+form \ref{ode_inv_prob} motivated by problems in near-term carbon cycle forecasting and 
+long-term climate modeling. 
 
+ \subsection{Gaussian Processes} \label{gp_review}
+ In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer 
+ readers to \cite{gramacy2020surrogates, StuartTeck2, gpML}. We also discuss basic extensions
+ to Gaussian process models for multi-output functions, which will be relevant in various examples
+ considered throughout this article.
+ 
+ \subsubsection{Single Output Gaussian Processes}
+ A Gaussian process (GP) can be thought of as a
+random function $\funcPrior: \parSpace \to \R$, defined by the property that 
+the random vector $[\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top$ has
+a joint Gaussian distribution for any finite set of inputs $\parMat \Def \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
+A GP is defined by its mean function $\gpMeanPrior: \parSpace \to \R$ and positive-definite kernel
+(i.e., covariance function) $\gpKerPrior: \parSpace \times \parSpace \to \R$ and is thus denoted by 
+$\funcPrior \sim \GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows. Letting 
+$\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
+$\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
+\footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
+$\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
+and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
+the defining property of the GP can be written as 
+\begin{align}
+\funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
+\end{align}
+For our purposes, the GP $\funcPrior$ will be a prior distribution for a \textit{deterministic} function $\func: \parSpace \to \R$. 
+However, the underlying ideas explored here can be extended to the setting where evaluations of $\func$ 
+are corrupted by noise \citep{VehtariParallelGP}. 
+If we observe noiseless function evaluations $\func(\designIn)$ at a set of inputs $\designIn$, then we can consider
+the conditional distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
+\citep{gpML} that the conditional is also a GP
+\begin{align}
+\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
+\end{align}
+with mean and kernel given by
+\footnote{The GP conditional mean and covariance equations apply more generally when conditioning on 
+$\{\designIn[\Ndesign], \funcVal[\Ndesign]\}$, regardless of whether $\funcVal[\Ndesign]$ is interpreted as 
+a set of noiseless function evaluations or not. However, in our setting we reserve the notation $\gpMean[\Ndesign]$
+for the case when $\funcVal[\Ndesign] = \func(\designIn[\Ndesign])$; i.e., conditioning on the exact function 
+evaluations. Note that $\gpKer[\Ndesign]$ is independent of $\funcVal[\Ndesign]$ so this distinction is only 
+relevant for the mean.} 
 
+\begin{align}
+\gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\func(\designIn) - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
+\gpKer[\Ndesign](\parMat) &= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} \gpKerPrior(\designIn, \parMat). \nonumber
+\end{align}
 
+We will refer to observed input locations $\designIn$ as \textit{design points}, and the conditional
+distribution $\GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$ as the \textit{predictive distribution}.
+The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \func(\designIn[\Ndesign])$), with 
+the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). 
+To break these interpolation properties,
+a constant can be added to the diagonal of the kernel matrix so that $(\gpKerPrior(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
+$\gpKerPrior(\designIn)^{-1}$ in \ref{kriging_eqns}. In the present context of deterministic forward models, 
+this interpolation property is typically desirable. Nevertheless, a small, positive fixed constant $\nuggetSD^2$ is still 
+typically included for numerical stability. 
 
+Appropriate choices for the prior mean $\gpMeanPrior$ and covariance $\gpKerPrior$ depend on the 
+particular application, but we typically take the mean to be a constant or a linear model of the form 
+$\gpMeanPrior(\Par) = \beta^\top \phi(\Par)$, for some feature map $\phi$. A common default choice of 
+covariance function is the exponentiated quadratic (also called squared exponential, Gaussian, or radial basis function)
+kernel,
+\begin{align}
+\gpKerPrior(\Par, \tilde{\Par}) &= 
+\margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, \label{Gaussian_kernel}
+\end{align}
+defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. 
+This is an example of a stationary, or shift-invariant, kernel since $\gpKerPrior(\Par, \tilde{\Par})$ only depends 
+on its arguments through their difference $\Par - \tilde{\Par}$. 
+A common approach to set the mean and kernel hyperparameters is the empirical Bayes method of fixing
+their values at their maximum (marginal) likelihood estimates, which conveniently retains the Gaussian
+predictive distribution \Cref{generic_gp_conditional} at the expense of failing to acknowledge uncertainty
+in the hyperparameters. The fully Bayesian alternative significantly increases computation, 
+and results in a non-Gaussian predictive distribution. 
 
+\subsubsection{Multiple Output Gaussian Processes}
+We now consider the extension to multi-output functions $\funcPrior: \parSpace \to \R^{\dimObs}$. 
+There is a large literature on multi-output kernels \citep{multiOutputKernels}, but we focus here on the 
+simplest case in which each output is modeled separately as an independent GP. 
+In this setting, the notation $\gpKerPrior(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ 
+diagonal matrix collecting the variance of each independent GP. Similarly, for a set of inputs 
+$\parMat \in \R^{M \times \dimPar}$, $\gpKerPrior(\parMat)$ is now the 
+$M\dimObs \times M\dimObs$ block diagonal matrix constructed from the covariances of 
+each independent GP.
+ 
+This basic multi-output strategy becomes problematic when the output dimension $\dimObs$ 
+is large or the outputs are highly interdependent, rendering the independent GP approach infeasible or ill-advised.
+An alternative popular strategy is is to approximate the function output as a linear combination of a small number
+of basis vectors, with the coefficients modeled as independent GPs; that is, 
+\begin{align}
+\funcPrior(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{basis_func_model} \\
+\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean{(\idxBasis)}, \emKer{(\idxBasis)}),  \\
+ \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec}),
+\end{align}
+where the $\basisVec_{\idxBasis}$ are fixed basis vectors.
+These basis vectors are commonly constructed via a singular value decomposition, though other 
+bases are also possible \citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}.
+Under this model, the univariate GPs $\basisWeight_{\idxBasis}$ are fit and conditioned independently, then 
+plugged back into \Cref{basis_func_model} to construct the predictive distribution. The linear Gaussian 
+structure of \Cref{basis_func_model} implies that this approach retains a Gaussian predictive distribution
+for $\funcEm[\Ndesign]$.
 
-
-
-
-
+ 
+ 
 % An Overview of Surrogate modeling in Bayesian inference 
 \section{An Overview of Surrogate Modeling in Bayesian Inference}
 In this section, we provide an overview of the typical workflow for Bayesian inference using surrogate models. We note 
@@ -216,102 +412,6 @@ Calibration vs. consistency. Consistency: SUR framework, Youssef MCMC work, Teck
 % Setting and Background 
 \section{Setting and Background}
 
-\subsection{Bayesian Inverse Problems}
-We consider a \textit{forward model} $\fwd: \R^{\dimPar} \to \R^{\dimObs}$ describing some system of interest, parameterized by 
-input parameters $\Par \in \parSpace \subset \R^{\dimPar}$. In addition, we suppose that we have noisy observations 
-$\obs \in \obsSpace \subset \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ seeks to approximate. The 
-\textit{inverse problem} concerns learning the parameter values $\Par$ such that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating}
-the model so that it agrees with reality. The statistical approach to this problem assumes that the link between model outputs and 
-observations is governed by a probability distribution on  $\obs \given \Par$. We assume that this distribution admits a density 
-with corresponding log-likelihood 
-\begin{align}
-\llik: \parSpace \to \R, \label{log_likelihood}
-\end{align}
-such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$ 
-\footnote{For succinctness, the notation $\llik(\Par)$ suppresses dependence on the data $\obs$, 
-as we assume the data is fixed throughout the analysis.}
-\footnote{We are currently focusing on the forward model parameter $\Par$, treating other likelihood 
-parameters (e.g., observation covariance) as fixed. We will relax this assumption 
-in section \ref{section_lik_par}.}.
-
-The Bayesian approach completes this specification with a prior distribution 
-on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
-by the posterior distribution $\postDensNorm(\Par) \Def p(\Par \given \obs)$. The posterior density is computed by Bayes' rule 
-\begin{align}
-\postDensNorm(\Par) = \frac{1}{\normCst}\postDens(\Par) \Def \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
-\end{align}
-with normalizing constant given by 
-\begin{align}
-\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
-\end{align}
-We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. When relevant, we will make explicit the dependence on the forward 
-model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to considering 
-generic likelihoods, we will give special attention to the additive Gaussian noise model
-\begin{align}
-\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber 
-\end{align}
-with corresponding log-likelihood 
-\begin{align}
-\llik(\Par; \fwd) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
-= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)). \label{llik_Gaussian}
-\end{align}
-
-In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
-standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
-algorithm. Such algorithms are iterative in nature, often requiring $\BigO(10^6)$ iterations, with each 
-iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
-In the inverse problem context, this computational requirement is often prohibitive when the forward model 
-evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
-expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
-cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
-an approximation of the latter). 
- 
-% Motivating Example: Parameter Estimation for Dynamical Models
-\subsection{Motivating Example: Parameter Estimation for Dynamical Models} \label{dynamical_models}
-While many problems fall under the generic setting outlined above, our primary application of interest 
-stems from the problem of parameter estimation for dynamical models that describe complex systems. 
-This problem arises in various forms under the umbrella of Earth system modeling \citep{ESM_modeling_2pt0}, 
-and we pull examples primarily from ecological models of the terrestrial biosphere (\todo: cite). We now 
-establish notation for the dynamical model applications, and cast the problem of parameter estimation for 
-differential equations as a specific instance of the generic inverse problem \ref{inv_prob_Gaussian}. 
-Consider the initial value problem 
-\begin{align}
-\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
-\end{align}
-describing the time evolution of $\dimState$ state variables 
-$\state(\Time) \Def \left[\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)\right]^\top \in \mathbb{R}^{\dimState}$,
-with dynamics depending on parameters $\Par \in \parSpace$. As our focus will be on estimating these parameters 
-from observations, we consider the solution operator 
-\begin{align}
-\Par &\mapsto \left\{\state(\Time, \Par) :  \Time \in [\timeStart, \timeEnd] \right\}, 
-\end{align}
-mapping parameters to state trajectories over some time horizon $[\timeStart, \timeEnd]$. In practice, the solution 
-is often approximated via a numerical discretization of the form 
-\begin{align}
-\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
-\end{align}
-Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
-and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
-values $\state(\Time, \Par)$ at a finite set of time points in $[\timeStart, \timeEnd]$. 
-Going forward, we focus on the approximate solution operator $\solutionOp$, neglecting discretization error 
-for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
-noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
-$\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the state trajectory to a 
-$\dimObs$-dimensional observable quantity. We assume the observations are generated as 
-\begin{align}
-\obs &= (\obsOp \circ \solutionOp)(\ParTrue) + \noise \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber 
-\end{align}
-for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this falls within the generic 
-inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
-Some of the methods discussed below readily 
-generalize to more complicated settings that consider non-additive or non-Gaussian noise, or the presence of 
-model discrepancy terms. The observation operator commonly maps to statistical moments of the state 
-trajectory (e.g., a time average), or may simply extract the state values at a subset of the simulated time 
-points.
-
 \subsubsection{A Toy Carbon Cycle Model}
 As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
 structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
@@ -338,71 +438,7 @@ Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
 We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
 time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
 $\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables.
-
-% Gaussian Processes
-\subsection{Gaussian Processes}
-In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer readers to 
-\cite{gramacy2020surrogates, StuartTeck2, gpML}. A \textit{Gaussian process} (GP) is a probability 
-distribution over a set of functions $\funcPrior: \parSpace \to \R$, defined by the property that 
-the random vector $[\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top$ has
-a joint Gaussian distribution for any set of inputs $\parMat \Def \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
-A GP is defined by its \textit{mean function} $\gpMeanPrior: \parSpace \to \R$ and positive-definite \textit{kernel} 
-(i.e., \textit{covariance function}) $\gpKerPrior: \parSpace \times \parSpace \to \R$ and is thus denoted by 
-$\GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows. Letting 
-$\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
-$\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
-\footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
-$\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
-and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
-the defining property of the GP can be written as 
-\begin{align}
-\funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
-\end{align}
-For our purposes, the GP $\funcPrior$ will be a prior distribution for a \textit{deterministic} function $\func: \parSpace \to \R$. 
-However, the underlying ideas explored here can be extended to the setting where the evaluations of $\func$ 
-are corrupted by noise \citep{VehtariParallelGP}. 
-Now suppose that, at a set of \textit{design points} $\designIn$, we have computed the noiseless function values
-$\func(\designIn)$. Viewing these values as a realization of the random variable $\funcPrior(\designIn)$, we can 
-consider the conditional (i.e., \textit{predictive}) distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
-\citep{gpML} that this conditional distribution is also a GP
-\begin{align}
-\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
-\end{align}
-with mean and kernel given by
-\footnote{The GP conditional mean and covariance equations apply more generally when conditioning on 
-$\{\designIn[\Ndesign], \funcVal[\Ndesign]\}$, regardless of whether $\funcVal[\Ndesign]$ is interpreted as 
-a set of noiseless function evaluations or not. However, in our setting we reserve the notation $\gpMean[\Ndesign]$
-for the case when $\funcVal[\Ndesign] = \func(\designIn[\Ndesign])$; i.e., conditioning on the exact function 
-evaluations. Note that $\gpKer[\Ndesign]$ is independent of $\funcVal[\Ndesign]$ so this distinction is only 
-relevant for the mean.} 
-\begin{align}
-\gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\func(\designIn) - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
-\gpKer[\Ndesign](\parMat) &= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} \gpKerPrior(\designIn, \parMat). \nonumber
-\end{align}
-The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \func(\designIn[\Ndesign])$), with 
-the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). To break these interpolation properties,
-a constant can be added to the diagonal of the kernel matrix so that $(\gpKerPrior(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
-$\gpKerPrior(\designIn)^{-1}$ in \ref{kriging_eqns}. In the present context, the maps $\fwd$ and $\llik$ are assumed to be deterministic functions 
-of $\Par$ and hence the interpolation property is desirable. Nevertheless, a small, positive fixed constant $\nuggetSD^2$ is still 
-typically included for numerical stability. 
-
-Our default choice of covariance function is the popular \textit{exponentiated quadratic} 
-(also called \textit{squared exponential} or \textit{Gaussian}) kernel, which is given by 
-\begin{align}
-\gpKerPrior(\Par, \tilde{\Par}) &= 
-\margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, 
-\end{align}
-defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. This is an example
-of a stationary, or shift-invariant, kernel since $\gpKerPrior(\Par, \tilde{\Par})$ only depends on its arguments through their difference 
-$\Par - \tilde{\Par}$. To complete the GP prior specification, we typically take the mean 
-function to be a constant or quadratic. We opt for the common empirical Bayes approach of fixing all mean and kernel hyperparameters 
-at their maximum (marginal) likelihood estimates.
-
-Finally, we consider the extension to multi-output functions $\funcPrior: \parSpace \to \R^{\dimObs}$. There is a large literature on multi-output 
-kernels (\todo: cite), but we focus here on the simplest case in which each output is modeled separately as an independent GP. 
-In this setting, the notation $\gpKerPrior(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ diagonal matrix collecting the variance of each 
-independent GP. Similarly, for a set of inputs $\parMat \in \R^{M \times \dimPar}$, $\gpKerPrior(\parMat)$ is now the 
-$M\dimObs \times M\dimObs$ block diagonal matrix constructed from the predictive covariances of each independent GP. 
+ 
 
 \subsection{Surrogate Construction}
 We now consider modeling either $\fwd$ or $\llik$ with a GP, referring to these cases as \textit{forward model emulation} and 
@@ -1568,8 +1604,11 @@ while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibrat
 % Numerical Experiments
 \section{Numerical Experiments}
 
+% Banana-shaped Distribution
+\subsection{Banana-shaped Distribution} \label{banana_example}
+
 % Very Simple Ecosystem Model 
-\subsection{Very Simple Ecosystem Model}
+\subsection{Very Simple Ecosystem Model} \label{vsem_example}
 Our first set of experiments utilizes the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
 structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
 describes the evolution of the state vector
@@ -1628,6 +1667,8 @@ prior
 \Par \sim \mathcal{U}(0.2, 1.0), 
 \end{align*}
 thus completing the specification of the Bayesian inverse problem. 
+
+\subsection{Lorenz} \label{lorenz_example}
 
 
 % Appendix 

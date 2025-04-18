@@ -1,0 +1,237 @@
+%!TEX root = SMA-book.tex
+
+% Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
+
+% --------------------------------------------------------------------------------------------------
+% General 
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\cst}{C}
+\newcommand{\eqDist}{\overset{d}{=}} % Equality in distribution 
+\newcommand{\diag}{\textrm{diag}}
+\newcommand{\law}{\textrm{law}}
+
+
+% --------------------------------------------------------------------------------------------------
+% Bayesian inverse problem: general setup 
+% --------------------------------------------------------------------------------------------------
+
+% General inverse problems.
+\newcommand{\Par}{u}
+\newcommand{\parSpace}{\mathcal{U}} % Parameter space
+\newcommand{\dimPar}{D} % Parameter dimension 
+\newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
+\newcommand{\obs}{y} % Data observation (response) vector
+\newcommand{\noise}{\epsilon} % Random variable representing noise, typically in additive noise model. 
+\newcommand{\obsSpace}{\mathcal{Y}} % Output space
+\newcommand{\dimObs}{P} % Dimension of data observation vector
+\newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
+\newcommand{\fwd}{G} % Forward model
+\newcommand{\llik}{\mathcal{L}} % Log-likelihood 
+\newcommand{\priorDens}{\pi_0} % Prior density 
+\newcommand{\postDens}{\pi} % Unnormalized posterior density.
+\newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
+\newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
+\newcommand{\likPar}{\Sigma} % Likelihood parameter
+\newcommand{\ParTrue}{\Par_{\star}}
+
+
+% --------------------------------------------------------------------------------------------------
+% Gaussian Process Emulators
+% --------------------------------------------------------------------------------------------------
+
+% Generic GP commands. 
+\newcommand{\Ndesign}{N}
+\newcommand{\GP}{\mathcal{GP}} % GP distribution.
+\newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
+\newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
+\newcommand{\funcPrior}{\func_{0}}
+\newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
+\newcommand{\funcValExact}[1][\Ndesign]{\varphi_{#1}^{*}}
+\newcommand{\gpMeanBase}{\mu} % The base notation used for GP mean (no sub/superscripts). 
+\newcommand{\gpKerBase}{k}
+\newcommand{\gpMeanPrior}{\gpMeanBase_0}
+\newcommand{\gpKerPrior}{\gpKerBase_0}
+\newcommand{\gpMean}[1][\Ndesign]{\gpMeanBase_{#1}}
+\newcommand{\gpKer}[1][\Ndesign]{\gpKerBase_{#1}}
+\newcommand{\nuggetSD}{\eta}
+\newcommand{\kerMat}[1][\Ndesign]{K_{#1}}
+\newcommand{\emLawPrior}[1]{{\Pi}^{#1}} % The prior law/distribution of an emulator.
+\newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
+\newcommand{\designRand}[2][\Nbatch]{\mathcal{D}_{#1}^{#2}} % When the response is unobserved/random. 
+\newcommand{\emLaw}[2][\design]{{\Pi}^{#2}_{#1}} % The conditional law/distribution of an emulator (may or may not be Gaussian). 
+
+% Exponentiated quadratic kernel.
+\newcommand{\lengthscale}{\ell}
+\newcommand{\margSD}{\sigma_{\gpKerBase}}
+
+% Log-likelihood and forward model emulators. 
+\newcommand{\fwdPrior}{\fwd_{0}}
+\newcommand{\llikPrior}{\llik_{0}}
+\newcommand{\funcEm}[1][\Ndesign]{\func_{#1}}
+\newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
+\newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
+\newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
+\newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
+
+% Mean and kernel functions for log-likelihood and forward model emulators. 
+\newcommand{\emMeanPrior}[1]{\gpMeanPrior^{#1}} 
+\newcommand{\emKerPrior}[1]{\gpKerPrior^{#1}}
+\newcommand{\emMean}[2][\Ndesign]{\gpMeanBase^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
+\newcommand{\emKer}[2][\Ndesign]{\gpKerBase^{#2}_{#1}}
+
+% Random (sample) approximations. 
+\newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
+\newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
+\newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
+\newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
+\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{samp}}}
+
+% Marginal approximations. 
+\newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
+\newcommand{\fwdEmMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,marg}}}
+\newcommand{\llikEmMargDens}[1][\Ndesign]{\llikEmMarg[#1]{\postDens}} 
+\newcommand{\fwdEmMargDens}[1][\Ndesign]{\fwdEmMarg[#1]{\postDens}} 
+\newcommand{\CovComb}[1][\Ndesign]{\Em[{#1}]{\likPar}^{\fwd}}
+
+% Mean approximations. 
+\newcommand{\llikEmMean}[2][\Ndesign]{{#2}_{#1}^{\text{mean}}}
+\newcommand{\fwdEmMean}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mean}}}
+\newcommand{\llikEmMeanDens}[1][\Ndesign]{\llikEmMean[#1]{\postDens}} 
+\newcommand{\fwdEmMeanDens}[1][\Ndesign]{\fwdEmMean[#1]{\postDens}} 
+
+% Quantile approximations. 
+\newcommand{\quantileProb}{\alpha}
+\newcommand{\GaussianCDF}{\Phi}
+\newcommand{\quantile}[1][\quantileProb]{q^{\quantileProb}}
+\newcommand{\llikEmQ}[2][\Ndesign]{{#2}_{#1}^{\quantileProb}}
+\newcommand{\fwdEmQ}[2][\Ndesign]{{#2}_{#1}^{\fwd, \quantileProb}}
+\newcommand{\llikEmQDens}[1][\Ndesign]{\llikEmQ[#1]{\postDens}} 
+\newcommand{\fwdEmQDens}[1][\Ndesign]{\fwdEmQ[#1]{\postDens}} 
+
+% Joint marginal approximations. 
+\newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\textrm{joint-marg}}}
+\newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
+
+% Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
+\newcommand{\mcwmhJointLabel}{\textrm{mcwmh-joint}}
+\newcommand{\mcwmhIndLabel}{\textrm{mcwmh-ind}}
+\newcommand{\mhPseudoMargLabel}{\textrm{mh-pseudo-marg}}
+\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\mcwmhJointLabel}}
+\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,\mcwmhJointLabel}}}
+
+% Design. 
+\newcommand{\Nbatch}{B}
+\newcommand{\Nrounds}{K_{\textrm{design}}}
+\newcommand{\designIndex}{k}
+\newcommand{\Naugment}{\Ndesign + \Nbatch}
+\newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
+\newcommand{\parMat}{U} % Generic matrix of input parameter points. 
+\newcommand{\designIn}[1][\Ndesign]{U_{#1}} % Design inputs. 
+\newcommand{\designOutLlik}[1][\Ndesign]{\ell_{#1}}
+\newcommand{\designOutFwd}[1][\Ndesign]{g_{#1}}
+\newcommand{\designOutLlikExact}[1][\Ndesign]{\ell^*_{#1}}
+\newcommand{\designOutFwdExact}[1][\Ndesign]{g^*_{#1}}
+\newcommand{\designBatchIn}{U_{\Nbatch}}
+\newcommand{\designBatchLlik}{\ell_{\Nbatch}}
+\newcommand{\designBatchFunc}{\varphi_{\Nbatch}}
+\newcommand{\designBatchFwd}{g_{\Nbatch}}
+\newcommand{\fwdEmCond}[2][\Ndesign]{\fwdEm[{#1}]^{#2}}
+\newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
+\newcommand{\qoiMap}{\phi}
+\newcommand{\qoi}[1][\Ndesign]{\qoiMap_{#1}}
+
+% Acquisition functions 
+\newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\textrm{#2}}}
+\newcommand{\maxvarLabel}{\textrm{max-var}}
+\newcommand{\maxentLabel}{\textrm{max-ent}}
+\newcommand{\intvarLabel}{\textrm{int-var}}
+\newcommand{\intentLabel}{\textrm{int-ent}}
+\newcommand{\maxexpvarLabel}{\textrm{max-exp-var}}
+\newcommand{\maxexpentLabel}{\textrm{max-exp-ent}}
+\newcommand{\intExpVarLabel}{\textrm{int-exp-var}}
+\newcommand{\fwdintExpVarLabel}{\fwd \textrm{,}\intExpVarLabel}
+\newcommand{\intExpEntLabel}{\textrm{int-exp-ent}}
+\newcommand{\Ent}{H} % Entropy 
+\newcommand{\weightDens}[1][\Ndesign]{\rho_{#1}}
+\newcommand{\varInflation}{v}
+
+% Basis function emulation. 
+\newcommand{\basisVec}{\phi}
+\newcommand{\basisWeight}{w}
+\newcommand{\dimBasis}{R}
+\newcommand{\idxBasis}{r}
+
+% --------------------------------------------------------------------------------------------------
+% Markov Chain Monte Carlo. 
+% --------------------------------------------------------------------------------------------------
+
+% Generic MCMC commands. 
+\newcommand{\propDens}{q} % Proposal density
+\newcommand{\propPar}{\tilde{\Par}} % Proposal density
+\newcommand{\llikSamp}{\ell} 
+\newcommand{\llikSampProp}{\tilde{\ell}} 
+\newcommand{\llikSampDist}{\nu}
+\newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
+\newcommand{\sampleIndex}{k} % Generic index for samples. 
+\newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
+\newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
+\newcommand{\NMCMC}{\NSample_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
+\newcommand{\avgAccProbMH}{\overline{a}}
+\newcommand{\accProbRatio}{r}
+\newcommand{\likRatio}{\lambda}
+\newcommand{\MarkovKernel}{P}
+\newcommand{\mcmcIndex}{\sampleIndex}
+% \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
+\newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
+
+% --------------------------------------------------------------------------------------------------
+% Dynamical Models. 
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\Time}{t}
+\newcommand{\state}{x}
+\newcommand{\odeRHS}{F}
+\newcommand{\timeStart}{\Time_0}
+\newcommand{\timeEnd}{\Time_1}
+\newcommand{\stateIC}{\state_{\circ}}
+\newcommand{\dimState}{S}
+\newcommand{\stateIndex}{s}
+\newcommand{\indexState}[2][\stateIndex]{{#2}^{({#1})}}
+\newcommand{\solutionOp}{\mathcal{S}}
+\newcommand{\obsOp}{\mathcal{H}}
+\newcommand{\timeIndex}{\mcmcIndex}
+\newcommand{\indexTime}[2][\timeIndex]{{#2}_{#1}}
+\newcommand{\NTimeStep}{\NSample}
+\newcommand{\forcing}{w}
+
+% --------------------------------------------------------------------------------------------------
+% Very Simple Ecosystem Model (VSEM)
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\stateV}{\state_{\textrm{v}}}
+\newcommand{\stateR}{\state_{\textrm{r}}}
+\newcommand{\stateS}{\state_{\textrm{s}}}
+\newcommand{\dstateV}{\dot{\state}_{\textrm{v}}}
+\newcommand{\dstateR}{\dot{\state}_{\textrm{r}}}
+\newcommand{\dstateS}{\dot{\state}_{\textrm{s}}}
+\newcommand{\NPP}{\textrm{NPP}}
+\newcommand{\GPP}{\textrm{GPP}}
+\newcommand{\alphaV}{\alpha_{\textrm{v}}}
+\newcommand{\tauV}{\tau_{\textrm{v}}}
+\newcommand{\tauR}{\tau_{\textrm{r}}}
+\newcommand{\tauS}{\tau_{\textrm{s}}}
+\newcommand{\LUE}{\ell}
+\newcommand{\LAR}{r}
+\newcommand{\KEXT}{\kappa}
+\newcommand{\fracRespiration}{\gamma}
+\newcommand{\LAI}{\textrm{LAI}}
+
+
+
+
+
+
+
+
