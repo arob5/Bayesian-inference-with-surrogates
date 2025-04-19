@@ -5,42 +5,195 @@
 # Andrew Roberts
 
 # ------------------------------------------------------------------------------
+# General helper functions.
+# ------------------------------------------------------------------------------
+
+get_ids_by_tag <- function(experiment_dir, round=NULL, design_tag_list=NULL, 
+                           em_tag_list=NULL, mcmc_tag_list=NULL) {
+  # Constructs a data.table of IDs that allows tracking dependencies within and
+  # across rounds. This is accomplished by starting at round one and then
+  # stepping forward through the rounds. The default behavior is to return a 
+  # table with all IDs/tags across all rounds included. Optional arguments
+  # allow restriction to the set of IDs associated with specific tags by round.
+  # For example, `mcmc_tag_list` must be a list of the form:
+  #   list(round1=c("mean", "marginal"), round3=c("mean")).
+  # This means that the round one MCMC IDs will be restricted to those associated
+  # with MCMC tags "mean" or "marginal". This means that any future steps
+  # relying on other tags will be excluded. When round 3 is reached, only 
+  # MCMC IDs associated with the MCMC tag "mean" will be included from that 
+  # round (but this won't eliminate the "marginal" IDs from previous rounds).
+  # `design_tag_list` and `em_tag_list` are analogously defined. The one 
+  # thing to note about `design_tag_list` is that the round 1 tags are associated
+  # with initial design methods, while other round design tags are associated
+  # with sequential acquisition methods. The argument `round` allows for the 
+  # specification of a stopping point; e.g., `round = 3L` implies that 
+  # only IDs from the first three rounds will be fetched. If at any point
+  # a required "ID map" file is missing, then the loop will terminate early 
+  # and only the IDs up to that point will be returned. Note that the order
+  # of the stages within each round is: design -> Emulator -> MCMC.
+
+  return_cols <- c("round", "design_tag", "em_tag", "mcmc_tag", "design_id",
+                   "em_id", "mcmc_id", "design_seed", "em_seed", "mcmc_seed")
+  
+  # Identify the rounds to loop over.
+  output_dir <- file.path(experiment_dir, "output")
+  if(is.null(round)) {
+    round_tags <- grep("round", list.files(output_dir), value=TRUE)
+    rounds <- sort(as.integer(sub("round", "", round_tags)))
+  } else {
+    rounds <- 1:round
+  }
+  
+  # The design step in round 1 is treated specially, as it has no prior
+  # dependencies.
+  id_map_round <- fread(file.path(output_dir, "round1", "design", "id_map.csv"))
+  setnames(id_map_round, "seed", "design_seed")
+  id_map_round[, round := 1L]
+  design_tags <- design_tag_list[["round1"]]
+  if(!is.null(design_tags)) {
+    id_map_round <- id_map_round[design_tag %in% design_tags]
+  }
+  
+  for(i in rounds) {
+    round_tag <- paste0("round", i)
+    round_dir <- file.path(output_dir, round_tag)
+    
+    # Design.
+    if(i != 1L) {
+      id_map_round <- try(fread(file.path(round_dir, "design", "id_map.csv")))
+      if(any(class(id_map_round) == "try-error")) {
+        message("`get_ids_by_tag()` early stop, round ", i, "; step: design")
+        break
+      } else {
+        design_tags <- design_tag_list[[round_tag]]
+        if(length(design_tags) > 0L) id_map_round <- id_map_round[design_tag %in% design_tags]
+      }
+
+      # Restrict to design tags/IDs that have not been dropped as off the last round.
+      setnames(id_map_round, "seed", "design_seed")
+      prev_round <- round - 1L
+      prev_round_ids <- unique(id_map[round==prev_round, .(design_tag, design_id)])
+      id_map_round <- data.table::merge.data.table(id_map_round, prev_round_ids,
+                                                   by=c("design_tag", "design_id"),
+                                                   all=FALSE) 
+    }
+
+    # Emulator.
+    id_map_em <- try(fread(file.path(round_dir, "em", "id_map.csv")))
+    if(any(class(id_map_em) == "try-error")) {
+      message("`get_ids_by_tag()` early stop, round ", i, "; step: emulator")
+      break
+    } else {
+      em_tags <- em_tag_list[[round_tag]]
+      if(length(em_tags) > 0L) id_map_em <- id_map_em[em_tag %in% em_tags]
+    }
+    
+    setnames(id_map_em, "seed", "em_seed")
+    id_map_round <- data.table::merge.data.table(id_map_round, id_map_em,
+                                                 by=c("design_tag", "design_id"),
+                                                 all.x=TRUE, all.y=FALSE)
+    
+    # MCMC.
+    id_map_mcmc <- try(fread(file.path(round_dir, "mcmc", "id_map.csv")))
+    if(any(class(id_map_mcmc) == "try-error")) {
+      message("`get_ids_by_tag()` early stop, round ", i, "; step: MCMC")
+      break
+    } else {
+      mcmc_tags <- mcmc_tag_list[[round_tag]]
+      if(length(mcmc_tags) > 0L) id_map_mcmc <- id_map_mcmc[mcmc_tag %in% mcmc_tags]
+    }
+    
+    setnames(id_map_mcmc, "seed", "mcmc_seed")
+    id_map_round <- data.table::merge.data.table(id_map_round, id_map_mcmc,
+                                                 by=c("em_tag", "em_id"),
+                                                 all.x=TRUE, all.y=FALSE)
+    
+    # Append round IDs to ID map.
+    id_map_round[, round := round]
+    if(i == 1L) {
+      id_map <- copy(id_map_round)[, ..return_cols]
+    } else {
+      id_map <- rbindlist(list(id_map, id_map_round[, ..return_cols]), use.names=TRUE)
+    }
+  }
+  
+  return(id_map)
+}
+  
+  
+
+# ------------------------------------------------------------------------------
 # MCMC Processing
 # ------------------------------------------------------------------------------
   
 process_mcmc_round <- function(experiment_dir, round, mcmc_ids, 
-                               rhat_threshold=1.05, min_itr_threshold=500L) {
+                               rhat_threshold=1.05, min_itr_threshold=500L,
+                               write_files=FALSE, ...) {
   # Processes MCMC output within a specific round of a specific experiment.
   # Will process all MCMC runs specified in `mcmc_ids`, which is a data.table
   # with columns "mcmc_tag", "em_tag", "em_id", "mcmc_id". Assumes MCMC output
   # for a specific run is stored at path:
   # <experiment_dir>/round_<round>/mcmc/<mcmc_tag>/<em_tag>/em_<em_id>/mcmc_<mcmc_id>/mcmc_samp.rds
   
-  mcmc_results <- copy(mcmc_ids)
-  mcmc_dir <- file.path(experiment_dir, paste0("round",round), "mcmc")
+  # TODO: temporarily including em_tag as column, since I accidentially made 
+  # mcmc_id unique by mcmc_tag and em_tag.
+  
+  mcmc_summary <- data.table(mcmc_tag=character(), mcmc_id=integer(), em_tag=character(),
+                             status=character(), max_rhat=numeric(),
+                             n_groups=integer(), n_chains=integer(),
+                             n_itr=integer())
+  group_info <- data.table(mcmc_tag=character(), mcmc_id=integer(), em_tag=character(),
+                           group=integer(), chain_str=character(),
+                           log_weight=numeric(), itr_start=integer(),
+                           itr_stop=integer())
+  
+  mcmc_dir <- file.path(experiment_dir, "output", paste0("round",round), "mcmc")
   
   for(i in 1:nrow(mcmc_ids)) {
-    # Read MCMC output.
-    mcmc_tag <- mcmc_ids[i, "mcmc_tag"]
-    mcmc_id <- mcmc_ids[i, "mcmc_id"]
-    em_tag <- mcmc_ids[i, "em_tag"]
-    em_id <- mcmc_ids[i, "em_id"]
-    samp_list <- try(readRDS(file.path(mcmc_dir, mcmc_tag, em_tag, 
-                                       paste0("em_", em_id),
-                                       paste0("mcmc_", mcmc_id),
-                                       "mcmc_samp.rds")))
+    print(i)
     
-    if(class(samp_list) != "try-error") {
-      results <- process_mcmc_run(samp_list, rhat_threshold=rhat_threshold, 
-                                  min_itr_threshold=min_itr_threshold, ...)
-    } else {
-      mcmc_results[i, `:=`(n_chains=0L, max_rhat=NA, status="rds_read_error")]
+    tryCatch({
+      # Read MCMC output.
+      mcmc_tag <- mcmc_ids[i]$mcmc_tag
+      mcmc_id <- mcmc_ids[i]$mcmc_id
+      em_tag <- mcmc_ids[i]$em_tag
+      em_id <- mcmc_ids[i]$em_id
+      samp_list <- try(readRDS(file.path(mcmc_dir, mcmc_tag, em_tag, 
+                                         paste0("em_", em_id),
+                                         paste0("mcmc_", mcmc_id),
+                                         "mcmc_samp.rds")), silent=TRUE)
+      
+      if(class(samp_list) != "try-error") {
+        results <- process_mcmc_run(samp_list, rhat_threshold=rhat_threshold, 
+                                    min_itr_threshold=min_itr_threshold, ...)
+        results$mcmc_summary[, `:=`(mcmc_tag=mcmc_tag, mcmc_id=mcmc_id, em_tag=em_tag)]
+        results$group_info[, `:=`(mcmc_tag=mcmc_tag, mcmc_id=mcmc_id, em_tag=em_tag)]
+        
+        mcmc_summary <- rbindlist(list(mcmc_summary, results$mcmc_summary), use.names=TRUE)
+        group_info <- rbindlist(list(group_info, results$group_info), use.names=TRUE, fill=TRUE)
+        
+      } else {
+        run_summary <- data.table(mcmc_tag=mcmc_tag, mcmc_id=mcmc_id, em_tag=em_tag, n_chains=0L, 
+                                  n_groups=0L, max_rhat=NA, status="read_err", n_itr=0L)
+        mcmc_summary <- rbindlist(list(mcmc_summary, run_summary), use.names=TRUE)
+      }
+    }, error = function(cond) {
+      run_summary <- data.table(mcmc_tag=mcmc_tag, mcmc_id=mcmc_id, em_tag=em_tag, n_chains=0L, 
+                                n_groups=0L, max_rhat=NA, status=conditionMessage(cond), n_itr=0L)
+      mcmc_summary <- rbindlist(list(mcmc_summary, run_summary), use.names=TRUE)
     }
+    )
+    
   }
   
-  return(list(mcmc_summary=mcmc_results, chain_summary=chain_results,
-              param_summary=param_results))
+  if(write_files) {
+    fwrite(mcmc_summary, file.path(mcmc_dir, "mcmc_summary.csv"))
+    fwrite(group_info, file.path(mcmc_dir, "group_info.csv"))
+  }
+  
+  return(invisible(list(mcmc_summary=mcmc_summary, group_info=group_info)))
 }
+
 
 process_mcmc_run <- function(samp_list, rhat_threshold=1.05, 
                              min_itr_threshold=500L, ...) {
@@ -74,7 +227,7 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
   # samples we allow for a single chain.
   #
   # Returns:
-  # A list with elements "mcmc_summary" and "group_summary".
+  # A list with elements "mcmc_summary" and "group_info".
   # 
   # mcmc_summary:
   # Provides a high-level summary of the entire MCMC run. This is a data.table
@@ -88,7 +241,7 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
   # "n_itr" is the number of valid iterations (i.e., after burn-in) summed
   # over each group (number of iterations may vary across groups).
   #
-  # group_summary:
+  # group_info:
   # Provides the necessary information for extracting the valid samples for 
   # an MCMC run, including the definition of the groups and their weights.
   # A data.table with columns "group", "chain_str", "max_rhat", "itr_start",
@@ -105,10 +258,13 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
 
   # Check to see if error occurred during run.
   err_occurred <- !is.null(samp_list$output_list[[1]]$condition)
+  group_info_empty <- data.table(group=integer(), chain_str=character(),
+                                 max_rhat=numeric(), itr_start=integer(),
+                                 itr_stop=integer(), log_weight=numeric())
   if(err_occurred) {
-    mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, status="mcmc_err",
-                               chain_group=NA)
-    return(list(summary=mcmc_summary, chain_info=NULL, rhat=NULL))
+    mcmc_summary <- data.table(n_chains=0L, n_groups=0L, max_rhat=NA, 
+                               status="mcmc_err", n_itr=0L)
+    return(list(mcmc_summary=mcmc_summary, group_info=group_info_empty))
   }
   
   if(length(unique(samp_list$samp$test_label)) != 1L) {
@@ -116,68 +272,51 @@ process_mcmc_run <- function(samp_list, rhat_threshold=1.05,
   }
   
   # Determine burn-ins and define chain groups/weights.
-  group_info <- get_chain_groups(samp_list$samp, samp_list$info, 
-                                 rhat_threshold=rhat_threshold, 
-                                 min_itr_threshold=min_itr_threshold, ...)
+  samp_results <- get_chain_groups(samp_list$samp, samp_list$info, 
+                                   rhat_threshold=rhat_threshold, 
+                                   min_itr_threshold=min_itr_threshold, ...)
+  samp_dt <- samp_results$samp
+  group_info <- samp_results$chain_group_map
   
-  return(group_info)
-
-
-  # # If all chains are invalid, then the whole run is marked as invalid.
-  # if(nrow(samp_dt_burned_in) == 0L) {
-  #   mcmc_summary <- data.table(n_chains=0L, max_rhat=NA, 
-  #                              status="processing_failed", chain_group=NA)
-  #   return(list(summary=mcmc_summary, chain_info=NULL, rhat=NULL))
-  # }
-  # 
-  # # Parameter level summary: within-chain Rhat statistics.
-  # id_cols <- c("test_label", "chain_idx", "param_type", "param_name")
-  # rhat_dt <- calc_R_hat(samp_dt, within_chain=TRUE)$R_hat_vals
-  # rhat_dt <- rhat_dt[, .SD, .SDcols=c(id_cols, "R_hat")]
-  # 
-  # # Chain level summary: Maximum within within-chain Rhat over all parameters 
-  # # within the chain.
-  # rhat_max_dt <- rhat_dt[, .(rhat=max(R_hat, na.rm=TRUE)), by=.(test_label, chain_idx)]
-  # other_chain_info <- samp_dt[, .(itr_min=min(itr), itr_max=max(itr)),
-  #                             by=.(test_label, chain_idx)]
-  # chain_info <- data.table::merge.data.table(rhat_max_dt, other_chain_info,
-  #                                            by=c("test_label", "chain_idx"))
-  # 
-  # # Calculate chain weights. Note that any invalid chains have been dropped at 
-  # # this point, so the weights are defined only for valid chains (i.e., after
-  # # normalizing the weights, they should sum to one only over the valid
-  # # chains). First need to subset `info_dt` to align with the adjustments
-  # # to `samp_dt`.
-  # info_dt <- samp_list$info
-  # info_dt <- select_mcmc_samp(info_dt, chain_idcs=chain_info$chain_idx)
-  # info_list <- list()
-  # for(i in chain_info$chain_idx) {
-  #   info_list[[i]] <- select_mcmc_samp(info_dt, chain_idcs=i,
-  #                                      itr_start=chain_info[chain_idx==i,itr_min],
-  #                                      itr_stop=chain_info[chain_idx==i,itr_max])
-  # }
-  # 
-  # info_dt <- rbindlist(info_list, use.names=TRUE)
-  # chain_weights <- calc_chain_weights(info_dt)
-  # chain_info <- data.table::merge.data.table(chain_info, chain_weights,
-  #                                            by=c("test_label", "chain_idx"))
-  # 
-  # 
-  # # Compute MCMC run summary. If across-chain diagnostics passed, then all
-  # # chains are valid.
-  # if(within_chain) {
-  #   mcmc_summary <- data.table(n_chains = nrow(chain_info),
-  #                              max_rhat = max(chain_info$rhat),
-  #                              status = "valid")
-  # } else {
-  #   n_chains <- nrow(chain_info)
-  #   mcmc_summary <- data.table(n_chains = n_chains,
-  #                              max_rhat = max(chain_info$rhat),
-  #                              status = "valid",
-  #                              chain_group = paste(rep("1", n_chains), collapse="-"))
-  # }
+  # Case that no valid samples are returned.
+  if(nrow(samp_dt) == 0L) {
+    mcmc_summary <- data.table(n_chains=0L, n_groups=0L, max_rhat=NA, 
+                               status="failed_processing", n_itr=0L)
+    return(list(mcmc_summary=mcmc_summary, group_info=group_info_empty))
+  }
   
-  # return(list(summary=mcmc_summary, chain_info=chain_info, rhat=rhat_dt))
+  # Compute R-hat within each group.
+  rhat_by_group <- calc_R_hat(samp_dt, within_chain=TRUE, group_col="group")$R_hat_vals
+
+  # Construct MCMC summary.
+  mcmc_summary <- data.table(status="valid", max_rhat=max(rhat_by_group$R_hat),
+                             n_groups=length(unique(group_info$group)),
+                             n_chains=length(unique(group_info$chain_idx)),
+                             n_itr=get_n_itr_by_run(samp_dt)$N)
+
+  # String encoding of which chains belong to which group.
+  chain_str_func <- function(x) paste0(x, collapse="-")
+  group_info <- agg_dt_by_func_list(group_info, "chain_idx", "group", 
+                                    list(chain_str=chain_str_func))
+  
+  # Construct group summary. NULL group weights imply equal weights for all 
+  # groups (typically means there is only one group).
+  group_weights <- samp_results$group_weights
+  if(is.null(group_weights)) {
+    group_info[, log_weight := 0]
+  } else {
+    group_weights[, test_label := NULL]
+    group_info <- data.table::merge.data.table(group_info, group_weights,
+                                               all=TRUE, by="group")
+  }
+  
+  # Attach min/max iteration for each group.
+  group_itr_info <- samp_dt[, .(itr_start=min(itr), itr_stop=max(itr)),
+                            by="group"]
+  group_info <- data.table::merge.data.table(group_info, group_itr_info,
+                                             all=TRUE, by="group")
+  
+  return(list(mcmc_summary=mcmc_summary, group_info=group_info))
 }
 
 
@@ -241,9 +380,11 @@ get_chain_groups <- function(samp_dt, info_dt, rhat_threshold=1.05,
     samp_dt_burned_in[, group := 1L]
   }
   
-  # If all chains are invalid, then the whole run is marked as invalid.
+  # If all chains are invalid, then there are no samples/chains/groups to return.
   if(nrow(samp_dt_burned_in) == 0L) {
-    return(NULL)
+    return(list(samp=samp_dt_burned_in, 
+                chain_group_map=data.table(chain_idx=integer(0), group=integer(0)),
+                group_weights=NULL))
   }
   
   # Step 3: Determine if some valid chains can be merged. Only run if across
@@ -474,8 +615,13 @@ merge_chains <- function(samp_dt, rhat_threshold=1.05, min_itr_threshold=500L,
 
 
 # ------------------------------------------------------------------------------
-# Loading/Assembling Processed MCMC samples
+# MCMC Analysis
+#   Functions that are used after MCMC output has already been processed
+#   (i.e., burn-in already identified, invalid chains dropped, group weights
+#    assigned, etc.). These functions load the processed outputs and 
+#   assemble summary statistics/produce plots/etc.
 # ------------------------------------------------------------------------------
+
 
 get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
                          only_valid=TRUE) {
@@ -484,10 +630,10 @@ get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag,
   # with the specified experiment, round, MCMC tag, emulator tag, and design
   # tag specified in the function arguments. If `only_valid` is TRUE, then 
   # the MCMC iterations and chains are subset using the MCMC post-processing
-  # results in the "summary_files" directory. This also implies that MCMC runs
-  # with no valid chains will be dropped entirely. Setting `only_valid=TRUE`
-  # also attaches additional information as columns in the returned data.table,
-  # including Rhat values and chain weights.
+  # results. This also implies that MCMC runs with no valid chains will be 
+  # dropped entirely. Setting `only_valid=TRUE` also attaches additional 
+  # information as columns in the returned data.table, including Rhat values 
+  # and group weights.
   #
   # NOTE: 
   # Currently this function returns a data.table that is unique by `mcmc_id`
@@ -536,7 +682,7 @@ get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag,
 load_samp_mat <- function(experiment_dir, round, mcmc_tag, mcmc_id, 
                           only_valid=TRUE, n_subsamp=NULL, ...) {
   # Loads MCMC samples from a single run, which is uniquely identified 
-  # by (roumd, mcmc_tag, mcmc_id) within the given experiment directory.
+  # by (round, mcmc_tag, mcmc_id) within the given experiment directory.
   # If `only_valid = TRUE` drops invalid runs/chains/iterations based on the
   # MCMC preprocessing step. If `n_subsamp` is an integer less than the 
   # number of valid samples, will return a subsample of the (valid) MCMC

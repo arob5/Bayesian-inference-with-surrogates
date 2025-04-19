@@ -16,6 +16,7 @@
 library(ggplot2)
 library(data.table)
 library(assertthat)
+library(tictoc)
 
 # ------------------------------------------------------------------------------
 # Settings 
@@ -67,114 +68,17 @@ source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 # Load MCMC ID map. Unique by columns "mcmc_id", "mcmc_tag".
 # TODO: I messed up and rows are actually unique by "mcmc_id", "mcmc_tag",
 # "em_tag". Need to fix this.
+#
+# Should also update `process_mcmc_round` to save to file periodically.
 mcmc_ids <- fread(mcmc_ids_path)[, .(mcmc_tag, em_tag, em_id, mcmc_id)]
 print(paste0("Preparing to process ", nrow(mcmc_ids), " MCMC runs."))
 
-process_mcmc_round(experiment_dir, round, mcmc_ids, 
-                   rhat_threshold=rhat_threshold,
-                   min_itr_threshold=min_itr_threshold)
-
-
-samp_list <- try(readRDS(file.path(mcmc_dir, "mean", "em_fwd", 
-                                   paste0("em_", 3),
-                                   paste0("mcmc_", 3),
-                                   "mcmc_samp.rds")))
-
-test <- process_mcmc_run(samp_list, rhat_threshold=1.00002)
-
-test$chain_group_map
-test$group_weights
-test$samp[, .N, by=chain_idx]
-test$samp[, .N, by=group]
-test$samp[, min(itr), by=group]
-test$samp[, min(itr), by=.(chain_idx, group)]
-
-rhat1 <- calc_R_hat(test$samp, within_chain=FALSE)
-rhat2 <- calc_R_hat(test$samp, within_chain=TRUE)
-
-
-
-# TODO: 
-#   write function that iteratively increases the burn-in (on a chain-by-chain)
-#   basis until it is considered "valid". Should stop at a certain point 
-#   so that a lower bound on the number of iterations is enforced (say, we 
-#   shouldn't use a chain with fewer than 500 iterations).
-
-mcmc_tags <- setdiff(list.files(mcmc_dir), "summary_files")
-mcmc_summary <- data.table(mcmc_id = character(),
-                           mcmc_tag = character(),
-                           n_chains = integer(), 
-                           max_rhat = integer(),
-                           status = logical())
-chain_summary <- data.table(mcmc_id = character(),
-                            mcmc_tag = character(),
-                            test_label = character(),
-                            chain_idx = integer(),
-                            rhat = numeric(),
-                            itr_min = integer(),
-                            itr_max = integer(),
-                            llik_mean = numeric(),
-                            llik_var = numeric(),
-                            n_itr = integer(),
-                            log_weight = numeric())
-param_summary <- data.table(mcmc_id = character(),
-                            mcmc_tag = character(),
-                            test_label = character(),
-                            chain_idx = integer(),
-                            param_type = character(),
-                            param_name = character(),
-                            R_hat = numeric())
-
-
-for(tag in mcmc_tags) {
-  print(paste0("MCMC tag: ", tag))
-  tag_dir <- file.path(mcmc_dir, tag)
-  id_map <- fread(file.path(tag_dir, "id_map.csv"))
-  mcmc_ids <- id_map$mcmc_id
-  
-  for(mcmc_id in mcmc_ids) {
-    cat("\t", mcmc_id, "\n")
-    samp_list <- try(readRDS(file.path(tag_dir, mcmc_id, "samp.rds")))
-    
-    if(class(samp_list) != "try-error") {
-      summary_info <- process_mcmc_run(samp_list, rhat_threshold=rhat_threshold, 
-                                       min_itr_threshold=min_itr_threshold)
-      
-      # High-level MCMC run information.
-      summary <- summary_info$summary
-      summary[, `:=`(mcmc_id=mcmc_id, mcmc_tag=tag)]
-      mcmc_summary <- rbindlist(list(mcmc_summary, summary), use.names=TRUE)
-      
-      # Chain-by-chain information.
-      chain_info <- summary_info$chain_info
-      if(!is.null(chain_info)) {
-        chain_info[, `:=`(mcmc_id=mcmc_id, mcmc_tag=tag)]
-        chain_summary <- rbindlist(list(chain_summary, chain_info), use.names=TRUE)
-      }
-      
-      # Rhat by parameter.
-      rhat_info <- summary_info$rhat
-      if(!is.null(rhat_info)) {
-        rhat_info[, `:=`(mcmc_id=mcmc_id, mcmc_tag=tag)]
-        param_summary <- rbindlist(list(param_summary, rhat_info), use.names=TRUE)
-      }
-      
-    } else {
-      summary <- data.table(mcmc_id=mcmc_id, mcmc_tag=tag, n_chains=0L,
-                            max_rhat=NA, status="rds_read_error")
-      mcmc_summary <- rbindlist(list(mcmc_summary, summary), use.names=TRUE)
-    }
-    
-  }
-}
-
-mcmc_summary_dir <- file.path(mcmc_dir, "summary_files")
-fwrite(mcmc_summary, file.path(mcmc_summary_dir, "mcmc_summary.csv"))
-fwrite(chain_summary, file.path(mcmc_summary_dir, "chain_summary.csv"))
-fwrite(param_summary, file.path(mcmc_summary_dir, "param_summary.csv"))
-
-
-
+start_time <- tic()
+results <- process_mcmc_round(experiment_dir, round, mcmc_ids, 
+                              rhat_threshold=rhat_threshold,
+                              min_itr_threshold=min_itr_threshold, 
+                              write_files=TRUE)
+end_time <- toc()
 
 
 

@@ -1,63 +1,68 @@
 #
-# analyze_approx_mcmc.r
+# run_analyze_mcmc.r
 # This script is intended to be run after `run_approx_mcmc.r` and 
-# `postprocess_approx_mcmc.r` to provide summaries of the approximate MCMC 
+# `run_postprocess_mcmc.r` to provide summaries of the approximate MCMC 
 # output and compare the various approximate samples to the exact MCMC samples.
-# This script assumes that the MCMC output saved to file has already been 
-# post-processed and mixing issues have been addressed.
-# 
+# These plots summarize the performance of an MCMC algorithm (i.e., MCMC tag)
+# for each emulator tag/design tag combination across the set of initial 
+# design replicates.
+#
 # Andrew Roberts
 #
 
-library(ggplot2)
+# TODO: 
+# Need to update the helper functions used here to also work for rounds beyond
+# round one. It seems that I'd want a function that takes as inputs at minimum an 
+# initial design tag, and then the code propagates forward through the rounds
+# to grab all output stemming from that initial design. Could optionally also
+# restrict to particular em_tags, mcmc_tags, or acq_tags.
+
 library(data.table)
 library(assertthat)
 library(docopt)
 
 # Plotting.
+library(ggplot2)
 library(patchwork)
 library(scales)
 library(grid)
-
-# Settings: for now targetting a specific emulator/design tag pair.
-experiment_tag <- "vsem"
-round <- 1L
-em_tag <- "llik_quad_mean"
-design_tag <- "LHS_200"
 
 # ------------------------------------------------------------------------------
 # Settings 
 # ------------------------------------------------------------------------------
 
-# Base directory: all paths are relative to this directory.
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+# Paths
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
-# Directory to source code.
-src_dir <- file.path(base_dir, "src")
+# Experiment and round.
+experiment_tag <- "banana"
+round <- 1L
 
-# Define directories and ensure required paths exist.
-experiment_dir <- file.path(base_dir, "output", "gp_inv_prob", experiment_tag)
-inv_prob_dir <- file.path(experiment_dir, "inv_prob_setup")
-mcmc_dir <- file.path(experiment_dir, paste0("round", round), "mcmc")
+# ------------------------------------------------------------------------------
+# Setup 
+# ------------------------------------------------------------------------------
+
+round_name <- paste0("round", round)
+
+# Directories.
+experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
+src_dir <- file.path(code_dir, "src")
+mcmc_dir <- file.path(experiment_dir, "output", round_name, "mcmc")
+inv_prob_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
+
+# Paths.
+mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
+mcmc_summary_path <- file.path(mcmc_dir, "mcmc_summary.csv")
+mcmc_group_info_path <- file.path(mcmc_dir, "group_info.csv")
 
 # Source required scripts.
 source(file.path(src_dir, "general_helper_functions.r"))
-source(file.path(src_dir, "inv_prob_test_functions.r"))
 source(file.path(src_dir, "statistical_helper_functions.r"))
 source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "seq_design.r"))
-source(file.path(src_dir, "gp_helper_functions.r"))
-source(file.path(src_dir, "gpWrapper.r"))
-source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
-source(file.path(src_dir, "gp_mcmc_functions.r"))
-source(file.path(src_dir, "sim_study_functions.r"))
-
-# Load R project. 
-# renv::load(base_dir)
-# print(".libPaths()")
-# print(.libPaths())
-# renv::status()
+source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 
 # ------------------------------------------------------------------------------
 # Load exact MCMC baseline.
@@ -72,14 +77,48 @@ samp_exact_stats_multi <- readRDS(file.path(inv_prob_dir, "mcmc_exact_stats_mult
 # Read and compile approximate MCMC output.  
 # ------------------------------------------------------------------------------
 
-# Load MCMC tags. Restrict to tags with at least one valid replicate.
-mcmc_summary <- fread(file.path(mcmc_dir, "summary_files", "mcmc_summary.csv"))
+# Extract MCMC IDs.
+design_tag_list <- list(round1=c("simple_5"))
+em_tag_list <- list(round1=c("em_fwd"))
+mcmc_tag_list <- list(round1=c("mean", "marginal"))
+
+mcmc_ids <- get_ids_by_tag(experiment_dir, round=round, 
+                           design_tag_list=design_tag_list, 
+                           em_tag_list=em_tag_list,
+                           mcmc_tag_list=mcmc_tag_list)
+
+
+# Questions:
+#  - Why is pm-ind failing for em_fwd, but not em_llik?
+#  - Why is pm-joint failing on every run? (not a priority question)
+#  - Why are the pm-joint-rect/pm-ind-rect failing for em_llik but not em_fwd?
+
+
+# Load MCMC tags. Print basic summary of MCMC runs.
+mcmc_summary <- fread(file.path(mcmc_dir, "mcmc_summary.csv"))
+
+mcmc_summary[, .N, by=status]
+
+mcmc_summary[status != "valid", .N, by="mcmc_tag"]
+mcmc_summary[status != "valid", .N, by=c("mcmc_tag", "em_tag")]
+
+# Group by mcmc_tag, em_tag. In round 1 this should identify each algorithm 
+# so that we can identify how many replicates there are per group.
+# TODO: generalize to future round; think I also need to group by em_id.
+# Better yet, need a way to just input tags (e.g., initial design tag, em_tag,
+# mcmc_tag) and then have a function that loops over the rounds until the 
+# current round and identifies all MCMC runs associated with those tags.
+mcmc_summary[status=="valid", .(n_valid_reps=.N), by=c("mcmc_tag", "em_tag")]
+
+
+
 mcmc_summary <- mcmc_summary[status=="valid", .(n_valid_reps=.N), by=mcmc_tag]
 mcmc_tags <- mcmc_summary[n_valid_reps > 1L, mcmc_tag]
 
 # Load statistics of aggregated data.
 mcmc_tag_list <- vector(mode="list", length=length(mcmc_tags))
 names(mcmc_tag_list) <- mcmc_tags
+
 
 #
 # TODO: need to add multivariate stats to list returned by `get_samp_dt_reps_agg`
