@@ -1,0 +1,50 @@
+%!TEX root = SMA-book.tex
+
+% Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
+
+
+% --------------------------------------------------------------------------------------------------
+% General commands.  
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\todo}{\textbf{TODO}}
+
+
+% --------------------------------------------------------------------------------------------------
+% General Math.  
+% --------------------------------------------------------------------------------------------------
+
+% Common math commands. 
+\newcommand*{\abs}[1]{\left\lvert#1\right\rvert}
+\newcommand{\R}{\mathbb{R}}
+\newcommand*{\suchthat}{\,\mathrel{\big|}\,}
+\newcommand{\Exp}[1]{\exp\mathopen{}\left\{#1\right\}\mathclose{}}
+\newcommand{\Log}[1]{\log\mathopen{}\left\{#1\right\}\mathclose{}}
+\newcommand{\BigO}{\mathcal{O}}
+\newcommand{\Def}{\coloneqq} % coloneqq comes from the mathtools package. 
+
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclarePairedDelimiterX\innerp[2]{(}{)}{#1\delimsize\vert\mathopen{}#2}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+
+% Linear algebra.
+\newcommand*{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bw}{\mathbf{w}}
+\newcommand{\oneVec}[1][]{\boldsymbol{1}_{#1}}
+\newcommand{\idMat}{\mathbf{I}}
+\newcommand{\bS}{\mathbf{S}}
+\newcommand{\bK}{\mathbf{K}}
+\newcommand{\ba}{\mathbf{a}}
+\newcommand{\bb}{\mathbf{b}}
+
+% Probability. 
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Gaussian}{\mathcal{N}}
+\newcommand{\LN}{\text{LN}} % Log-normal distribution 
+\newcommand{\given}{\mid} 
+

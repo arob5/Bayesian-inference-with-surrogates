@@ -2,3 +2,17 @@ output/
 *.png
 *.pdf
 *.o*
+
+## Latex auxiliary files.
+*.aux
+*.lof
+papers/*.log
+papers/*.out
+*.lot
+*.toc
+*.bbl
+*.blg
+*.gz
+
+## Plots directory
+figures/
