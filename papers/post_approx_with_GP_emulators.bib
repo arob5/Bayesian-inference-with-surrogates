@@ -24,6 +24,44 @@ author={Nina Raoult, Natalie Douglas, Natasha MacBean, et al.},
 year={2024}} 
 
 %  ---------------------------------------------------------------------------------------------------
+% Sampling/Initial design methods (low-discrepancy, space-filling, etc.)
+%  ---------------------------------------------------------------------------------------------------
+
+% Support points
+@article{supportPoints,
+author = {Simon Mak and V. Roshan Joseph},
+title = {{Support points}},
+volume = {46},
+journal = {The Annals of Statistics},
+number = {6A},
+publisher = {Institute of Mathematical Statistics},
+pages = {2562 -- 2592},
+keywords = {Bayesian computation, energy distance, Monte Carlo, numerical integration, quasi-Monte Carlo, representative points},
+year = {2018},
+doi = {10.1214/17-AOS1629},
+URL = {https://doi.org/10.1214/17-AOS1629}
+}
+
+
+% Stein points
+@InProceedings{SteinPoints,
+  title = 	 {Stein Points},
+  author =       {Chen, Wilson Ye and Mackey, Lester and Gorham, Jackson and Briol, Francois-Xavier and Oates, Chris},
+  booktitle = 	 {Proceedings of the 35th International Conference on Machine Learning},
+  pages = 	 {844--853},
+  year = 	 {2018},
+  editor = 	 {Dy, Jennifer and Krause, Andreas},
+  volume = 	 {80},
+  series = 	 {Proceedings of Machine Learning Research},
+  month = 	 {10--15 Jul},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v80/chen18f/chen18f.pdf},
+  url = 	 {https://proceedings.mlr.press/v80/chen18f.html},
+  abstract = 	 {An important task in computational statistics and machine learning is to approximate a posterior distribution $p(x)$ with an empirical measure supported on a set of representative points $\{x_i\}_{i=1}^n$. This paper focuses on methods where the selection of points is essentially deterministic, with an emphasis on achieving accurate approximation when $n$ is small. To this end, we present Stein Points. The idea is to exploit either a greedy or a conditional gradient method to iteratively minimise a kernel Stein discrepancy between the empirical measure and $p(x)$. Our empirical results demonstrate that Stein Points enable accurate approximation of the posterior at modest computational cost. In addition, theoretical results are provided to establish convergence of the method.}
+}
+
+
+%  ---------------------------------------------------------------------------------------------------
 % General Gaussian Processes (GPs) and Bayesian Optimization
 %  ---------------------------------------------------------------------------------------------------
 
@@ -57,7 +95,15 @@ url="https://doi.org/10.1007/978-3-540-28650-9_4"
   keywords={Big data;Bayes methods;Linear programming;Decision making;Design of experiments;Optimization;Genomes;Statistical analysis;decision making;design of experiments;optimization;response surface methodology;statistical learning;genomic medicine;Decision making;design of experiments;optimization;response surface methodology;statistical learning},
   doi={10.1109/JPROC.2015.2494218}}
  
-
+ % BOTorch
+ @inproceedings{botorch,
+  title = {{BoTorch: A Framework for Efficient Monte-Carlo Bayesian Optimization}},
+  author = {Balandat, Maximilian and Karrer, Brian and Jiang, Daniel R. and Daulton, Samuel and Letham, Benjamin and Wilson, Andrew Gordon and Bakshy, Eytan},
+  booktitle = {Advances in Neural Information Processing Systems 33},
+  year = 2020,
+  url = {http://arxiv.org/abs/1910.06403}
+}
+ 
 % Bayesian Quadrature
 @article{BayesQuadrature,
 title = {Bayes–Hermite quadrature},
@@ -120,6 +166,173 @@ URL={https://www.frontiersin.org/journals/artificial-intelligence/articles/10.33
 DOI={10.3389/frai.2020.00052},
 ISSN={2624-8212}}
 
+% Active learning Deep GPs
+@article{deepGPAL,
+author = {Annie Sauer and Robert B. Gramacy and David Higdon and},
+title = {Active Learning for Deep Gaussian Process Surrogates},
+journal = {Technometrics},
+volume = {65},
+number = {1},
+pages = {4--18},
+year = {2023},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2021.2008505},
+URL = {  https://doi.org/10.1080/00401706.2021.2008505},
+eprint = {https://doi.org/10.1080/00401706.2021.2008505}
+}
+
+% Deep GPs Vecchia
+@article{deepGPVecchia,
+author = {Annie Sauer and Andrew Cooper and Robert B. Gramacy and},
+title = {Vecchia-Approximated Deep Gaussian Processes for Computer Experiments},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {32},
+number = {3},
+pages = {824--837},
+year = {2023},
+publisher = {ASA Website},
+doi = {10.1080/10618600.2022.2129662},
+URL = {https://doi.org/10.1080/10618600.2022.2129662},
+eprint = {https://doi.org/10.1080/10618600.2022.2129662}
+}
+
+% Pathwise conditioning
+@misc{pathwiseConditioning,
+      title={Pathwise Conditioning of Gaussian Processes}, 
+      author={James T. Wilson and Viacheslav Borovitskiy and Alexander Terenin and Peter Mostowsky and Marc Peter Deisenroth},
+      year={2021},
+      eprint={2011.04026},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2011.04026}, 
+}
+
+% Efficiently sampling GP posteriors
+@misc{samplingGPPosts,
+      title={Efficiently Sampling Functions from Gaussian Process Posteriors}, 
+      author={James T. Wilson and Viacheslav Borovitskiy and Alexander Terenin and Peter Mostowsky and Marc Peter Deisenroth},
+      year={2020},
+      eprint={2002.09309},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2002.09309}, 
+}
+
+% KL expansion for GP prior
+@article{dimRedPolyChaos,
+title = {Dimensionality reduction and polynomial chaos acceleration of Bayesian inference in inverse problems},
+journal = {Journal of Computational Physics},
+volume = {228},
+number = {6},
+pages = {1862-1902},
+year = {2009},
+issn = {0021-9991},
+doi = {https://doi.org/10.1016/j.jcp.2008.11.024},
+url = {https://www.sciencedirect.com/science/article/pii/S0021999108006062},
+author = {Youssef M. Marzouk and Habib N. Najm},
+keywords = {Inverse problems, Bayesian inference, Dimensionality reduction, Polynomial chaos, Markov chain Monte Carlo, Galerkin projection, Gaussian processes, Karhunen–Loève expansion, RKHS},
+abstract = {We consider a Bayesian approach to nonlinear inverse problems in which the unknown quantity is a spatial or temporal field, endowed with a hierarchical Gaussian process prior. Computational challenges in this construction arise from the need for repeated evaluations of the forward model (e.g., in the context of Markov chain Monte Carlo) and are compounded by high dimensionality of the posterior. We address these challenges by introducing truncated Karhunen–Loève expansions, based on the prior distribution, to efficiently parameterize the unknown field and to specify a stochastic forward problem whose solution captures that of the deterministic forward model over the support of the prior. We seek a solution of this problem using Galerkin projection on a polynomial chaos basis, and use the solution to construct a reduced-dimensionality surrogate posterior density that is inexpensive to evaluate. We demonstrate the formulation on a transient diffusion equation with prescribed source terms, inferring the spatially-varying diffusivity of the medium from limited and noisy data.}
+}
+
+@ARTICLE{polyChaosReview,
+  author={Shen, Danfeng and Wu, Hao and Xia, Bingqing and Gan, Deqiang},
+  journal={IEEE Systems Journal}, 
+  title={Polynomial Chaos Expansion for Parametric Problems in Engineering Systems: A Review}, 
+  year={2020},
+  volume={14},
+  number={3},
+  pages={4500-4514},
+  keywords={Mathematical model;Stochastic processes;Uncertainty;Chaos;Differential equations;Random variables;Computational modeling;Polynomial chaos expansion (PCE);parametric problem;stochastic collocation method (SCM);stochastic Galerkin method (SGM);uncertainty quantification (UQ)},
+  doi={10.1109/JSYST.2019.2957664}}
+
+@article{MarzoukPolyChaos,
+title = {Stochastic spectral methods for efficient Bayesian solution of inverse problems},
+journal = {Journal of Computational Physics},
+volume = {224},
+number = {2},
+pages = {560-586},
+year = {2007},
+issn = {0021-9991},
+doi = {https://doi.org/10.1016/j.jcp.2006.10.010},
+url = {https://www.sciencedirect.com/science/article/pii/S0021999106004839},
+author = {Youssef M. Marzouk and Habib N. Najm and Larry A. Rahn},
+keywords = {Inverse problems, Bayesian inference, Polynomial chaos, Monte Carlo, Markov chain Monte Carlo, Spectral methods, Galerkin projection, Diffusive transport},
+abstract = {We present a reformulation of the Bayesian approach to inverse problems, that seeks to accelerate Bayesian inference by using polynomial chaos (PC) expansions to represent random variables. Evaluation of integrals over the unknown parameter space is recast, more efficiently, as Monte Carlo sampling of the random variables underlying the PC expansion. We evaluate the utility of this technique on a transient diffusion problem arising in contaminant source inversion. The accuracy of posterior estimates is examined with respect to the order of the PC representation, the choice of PC basis, and the decomposition of the support of the prior. The computational cost of the new scheme shows significant gains over direct sampling.}
+}
+
+@misc{deepEnsembles,
+      title={Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles}, 
+      author={Balaji Lakshminarayanan and Alexander Pritzel and Charles Blundell},
+      year={2017},
+      eprint={1612.01474},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1612.01474}, 
+}
+
+@misc{epistemicNN,
+      title={Epistemic Neural Networks}, 
+      author={Ian Osband and Zheng Wen and Seyed Mohammad Asghari and Vikranth Dwaracherla and Morteza Ibrahimi and Xiuyuan Lu and Benjamin Van Roy},
+      year={2023},
+      eprint={2107.08924},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2107.08924}, 
+}
+
+@misc{conformalSurrogate,
+      title={Uncertainty Quantification of Surrogate Models using Conformal Prediction}, 
+      author={Vignesh Gopakumar and Ander Gray and Joel Oskarsson and Lorenzo Zanisi and Stanislas Pamela and Daniel Giles and Matt Kusner and Marc Peter Deisenroth},
+      year={2024},
+      eprint={2408.09881},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2408.09881}, 
+}
+
+@misc{conformalGP,
+      title={Conformal Approach To Gaussian Process Surrogate Evaluation With Coverage Guarantees}, 
+      author={Edgar Jaber and Vincent Blot and Nicolas Brunel and Vincent Chabridon and Emmanuel Remy and Bertrand Iooss and Didier Lucor and Mathilde Mougeot and Alessandro Leite},
+      year={2024},
+      eprint={2401.07733},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2401.07733}, 
+}
+
+@article{conformalTwoStageDesign,
+title = {Two-stage surrogate modeling for data-driven design optimization with application to composite microstructure generation},
+journal = {Engineering Applications of Artificial Intelligence},
+volume = {138},
+pages = {109436},
+year = {2024},
+issn = {0952-1976},
+doi = {https://doi.org/10.1016/j.engappai.2024.109436},
+url = {https://www.sciencedirect.com/science/article/pii/S095219762401594X},
+author = {Farhad Pourkamali-Anaraki and Jamal F. Husseini and Evan J. Pineda and Brett A. Bednarcyk and Scott E. Stapleton},
+keywords = {Intelligent design optimization, Machine learning, Learner-evaluator framework, Conformal prediction, Prediction interval},
+abstract = {Design optimization or inverse problems, which involve determining input parameters to achieve specific desired outputs, are essential in many engineering applications. Conventional artificial intelligence methods for solving inverse problems rely on single-stage surrogate modeling. However, these methods can be limited in their ability to fully represent the complex relationship between inputs and outputs, hindering a comprehensive exploration of potential solutions and overlooking valid alternatives. To address this challenge, this paper presents a novel two-stage framework that combines two distinct machine learning models: a “learner” and an “evaluator”. The learner identifies a subset of candidate inputs whose predicted outputs closely match the target. The evaluator then refines this selection by further narrowing the input space, resulting in more precise predictions. A key innovation is the incorporation of conformal inference, a statistical technique that quantifies prediction uncertainty in a distribution-free setting and is applicable to any machine learning model. The framework’s effectiveness is validated through extensive benchmark testing using a simulated data set and an engineering case study on artificial microstructure generation of fiber-reinforced composites. The results demonstrate that this two-stage approach significantly outperforms traditional single-stage methods, consistently delivering more accurate and reliable solutions. For instance, the framework consistently identifies input configurations that closely align with two desired descriptors across varying fiber counts, while single surrogate models yield solutions far from the targets without any precautions. This paper is concluded by discussing potential future enhancements, including the integration of deep learning models and strategies for addressing distribution shifts within the framework.}
+}
+
+@misc{conformalEvidentialSurrogate,
+      title={ConfEviSurrogate: A Conformalized Evidential Surrogate Model for Uncertainty Quantification}, 
+      author={Yuhan Duan and Xin Zhao and Neng Shi and Han-Wei Shen},
+      year={2025},
+      eprint={2504.02919},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2504.02919}, 
+}
+
+@misc{conformalBayesOpt,
+      title={Bayesian Optimization with Conformal Prediction Sets}, 
+      author={Samuel Stanton and Wesley Maddox and Andrew Gordon Wilson},
+      year={2023},
+      eprint={2210.12496},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2210.12496}, 
+}
 
 %  ---------------------------------------------------------------------------------------------------
 % MCMC
@@ -170,6 +383,19 @@ URL = {https://doi.org/10.1214/07-AOS574}
       primaryClass={cs.LG}
 }
 
+% Function Space MCMC
+@article{functionSpaceMCMC,
+   title={MCMC Methods for Functions: Modifying Old Algorithms to Make Them Faster},
+   volume={28},
+   ISSN={0883-4237},
+   url={http://dx.doi.org/10.1214/13-STS421},
+   DOI={10.1214/13-sts421},
+   number={3},
+   journal={Statistical Science},
+   publisher={Institute of Mathematical Statistics},
+   author={Cotter, S. L. and Roberts, G. O. and Stuart, A. M. and White, D.},
+   year={2013},
+   month=aug }
 
 %  ---------------------------------------------------------------------------------------------------
 % General computer modeling
@@ -474,6 +700,10 @@ note = {e2020MS002454 2020MS002454},
 abstract = {Abstract Parameters in climate models are usually calibrated manually, exploiting only small subsets of the available data. This precludes both optimal calibration and quantification of uncertainties. Traditional Bayesian calibration methods that allow uncertainty quantification are too expensive for climate models; they are also not robust in the presence of internal climate variability. For example, Markov chain Monte Carlo (MCMC) methods typically require model runs and are sensitive to internal variability noise, rendering them infeasible for climate models. Here we demonstrate an approach to model calibration and uncertainty quantification that requires only model runs and can accommodate internal climate variability. The approach consists of three stages: (a) a calibration stage uses variants of ensemble Kalman inversion to calibrate a model by minimizing mismatches between model and data statistics; (b) an emulation stage emulates the parameter-to-data map with Gaussian processes (GP), using the model runs in the calibration stage for training; (c) a sampling stage approximates the Bayesian posterior distributions by sampling the GP emulator with MCMC. We demonstrate the feasibility and computational efficiency of this calibrate-emulate-sample (CES) approach in a perfect-model setting. Using an idealized general circulation model, we estimate parameters in a simple convection scheme from synthetic data generated with the model. The CES approach generates probability distributions of the parameters that are good approximations of the Bayesian posteriors, at a fraction of the computational cost usually required to obtain them. Sampling from this approximate posterior allows the generation of climate predictions with quantified parametric uncertainties.},
 year = {2021}
 }
+
+@article{CESSoftware, doi = {10.21105/joss.06372}, url = {https://doi.org/10.21105/joss.06372}, 
+year = {2024}, publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372}, 
+author = {Oliver R. a. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification}, journal = {Journal of Open Source Software} }
 
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
@@ -1142,15 +1372,6 @@ keywords = {Computer experiment, Gaussian process, Random function, Latin hyperc
 abstract = {Computer models simulating a physical process are used in many areas of science. Due to the complex nature of these codes it is often necessary to approximate the code, which is typically done using a Gaussian process. In many situations the number of code runs available to build the Gaussian process approximation is limited. When the initial design is small or the underlying response surface is complicated this can lead to poor approximations of the code output. In order to improve the fit of the model, sequential design strategies must be employed. In this paper we introduce two simple distance based metrics that can be used to augment an initial design in a batch sequential manner. In addition we propose a sequential updating strategy to an orthogonal array based Latin hypercube sample. We show via various real and simulated examples that the distance metrics and the extension of the orthogonal array based Latin hypercubes work well in practice.}
 }
 
-% Deep Gaussian Processes via MCMC sampling; estimates IMSPE and ALC criteria using the MCMC samples. 
-@misc{sauer2021active,
-      title={Active Learning for Deep Gaussian Process Surrogates}, 
-      author={Annie Sauer and Robert B. Gramacy and David Higdon},
-      year={2021},
-      eprint={2012.08015},
-      archivePrefix={arXiv},
-      primaryClass={stat.ME}
-}
 
 % Likelihood-free inference perspective. Emulate likelihood with neural network ensemble. Use MaxVar and mutual information acquisitions to acquire new points. 
 @article{Lueckmann2018LikelihoodfreeIW,

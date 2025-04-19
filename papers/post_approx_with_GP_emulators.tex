@@ -211,11 +211,15 @@ expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of w
 cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
 an approximation of the latter). We focus on surrogate models that take the form of statistical 
 regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \llik(\Par)$.
-\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling) for $\fwd$ 
+\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
 that exploit the specific structure of the forward model; see, e.g., \todo.}
 We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
-model the latter as \textit{log-likelihood emulation}.
-
+model the latter as \textit{log-likelihood emulation}. Throughout this review, we will typically view the functions
+$\fwd(\Par)$ and $\llik(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
+such maps as \textit{simulators}, owing to the fact that in typical applications evaluating these maps requires
+running an expensive computer code. The following section provides a concrete example of such a simulation
+model stemming from the numerical solution of differential equations. 
+ 
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
 We now demonstrate how the problem of estimating the parameters of differential equation models 
  can be cast within the Bayesian inverse problem framework. Our primary motivating applications 
@@ -251,7 +255,7 @@ for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this fa
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Generalizations can be considered to settings with non-additive or non-Gaussian noise, or the 
 presence of model discrepancy. In our numerical experiments we consider two problems of the 
-form \ref{ode_inv_prob} motivated by problems in near-term carbon cycle forecasting and 
+form \ref{ode_inv_prob} motivated by applications to near-term carbon cycle forecasting and 
 long-term climate modeling. 
 
  \subsection{Gaussian Processes} \label{gp_review}
@@ -270,14 +274,16 @@ A GP is defined by its mean function $\gpMeanPrior: \parSpace \to \R$ and positi
 $\funcPrior \sim \GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows. Letting 
 $\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
 $\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
-\footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
 $\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
-and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. Given this notation, 
+and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. 
+\footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
+Given this notation, 
 the defining property of the GP can be written as 
 \begin{align}
 \funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
 \end{align}
-For our purposes, the GP $\funcPrior$ will be a prior distribution for a \textit{deterministic} function $\func: \parSpace \to \R$. 
+For our purposes, the GP $\funcPrior$ will represent a prior distribution for a \textit{deterministic} function 
+$\func: \parSpace \to \R$. 
 However, the underlying ideas explored here can be extended to the setting where evaluations of $\func$ 
 are corrupted by noise \citep{VehtariParallelGP}. 
 If we observe noiseless function evaluations $\func(\designIn)$ at a set of inputs $\designIn$, then we can consider
@@ -325,7 +331,7 @@ A common approach to set the mean and kernel hyperparameters is the empirical Ba
 their values at their maximum (marginal) likelihood estimates, which conveniently retains the Gaussian
 predictive distribution \Cref{generic_gp_conditional} at the expense of failing to acknowledge uncertainty
 in the hyperparameters. The fully Bayesian alternative significantly increases computation, 
-and results in a non-Gaussian predictive distribution. 
+and results in a non-Gaussian predictive distribution after marginalizing the hyperparameters. 
 
 \subsubsection{Multiple Output Gaussian Processes}
 We now consider the extension to multi-output functions $\funcPrior: \parSpace \to \R^{\dimObs}$. 
@@ -343,7 +349,7 @@ An alternative popular strategy is is to approximate the function output as a li
 of basis vectors, with the coefficients modeled as independent GPs; that is, 
 \begin{align}
 \funcPrior(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{basis_func_model} \\
-\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean{(\idxBasis)}, \emKer{(\idxBasis)}),  \\
+\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean[0]{(\idxBasis)}, \emKer[0]{(\idxBasis)}),  \\
  \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec}),
 \end{align}
 where the $\basisVec_{\idxBasis}$ are fixed basis vectors.
@@ -352,10 +358,113 @@ bases are also possible \citep{HigdonBasis, emulate_functional_output, functionV
 Under this model, the univariate GPs $\basisWeight_{\idxBasis}$ are fit and conditioned independently, then 
 plugged back into \Cref{basis_func_model} to construct the predictive distribution. The linear Gaussian 
 structure of \Cref{basis_func_model} implies that this approach retains a Gaussian predictive distribution
-for $\funcEm[\Ndesign]$.
+for $\funcEm[\Ndesign]$, conditional on the hyperparameters.
 
- 
- 
+% Initial Design and Surrogate Models
+\section{Initial Design and Surrogate Models}
+We begin our review with an overview of commonly-used surrogate models and describe 
+the general workflow used to fit these models in order to produce approximations of the expensive simulator.
+We emphasize models that provide a probabilistic representation of the emulator uncertainty, in addition
+to providing point predictions.
+Such considerations have been explored extensively across the much broader landscape of 
+surrogate modeling, but we focus the discussion here within the context of surrogate modeling specifically for 
+Bayesian inversion. With this in mind, we frame the discussion around
+two broad classes of strategies: log-likelihood emulation and forward model emulation.
+
+\subsection{Initial Design}
+Before discussing specific emulators, we comment on the general process of surrogate fitting.
+We focus exclusively on a modular workflow \citep{modularization}, such that the surrogate is
+ trained only on data produced
+by the simulator, as opposed to jointly learning the surrogate with the parameters in a 
+unified Bayesian model (e.g., as in the seminal work \citet{KOH}). Fitting the surrogate requires 
+generating training data by evaluating the simulator at a chosen set of input parameters
+$\designIn \Def \{\Par_1, \dots, \Par_{\Ndesign}\}$. We refer to $\designIn$ as the \textit{initial design}.
+Depending on which map is being emulated, the training data for the emulator will take the form 
+$\{\designIn, \fwd(\designIn)\}$ or $\{\designIn, \llik(\designIn)\}$. In the computer experiments literature, 
+the initial design is typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples 
+include latin hypercube designs and Sobol sequences (\todo: cite). In the present setting, a natural 
+approach is to sample $\designIn$ from the prior $\priorDens$, either via simple Monte Carlo or using 
+algorithms that seek to minimize a specific notion of discrepancy \citep{supportPoints, SteinPoints}.
+As we will demonstrate in experiments, fitting emulators on prior designs may simultaneously produce 
+reasonable approximations in a prior-averaged sense, and poor approximations in a posterior-averaged
+sense. This is due to a common phenomenon in Bayesian inverse problems, whereby the posterior is highly 
+concentrated relative to the prior. Even in parameter spaces of moderate dimension, it is common that 
+the initial design may contain few or no points in the region of significant posterior mass. This is one of the
+central challenges of surrogate modeling in this setting, and motivates the use of sequential design algorithms
+to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq_design}).
+
+Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
+sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
+be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
+\textit{calibrate, emulate, sample} \citep{CES,idealizedGCM,CESSoftware} workflow, which uses 
+Ensemble Kalman methods to produce the initial design. We do not discuss these methods further
+in this review, but note that further methodological development in combining the strengths of these 
+methods may prove a fruitful avenue for future research.
+
+\subsection{Probabilistic Surrogates}
+We now briefly review common emulator models, focusing on those that provide a probabilistic 
+description of approximation uncertainty. The canonical example is a Gaussian process (GP),
+which has been extensively applied in a wide variety of surrogate modeling tasks, including 
+as emulators for solving Bayesian inverse problems. The Gaussian predictive distribution of a 
+GP facilitates many convenient closed-form computations, which we will derive and present 
+throughout this review. Extensions to the GP methodology can produce more flexible 
+emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
+GPs yield predictions in the form of (continuous) mixtures of Gaussians, while deep GPs
+\citep{deepGPVecchia,deepGPAL} allow for very flexible predictive distributions.
+
+Polynomial chaos expansions (PCE) represent a popular alternative to GPs, particularly in
+ the engineering community \citep{polyChaosReview,MarzoukPolyChaos}
+ (\todo: add a couple sentences of description here).
+
+In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
+surrogate. This generic perspective is considered in \citep{BurknerSurrogate}, where the 
+authors assume only that samples can be drawn from the posterior distribution over 
+surrogate parameters. It should be noted, however, that this assumption does not naturally 
+encompass nonparametric emulator models. For example, drawing samples from GPs 
+generally requires sampling infinite-dimensional functions, and thus in practice requires 
+discretization or other approximations.
+\footnote{This computational challenge has been extensively studied in various fields, including
+Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
+and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}. 
+Common approaches utilize low-rank approximations, which approximate GPs using a 
+finite-dimensional parametric model.} In the nonparametric setting, a generic view of a 
+surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
+over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
+for the generic implementation of surrogate models in software packages such as 
+BoTorch \citep{botorch}, thus supporting both nonparametric and non-Gaussian surrogates. 
+
+There has also been growing interest in models with predictive distributions not necessarily 
+rooted in the Bayesian philosophy. This includes neural network based models such 
+as deep ensembles, which summarize uncertainty via an ensemble of neural network 
+models \citep{deepEnsembles}. Various other methods have also been proposed to 
+incorporate a notion of predictive uncertainty within neural networks \citep{epistemicNN}.
+Of particular note are conformal prediction methods, which allow for the construction of 
+pointwise prediction intervals for models that might otherwise only produce point 
+estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conformalEvidentialSurrogate,conformalBayesOpt}.
+\todo{add a few sentences of conformal prediction}
+
+\subsection{Log-likelihood Emulation}
+Include likelihood surrogate distribution under GP.
+Difficulties: non-stationarity (cite Booth/Gramacy nonstationary surrogate review), bound constraints (cite quantile/bound constraint paper)
+Note that the unnormalized log posterior density could also be modeled (cite Sanz-Alonso paper)
+Issue with likelihood parameters (cite Sinsbeck and Nowak paper)
+Include 1d example.
+
+\subsection{Forward Model Emulation}
+Include likelihood surrogate distribution under GP with additive Gaussian noise.
+Include 1d example.
+
+\section{Posterior Approximation}
+\subsection{Marginal Posterior}
+Present the general marginal posterior. Cite Burkner, and discuss how computation takes the form of
+an ensemble of MCMC runs. Then discuss how this runs into issues with nonparametric emulators.
+
+\section{Sequential Design} \label{sec:seq_design}
+\subsection{Asymptotic Consistency}
+Note that the algorithms that are appropriate for certain problems will significantly depend on 
+how expensive the simulator is.
+
+
 % An Overview of Surrogate modeling in Bayesian inference 
 \section{An Overview of Surrogate Modeling in Bayesian Inference}
 In this section, we provide an overview of the typical workflow for Bayesian inference using surrogate models. We note 
@@ -364,38 +473,13 @@ and contour estimation [\todo: add citations]. This review is restricted to sett
 an approximation of a Bayesian posterior distribution. 
 
 \subsection{Initial Design}
-The first step in the surrogate modeling workflow is to run the expensive forward model at a set of input parameter 
-values. The collection of inputs and their associated outputs, referred to as the \textit{initial design},
-provides the training data for fitting a surrogate model. In the computer experiments literature, the initial design input
-locations are typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples include 
-latin hypercube designs and Sobol sequences (\todo: cite). In the present context, the prior distribution defining the 
-Bayesian model encodes a priori knowledge about important regions of parameter space. Therefore, the initial 
-design is typically sampled from the prior, potentially with a space-filling adjustment. 
 
-We focus on the typical modular \citep{modularization} surrogate modeling workflow, whereby the surrogate model is trained 
-using only a set of forward model input-output pairs. The alternative approach of jointly learning the surrogate and the 
-calibration parameters in a single probabilistic model was considered in the seminal work of Kennedy and O'Hagan \citep{KOH},
-but has generally fallen out of favor owing to the fact that allowing the emulator to be informed by $\obs$ can lead to unintuitive 
-results, and problematic behavior under model misspecification. The first step in the surrogate modeling pipeline is to generate
-a set of input-output pairs by running the forward model at a set of parameter values. We refer to this initial training set as the 
-\textit{initial design}. Crucially, these initial forward model runs can be performed in parallel.
-The initial design inputs are commonly sampled from the prior, often with adjustments to encourage ``space-filling'' 
-behavior (\todo: cite; LHS, Sobol). While such space-filling designs may perform well when one is interested in the behavior of 
-forward model over the entire parameter space, this approach can be problematic given the goal of constructing a surrogate-induced
-posterior approximation. In particular, the posterior distribution may be highly concentrated relative to the posterior
-support, so that designs sampled from the prior may completely miss the region of significant posterior mass. This can result 
-in very poor posterior approximations. The typical remedy is to refine the approximation using multiple rounds of exact model 
-simulations. We discuss such questions of sequential design for surrogate modeling below. Alternatively, one can consider using 
-the initial rounds of computation to construct an initial posterior approximation by other means. Samples from this initial coarse 
-approximation can then be used as part of the initial design to train a likelihood surrogate. 
 
 Given that the GP is ultimately used to approximate a posterior distribution, various papers have noted the benefit of 
 focusing the model evaluation locations in regions of significant posterior probability 
 \citep{CES,idealizedGCM}.
 
 \todo: add Roshan Joseph's recent initial design work
-
-LHS, EKI/CES, difficulty of posterior concentration.
 
 \subsection{Surrogate Model}
 llik vs fwd model emulation (mention that latter can be viewed as generically as emulating any function of the parameter, on 
