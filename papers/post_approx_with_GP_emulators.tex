@@ -345,7 +345,7 @@ each independent GP.
  
 This basic multi-output strategy becomes problematic when the output dimension $\dimObs$ 
 is large or the outputs are highly interdependent, rendering the independent GP approach infeasible or ill-advised.
-An alternative popular strategy is is to approximate the function output as a linear combination of a small number
+A popular alternative is to approximate the function output as a linear combination of a small number
 of basis vectors, with the coefficients modeled as independent GPs; that is, 
 \begin{align}
 \funcPrior(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{basis_func_model} \\
@@ -396,7 +396,7 @@ to iteratively construct the design in order to target high-posterior regions (s
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
 be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
-\textit{calibrate, emulate, sample} \citep{CES,idealizedGCM,CESSoftware} workflow, which uses 
+\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware}, which uses 
 Ensemble Kalman methods to produce the initial design. We do not discuss these methods further
 in this review, but note that further methodological development in combining the strengths of these 
 methods may prove a fruitful avenue for future research.
@@ -407,7 +407,7 @@ description of approximation uncertainty. The canonical example is a Gaussian pr
 which has been extensively applied in a wide variety of surrogate modeling tasks, including 
 as emulators for solving Bayesian inverse problems. The Gaussian predictive distribution of a 
 GP facilitates many convenient closed-form computations, which we will derive and present 
-throughout this review. Extensions to the GP methodology can produce more flexible 
+throughout this review. Extensions of the GP methodology can produce more flexible 
 emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
 GPs yield predictions in the form of (continuous) mixtures of Gaussians, while deep GPs
 \citep{deepGPVecchia,deepGPAL} allow for very flexible predictive distributions.
@@ -431,7 +431,7 @@ finite-dimensional parametric model.} In the nonparametric setting, a generic vi
 surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
 over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
 for the generic implementation of surrogate models in software packages such as 
-BoTorch \citep{botorch}, thus supporting both nonparametric and non-Gaussian surrogates. 
+BoTorch \citep{botorch}, which provides support for both nonparametric and non-Gaussian surrogates. 
 
 There has also been growing interest in models with predictive distributions not necessarily 
 rooted in the Bayesian philosophy. This includes neural network based models such 
@@ -444,6 +444,7 @@ estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conforma
 [\todo{add a few sentences on conformal prediction}]
 
 \subsection{Forward Model Emulation}
+\subsubsection{Relation to computer model calibration literature}
 We now begin our discussion of emulation strategies geared towards the goal of Bayesian inversion.
 One natural approach is to fit an emulator approximating the forward model $\fwd(\Par)$. 
 The challenge of emulating a black-box computer model has received widespread attention 
@@ -451,8 +452,8 @@ well beyond the scope of Bayesian inference, and thus the model building process
 such emulators may be informed by the vast literature from the computer experiments, engineering,
 and statistics communities. As a starting point, we refer readers to 
 \citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
-and the references therein. We take a moment to clarify the scope of our present setting in relation 
-to a thread of research in the computer experiments literature.  
+and the references therein. We take a moment to clarify the scope of our review in relation 
+to related work in the computer experiments literature.  
 Indeed, early work in this literature addressed the challenge of learning 
 model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
 commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
@@ -467,39 +468,27 @@ without seeing the calibration data $\obs$. This modular two-stage approach natu
 the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
 of the central questions motivating this review.
  
-It is difficult to make broad assertions about specific emulator models, as the adequacy of a specific
-model will depend on characteristics of $\fwd$ and the particular goals at hand. However, one common 
-theme that drives certain model choices is the characteristics and dimensionality of the observation space;
-i.e., the output space of $\fwd(\Par)$. If the output dimension $\dimObs$ is reasonably small, 
-then a common approach is to fit an independent emulator to fit each output. In the GP setting, this would 
-entail specifying a prior of the form
-\begin{equation}
-\fwdPrior \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd}),
-\end{equation}
-where the prior mean $\emMeanPrior$ and kernel $\emKerPrior$ are of the independent multi-output variety.
+\subsubsection{Induced Likelihood Approximation}
+We let $\fwdEm[\Ndesign]$ denote a probabilistic surrogate model for $\fwd$, which has been
+fit using training data $\{\designIn, \fwd(\designIn)\}$ from $\Ndesign$ design points.
+Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces 
+a random approximation of the log-likelihood, which we denote by 
+$\llikEmFwd(\cdot) \Def \llik(\cdot; \fwdEm[\Ndesign])$. The induced distribution for 
+$\llikEmFwd$ will depend on the predictive distribution of the forward model emulator, as well as 
+the structure of the likelihood function. The following section gives details for a special case where
+the first two moments of $\llikEmFwd$ are known in closed-form.
 
-
-multi-output GP prior directly for the forward model. 
-Conditioning on this design yields the predictive distribution 
-$\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
-which constitutes the emulator for $\fwd. $
-Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces a random approximation of the 
-log-likelihood, which we denote by $\llikEmFwd(\cdot)$. 
-In the case of the additive Gaussian likelihood \ref{llik_Gaussian} this approximation takes the form 
-\begin{align}
-\llikEmFwd(\Par) \Def \llik(\Par; \fwdEm) =  \log\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar). \label{induced_llik_emulator}
-\end{align}
-We emphasize two facts: (i.) the induced log-likelihood approximation $\llikEmFwd[\Ndesign](\Par)$ is also 
-stochastic, but no longer Gaussian in general; and (ii.) no surrogate modeling is performed directly for $\llik$; instead, 
-the approximation $\llikEmFwd[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ is derived by plugging the 
-conditioned forward model emulator into the log-likelihood function, 
-constituting a modular surrogate-modeling approach \citep{modularization}. If the likelihood is Gaussian  
-\ref{induced_llik_emulator}, then the first two moments of the induced likelihood surrogate are available in closed-form.
+\subsubsection{Gaussian Setting}
+In this section we consider the special case where both the likelihood and $\fwdEm[\Ndesign]$ are Gaussian.
+These two distributional assumptions combine to allow closed-form computations, and thus have 
+been considered frequently in the literature (\todo: cite).
 
 \begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
-Given a GP forward model emulator $\fwdEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
-the plug-in likelihood estimator $\Exp{\llik(\Par; \fwdEm)} = \Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar)$ has 
-mean and variance given by 
+Assume that $\fwdEm[\Ndesign]$ is a forward model emulator with Gaussian predictive distribution; 
+that is, $\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
+for all $\Par \in \parSpace$. Then, in the additive Gaussian likelihood setting, the induced likelihood 
+surrogate $\Exp{\llikEmFwd(\Par)} = \Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar)$ has mean and 
+variance given by
 \begin{align}
 \E_{\fwdEm}\left[\Exp{\llik(\Par; \fwdEm)} \right] 
 &= \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
@@ -509,25 +498,35 @@ mean and variance given by
 \end{align}
 \end{prop}
 
-This follows from general facts about Gaussians; see \Cref{prop:Gaussian_marginal_moments} in the appendix for a full derivation.
-The forward model emulation strategy detailed above becomes problematic when the output 
-dimension $\dimObs$ is large or the outputs are highly interdependent, rendering the independent GP approach infeasible or ill-advised.
-For example, the forward model output may correspond to the numerical solution of 
-a differential equation and thus may take the form of a time series or spatiotemporal grid. 
-A great deal of literature has addressed these challenges, including approaches tailored to forward models
-with dynamical structure; e.g., \citet{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
-One popular strategy is to approximate the model output as a linear combination of a small number of basis vectors, with the 
-coefficients modeled as independent GPs; that is, 
-\begin{align}
-\fwdEm(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{fwd_model_basis_func} \\
-\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean{(\idxBasis)}, \emKer{(\idxBasis)}),  \\
- \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec})
-\end{align}
-where the noise term $\noise_{\basisVec}$ accounts for the approximation error in the basis expansion.
-The basis vectors are typically found via a singular value decomposition, though other bases have been explored 
-\citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}. The surrogate predictive distribution
-under the model in \cref{fwd_model_basis_func} remains Gaussian, 
-and thus \cref{fwd_em_lik_emulator_moments_Gaussian} still holds.
+See \Cref{prop:Gaussian_marginal_moments} in the appendix for the derivation, which follows from basic facts about Gaussians.
+The canonical example of a Gaussian surrogate is a GP, which is defined by specifying a prior distribution  
+\begin{equation}
+\fwdPrior \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd}).
+\end{equation}
+for $\fwd$. Conditioning on the design yields the predictive distribution 
+$\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
+which constitutes the emulator for $\fwd$.
+Unless otherwise indicated, we assume the mean and kernel hyperparameters are
+fixed, so that the GP predictive distribution remains Gaussian. This is a common assumption in the literature, 
+and facilitates the presentation of analytical expressions (such as \Cref{fwd_em_lik_emulator_moments_Gaussian})
+that aid intuition. We will make clear when such assumptions are being 
+leveraged, and later highlight methodology that is agnostic to the predictive distribution of the surrogate model.
+
+In the typical case that the observation space has dimension $\dimObs > 1$, then we interpret 
+$\emMeanPrior{\fwd}, \emKerPrior{\fwd}$ as multi-output mean and covariance functions, respectively.
+If $\dimObs$ is reasonably small, then it may be appropriate to simply fit an independent GP to 
+each scalar output variable. However, if $\dimObs$ is large or the outputs are highly structured, 
+then the independent GP approach may be infeasible or ill-advised. Such complications commonly 
+arise in settings with spatial or temporal structure, such as epidemic modeling \citep{FadikarAgentBased},
+engineering design \citep{PODemulation}, and ecological forecasting (\todo: cite).  
+In such contexts, a popular 
+alternative is to leverage the basis reduction strategy \ref{basis_func_model}. The surrogate predictive 
+distribution remains Gaussian under this model, and thus \Cref{fwd_em_lik_emulator_moments_Gaussian}
+still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator 
+using the basis vector approach is explored in \citet{Surer2023sequential}. We also briefly note that 
+a great deal of literature has addressed the challenge of emulating forward models with dynamical structure using 
+methods other than the basis vector approach; e.g., 
+\citet{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
 
 \subsection{Log-likelihood Emulation}
 Include likelihood surrogate distribution under GP.
