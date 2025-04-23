@@ -39,6 +39,18 @@ code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 experiment_tag <- "banana"
 round <- 1L
 
+# Threshold for minimum number of replicate designs required to produce a 
+# plot summarizing distribution over replicates.
+min_n_rep <- 85L
+
+# Interval probabilities for credible intervals.
+interval_probs <- seq(.1, .9, .1)
+
+# Quantiles for summarizing distribution of results over replicated 
+# initial designs.
+rep_quantile_lower <- 0.1
+rep_quantile_upper <- 0.9
+
 # ------------------------------------------------------------------------------
 # Setup 
 # ------------------------------------------------------------------------------
@@ -50,6 +62,9 @@ experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 src_dir <- file.path(code_dir, "src")
 mcmc_dir <- file.path(experiment_dir, "output", round_name, "mcmc")
 inv_prob_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
+summary_files_dir <- file.path(mcmc_dir, "summary_files")
+
+dir.create(file.path(mcmc_dir, "summary_files"))
 
 # Paths.
 mcmc_ids_path <- file.path(mcmc_dir, "id_map.csv")
@@ -78,135 +93,120 @@ samp_exact_stats_multi <- readRDS(file.path(inv_prob_dir, "mcmc_exact_stats_mult
 # ------------------------------------------------------------------------------
 
 # Extract MCMC IDs.
-design_tag_list <- list(round1=c("simple_5"))
-em_tag_list <- list(round1=c("em_fwd"))
-mcmc_tag_list <- list(round1=c("mean", "marginal"))
+mcmc_ids <- get_mcmc_ids(experiment_dir, round=round, 
+                         only_last_round=TRUE,
+                         only_valid=TRUE)
 
-mcmc_ids <- get_ids_by_tag(experiment_dir, round=round, 
-                           design_tag_list=design_tag_list, 
-                           em_tag_list=em_tag_list,
-                           mcmc_tag_list=mcmc_tag_list)
+# Load aggregate statistics for the selected IDs.
+mcmc_stats <- get_mcmc_stats_agg(experiment_dir, mcmc_ids, format_long=FALSE,
+                                 interval_probs=interval_probs, only_valid=TRUE)
+saveRDS(mcmc_stats, file.path(summary_files_dir, "mcmc_stats.rds"))
 
+par_stats <- mcmc_stats$par_stats
+cred_intervals <- mcmc_stats$cred_intervals
+  
+# ------------------------------------------------------------------------------
+# Filter to only include plots satisfying the minimum replicate threshold.
+# ------------------------------------------------------------------------------
 
 # Questions:
 #  - Why is pm-ind failing for em_fwd, but not em_llik?
 #  - Why is pm-joint failing on every run? (not a priority question)
 #  - Why are the pm-joint-rect/pm-ind-rect failing for em_llik but not em_fwd?
+#  - Check the 4 marginal/em_fwd runs that failed.
+#  - Ensure MCMC settings are being saved in the MCMC info lists so I can 
+#    verify the settings are properly being passed to the functions.
 
+valid_tag_combs <- mcmc_ids[, .(n_rep=.N), by=.(mcmc_tag, em_tag)]
+valid_tag_combs[, valid_n_reps := (n_rep >= min_n_rep)]
 
-# Load MCMC tags. Print basic summary of MCMC runs.
-mcmc_summary <- fread(file.path(mcmc_dir, "mcmc_summary.csv"))
+print("mcmc/em tag rep summary:")
+print(valid_tag_combs)
 
-mcmc_summary[, .N, by=status]
+print("mcmc/em tag combinations satisfying minimum replication threshold:")
+valid_tag_combs[, .N, by=valid_n_reps]
 
-mcmc_summary[status != "valid", .N, by="mcmc_tag"]
-mcmc_summary[status != "valid", .N, by=c("mcmc_tag", "em_tag")]
-
-# Group by mcmc_tag, em_tag. In round 1 this should identify each algorithm 
-# so that we can identify how many replicates there are per group.
-# TODO: generalize to future round; think I also need to group by em_id.
-# Better yet, need a way to just input tags (e.g., initial design tag, em_tag,
-# mcmc_tag) and then have a function that loops over the rounds until the 
-# current round and identifies all MCMC runs associated with those tags.
-mcmc_summary[status=="valid", .(n_valid_reps=.N), by=c("mcmc_tag", "em_tag")]
-
-
-
-mcmc_summary <- mcmc_summary[status=="valid", .(n_valid_reps=.N), by=mcmc_tag]
-mcmc_tags <- mcmc_summary[n_valid_reps > 1L, mcmc_tag]
-
-# Load statistics of aggregated data.
-mcmc_tag_list <- vector(mode="list", length=length(mcmc_tags))
-names(mcmc_tag_list) <- mcmc_tags
-
-
-#
-# TODO: need to add multivariate stats to list returned by `get_samp_dt_reps_agg`
-#       as well.
-#
-
-interval_probs <- seq(.1,1,.1)
-
-print("-----> Loading MCMC tags:")
-for(tag in mcmc_tags) {
-  print(tag)
-  mcmc_tag_list[[tag]] <- get_samp_dt_reps_agg(experiment_dir, round, tag, 
-                                               em_tag, design_tag, 
-                                               only_valid=TRUE, format_long=FALSE,
-                                               interval_probs=interval_probs)
-}
-
+# Restrict to runs that exceed min rep threshold.
+cred_intervals <- cred_intervals[param_type=="par"]
+cred_intervals <- data.table::merge.data.table(cred_intervals, 
+                                               valid_tag_combs[valid_n_reps==TRUE],
+                                               by=c("mcmc_tag", "em_tag"),
+                                               all.x=FALSE)
 
 # ------------------------------------------------------------------------------
 # 1d Marginal Coverage Plots
 # ------------------------------------------------------------------------------
 
 plt_dir <- file.path(mcmc_dir, "summary_files", "plots")
-
-# All unique combinations of test_label (i.e., MCMC tag), param_type, and
-# param_name.
-param_summary <- fread(file.path(mcmc_dir, "summary_files", "param_summary.csv"))
-plt_id_vars <- unique(param_summary, by=c("mcmc_tag", "param_type", "param_name"))
+dir.create(plt_dir)
 
 # Functions to summarize percentiles of coverage dist over replications.
 summary_funcs <- list(median = median,
                       mean = mean,
-                      q_lower = function(x) quantile(x, .1),
-                      q_upper = function(x) quantile(x, .9))
+                      q_lower = function(x) quantile(x, rep_quantile_lower),
+                      q_upper = function(x) quantile(x, rep_quantile_upper))
 
+# Assemble list of covereage plots. One plot per em_tag-mcmc_tag-param_name
+# combination.
+plt_id_vars <- unique(cred_intervals[, .(mcmc_tag, em_tag, param_name)])
 coverage_plt_list <- list()
 
-for(tag in mcmc_tags) {
-  print(paste0("MCMC Tag: ", tag))
+for(i in 1:nrow(plt_id_vars)) {
   
-  coverage_plt_list[[tag]] <- list()
-  tag_pars <- plt_id_vars[mcmc_tag==tag]
-  tag_coverage_stats <- mcmc_tag_list[[tag]]$cred_intervals
+  # Information for current plot.
+  m_tag <- plt_id_vars[i, mcmc_tag]
+  e_tag <- plt_id_vars[i, em_tag]
+  p_name <- plt_id_vars[i, param_name]
+  cat("\n", m_tag, "-", e_tag, "-", p_name, "\n")
   
-  for(i in 1:nrow(tag_pars)) {
-    p_type <- tag_pars[i, param_type]
-    p_name <- tag_pars[i, param_name]
-    cat("\n", p_type, "-", p_name, "\n")
-    
-    tag_coverage_param <- tag_coverage_stats[(param_type==p_type) & (param_name==p_name)]
-    samp_exact_param <- samp_exact[(param_type==p_type) & (param_name==p_name), sample]
-    n_exact_samp <- length(samp_exact_param)
-    compute_actual_coverage <- function(l, u) sum((samp_exact_param >= l) & (samp_exact_param <= u)) / n_exact_samp
-    tag_coverage_param[, actual_coverage := compute_actual_coverage(lower, upper), 
-                        by=seq_len(nrow(tag_coverage_param))]
-    
-    coverage_plt_data <- agg_dt_by_func_list(tag_coverage_param, 
-                                             value_col="actual_coverage",
-                                             group_cols=c("test_label", "param_type", "param_name", "prob"),
-                                             agg_funcs=summary_funcs)
-    coverage_plt_data[, nominal_coverage := as.numeric(prob)/100]
-    
-    plt <- ggplot(coverage_plt_data, aes(x=nominal_coverage)) +
-            geom_ribbon(aes(ymin=q_lower, ymax=q_upper), fill="skyblue", alpha=0.4) +
-            geom_line(aes(y=median), color="darkblue") +
-            geom_line(aes(y=mean), color="darkorange") + 
-            geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
-            xlab("Nominal Coverage") + ylab("Actual Coverage") +
-            ggtitle(paste(tag, p_name, sep=" - "))
-    
-    # NOTE: there is currently only one param type so I am ignoring the type
-    # here for simplicitly. When generalizing to multiple types need to account
-    # for this to avoid duplicate parameter names across types.
-    coverage_plt_list[[tag]][[p_name]] <- plt
-  }
+  # Nominal coverage from approximate MCMC.
+  coverage <- cred_intervals[(mcmc_tag==m_tag) & 
+                             (em_tag==e_tag) &
+                             (param_name==p_name)]
+  
+  # Compute actual coverage.
+  samp_exact_param <- samp_exact[(param_type=="par") & (param_name==p_name), sample]
+  n_exact_samp <- length(samp_exact_param)
+  compute_actual_coverage <- function(l, u) sum((samp_exact_param >= l) & (samp_exact_param <= u)) / n_exact_samp
+  coverage[, actual_coverage := compute_actual_coverage(lower, upper), 
+             by=seq_len(nrow(coverage))]
+  
+  # Summarize coverage over distribution of initial design replicates.
+  coverage_plt_data <- agg_dt_by_func_list(coverage, 
+                                           value_col="actual_coverage",
+                                           group_cols=c("mcmc_tag", "em_tag", "param_name", "prob"),
+                                           agg_funcs=summary_funcs)
+  coverage_plt_data[, nominal_coverage := as.numeric(prob)/100]
+  
+  # Produce plot.
+  plt <- ggplot(coverage_plt_data, aes(x=nominal_coverage)) +
+    geom_ribbon(aes(ymin=q_lower, ymax=q_upper), fill="skyblue", alpha=0.4) +
+    geom_line(aes(y=median), color="darkblue") +
+    geom_line(aes(y=mean), color="darkorange") + 
+    geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
+    xlab("Nominal Coverage") + ylab("Actual Coverage") +
+    ggtitle(paste(m_tag, e_tag, p_name, sep=" - "))
+  
+  coverage_plt_list[[m_tag]][[e_tag]][[p_name]] <- plt
 }
 
+
 # Save to file.
-saveRDS(coverage_plt_list, file.path(mcmc_dir, "summary_files", "coverage_plt_list.rds"))
+saveRDS(coverage_plt_list, file.path(summary_files_dir, "coverage_plt_list.rds"))
 
 
-plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
+# ------------------------------------------------------------------------------
+# Final Plot Formatting
+# ------------------------------------------------------------------------------
+
+plot_grid <- function(plt_list, mcmc_tags, em_tags, par_names, interval_probs) {
   grid_plt_list <- list()
   q_min <- min(interval_probs)
   q_max <- max(interval_probs)
   
   for(i in seq_along(mcmc_tags)) {
     tag <- mcmc_tags[i]
+    
     
     for(j in seq_along(par_names)) {
       par <- par_names[j]
@@ -221,13 +221,7 @@ plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
       
       # Only add titles to the first row.
       if(i == 1L) {
-        # TODO: TEMP
-        if(par == "KEXT") nm <- "theta 1"
-        if(par == "GAMMA") nm <- "theta 2"
-        if(par == "Cv") nm <- "theta 3"
-        plt <- plt + ggtitle(nm)
-        
-        # plt <- plt + ggtitle(par)
+        plt <- plt + ggtitle(par)
       }
       
       # Only add x-axis tick labels to the last row.
@@ -239,15 +233,7 @@ plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
       
       # Only add y-axis labels and tick labels to the first column.
       if(j == 1L) {
-        # TODO: TEMP
-        if(tag == "mean-rect") nm <- "mean"
-        if(tag == "marginal-rect") nm <- "marginal"
-        if(tag == "mcwmh-joint-rect") nm <- "noisy"
-        plt <- plt + ylab(nm) + 
-                theme(axis.title.y=element_text(size=16),
-                      axis.text.y=element_text(size=12))
-        
-        # plt <- plt + ylab(tag)
+        plt <- plt + ylab(tag)
       } else {
         plt <- plt + theme(axis.text.y = element_blank(),
                            axis.title.y = element_blank())
@@ -264,6 +250,7 @@ plot_grid <- function(plt_list, mcmc_tags, par_names, interval_probs) {
   # Format in grid.
   wrap_plots(grid_plt_list, ncol=length(par_names), nrow=length(mcmc_tags))
 }
+
 
 
 # Plug-in Mean.

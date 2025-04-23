@@ -8,8 +8,9 @@
 # General helper functions.
 # ------------------------------------------------------------------------------
 
-get_ids_by_tag <- function(experiment_dir, round=NULL, design_tag_list=NULL, 
-                           em_tag_list=NULL, mcmc_tag_list=NULL) {
+get_ids_by_tag <- function(experiment_dir, round=NULL, 
+                           design_tag_list=NULL, em_tag_list=NULL, 
+                           mcmc_tag_list=NULL, only_last_round=FALSE) {
   # Constructs a data.table of IDs that allows tracking dependencies within and
   # across rounds. This is accomplished by starting at round one and then
   # stepping forward through the rounds. The default behavior is to return a 
@@ -31,6 +32,9 @@ get_ids_by_tag <- function(experiment_dir, round=NULL, design_tag_list=NULL,
   # a required "ID map" file is missing, then the loop will terminate early 
   # and only the IDs up to that point will be returned. Note that the order
   # of the stages within each round is: design -> Emulator -> MCMC.
+  # If `only_last_round = TRUE`, then only the IDs from the final round 
+  # identified will be returned. Otherwise, the IDs from all rounds will 
+  # be returned.
 
   return_cols <- c("round", "design_tag", "em_tag", "mcmc_tag", "design_id",
                    "em_id", "mcmc_id", "design_seed", "em_seed", "mcmc_seed")
@@ -54,8 +58,9 @@ get_ids_by_tag <- function(experiment_dir, round=NULL, design_tag_list=NULL,
     id_map_round <- id_map_round[design_tag %in% design_tags]
   }
   
-  for(i in rounds) {
-    round_tag <- paste0("round", i)
+  for(i in seq_along(rounds)) {
+    round <- rounds[i]
+    round_tag <- paste0("round", round)
     round_dir <- file.path(output_dir, round_tag)
     
     # Design.
@@ -113,7 +118,11 @@ get_ids_by_tag <- function(experiment_dir, round=NULL, design_tag_list=NULL,
     if(i == 1L) {
       id_map <- copy(id_map_round)[, ..return_cols]
     } else {
-      id_map <- rbindlist(list(id_map, id_map_round[, ..return_cols]), use.names=TRUE)
+      if(only_last_round) {
+        id_map <- copy(id_map_round)[, ..return_cols]
+      } else {
+        id_map <- rbindlist(list(id_map, id_map_round[, ..return_cols]), use.names=TRUE)
+      }
     }
   }
   
@@ -622,61 +631,226 @@ merge_chains <- function(samp_dt, rhat_threshold=1.05, min_itr_threshold=500L,
 #   assemble summary statistics/produce plots/etc.
 # ------------------------------------------------------------------------------
 
+get_mcmc_ids <- function(experiment_dir, only_valid=TRUE, ...) {
+  # A wrapper around `get_ids_by_tag()` that subsets MCMC IDs by user-specified
+  # conditions on the tags. If `only_valid = TRUE` then the IDs are further 
+  # subset by reading the "mcmc_summary.csv" file from each round (if it 
+  # exists) and restricting to IDs that are marked as valid. Note that this 
+  # is done on a round-by-round basis; there is no notion of excluding 
+  # runs from future rounds that depend on an invalid run from a previous round,
+  # as it is assumed that invalid MCMC runs are never used as inputs to future 
+  # steps. This assumption could be dropped in the future if needed.
+  # The `...` arguments are passed to `get_ids_by_tag()` which allows users
+  # to subset by round, design tag, em tag, and mcmc tag. If `only_valid = FALSE`
+  # then simply returns the return value from `get_ids_by_tag()`.
+  # When `only_valid = TRUE` the returned data.table includes all of the 
+  # extra columns from the "mcmc_summary.csv" files: "status", "max_rhat",
+  # "n_groups", "n_chains", "n_itr". 
 
-get_mcmc_ids <- function(experiment_dir, round, mcmc_tag, em_tag, design_tag, 
-                         only_valid=TRUE) {
-  # Assembles an ID map table with columns "mcmc_id", "em_id", "em_tag",
-  # "design_id", and "design_tag" containing the set of MCMC IDs associated
-  # with the specified experiment, round, MCMC tag, emulator tag, and design
-  # tag specified in the function arguments. If `only_valid` is TRUE, then 
-  # the MCMC iterations and chains are subset using the MCMC post-processing
-  # results. This also implies that MCMC runs with no valid chains will be 
-  # dropped entirely. Setting `only_valid=TRUE` also attaches additional 
-  # information as columns in the returned data.table, including Rhat values 
-  # and group weights.
-  #
-  # NOTE: 
-  # Currently this function returns a data.table that is unique by `mcmc_id`
-  # if `only_valid=FALSE` and is unique by (`mcmc_id`, `chain_idx`) if 
-  # `only_valid=TRUE`. This is a bit confusing and should probably be changed.
+  mcmc_ids <- get_ids_by_tag(experiment_dir, ...)
+  if(!only_valid) return(mcmc_ids)
   
-  # Assemble set of MCMC tags that are associated with the specified experiment,
-  # round, MCMC tag, and emulator tag.
-  round_tag <- paste0("round", round)
-  mcmc_dir <- file.path(experiment_dir, round_tag, "mcmc", mcmc_tag)
-  mcmc_id_map <- fread(file.path(mcmc_dir, "id_map.csv"))
+  # Loop over rounds and select valid IDs.
+  rounds <- unique(mcmc_ids$round)
+  output_dir <- file.path(experiment_dir, "output")
+  mcmc_ids_valid <- NULL
   
-  # Subset MCMC IDs to those associated with specified emulator tag.
-  em_tag_curr <- em_tag
-  mcmc_id_map <- mcmc_id_map[em_tag==em_tag_curr]
-  
-  # Subset MCMC IDs to those associated with specified design tag.
-  design_tag_curr <- design_tag
-  em_id_map <- fread(file.path(experiment_dir, round_tag, "em", em_tag, "id_map.csv"))
-  mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, em_id_map, by="em_id",
-                                              all.x=TRUE, all.y=FALSE)
-  mcmc_id_map <- mcmc_id_map[design_tag==design_tag_curr]
-  
-  # Use MCMC post-processing results to select only valid runs/chains/itrs.
-  if(only_valid) {
+  for(i in seq_along(rounds)) {
+    round_num <- rounds[i]
+    round_tag <- paste0("round", i)
+    mcmc_summary_path <- file.path(output_dir, round_tag, "mcmc", "mcmc_summary.csv")
     
-    # Retain only valid runs.
-    mcmc_tag_curr <- mcmc_tag
-    summary_dir <- file.path(experiment_dir, round_tag, "mcmc", "summary_files")
-    run_summary <- fread(file.path(summary_dir, "mcmc_summary.csv"))
-    run_summary <- run_summary[(status=="valid") & (mcmc_tag == mcmc_tag_curr)]
-    mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, run_summary, 
-                                                all=FALSE, by="mcmc_id")
-    
-    # Retain only valid chains, and set burn-ins determined by preprocessing.
-    chain_summary <- fread(file.path(summary_dir, "chain_summary.csv"))
-    chain_summary <- chain_summary[mcmc_tag==mcmc_tag_curr]
-    mcmc_id_map <- data.table::merge.data.table(mcmc_id_map, chain_summary,
-                                                all=FALSE, by=c("mcmc_id", "mcmc_tag"))
+    if(file.exists(mcmc_summary_path)) {
+      mcmc_summary <- fread(mcmc_summary_path)[status=="valid"]
+      mcmc_ids_round <- data.table::merge.data.table(mcmc_ids[round==round_num], 
+                                                     mcmc_summary, all=FALSE, 
+                                                     by=c("mcmc_tag", "mcmc_id", "em_tag"))
+      if(i == 1L) mcmc_ids_valid <- copy(mcmc_ids_round)
+      else mcmc_ids_valid <- rbindlist(list(mcmc_ids_valid, mcmc_ids_round), 
+                                       use.names=TRUE)
+    } else {
+      message("MCMC summary file not found at path: ", mcmc_summary_path)
+    }
   }
   
-  return(mcmc_id_map)
+  if(is.null(mcmc_ids_valid)) {
+    message("No MCMC summary files found, so returning all IDs from `get_ids_by_tag()`.")
+    return(mcmc_ids)
+  }
+  
+  return(mcmc_ids_valid)
 }
+
+
+read_mcmc_samp <- function(experiment_dir, round, mcmc_tag, em_tag,
+                           mcmc_id, em_id, only_valid=TRUE, group_info=NULL) {
+  # Reads the "mcmc_samp.rds" list for the specified MCMC ID. If 
+  # `only_valid = TRUE`, then filters modifies both the "samp_dt" and "info_dt"
+  # tables based on the information in `group_info`. In particular:
+  # (i.) restricts to the "itr_start", "itr_stop" iteration range.
+  # (ii.) keeps only chains specified in "chain_str".
+  # (iii.) assigns a "group" tag and associated group weight for each group.
+  #        This is done by adding "group" and "log_weight" columns to both 
+  #        data.tables.
+  #
+  # If `group_info` is not given as an argument, then it will be loaded from 
+  # file. Also, note that the arguments "experiment_dir", "round", "mcmc_tag",
+  # and "mcmc_id" are sufficient to identify a specific MCMC run. However, we 
+  # require "em_tag" and "em_id" here to facilitate easy specification of the
+  # necessary filepath.
+
+  mcmc_dir <- file.path(experiment_dir, "output", paste0("round", round), "mcmc")
+  samp_path <- file.path(mcmc_dir, mcmc_tag, em_tag, paste0("em_", em_id),
+                         paste0("mcmc_", mcmc_id), "mcmc_samp.rds")
+    
+  # Read file.
+  samp_list <- try(readRDS(samp_path))
+  if(any(class(samp_list) == "try-error")) {
+    message("MCMC samples not found. Returning NULL. Path: ",
+            samp_path)
+    return(NULL)
+  }
+  
+  if(!only_valid) return(samp_list)
+  
+  # If necessary, read group info file.
+  if(is.null(group_info)) {
+    group_info_path <- file.path(mcmc_dir, "group_info.csv")
+    group_info <- try(fread(group_info_path))
+    
+    if(any(class(group_info) == "try-error")) {
+      message("`group_info` file not found, returning samples without any sort ",
+              " of filtering/grouping. Path: ", group_info_path)
+      return(samp_list)
+    }
+  }
+  
+  tag <- mcmc_tag
+  id <- mcmc_id
+  e_tag <- em_tag
+  group_info <- group_info[(mcmc_tag==tag) & (mcmc_id==id) & (em_tag==e_tag)]
+  if(nrow(group_info) == 0L) {
+    message("Subsetting `group_info` resulted in zero rows.", 
+            " Should result in >= 1 row. Returning samples without any sort ",
+            " of filtering/grouping.")
+    return(samp_list)
+  }
+  
+  # Restrict to specified chains.
+  extract_chains <- function(x) as.integer(strsplit(x, "-", fixed=TRUE)[[1]])
+  chain_group_map <- data.table(chain_idx=integer(), group=integer(), log_weight=numeric())
+  for(i in 1:nrow(group_info)) {
+    group_chains <- extract_chains(group_info[i, chain_str])
+    chain_group_map <- rbindlist(list(chain_group_map, 
+                                      data.table(chain_idx=group_chains,
+                                                 group=group_info[i, group],
+                                                 log_weight=group_info[i, log_weight])))
+  }
+  
+  chains <- chain_group_map$chain_idx
+  samp_dt <- samp_list$samp
+  info_dt <- samp_list$info
+  samp_dt <- samp_dt[chain_idx %in% chains]
+  info_dt <- info_dt[chain_idx %in% chains]
+  
+  # Restrict to specified iteration range.
+  itr_min <- group_info$itr_start
+  itr_max <- group_info$itr_stop
+  samp_dt <- samp_dt[(itr >= itr_min) & (itr <= itr_max)]
+  info_dt <- info_dt[(itr >= itr_min) & (itr <= itr_max)]
+ 
+  # Add group label and group weights.
+  info_dt <- data.table::merge.data.table(info_dt, chain_group_map,
+                                          by="chain_idx", all.x=TRUE)
+
+  # Update samp_list and return.
+  samp_list$samp <- samp_dt
+  samp_list$info <- info_dt
+  
+  return(samp_list)
+}
+
+
+get_mcmc_stats_agg <- function(experiment_dir, mcmc_ids, format_long=FALSE,
+                               interval_probs=NULL, only_valid=TRUE) {
+  # This function loops over a specified set of MCMC IDs and loads the 
+  # samples associated with each, and computes summary statistics of the 
+  # output. A data.table containing the summary statistics from all of the 
+  # specified IDs is returned.
+  #
+  # Args:
+  #   experiment_dir: experiment directory, used as base directory for paths.
+  #   mcmc_ids: data.table that must have columns "round", "mcmc_tag", "mcmc_id",
+  #             and "em_tag". The last one is only included as a temporary
+  #             fix and will eventually be removed. This data.table will 
+  #             often be constructed via a call to `get_mcmc_ids()`.
+  #   format_long: TODO
+  #   interval_probs: vector of values in (0,1) representing probabilities 
+  #                   defining credible intervals.
+  #   only_valid: logical, passed to `read_mcmc_samp()`. Determines whether
+  #               MCMC samples will be filtered/group info will be added.
+  
+  ids <- unique(mcmc_ids[, .(round, mcmc_tag, mcmc_id, em_tag, em_id)])
+  rounds <- unique(ids$round)
+  output_dir <- file.path(experiment_dir, "output")
+  group_cols <- c("test_label", "param_type", "param_name")
+  
+  # Separate data.tables will store means/vars and marginal credible intervals.
+  par_stats <- NULL
+  cred_intervals <- NULL
+  
+  # Load MCMC group info, which contains burn-in and group weight information.
+  for(i in seq_along(rounds)) {
+    round_num <- rounds[i]
+    round_tag <- paste0("round", round_num)
+    mcmc_dir <- file.path(output_dir, round_tag, "mcmc")
+    group_info <- fread(file.path(mcmc_dir, "group_info.csv"))
+    ids_round <- ids[round == round_num]
+    
+    for(j in 1:nrow(ids_round)) {
+      print(paste(i, j, sep = " --- "))
+      
+      mcmc_tag <- ids_round[j, mcmc_tag]
+      mcmc_id <- ids_round[j, mcmc_id]
+      em_tag <- ids_round[j, em_tag]
+      em_id <- ids_round[j, em_id]
+      
+      # Read/format samples.
+      samp_list <- read_mcmc_samp(experiment_dir, round=round_num, 
+                                  mcmc_tag=mcmc_tag, 
+                                  em_tag=em_tag,
+                                  mcmc_id=mcmc_id, 
+                                  em_id=em_id,
+                                  only_valid=only_valid,
+                                  group_info=group_info)
+      
+      # Compute univariate aggregate statistics (mean, variance).
+      stat_info <- compute_mcmc_param_stats(samp_list$samp, subset_samp=FALSE, 
+                                            format_long=format_long,
+                                            group_cols=group_cols,
+                                            interval_probs=interval_probs,
+                                            info_dt=info_dt)
+      
+      # Attach additional info.
+      par_stats_curr <- stat_info$par_stats
+      cred_intervals_curr <- stat_info$cred_intervals
+      par_stats_curr[, `:=`(round=round_num, mcmc_tag=mcmc_tag, 
+                            mcmc_id=mcmc_id, em_tag=em_tag, em_id=em_id)]
+      cred_intervals_curr[, `:=`(round=round_num, mcmc_tag=mcmc_tag, 
+                                 mcmc_id=mcmc_id, em_tag=em_tag, em_id=em_id)]
+      
+      # Append.
+      if(is.null(par_stats)) par_stats <- copy(par_stats_curr)
+      else par_stats <- rbindlist(list(par_stats, par_stats_curr), use.names=TRUE)
+      
+      if(is.null(cred_intervals)) cred_intervals <- copy(cred_intervals_curr)
+      else cred_intervals <- rbindlist(list(cred_intervals, cred_intervals_curr), use.names=TRUE)
+    }
+  }
+  
+  return(list(par_stats=par_stats, cred_intervals=cred_intervals))
+}
+
 
 
 load_samp_mat <- function(experiment_dir, round, mcmc_tag, mcmc_id, 

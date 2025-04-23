@@ -5,6 +5,12 @@ output: html_document
 
 ```{r}
 library(data.table)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(grid)
+library(support)
+
 
 experiment_tag <- "banana"
 
@@ -22,6 +28,9 @@ source(file.path(src_dir, "plotting_helper_functions.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 ```
 
 # MCMC Diagnostics
@@ -61,6 +70,7 @@ test_info_grid <- get_init_design_list(inv_prob,
 plt_df <- data.frame(test_info_grid$input, lprior=test_info_grid$lprior,
                      llik=test_info_grid$llik, lpost=test_info_grid$lpost,
                      fwd=test_info_grid$fwd)
+plt_df$post <- exp(plt_df$lpost)
 ```
 
 ```{r}
@@ -114,8 +124,283 @@ plt_post_test_pts <- ggplot() +
 plot(plt_post_test_pts)
 ```
 
+# Investigating some emulators.
+```{r}
+# Design info.
+design_tag <- "simple_5"
+design_id <- 12L
+
+# Forward model emulator.
+em_tag_fwd <- "em_fwd"
+
+# Log-likelihood emulator.
+em_tag_llik <- "em_llik"
+
+# Subset to selected tags/IDs.
+ids <- get_ids_by_tag(experiment_dir, round=1L, 
+                      design_tag_list=list(round1=design_tag), 
+                      em_tag_list=list(round1=c(em_tag_fwd, em_tag_llik)),
+                      only_last_round=TRUE)
+d_id <- design_id
+ids <- ids[design_id == d_id]
+
+# Sample one em_id per em_tag.
+em_ids <- ids[, .(em_id=sample(em_id, 1)), by=.(design_tag, design_id, round, em_tag)]
+em_id_fwd <- em_ids[em_tag==em_tag_fwd, em_id]
+em_id_llik <- em_ids[em_tag==em_tag_llik, em_id]
+```
 
 
+```{r}
+# Load emulators.
+em_llik <- readRDS(file.path(experiment_dir, "output", "round1", "em", 
+                             em_tag_llik, design_tag,
+                             paste0("design_", design_id), 
+                             paste0("em_", em_id_llik), "em_llik.rds"))
+em_fwd <- readRDS(file.path(experiment_dir, "output", "round1", "em", 
+                            em_tag_fwd, design_tag,
+                            paste0("design_", design_id), 
+                            paste0("em_", em_id_fwd), "em_llik.rds"))
+```
+
+
+## Forward model emulator
+```{r}
+dt_design_fwd <- data.table(em_fwd$get_design_inputs(),
+                            llik=em_fwd$get_design_llik())
+
+plt_fwd_design <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=post), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("Posterior density and design points")
+plot(plt_fwd_design)
+```
+
+```{r}
+# Forward model predictions.
+em_fwd_pred_list <- em_fwd$predict_emulator(test_info_prior$input)
+em_fwd_pred_dt <- data.table(test_info_prior$input,
+                             mean=em_fwd_pred_list$mean[,1],
+                             var=em_fwd_pred_list$var[,1])
+
+em_fwd_true <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=fwd), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd true")
+em_fwd_mean <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=mean), em_fwd_pred_dt) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd mean")
+em_fwd_sd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=sqrt(var)), em_fwd_pred_dt) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd sd")
+
+plot(em_fwd_true)
+plot(em_fwd_mean)
+plot(em_fwd_sd)
+```
+
+```{r}
+# Induced likelihood approx: forward model emulator.
+em_fwd_lik_approx <- em_fwd$calc_lik_approx(c("mean", "marginal"), 
+                                            input=test_info_prior$input, 
+                                            em_pred_list=em_fwd_pred_list,
+                                            log_scale=TRUE, return_type="matrix")
+em_fwd_lik_approx <- data.table(test_info_prior$input, em_fwd_lik_approx)
+
+
+llik_true <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=llik), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("log-lik true")
+llik_approx_mean_fwd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=mean), em_fwd_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd plug-in mean log-likelihood approx")
+llik_approx_marg_fwd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=marginal), em_fwd_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd log marginal likelihood approx")
+
+plot(llik_true)
+plot(llik_approx_mean_fwd)
+plot(llik_approx_marg_fwd)
+```
+
+
+```{r}
+# Induced likelihood approx: forward model emulator.
+lik_true <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=exp(llik)), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("lik true")
+lik_approx_mean_fwd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=exp(mean)), em_fwd_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd plug-in mean likelihood approx")
+lik_approx_marg_fwd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=exp(marginal)), em_fwd_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") + 
+                ggtitle("em_fwd marginal likelihood approx")
+
+plot(lik_true)
+plot(lik_approx_mean_fwd)
+plot(lik_approx_marg_fwd)
+```
+
+### MCMC samples for forward model emulator
+```{r}
+# Load MCMC samples. 
+
+mcmc_id_mean_fwd <- ids[(mcmc_tag=="mean") & (em_tag==em_tag_fwd), mcmc_id]
+samp_list_mean_fwd <- read_mcmc_samp(experiment_dir, round=1L, mcmc_tag="mean", 
+                                     em_tag=em_tag_fwd, mcmc_id=mcmc_id_mean_fwd, 
+                                     em_id=em_id_fwd, only_valid=TRUE)
+
+mcmc_id_marg_fwd <- ids[(mcmc_tag=="marginal") & (em_tag==em_tag_fwd), mcmc_id]
+samp_list_marg_fwd <- read_mcmc_samp(experiment_dir, round=1L, mcmc_tag="marginal", 
+                                     em_tag=em_tag_fwd, mcmc_id=mcmc_id_marg_fwd, 
+                                     em_id=em_id_fwd, only_valid=TRUE)
+
+mcmc_id_mcwmhjoint_fwd <- ids[(mcmc_tag=="mcwmh-joint") & (em_tag==em_tag_fwd), mcmc_id]
+samp_list_mcwmhjoint_fwd <- read_mcmc_samp(experiment_dir, round=1L, mcmc_tag="mcwmh-joint", 
+                                     em_tag=em_tag_fwd, mcmc_id=mcmc_id_mcwmhjoint_fwd, 
+                                     em_id=em_id_fwd, only_valid=TRUE)
+```
+
+
+```{r}
+# Plug-in mean. 
+
+samp_fwd_mean_subset <- as.data.frame(select_mcmc_samp_mat(samp_list_mean_fwd$samp, 
+                                                           thin=100L))
+samp_fwd_mean_subset <- as.data.table(samp_fwd_mean_subset)
+
+# Plot samples.
+plt_fwd_mean_samp <- ggplot() +
+              geom_contour_filled(data=plt_df, mapping=aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") +
+              geom_point(aes(x=u1, y=u2), data=samp_fwd_mean_subset, color="grey", alpha=0.3) +
+              ggtitle("Plug-in mean samp [fwd]")
+
+plot(plt_fwd_mean_samp)
+```
+
+```{r}
+# Marginal.
+
+samp_fwd_marg_subset <- as.data.frame(select_mcmc_samp_mat(samp_list_marg_fwd$samp, 
+                                                           thin=100L))
+samp_fwd_marg_subset <- as.data.table(samp_fwd_marg_subset)
+
+# Plot samples.
+plt_fwd_marg_samp <- ggplot() +
+              geom_contour_filled(data=plt_df, mapping=aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") +
+              geom_point(aes(x=u1, y=u2), data=samp_fwd_marg_subset, color="grey", alpha=0.3) +
+              ggtitle("marginal samp [fwd]")
+
+plot(plt_fwd_marg_samp)
+```
+
+```{r}
+# MCWMH-Joint
+
+samp_fwd_mcwmhj_subset <- as.data.frame(select_mcmc_samp_mat(samp_list_mcwmhjoint_fwd$samp, 
+                                                             thin=100L))
+samp_fwd_mcwmhj_subset <- as.data.table(samp_fwd_mcwmhj_subset)
+
+# Plot samples.
+plt_fwd_mcwmhj_samp <- ggplot() +
+              geom_contour_filled(data=plt_df, mapping=aes(x=u1, y=u2, z=exp(lpost))) +
+              geom_point(aes(x=u1, y=u2), data=dt_design_fwd, color="red") +
+              geom_point(aes(x=u1, y=u2), data=samp_fwd_mcwmhj_subset, color="grey", alpha=0.3) +
+              ggtitle("mcwmh-joint samp [fwd]")
+
+plot(plt_fwd_mcwmhj_samp)
+```
+
+## Log-Likelihood emulator
+```{r}
+dt_design_llik <- data.table(em_llik$get_design_inputs(),
+                             llik=em_llik$get_design_llik())
+
+plt_llik_design <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=post), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("Posterior density and design points")
+plot(plt_llik_design)
+```
+
+```{r}
+# Log-Likelihood predictions.
+em_llik_pred_list <- em_llik$predict_emulator(test_info_prior$input)
+em_llik_pred_dt <- data.table(test_info_prior$input,
+                             mean=em_llik_pred_list$mean[,1],
+                             var=em_llik_pred_list$var[,1])
+
+em_llik_true <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=llik), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("em_llik true")
+em_llik_mean <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=mean), em_llik_pred_dt) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("em_llik mean")
+em_llik_sd <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=sqrt(var)), em_llik_pred_dt) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("em_llik sd")
+
+plot(em_llik_true)
+plot(em_llik_mean)
+plot(em_llik_sd)
+```
+
+```{r}
+# Induced likelihood approx: forward model emulator.
+
+test1 <- em_llik$predict_lik(test_info_prior$input[1:10,], log_scale=TRUE,
+                             adjustment=NULL)
+cbind(test1$log_mean, test1$log_var)
+
+test2 <- em_llik$predict(test_info_prior$input[1:10,], adjustment=NULL)
+cbind(test2$mean, test2$var, test2$mean + 0.5*test2$var)
+
+
+test <- convert_Gaussian_to_rect_LN(test2$mean, test2$var,
+                             return_var=TRUE, 
+                             bounds=c(-Inf, bound), 
+                             log_scale=TRUE)
+
+
+
+em_llik_lik_approx <- em_llik$calc_lik_approx(c("mean", "marginal"), 
+                                            input=test_info_prior$input, 
+                                            em_pred_list=em_llik_pred_list,
+                                            log_scale=TRUE, return_type="matrix",
+                                            adjustment="rectified")
+em_llik_lik_approx <- data.table(test_info_prior$input, em_llik_lik_approx)
+
+
+llik_true <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=llik), plt_df) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("log-lik true")
+llik_approx_mean_llik <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=mean), em_llik_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("em_llik plug-in mean log-likelihood approx")
+llik_approx_marg_llik <- ggplot() +
+                geom_contour_filled(aes(x=u1, y=u2, z=marginal), em_llik_lik_approx) +
+                geom_point(aes(x=u1, y=u2), data=dt_design_llik, color="red") + 
+                ggtitle("em_llik log marginal likelihood approx")
+
+plot(llik_true)
+plot(llik_approx_mean_llik)
+plot(llik_approx_marg_llik)
+```
 
 
 
