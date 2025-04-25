@@ -536,12 +536,14 @@ likelihood. Thus, for the purposes of posterior inference, it is sufficient to d
 $\Par \mapsto \llik(\Par)$ or $\Par \mapsto \lpost(\Par)$ without obtaining an approximation of the forward model.
 This implies fitting a surrogate model to the design $\{\designIn, \llik(\designIn)\}$ or $\{\designIn, \lpost(\designIn)\}$, respectively.
 We refer to these approaches collectively as \textit{log-density} emulation.
-The log-likelihood emulation approach is considered in \citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation}.
+The log-likelihood emulation approach is considered in 
+\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors}.
 A related approach is explored in \citep{wang2018adaptive}. 
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios}.
 The closely-related unnormalized log-posterior density (i.e., the joint parameter-data density) emulation
 strategy is used in \citet{Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
+We colloquially refer to this latter approach as log-posterior emulation for succinctness.
 Emulating the log density over the density itself is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
@@ -565,12 +567,30 @@ choices may admit a sufficient statistic which can be emulated independently of 
 The following sub-section provides such an example for multiplicative Gaussian likelihoods, following the 
 approach of \citet{FerEmulation}.
 
-\subsubsection{Log-Likelihood vs. Unnormalized Log-Posterior Density Emulation}
+\subsubsection{Log-Likelihood vs. Log-Posterior Emulation}
 The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
 work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
 a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
 
 \subsubsection{Gaussian Setting}
+\Cref{fwd_em_lik_emulator_moments_Gaussian} demonstrates that the predictive moments of the induced likelihood 
+surrogate are available in closed-form when both the likelihood and the surrogate predictive distribution are 
+Gaussian. In the setting of log-density emulation, the distribution of the induced likelihood surrogate can be
+fully characterized for Gaussian surrogates.
+
+\begin{prop} \label{llik_em_lik_emulator_moments_Gaussian}
+Assume that $\lpostEm[\Ndesign]$ is a log-posterior emulator with Gaussian predictive distribution; 
+that is, $\lpostEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\postDens}(\Par), \emKer[\Ndesign]{\postDens}(\Par))$
+for all $\Par \in \parSpace$. Then the induced unnormalized posterior density surrogate 
+$\postEm[\Ndesign](\Par) = \Exp{\lpostEm[\Ndesign](\Par)}$ is given by
+\begin{align}
+\postEm[\Ndesign](\Par) &\sim \text{LN}\left(\emMean[\Ndesign]{\postDens}(\Par), \emKer[\Ndesign]{\postDens}(\Par)\right),
+\end{align}
+which implies 
+\begin{align}
+\E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\postDens}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\postDens}(\Par)},
+\end{align}
+\end{prop}
 
  It is typically preferable to focus on approximating the logarithm 
 of the likelihood, which usually results in a smoother response surface more amenable to GP emulation [\todo: cite]. 
