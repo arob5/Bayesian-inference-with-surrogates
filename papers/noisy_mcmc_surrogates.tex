@@ -60,6 +60,22 @@
 
 \maketitle
 
+The main contribution of this paper is introduce a new framework for conducting surrogate-based
+posterior inference based around approximating the acceptance probability of Metropolis-Hastings
+algorithms. In particular, we develop practical noisy MCMC algorithms that require only the ability
+to sample from the predictive distribution of the surrogate model. We also propose several (batch) 
+sequential design algorithms that target improvement in the posterior approximation. 
+Finally, we provide practical recommendations on emulating unnormalized posterior densities, 
+including prior predictive checks for avoiding common pathologies. 
+
+% Surrogate Construction
+\section{Surrogate Construction}
+\subsection{Initial Design}
+\subsection{Log density emulation}
+Use log density emulation to refer to both log-likelihood and unnormalized log posterior density estimation.
+\subsection{Forward model emulation}
+\subsection{Existence and Tail Behavior}
+
 % Posterior Approximation
 \section{Posterior Approximation} \label{sec:post_approx}
 With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
@@ -79,7 +95,9 @@ This point of view aligns closely with the perspective taken in \citep{BurknerSu
 MCMC-based methods for propagating surrogate uncertainty in a Bayesian framework. 
 
 Alternative lines of research have emphasized algorithms that iteratively select design points in order to 
-achieve asymptotic convergence to the exact posterior. The papers \citet{Li_2014,ConradLocalExactMCMC} 
+achieve asymptotic convergence to the exact posterior. These methods effectively combine posterior
+inference and sequential design within a single algorithm.
+The papers \citet{Li_2014,ConradLocalExactMCMC} 
 adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
 exactness by showing the polynomial 
 approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
@@ -94,6 +112,36 @@ maintaining asymptotic exactness. The tradeoff is that such approaches still typ
 often performed serially-- and thus remain impractical in settings with computationally-intensive simulators.
 Motivated by this fact, our focus in this section is on approximate posterior inference and uncertainty propagation
 with a fixed surrogate. We discuss sequential design strategies in section \todo. 
+
+\subsection{Expected Posterior}
+The predictive distribution of the probabilistic surrogate model induces a random approximation 
+of the unnormalized posterior density. Normalizing this quantity yields a random measure
+\begin{align}
+\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
+&\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \label{post_dens_random_llik},
+\end{align}
+with normalizing constant given by 
+\begin{align}
+\llikEmRdm[\Ndesign]{\normCst}
+&= \int \llikEmRdmDens[\Ndesign](\Par)d\Par \label{norm_cst_random_llik}. 
+\end{align}
+
+
+% Active Learning
+\section{Active Learning} \label{sec:active_learning}
+
+Various works have focused on active learning algorithms that guarantee convergence to the 
+true posterior distribution. In the previous section, we already summarized the subset of 
+this literature that embeds the sequential design within a single MCMC run. A common 
+alternative is to adopt an acquisition function optimization framework, akin to the approach 
+used in Bayesian optimization \citep{reviewBayesOpt}. In this approach, an objective 
+function (i.e., \textit{acquisition function} or \textit{design criterion}) is optimized to select a new 
+design point (or batch of points). In our present context, we seek to define acquisition 
+functions that target the goal of posterior approximation. 
+ 
+ 
+
 
 
 % Emphasize asymptotics: gp_surrogates_random_exploration, StuartTeck1, StuartTeck2
