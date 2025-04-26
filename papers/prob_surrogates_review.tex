@@ -82,9 +82,9 @@ standard inference schemes such as Markov chain Monte Carlo (MCMC).
 
 The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference.
 A probabilistic representation of a surrogate model acknowledges the additional uncertainty introduced by the likelihood 
-approximation. We focus on the questions of how to leverage this uncertainty in (i.) constructing posterior approximations 
-that meaningfully propagate the surrogate uncertainty, and (ii.) designing goal-oriented sequential design (i.e., active learning) 
-algorithms that iteratively refine the surrogate in order to yield maximal improvement in the induced posterior approximation. 
+approximation. We focus on the questions of how to leverage this uncertainty in constructing posterior
+approximations and in designing goal-oriented sequential design (i.e., active learning) algorithms
+that iteratively refine the surrogate to yield maximal improvement in the induced posterior approximation. 
 Probabilistic emulators induce a stochastic representation of the likelihood, such that the true likelihood is 
 modeled as a realization of a random function. Such surrogates commonly arise when an emulator
 model is fit using Bayesian methods, though non-Bayesian techniques such as conformal predictors (\todo: cite) and 
@@ -103,19 +103,20 @@ closed-form expressions also allows for improved interpretability. On the other 
 severely limits modeling flexibility. Many existing methodologies are limited to the Gaussian setting: requiring emulators with 
 Gaussian predictive distributions, or imposing a Gaussian assumption on the likelihood being approximated.
 Small deviations from these assumptions commonly break the closed-form computations enjoyed in this limited regime.
+Therefore, in addition to providing a comprehensive review of the Gaussian setting, we emphasize recent work on 
+developing general-purpose probabilistic workflows that relax the Gaussian requirements.
 
 We begin our review of surrogate-assisted Bayesian inversion with a discussion of the surrogate construction itself,
-drawing a distinction between two general strategies common in the literature: (i.) forward model emulation, whereby
-(some function of) the expensive computer model is approximated by an emulator, and (ii.) log-density emulation, where
+drawing a distinction between two general strategies common in the literature: \textit{forward model emulation}, whereby
+(some function of) the expensive computer model is approximated by an emulator, and \textit{log-density emulation}, where
 a surrogate approximates either the log-likelihood or log-unnormalized posterior density directly. 
 Note that the latter approach is a special case of the former, and both strategies ultimately induce an 
 approximation of the likelihood function, and thus the posterior distribution. However, we still find it useful to make this distinction, 
 as the selection of the target function for emulation has implications for propagating surrogate uncertainty. Moreover, the 
 availability of analytical computations differs across the two strategies. We discuss the relative merits and downsides of each 
-approach, as well as typical use cases. The choice between forward model and log-likelihood emulation is also explored
-in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly noted in \citet{Surer2023sequential}. We use 
-the term \textit{log-density emulation} to encompass both emulation of the log-likelihood and the unnormalized log-posterior density,
-as both methods have been used in the literature. 
+approach, as well as typical use cases. The choice between forward model and log-density emulation is also explored
+in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly noted in 
+\citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
 
 We next proceed to review methods for utilizing the surrogate model in approximating the posterior. We begin with a thorough 
 review of the GP setting, in which a variety of posterior approximations have been proposed across several different literatures; 
@@ -131,15 +132,17 @@ The final portion of this article focuses on improving an existing surrogate by 
 using a new set of exact simulation evaluations. This constitutes a sequential design (i.e., active learning) problem, 
 whereby the selection of new training points is optimized to yield maximal improvement in the induced 
 posterior approximation. This leads to an instance of the ``exploration vs. exploitation'' balancing act,
-familiar to fields such as Bayesian optimization \citep{reviewBayesOpt} and Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, among others. In the present setting, this 
+familiar to fields such as Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, reinforcement learning 
+\citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, among others.
+In the present setting, this 
 manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
-and exploring other regions of parameter space. In the GP surrogate setting, a variety of 
+and exploring other regions of parameter space. For GP surrogates, a variety of 
 design criteria (i.e., acquisition functions) have been proposed that seek to to target high probability regions, 
 while also acknowledging uncertainty in the GP model 
 \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}.
 We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
-facilitate improved iterpretability in settings where closed-form expressions are available.
+facilitate improved interpretability in settings where closed-form expressions are available.
 We also highlight batch sequential approaches, where multiple design points are acquired simultaneously. 
 Batch sequential design becomes increasingly essential as the cost of likelihood evaluations increases, as it allows for 
 parallel computations. 
@@ -152,8 +155,7 @@ using dynamic ecological models of the carbon cycle.
 \section{Background}
 In this section we introduce the Bayesian inference setting of interest, with an emphasis on Bayesian inverse problems
 stemming from mechanistic dynamical models. We provide a concrete example of parameter estimation for ordinary 
-differential equations, and introduce the two regimes of forward model and log-likelihood emulation. The section concludes
-with a brief review of Gaussian processes.
+differential equations, and conclude the section with a brief overview of Gaussian processes.
  
  \subsection{Bayesian Inverse Problems}
 We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
@@ -351,8 +353,8 @@ A popular alternative is to approximate the function output as a linear combinat
 of basis vectors, with the coefficients modeled as independent GPs; that is, 
 \begin{align}
 \funcPrior(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{basis_func_model} \\
-\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean[0]{(\idxBasis)}, \emKer[0]{(\idxBasis)}),  \\
- \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec}),
+\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean[0]{(\idxBasis)}, \emKer[0]{(\idxBasis)}), \label{basis_func_GPs} \\
+ \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec}), \label{basis_func_noise}
 \end{align}
 where the $\basisVec_{\idxBasis}$ are fixed basis vectors.
 These basis vectors are commonly constructed via a singular value decomposition, though other 
@@ -364,14 +366,12 @@ for $\funcEm[\Ndesign]$, conditional on the hyperparameters.
 
 % Initial Design and Surrogate Models
 \section{Initial Design and Surrogate Models}
-We begin our review with an overview of commonly-used surrogate models and describe 
-the general workflow used to fit these models in order to produce approximations of the expensive simulator.
-We emphasize models that provide a probabilistic representation of the emulator uncertainty, in addition
-to providing point predictions.
-Such considerations have been explored extensively across the much broader landscape of 
-surrogate modeling, but we focus the discussion here within the context of surrogate modeling specifically for 
-Bayesian inversion. With this in mind, we frame the discussion around
-two broad classes of strategies: log-likelihood emulation and forward model emulation.
+We begin our review by summarizing the surrogate modeling workflow in the context of solving
+Bayesian inverse problems. We highlight commonly-used surrogates, emphasizing
+models that provide a probabilistic representation of emulator uncertainty in addition to 
+standard point predictions. We conclude the section with discussions of the tradeoffs
+between the forward and log-density emulation strategies, and connections with the 
+broader computer experiments literature.
 
 \subsection{Initial Design}
 Before discussing specific emulators, we comment on the general process of surrogate fitting.
@@ -399,7 +399,10 @@ Another approach to this problem is to first run an alternative algorithm (e.g.,
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
 be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
 \textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware}, which uses 
-Ensemble Kalman methods to produce the initial design. We do not discuss these methods further
+Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
+\citet{emPostDens} utilizes a sequence of importance sampling steps to construct a Gaussian 
+approximation of the posterior, which is then sampled from to produce an initial surrogate design.
+We do not discuss these methods further
 in this review, but note that further methodological development in combining the strengths of these 
 methods may prove a fruitful avenue for future research.
 
@@ -415,8 +418,8 @@ GPs yield predictions in the form of (continuous) mixtures of Gaussians, while d
 \citep{deepGPVecchia,deepGPAL} allow for very flexible predictive distributions.
 
 Polynomial chaos expansions (PCE) represent a popular alternative to GPs, particularly in
- the engineering community \citep{polyChaosReview,MarzoukPolyChaos}
- (\todo: add a couple sentences of description here).
+the engineering and applied math communities \citep{polyChaosReview,MarzoukPolyChaos}
+(\todo: add a couple sentences of description here).
 
 In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
 surrogate. This generic perspective is considered in \citep{BurknerSurrogate}, where the 
@@ -446,58 +449,61 @@ estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conforma
 [\todo{add a few sentences on conformal prediction}]
 
 \subsection{Forward Model Emulation}
-\subsubsection{Relation to computer model calibration literature}
 We now begin our discussion of emulation strategies geared towards the goal of Bayesian inversion.
-One natural approach is to fit an emulator approximating the forward model $\fwd(\Par)$. 
-The challenge of emulating a black-box computer model has received widespread attention 
-well beyond the scope of Bayesian inference, and thus the model building process for constructing
-such emulators may be informed by the vast literature from the computer experiments, engineering,
-and statistics communities. As a starting point, we refer readers to 
-\citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
-and the references therein. We take a moment to clarify the scope of our review in relation 
-to related work in the computer experiments literature.  
-Indeed, early work in this literature addressed the challenge of learning 
-model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
-commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
-for a review). When cast as a problem of Bayesian inference, the calibration problem falls within the 
-framework considered in this article. However, much of this early calibration work focused on 
-the added challenge of learning a discrepancy term between the computer model $\fwd$ and the 
-true underlying system. For example, the pioneering work \citet{KOH} considers jointly learning 
-a forward model emulator, calibration parameters, and a discrepancy function within a single 
-Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
-focus on the alternative modular \citep{modularization} workflow, where the surrogate is fit offline 
-without seeing the calibration data $\obs$. This modular two-stage approach naturally leads to 
-the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
-of the central questions motivating this review.
- 
-\subsubsection{Induced Likelihood Approximation}
-We let $\fwdEm[\Ndesign]$ denote a probabilistic surrogate model for $\fwd$, which has been
-fit using training data $\{\designIn, \fwd(\designIn)\}$ from $\Ndesign$ design points.
-Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood induces 
-a random approximation of the log-likelihood, which we denote by 
-$\llikEmFwd(\cdot) \Def \llik(\cdot; \fwdEm[\Ndesign])$. The induced distribution for 
-$\llikEmFwd$ will depend on the predictive distribution of the forward model emulator, as well as 
-the structure of the likelihood function. The following section gives details for a special case where
-the first two moments of $\llikEmFwd$ are known in closed-form.
+One natural approach is to fit an emulator approximating the forward model map $\Par \mapsto \fwd(\Par)$,
+which entails fitting a predictive model to a design $\{\designIn, \fwd(\designIn)\}$. 
+We let $\fwdEm[\Ndesign]$ denote a stochastic surrogate that has been fit to this design,
+thus representing a distribution over functions that summarizes the uncertainty about the 
+numerically-inaccessible function $\fwd$.
+Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood 
+thus induces random approximations of the likelihood and posterior. In general, we use 
+$\llikEm[\Ndesign]$ to denote a stochastic approximation to the log-likelihood, induced
+by an underlying emulator fit to $\Ndesign$ design points. We write 
+$\llik(\Par; \fwdEm[\Ndesign]) = \llikEm[\Ndesign](\Par)$ when it is necessary to specify that
+the log-likelihood approximation is induced by a forward model emulator. We similarly use 
+the notation $\postDens(\Par; \fwdEm[\Ndesign]) = \postEm(\Par)$ and 
+$\lpost(\Par; \fwdEm[\Ndesign]) = \lpostEm(\Par)$ for the induced unnormalized 
+posterior density and log posterior density approximations. The induced distributions for 
+these quantities depend on the predictive distribution of the forward model emulator, as
+well as the structure of the likelihood function. Gaussian processes and polynomial 
+chaos expansions have been extensively employed as forward model emulators in 
+practice (\todo: cite). The specific structure of the surrogate, which depends heavily on the 
+characteristics of $\fwd$, is not the focus of this review. However, we do note that 
+a common challenge in emulating forward models stems from the fact that the observation 
+space (i.e., the output space of $\fwd(\Par)$) can be very high-dimensional. 
+Such complications commonly arise in settings with spatial or temporal structure, 
+such as epidemic modeling \citep{FadikarAgentBased},
+engineering design \citep{PODemulation}, ecological forecasting 
+\citep{emPostDens,DagonCLM}, and climate modeling \citep{ESM_modeling_2pt0,idealizedGCM}.
+One popular approach to deal with this challenge is to approximate the forward model output
+as a linear combination of a small number of basis vectors, and then emulate the scalar coefficients 
+of these vectors \citep{HigdonBasis,FadikarAgentBased,PODemulation}. Alternatively, surrogates 
+can be fit to low-dimensional summaries of the high-dimensional output, such as spatial or 
+temporal averages \citep{ESM_modeling_2pt0,idealizedGCM}.
+A great deal of other approaches have been proposed, including emulators designed 
+specifically for dynamical models \citep{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
+Log-density emulation, described in \Cref{log_density_emulation}, offers another avenue for 
+dimension reduction when the observation space is high-dimensional.
 
 \subsubsection{Gaussian Setting}
 In this section we consider the special case where both the likelihood and $\fwdEm[\Ndesign]$ are Gaussian.
 These two distributional assumptions combine to allow closed-form computations, and thus have 
-been considered frequently in the literature (\todo: cite).
+been considered frequently in the literature \citep{VillaniAdaptiveGP}.
 
 \begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
 Assume that $\fwdEm[\Ndesign]$ is a forward model emulator with Gaussian predictive distribution; 
 that is, $\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
-for all $\Par \in \parSpace$. Then, in the additive Gaussian likelihood setting, the induced likelihood 
-surrogate $\Exp{\llikEmFwd(\Par)} = \Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar)$ has mean and 
-variance given by
-\begin{align}
-\E_{\fwdEm}\left[\Exp{\llik(\Par; \fwdEm)} \right] 
-&= \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
-\Var_{\fwdEm}\left[\Exp{\llik(\Par; \fwdEm)} \right]
-&= \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par)  \right)}{\det(2\pi \likPar)^{1/2}}
-- \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}
-\end{align}
+for all $\Par \in \parSpace$. Then, in the additive Gaussian likelihood setting, the induced unnormalized 
+posterior density surrogate 
+$\postDens(\Par; \fwdEm[\Ndesign]) = \priorDens(\Par)\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar)$
+has mean and variance given by
+\begin{align*}
+\E_{\fwdEm}\left[\postDens(\Par; \fwdEm[\Ndesign]) \right] 
+&= \priorDens(\Par) \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
+\Var_{\fwdEm}\left[\postDens(\Par; \fwdEm[\Ndesign]) \right]
+&= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + \emKer[\Ndesign]{\fwd}(\Par)  \right)}{\det(2\pi \likPar)^{1/2}}
+- \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}\right]
+\end{align*}
 \end{prop}
 
 See \Cref{prop:Gaussian_marginal_moments} in the appendix for the derivation, which follows from basic facts about Gaussians.
@@ -518,19 +524,12 @@ In the typical case that the observation space has dimension $\dimObs > 1$, then
 $\emMeanPrior{\fwd}, \emKerPrior{\fwd}$ as multi-output mean and covariance functions, respectively.
 If $\dimObs$ is reasonably small, then it may be appropriate to simply fit an independent GP to 
 each scalar output variable. However, if $\dimObs$ is large or the outputs are highly structured, 
-then the independent GP approach may be infeasible or ill-advised. Such complications commonly 
-arise in settings with spatial or temporal structure, such as epidemic modeling \citep{FadikarAgentBased},
-engineering design \citep{PODemulation}, and ecological forecasting (\todo: cite).  
+then the independent GP approach may be infeasible or ill-advised.   
 In such contexts, a popular 
-alternative is to leverage the basis reduction strategy \ref{basis_func_model}. The surrogate predictive 
-distribution remains Gaussian under this model, and thus \Cref{fwd_em_lik_emulator_moments_Gaussian}
-still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator 
-using the basis vector approach is explored in \citet{Surer2023sequential}. We also briefly note that 
-a great deal of literature has addressed the challenge of emulating forward models with dynamical structure using 
-methods other than the basis vector approach; e.g., 
-\citet{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
+alternative is to leverage the basis reduction strategy in \cref{basis_func_model,basis_func_GPs,basis_func_noise}.
+The surrogate predictive distribution remains Gaussian under this model, and thus \Cref{fwd_em_lik_emulator_moments_Gaussian} still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator using the basis vector approach is explored in \citet{Surer2023sequential}. 
 
-\subsection{Log-Density Emulation}
+\subsection{Log-Density Emulation} \label{log_density_emulation}
 Observe in \Cref{post_dens} that the expensive forward model evaluations appear in the posterior density only through the 
 likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate either
 $\Par \mapsto \llik(\Par)$ or $\Par \mapsto \lpost(\Par)$ without obtaining an approximation of the forward model.
@@ -542,8 +541,8 @@ A related approach is explored in \citep{wang2018adaptive}.
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios}.
 The closely-related unnormalized log-posterior density (i.e., the joint parameter-data density) emulation
-strategy is used in \citet{Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
-We colloquially refer to this latter approach as log-posterior emulation for succinctness.
+strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
+We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
 Emulating the log density over the density itself is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
@@ -558,13 +557,13 @@ for certain surrogate models. The recent work \citet{quantileApprox} investigate
 bound constraints in GP-based log-likelihood emulation. In our numerical experiments, we demonstrate that ignoring
 such constraints can yield very poor posterior approximations. A third challenge follows from the fact that, in many applications, 
 the likelihood parameters (e.g., $\likPar$ in \Cref{inv_prob_Gaussian}) are typically not known and must also be 
-learned from data. An obvious solution is to extend the input space of the emulator to include the likelihood parameters, 
-but the resulting response surface may prove more challenging to emulate. This approach also increases both the 
+learned from data. An obvious solution is to extend the input space of the emulator to include the likelihood parameters
+\citep{llikRBF,emPostDens}, but the resulting response surface may prove more challenging to emulate. This approach also increases both the 
 input dimensionality of the emulator, as well as the number of design points required to achieve 
 a reasonable fit. Various approaches are explored in \citet{llikRBF} for dealing with nuisance likelihood parameters
 without requiring additional runs of the expensive simulator. Alternatively, specific likelihood 
 choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters. 
-The following sub-section provides such an example for multiplicative Gaussian likelihoods, following the 
+\Cref{ldens_Gaussian} provides such an example for multiplicative Gaussian likelihoods, following the 
 approach of \citet{FerEmulation}.
 
 \subsubsection{Log-Likelihood vs. Log-Posterior Emulation}
@@ -572,11 +571,15 @@ The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean functio
 work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
 a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
 
-\subsubsection{Gaussian Setting}
-\Cref{fwd_em_lik_emulator_moments_Gaussian} demonstrates that the predictive moments of the induced likelihood 
-surrogate are available in closed-form when both the likelihood and the surrogate predictive distribution are 
-Gaussian. In the setting of log-density emulation, the distribution of the induced likelihood surrogate can be
-fully characterized for Gaussian surrogates.
+Fit quadratic mean function: \citet{emPostDens}
+\citet{emPostDens} fits a quadratic mean via constructing a Gaussian approximation using importance sampling.
+The log density of this approximation (after subtracting off the normalizing constant) is used as the 
+mean function.
+
+\subsubsection{Gaussian Setting} \label{ldens_Gaussian}
+A Gaussian log-density emulator induces an approximation of the unnormalized posterior 
+density with a predictive distribution that can be characterized fully in closed-form. The following 
+result is the analog of \Cref{fwd_em_lik_emulator_moments_Gaussian} for log-density emulation.
 
 \begin{prop} \label{llik_em_lik_emulator_moments_Gaussian}
 Assume that $\lpostEm[\Ndesign]$ is a log-posterior emulator with Gaussian predictive distribution; 
@@ -624,17 +627,69 @@ Note that the unnormalized log posterior density could also be modeled (cite San
 Issue with likelihood parameters (cite Wild paper)
 Include 1d example.
 
-\subsubsection{Gaussian Setting}
+\subsection{Connection to Computer Model Calibration} \label{computer_calibration_connection}
+The challenge of emulating a black-box computer model has received widespread attention 
+well beyond the scope of Bayesian inference, and thus the model building process for constructing
+such emulators may be informed by the vast literature from the computer experiments, engineering,
+and statistics communities. As a starting point, we refer readers to 
+\citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
+and the references therein. We take a moment to clarify the scope of our review in relation 
+to related work in the computer experiments literature.  
+Indeed, early work in this literature addressed the challenge of learning 
+model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
+commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
+for a review). When cast as a problem of Bayesian inference, the calibration problem falls within the 
+framework considered in this article. However, much of this early calibration work focused on 
+the added challenge of learning a discrepancy term between the computer model $\fwd$ and the 
+true underlying system. For example, the pioneering work \citet{KOH} considers jointly learning 
+a forward model emulator, calibration parameters, and a discrepancy function within a single 
+Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
+focus on the alternative modular \citep{modularization} workflow, where the surrogate is fit offline 
+without seeing the calibration data $\obs$. This modular two-stage approach naturally leads to 
+the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
+of the central questions motivating this review.
+
 
 \section{Posterior Approximation}
 \subsection{Marginal Posterior}
-Present the general marginal posterior. Cite Burkner, and discuss how computation takes the form of
-an ensemble of MCMC runs. Then discuss how this runs into issues with nonparametric emulators.
+Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
+computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
+issues with nonparametric emulators. They also mention the use of the prior log density as a 
+mean for the emulator.
+
+\subsection{Unnormalized Density Approximations}
+Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
+computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
+issues with nonparametric emulators. They also mention the use of the prior log density as a 
+mean for the emulator.
+
+Consider mean approx: \citet{emPostDens}
+
+
+\subsection{Existence and Integrability}
+\citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
+function. This paper actually argues that this may be useful as a diagnostic to assess the quality 
+of the design. Their logic goes as follows: if the Markov chain moves far away from the design 
+points and reaches a region in which the GP reverts to its prior, this provides evidence that 
+there is a path of high probability (wrt the approximate posterior) to be able to reach such a region.
+This may mean that the design points are not adequately covering the high density region of the
+posterior. In particular, if the design points are adequately distributed, then the approximate posterior 
+tails should decay (at least at first). This would essentially create a "moat" around the design points
+that would create a region of zero probability to prevent the chain from reaching the regions 
+where the GP reverts to its prior.
 
 \section{Sequential Design} \label{sec:seq_design}
 \subsection{Asymptotic Consistency}
 Note that the algorithms that are appropriate for certain problems will significantly depend on 
 how expensive the simulator is.
+
+
+
+
+
+
+
+
 
 
 % An Overview of Surrogate modeling in Bayesian inference 
