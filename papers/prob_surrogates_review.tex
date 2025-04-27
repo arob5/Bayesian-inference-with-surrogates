@@ -461,10 +461,10 @@ Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-li
 thus induces random approximations of the likelihood and posterior. In general, we use 
 $\llikEm[\Ndesign]$ to denote a stochastic approximation to the log-likelihood, induced
 by an underlying emulator fit to $\Ndesign$ design points. We write 
-$\llik(\Par; \fwdEm[\Ndesign]) = \llikEm[\Ndesign](\Par)$ when it is necessary to specify that
+$\llikEm[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ when it is necessary to specify that
 the log-likelihood approximation is induced by a forward model emulator. We similarly use 
-the notation $\postDens(\Par; \fwdEm[\Ndesign]) = \postEm(\Par)$ and 
-$\lpost(\Par; \fwdEm[\Ndesign]) = \lpostEm(\Par)$ for the induced unnormalized 
+the notation $\postEm(\Par) = \postDens(\Par; \fwdEm[\Ndesign])$ and 
+$\lpostEm(\Par) = \lpost(\Par; \fwdEm[\Ndesign])$ for the induced unnormalized 
 posterior density and log posterior density approximations. The induced distributions for 
 these quantities depend on the predictive distribution of the forward model emulator, as
 well as the structure of the likelihood function. Gaussian processes and polynomial 
@@ -490,7 +490,7 @@ dimension reduction when the observation space is high-dimensional.
 \subsubsection{Gaussian Setting}
 In this section we consider the special case where both the likelihood and $\fwdEm[\Ndesign]$ are Gaussian.
 These two distributional assumptions combine to allow closed-form computations, and thus have 
-been considered frequently in the literature \citep{VillaniAdaptiveGP}.
+been considered frequently in the literature \citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,Surer2023sequential,VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
 
 \begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
 Assume that $\fwdEm[\Ndesign]$ is a forward model emulator with Gaussian predictive distribution; 
@@ -515,7 +515,7 @@ The canonical example of a Gaussian surrogate is a GP, which is defined by speci
 \end{equation}
 for $\fwd$. Conditioning on the design yields the predictive distribution 
 $\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
-which constitutes the emulator for $\fwd$.
+which constitutes the forward model emulator.
 Unless otherwise indicated, we assume the mean and kernel hyperparameters are
 fixed, so that the GP predictive distribution remains Gaussian. This is a common assumption in the literature, 
 and facilitates the presentation of analytical expressions (such as \Cref{fwd_em_lik_emulator_moments_Gaussian})
@@ -526,18 +526,18 @@ In the typical case that the observation space has dimension $\dimObs > 1$, then
 $\emMeanPrior{\fwd}, \emKerPrior{\fwd}$ as multi-output mean and covariance functions, respectively.
 If $\dimObs$ is reasonably small, then it may be appropriate to simply fit an independent GP to 
 each scalar output variable. However, if $\dimObs$ is large or the outputs are highly structured, 
-then the independent GP approach may be infeasible or ill-advised.   
+then the independent GP approach may be infeasible.  
 In such contexts, a popular 
 alternative is to leverage the basis reduction strategy in \cref{basis_func_model,basis_func_GPs,basis_func_noise}.
-The surrogate predictive distribution remains Gaussian under this model, and thus \Cref{fwd_em_lik_emulator_moments_Gaussian} still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator using the basis vector approach is explored in \citet{Surer2023sequential}. 
+The surrogate predictive distribution remains Gaussian under this model, and thus \cref{fwd_em_lik_emulator_moments_Gaussian} still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator using the basis vector approach is explored in \citet{Surer2023sequential}. 
 
 \subsection{Log-Density Emulation} \label{log_density_emulation}
-Observe in \Cref{post_dens} that the expensive forward model evaluations appear in the posterior density only through the 
+Observe in \cref{post_dens} that the expensive forward model evaluations appear in the posterior density only through the 
 likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate either
 $\Par \mapsto \llik(\Par)$ or $\Par \mapsto \lpost(\Par)$ without obtaining an approximation of the forward model.
 This implies fitting a surrogate model to the design $\{\designIn, \llik(\designIn)\}$ or $\{\designIn, \lpost(\designIn)\}$,
 which results in emulators $\llikEm[\Ndesign]$ and $\lpostEm[\Ndesign]$, respectively.
-We refer to these approaches collectively as \textit{log-density} emulation.
+We refer to these approaches collectively as \textit{log-density emulation}.
 As with forward model surrogates, log-density surrogates induce a random approximation $\postEm[\Ndesign]$ of the 
 unnormalized posterior density; we write $\postDens(\Par; \llikEm[\Ndesign])$ and $\postDens(\Par; \lpostEm[\Ndesign])$
 when it is necessary to emphasize the quantity that is directly emulated.
@@ -546,10 +546,10 @@ The log-likelihood emulation approach is considered in
 A related approach is explored in \citep{wang2018adaptive}. 
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios}.
-The closely-related unnormalized log-posterior density (i.e., the joint parameter-data density) emulation
+The closely-related unnormalized log-posterior density (i.e., joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
 We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
-Emulating the log density as opposed to the density itself is typically preferred as a way to improve numerical stability,
+Emulating the log-density as opposed to the density itself is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
 as opposed to the potentially high-dimensional output space of the forward model. This notion is referred 
@@ -562,7 +562,7 @@ stems from the fact that log-densities often have known bound constraints, which
 for certain surrogate models. The recent work \citet{quantileApprox} investigates the enforcement of 
 bound constraints in GP-based log-likelihood emulation. In our numerical experiments, we demonstrate that ignoring
 such constraints can yield very poor posterior approximations. A third challenge follows from the fact that, in many applications, 
-the likelihood parameters (e.g., $\likPar$ in \Cref{inv_prob_Gaussian}) are typically not known and must also be 
+the likelihood parameters (e.g., $\likPar$ in \cref{inv_prob_Gaussian}) are typically not known and must also be 
 learned from data. An obvious solution is to extend the input space of the emulator to include the likelihood parameters
 \citep{llikRBF,emPostDens}, but the resulting response surface may prove more challenging to emulate. This approach also increases both the 
 input dimensionality of the emulator, as well as the number of design points required to achieve 
@@ -608,42 +608,46 @@ $\postEm[\Ndesign](\Par) = \Exp{\lpostEm[\Ndesign](\Par)}$ is given by
 which implies 
 \begin{align}
 \E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\postDens}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\postDens}(\Par)}, \\
-\Var\left[\postEm[\Ndesign](\Par)\right] &= \left[\Exp{\emKer[\Ndesign]{\postDens}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\postDens}(\Par) + \emKer[\Ndesign]{\postDens}(\Par)}
+\Var\left[\postEm[\Ndesign](\Par)\right] &= \left[\Exp{\emKer[\Ndesign]{\postDens}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\postDens}(\Par) + \emKer[\Ndesign]{\postDens}(\Par)}.
 \end{align}
 \end{prop}
 
- It is typically preferable to focus on approximating the logarithm 
-of the likelihood, which usually results in a smoother response surface more amenable to GP emulation [\todo: cite]. 
-The emulator construction proceeds as before; a GP prior $\llikPrior \sim \GP(\emMeanPrior{\llik}, \emKerPrior{\llik})$ 
-is specified and the predictive distribution 
-\begin{align*}
+The assumptions in \cref{llik_em_lik_emulator_moments_Gaussian} are satisfied when either the 
+log-likelihood or log-posterior are emulated by GPs. This follows from specifying either of the 
+prior distributions
+\begin{align}
+&\llikEm[0] \sim \GP(\emMean[0]{\llik}, \emKer[0]{\llik}),
+&&\lpostEm[0] \sim \GP(\emMean[0]{\postDens}, \emKer[0]{\postDens})
+\end{align}
+and then defining the surrogates as the conditional processes 
+\begin{equation}
 \llikEm[\Ndesign] \Def \llikPrior | [\llikPrior(\designIn) = \llik(\designIn)] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})
-\end{align*}
-is obtained by conditioning on the design $\{\designIn, \llik(\designIn)\}$. 
-The distribution of $\llikEm[\Ndesign]$ is Gaussian, unlike
-the log-likelihood surrogate $\llikEmFwd[\Ndesign]$ in the forward model emulation setting. The analog to 
-\Cref{fwd_em_lik_emulator_moments_Gaussian} is stated below. In this case, the distribution of the induced likelihood 
-surrogate is immediately seen to be log-normal
-\footnote{If $f \sim \GP(\gpMean, \gpKer)$ then we refer to the exponential of $f$ as a \textit{log-normal process}, 
-denoted by $\Exp{f} \sim \LNP(\gpMean, \gpKer)$.}.
+\end{equation}
+or
+\begin{equation} 
+\lpostEm[\Ndesign] \Def \lpostEm[0]  | [\lpostEm[0](\designIn) = \lpost(\designIn)] \sim \GP(\emMean[\Ndesign]{\postDens}, \emKer[\Ndesign]{\postDens}),
+\end{equation}
+respectively. In these cases, the induced unnormalized log-posterior density approximation 
+$\postEm[\Ndesign]$ is the exponential of a Gaussian process, which we refer to as a 
+\textit{log-normal process}.
 
-This method is employed 
-in , which focuses on the Gaussian likelihood \ref{llik_Gaussian} in the specific case $\likPar = \sigma^2 I$.
-In this 
-case, a surrogate can be constructed to approximate the sufficient statistic $\norm{\obs - \fwd(\Par)}_2^2$, 
-which does not depend on the likelihood parameter $\sigma^2$. 
-Finally, we note that it may be difficult to incorporate prior domain knowledge 
-into the GP prior for the log-likelihood, whereas in certain settings it is easier to do so when constructing a forward model 
-surrogate \cite{GP_PDE_priors}. 
-Despite all of these challenges, we emphasize that the reduction to a scalar-valued output space is a significant benefit which 
-may outweigh the downsides of log-likelihood emulation in many applications. 
-
-Include likelihood surrogate distribution under GP.
-Difficulties: non-stationarity (cite Booth/Gramacy nonstationary surrogate review), bound constraints (cite quantile/bound constraint paper)
-Note that the unnormalized log posterior density could also be modeled (cite Sanz-Alonso paper)
-Issue with likelihood parameters (cite Wild paper)
-Include 1d example.
-
+Note that \cref{llik_em_lik_emulator_moments_Gaussian} is agnostic to the specific form of the 
+likelihood, unlike \cref{fwd_em_lik_emulator_moments_Gaussian}. However, particular likelihood
+structures may be leveraged to enable improved emulation in certain settings. For example, 
+\citet{FerEmulation} consider a Gaussian likelihood with block-diagonal covariance structure, yielding
+the log-likelihood
+\begin{align}
+\llik(\Par) 
+&= \log \Gaussian(\obs \given \fwd(\Par), \likPar) \nonumber \\
+&= -\frac{\dimObs}{2}\log(2\pi) - \frac{1}{2} \sum_{j=1}^{J} \left[\dimObs_j \log\left(\sigma_j^2\right) +
+ \frac{1}{\sigma_j^2} \norm{\obs_j - \fwd_j(\Par)}_2^2 \right].
+\end{align}
+In this case, the maps $\Par \mapsto \norm{\obs_j - \fwd_j(\Par)}_2^2$ can be emulated 
+independently of the likelihood parameter $\likPar$, allowing for easier inference of the 
+likelihood parameters along with $\Par$.
+Approaches such as this can be considered a variation of log-density emulation, or an instance of 
+forward model emulation with a particular definition of $\fwd$.
+ 
 \subsection{Connection to Computer Model Calibration} \label{computer_calibration_connection}
 The challenge of emulating a black-box computer model has received widespread attention 
 well beyond the scope of Bayesian inference, and thus the model building process for constructing
