@@ -207,7 +207,7 @@ with corresponding log-likelihood
 as this model features prominently in the inverse problems literature.
 In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
 standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
-algorithm. Such algorithms are serial in nature, often requiring $\BigO(10^6)$ iterations, with each 
+algorithm. Such algorithms are serial in nature, often requiring $\sim 10^5 - 10^7$ iterations, with each 
 iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
 In the inverse problem context, this computational requirement is often prohibitive when the forward model 
 evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
@@ -243,7 +243,7 @@ In practice, the solution is typically approximated via a numerical discretizati
 \begin{align}
 \solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
 \end{align}
-Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map implied by a numerical solver, 
+Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map induced by a numerical solver, 
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
 values $\state(\Time, \Par)$ at a finite set of time points in $[\timeStart, \timeEnd]$. 
 Going forward, we focus on the discrete-time operator $\solutionOp$, neglecting discretization error
@@ -259,14 +259,14 @@ for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this fa
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Generalizations can be considered to settings with non-additive or non-Gaussian noise, or the 
 presence of model discrepancy. In our numerical experiments we consider two problems of the 
-form \ref{ode_inv_prob} motivated by applications to near-term carbon cycle forecasting and 
+form \cref{ode_inv_prob} motivated by applications to near-term terrestrial carbon cycle forecasting and 
 long-term climate modeling. 
 
  \subsection{Gaussian Processes} \label{gp_review}
  In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer 
  readers to \cite{gramacy2020surrogates, StuartTeck2, gpML}. We also discuss basic extensions
  to Gaussian process models for multi-output functions, which will be relevant in various examples
- considered throughout this article.
+we discuss later.
  
  \subsubsection{Single Output Gaussian Processes}
  A Gaussian process (GP) can be thought of as a
@@ -280,7 +280,7 @@ $\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace
 $\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
 $\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
 and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. 
-\footnote{We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$}
+We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$.
 Given this notation, 
 the defining property of the GP can be written as 
 \begin{align}
@@ -297,13 +297,6 @@ the conditional distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)
 \funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
 \end{align}
 with mean and kernel given by
-\footnote{The GP conditional mean and covariance equations apply more generally when conditioning on 
-$\{\designIn[\Ndesign], \funcVal[\Ndesign]\}$, regardless of whether $\funcVal[\Ndesign]$ is interpreted as 
-a set of noiseless function evaluations or not. However, in our setting we reserve the notation $\gpMean[\Ndesign]$
-for the case when $\funcVal[\Ndesign] = \func(\designIn[\Ndesign])$; i.e., conditioning on the exact function 
-evaluations. Note that $\gpKer[\Ndesign]$ is independent of $\funcVal[\Ndesign]$ so this distinction is only 
-relevant for the mean.} 
-
 \begin{align}
 \gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\func(\designIn) - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
 \gpKer[\Ndesign](\parMat) &= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} \gpKerPrior(\designIn, \parMat). \nonumber
@@ -329,7 +322,7 @@ kernel,
 \margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, \label{Gaussian_kernel}
 \end{align}
 defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. 
-This is an example of a stationary, or shift-invariant, kernel since $\gpKerPrior(\Par, \tilde{\Par})$ only depends 
+This is an example of a stationary (i.e., shift-invariant) kernel since $\gpKerPrior(\Par, \tilde{\Par})$ only depends 
 on its arguments through their difference $\Par - \tilde{\Par}$. 
 A common approach to set the mean and kernel hyperparameters is the empirical Bayes method of fixing
 their values at their maximum (marginal) likelihood estimates, which conveniently retains the Gaussian
@@ -479,7 +472,7 @@ One popular approach to deal with this challenge is to approximate the forward m
 as a linear combination of a small number of basis vectors, and then emulate the scalar coefficients 
 of these vectors \citep{HigdonBasis,FadikarAgentBased,PODemulation}. Alternatively, surrogates 
 can be fit to low-dimensional summaries of the high-dimensional output, such as spatial or 
-temporal averages \citep{ESM_modeling_2pt0,idealizedGCM}.
+temporal averages \citep{ESM_modeling_2pt0,idealizedGCM,CLMBayesianCalibration,CLMSurrogates}.
 A great deal of other approaches have been proposed, including emulators designed 
 specifically for dynamical models \citep{GP_dynamic_emulation, Bayesian_emulation_dynamic, Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
 Log-density emulation, described in \Cref{log_density_emulation}, offers another avenue for 
@@ -533,17 +526,21 @@ The surrogate predictive distribution remains Gaussian under this model, and thu
 Observe in \Cref{post_dens} that the expensive forward model evaluations appear in the posterior density only through the 
 likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate either
 $\Par \mapsto \llik(\Par)$ or $\Par \mapsto \lpost(\Par)$ without obtaining an approximation of the forward model.
-This implies fitting a surrogate model to the design $\{\designIn, \llik(\designIn)\}$ or $\{\designIn, \lpost(\designIn)\}$, respectively.
+This implies fitting a surrogate model to the design $\{\designIn, \llik(\designIn)\}$ or $\{\designIn, \lpost(\designIn)\}$,
+which results in emulators $\llikEm[\Ndesign]$ and $\lpostEm[\Ndesign]$, respectively.
 We refer to these approaches collectively as \textit{log-density} emulation.
+As with forward model surrogates, log-density surrogates induce a random approximation $\postEm[\Ndesign]$ of the 
+unnormalized posterior density; we write $\postDens(\Par; \llikEm[\Ndesign])$ and $\postDens(\Par; \lpostEm[\Ndesign])$
+when it is necessary to emphasize the quantity that is directly emulated.
 The log-likelihood emulation approach is considered in 
-\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors}.
+\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
 A related approach is explored in \citep{wang2018adaptive}. 
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios}.
 The closely-related unnormalized log-posterior density (i.e., the joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
 We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
-Emulating the log density over the density itself is typically preferred as a way to improve numerical stability,
+Emulating the log density as opposed to the density itself is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
 as opposed to the potentially high-dimensional output space of the forward model. This notion is referred 
@@ -567,19 +564,29 @@ choices may admit a sufficient statistic which can be emulated independently of 
 approach of \citet{FerEmulation}.
 
 \subsubsection{Log-Likelihood vs. Log-Posterior Emulation}
-The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
-work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
-a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
-
-Fit quadratic mean function: \citet{emPostDens}
-\citet{emPostDens} fits a quadratic mean via constructing a Gaussian approximation using importance sampling.
-The log density of this approximation (after subtracting off the normalizing constant) is used as the 
-mean function.
+We take a moment to comment on the the distinction between emulating the log-likelihood versus
+the log-posterior. The literature summary above indicates that both approaches are commonly used;
+we are not aware of any cases in which the performance the two methods is compared. 
+Indeed, the choice appears inconsequential, as one emulator can easily be converted into the other 
+by adding or subtracting the log-prior density, which represents a deterministic shift to the predictive 
+distribution. For example, given a fit log-likelihood emulator $\llikEm[\Ndesign]$, a log-posterior emulator 
+can be constructed via
+\begin{equation}
+\lpostEm[\Ndesign](\Par) \Def \llikEm[\Ndesign](\Par) + \log \priorDens(\Par),
+\end{equation}
+which simply adjusts the predictive mean. Despite the similarity, we see one potential benefit of emulating 
+the log-posterior from a modeling standpoint: the tails of the log-posterior must decay. This
+qualitative information can be leveraged in designing an appropriate surrogate model for
+$\lpost$. The tail behavior of $\llik$ is not always well-known, which can present more of a 
+modeling challenge. These considerations are explored in detail in 
+\Cref{sec:existence}, which discusses the design of surrogate models that induce well-defined 
+posterior approximations. 
 
 \subsubsection{Gaussian Setting} \label{ldens_Gaussian}
 A Gaussian log-density emulator induces an approximation of the unnormalized posterior 
 density with a predictive distribution that can be characterized fully in closed-form. The following 
-result is the analog of \Cref{fwd_em_lik_emulator_moments_Gaussian} for log-density emulation.
+result is the analog of \Cref{fwd_em_lik_emulator_moments_Gaussian} in the forward model 
+emulation setting.
 
 \begin{prop} \label{llik_em_lik_emulator_moments_Gaussian}
 Assume that $\lpostEm[\Ndesign]$ is a log-posterior emulator with Gaussian predictive distribution; 
@@ -591,7 +598,8 @@ $\postEm[\Ndesign](\Par) = \Exp{\lpostEm[\Ndesign](\Par)}$ is given by
 \end{align}
 which implies 
 \begin{align}
-\E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\postDens}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\postDens}(\Par)},
+\E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\postDens}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\postDens}(\Par)}, \\
+\Var\left[\postEm[\Ndesign](\Par)\right] &= \left[\Exp{\emKer[\Ndesign]{\postDens}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\postDens}(\Par) + \emKer[\Ndesign]{\postDens}(\Par)}
 \end{align}
 \end{prop}
 
@@ -663,10 +671,10 @@ computation takes the form of an ensemble of MCMC runs. Then discuss how this ru
 issues with nonparametric emulators. They also mention the use of the prior log density as a 
 mean for the emulator.
 
-Consider mean approx: \citet{emPostDens}
+Consider mean approx: \citet{emPostDens,CLMBayesianCalibration}
 
 
-\subsection{Existence and Integrability}
+\subsection{Existence and Integrability} \label{sec:existence}
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
 function. This paper actually argues that this may be useful as a diagnostic to assess the quality 
 of the design. Their logic goes as follows: if the Markov chain moves far away from the design 
@@ -677,6 +685,14 @@ posterior. In particular, if the design points are adequately distributed, then 
 tails should decay (at least at first). This would essentially create a "moat" around the design points
 that would create a region of zero probability to prevent the chain from reaching the regions 
 where the GP reverts to its prior.
+
+The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
+work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
+a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
+Fit quadratic mean function: \citet{emPostDens}
+\citet{emPostDens} fits a quadratic mean via constructing a Gaussian approximation using importance sampling.
+The log density of this approximation (after subtracting off the normalizing constant) is used as the 
+mean function.
 
 \section{Sequential Design} \label{sec:seq_design}
 \subsection{Asymptotic Consistency}
