@@ -85,7 +85,7 @@ A probabilistic representation of a surrogate model acknowledges the additional 
 approximation. We focus on the questions of how to leverage this uncertainty in constructing posterior
 approximations and in designing goal-oriented sequential design (i.e., active learning) algorithms
 that iteratively refine the surrogate to yield maximal improvement in the induced posterior approximation. 
-Probabilistic emulators induce a stochastic representation of the likelihood, such that the true likelihood is 
+Probabilistic emulators induce a stochastic representation of the posterior density, such that the true density is 
 modeled as a realization of a random function. Such surrogates commonly arise when an emulator
 model is fit using Bayesian methods, though non-Bayesian techniques such as conformal predictors (\todo: cite) and 
 deep ensembles (\todo: cite) are increasingly being considered [\todo: also mention polynomial chaos]. 
@@ -111,14 +111,16 @@ drawing a distinction between two general strategies common in the literature: \
 (some function of) the expensive computer model is approximated by an emulator, and \textit{log-density emulation}, where
 a surrogate approximates either the log-likelihood or log-unnormalized posterior density directly. 
 Note that the latter approach is a special case of the former, and both strategies ultimately induce an 
-approximation of the likelihood function, and thus the posterior distribution. However, we still find it useful to make this distinction, 
+approximation of the posterior density. However, we still find it useful to make this distinction, 
 as the selection of the target function for emulation has implications for propagating surrogate uncertainty. Moreover, the 
-availability of analytical computations differs across the two strategies. We discuss the relative merits and downsides of each 
+availability of analytical computations differs across the two approaches. We discuss the relative merits and downsides of each 
 approach, as well as typical use cases. The choice between forward model and log-density emulation is also explored
 in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly noted in 
 \citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
 
-We next proceed to review methods for utilizing the surrogate model in approximating the posterior. We begin with a thorough 
+We next proceed to review methods for utilizing the surrogate model in approximating the posterior; i.e., 
+defining a deterministic posterior approximation that propagates the surrogate uncertainty.
+We begin with a thorough 
 review of the GP setting, in which a variety of posterior approximations have been proposed across several different literatures; 
 we collect these results here, presenting streamlined derivations aimed at clarifying the assumptions underlying the various 
 methods. We then proceed to describe generalizations to non-Gaussian stochastic emulators, as well as recent work
@@ -138,7 +140,7 @@ familiar to fields such as Bayesian optimization \citep{reviewBayesOpt}, Bayesia
 In the present setting, this 
 manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
 and exploring other regions of parameter space. For GP surrogates, a variety of 
-design criteria (i.e., acquisition functions) have been proposed that seek to to target high probability regions, 
+design criteria (i.e., acquisition functions) have been proposed that seek to target high probability regions, 
 while also acknowledging uncertainty in the GP model 
 \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}.
 We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
@@ -147,9 +149,7 @@ We also highlight batch sequential approaches, where multiple design points are 
 Batch sequential design becomes increasingly essential as the cost of likelihood evaluations increases, as it allows for 
 parallel computations. 
 
-While much of the discussion here is agnostic to the specifics of the underlying simulation model, we present applications 
-to parameter estimation for systems of ordinary differential equations. In particular, we conduct numerical experiments 
-using dynamic ecological models of the carbon cycle.
+We demonstrate these methods through various numerical experiments. [\todo: add a couple sentences here]
 
 % Background
 \section{Background}
@@ -165,8 +165,8 @@ density
 \end{equation}
 are available, but expensive owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
 commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
-Consider a \textit{forward model} $\fwd: \R^{\dimPar} \to \R^{\dimObs}$ describing some system of interest, 
-parameterized by input parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$. In addition, we suppose that 
+Consider a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing 
+some system of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose that 
 we have noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ 
 seeks to approximate. The \textit{inverse problem} concerns learning the parameter values $\Par$ such
  that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating} the model so that it agrees with the observations. 
@@ -185,15 +185,22 @@ The Bayesian approach completes this specification with a prior distribution
 on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
 by the posterior distribution
 \begin{align}
-\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst}\postDens(\Par) \Def \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
+\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst}\postDens(\Par) = \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
 \end{align}
 with normalizing constant given by 
 \begin{align}
 \normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
 \end{align}
 We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. When relevant, we will make explicit the dependence on the forward 
-model by writing $\llik(\Par; \fwd)$ and $\postDens(\Par; \fwd)$. In addition to considering 
+posterior density. We will also find it useful to introduce the notation
+\begin{equation}
+\lpost(\Par) \Def \log \postDens(\Par) = \log \priorDens(\Par) + \llik(\Par) \label{eq:lpost}
+\end{equation}
+for the logarithm of the unnormalized posterior density.
+When relevant, we will make explicit the dependence on the forward 
+model by writing $\llik(\Par; \fwd)$, $\lpost(\Par; \fwd)$, and $\postDens(\Par; \fwd)$. 
+
+In addition to considering 
 generic likelihoods, we will give special attention to the additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
@@ -212,14 +219,16 @@ iteration involving an evaluation of the unnormalized posterior density $\postDe
 In the inverse problem context, this computational requirement is often prohibitive when the forward model 
 evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
 expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
-cheap approximations to either $\fwd(\Par)$ or $\llik(\Par)$ (note that approximating the former induces 
+cheap approximations to either $\fwd(\Par)$ or $\lpost(\Par)$ (note that approximating the former induces 
 an approximation of the latter). We focus on surrogate models that take the form of statistical 
-regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \llik(\Par)$.
+regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
 \footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
 that exploit the specific structure of the forward model; see, e.g., \todo.}
 We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
-model the latter as \textit{log-likelihood emulation}. Throughout this review, we will typically view the functions
-$\fwd(\Par)$ and $\llik(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
+model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
+map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
+Throughout this review, we will typically view the functions
+$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
 such maps as \textit{simulators}, owing to the fact that in typical applications evaluating these maps requires
 running an expensive computer code. The following section provides a concrete example of such a simulation
 model stemming from the numerical solution of differential equations. 
@@ -247,9 +256,9 @@ Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents t
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
 values $\state(\Time, \Par)$ at a finite set of time points in $[\timeStart, \timeEnd]$. 
 Going forward, we focus on the discrete-time operator $\solutionOp$, neglecting discretization error
-for simplicity. Finally, suppose we have observed data $\obs \in \R^{\dimObs}$ that we model as a
+for simplicity. Finally, suppose we have observed data $\obs \in \obsSpace \subseteq \R^{\dimObs}$ that we model as a
 noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
-$\obsOp: \R^{\NTimeStep \times \dimState} \to \R^{\dimObs}$ mapping from the state trajectory to a 
+$\obsOp: \R^{\NTimeStep \times \dimState} \to \obsSpace$ mapping from the state trajectory to a 
 $\dimObs$-dimensional observable quantity. We assume the observations are generated as 
 \begin{align}
 \obs &= (\obsOp \circ \solutionOp)(\ParTrue) + \noise \label{ode_inv_prob} \\
@@ -289,7 +298,7 @@ the defining property of the GP can be written as
 For our purposes, the GP $\funcPrior$ will represent a prior distribution for a \textit{deterministic} function 
 $\func: \parSpace \to \R$. 
 However, the underlying ideas explored here can be extended to the setting where evaluations of $\func$ 
-are corrupted by noise \citep{VehtariParallelGP}. 
+are corrupted by noise \citep{stochasticComputerModels,VehtariParallelGP,OakleyllikEm}. 
 If we observe noiseless function evaluations $\func(\designIn)$ at a set of inputs $\designIn$, then we can consider
 the conditional distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
 \citep{gpML} that the conditional is also a GP
@@ -308,7 +317,7 @@ The predictive mean can be seen to interpolate the design points (i.e., $\gpMean
 the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). 
 To break these interpolation properties,
 a constant can be added to the diagonal of the kernel matrix so that $(\gpKerPrior(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
-$\gpKerPrior(\designIn)^{-1}$ in \ref{kriging_eqns}. In the present context of deterministic forward models, 
+$\gpKerPrior(\designIn)^{-1}$ in \cref{kriging_eqns}. In the present context of deterministic forward models, 
 this interpolation property is typically desirable. Nevertheless, a small, positive fixed constant $\nuggetSD^2$ is still 
 typically included for numerical stability. 
 
@@ -326,7 +335,7 @@ This is an example of a stationary (i.e., shift-invariant) kernel since $\gpKerP
 on its arguments through their difference $\Par - \tilde{\Par}$. 
 A common approach to set the mean and kernel hyperparameters is the empirical Bayes method of fixing
 their values at their maximum (marginal) likelihood estimates, which conveniently retains the Gaussian
-predictive distribution \Cref{generic_gp_conditional} at the expense of failing to acknowledge uncertainty
+predictive distribution in \cref{generic_gp_conditional} at the expense of failing to acknowledge uncertainty
 in the hyperparameters. The fully Bayesian alternative significantly increases computation, 
 and results in a non-Gaussian predictive distribution after marginalizing the hyperparameters. 
 
@@ -353,8 +362,8 @@ where the $\basisVec_{\idxBasis}$ are fixed basis vectors.
 These basis vectors are commonly constructed via a singular value decomposition, though other 
 bases are also possible \citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}.
 Under this model, the univariate GPs $\basisWeight_{\idxBasis}$ are fit and conditioned independently, then 
-plugged back into \Cref{basis_func_model} to construct the predictive distribution. The linear Gaussian 
-structure of \Cref{basis_func_model} implies that this approach retains a Gaussian predictive distribution
+plugged back into \cref{basis_func_model} to construct the predictive distribution. The linear Gaussian 
+structure of \cref{basis_func_model} implies that this approach retains a Gaussian predictive distribution
 for $\funcEm[\Ndesign]$, conditional on the hyperparameters.
 
 % Initial Design and Surrogate Models
@@ -375,7 +384,8 @@ unified Bayesian model (e.g., as in the seminal work \citet{KOH}). Fitting the s
 generating training data by evaluating the simulator at a chosen set of input parameters
 $\designIn \Def \{\Par_1, \dots, \Par_{\Ndesign}\}$. We refer to $\designIn$ as the \textit{initial design}.
 Depending on which map is being emulated, the training data for the emulator will take the form 
-$\{\designIn, \fwd(\designIn)\}$ or $\{\designIn, \llik(\designIn)\}$. In the computer experiments literature, 
+$\{\designIn, \fwd(\designIn)\}$, $\{\designIn, \llik(\designIn)\}$, or $\{\designIn, \lpost(\designIn)\}$. 
+In the computer experiments literature, 
 the initial design is typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples 
 include latin hypercube designs and Sobol sequences (\todo: cite). In the present setting, a natural 
 approach is to sample $\designIn$ from the prior $\priorDens$, either via simple Monte Carlo or using 
@@ -395,9 +405,8 @@ be used as part of an initial design to fit an emulator. This general strategy i
 Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
 \citet{emPostDens} utilizes a sequence of importance sampling steps to construct a Gaussian 
 approximation of the posterior, which is then sampled from to produce an initial surrogate design.
-We do not discuss these methods further
-in this review, but note that further methodological development in combining the strengths of these 
-methods may prove a fruitful avenue for future research.
+We do not discuss these methods further in this review, but note that continued methodological 
+development investigating such workflows may prove a fruitful avenue for future research. 
 
 \subsection{Probabilistic Surrogates}
 We now briefly review common emulator models, focusing on those that provide a probabilistic 
@@ -563,7 +572,7 @@ choices may admit a sufficient statistic which can be emulated independently of 
 \Cref{ldens_Gaussian} provides such an example for multiplicative Gaussian likelihoods, following the 
 approach of \citet{FerEmulation}.
 
-\subsubsection{Log-Likelihood vs. Log-Posterior Emulation}
+\subsubsection{Log-Likelihood vs. Log-Posterior Emulation} \label{sec:llik_vs_lpost}
 We take a moment to comment on the the distinction between emulating the log-likelihood versus
 the log-posterior. The literature summary above indicates that both approaches are commonly used;
 we are not aware of any cases in which the performance the two methods is compared. 
