@@ -639,7 +639,7 @@ the log-likelihood
 \begin{align}
 \llik(\Par) 
 &= \log \Gaussian(\obs \given \fwd(\Par), \likPar) \nonumber \\
-&= -\frac{\dimObs}{2}\log(2\pi) - \frac{1}{2} \sum_{j=1}^{J} \left[\dimObs_j \log\left(\sigma_j^2\right) +
+&= - \frac{1}{2} \sum_{j=1}^{J} \left[\dimObs_j \log\left(2\pi\sigma_j^2\right) +
  \frac{1}{\sigma_j^2} \norm{\obs_j - \fwd_j(\Par)}_2^2 \right].
 \end{align}
 In this case, the maps $\Par \mapsto \norm{\obs_j - \fwd_j(\Par)}_2^2$ can be emulated 
@@ -650,26 +650,27 @@ forward model emulation with a particular definition of $\fwd$.
  
 \subsection{Connection to Computer Model Calibration} \label{computer_calibration_connection}
 The challenge of emulating a black-box computer model has received widespread attention 
-well beyond the scope of Bayesian inference, and thus the model building process for constructing
-such emulators may be informed by the vast literature from the computer experiments, engineering,
-and statistics communities. As a starting point, we refer readers to 
-\citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
-and the references therein. We take a moment to clarify the scope of our review in relation 
-to related work in the computer experiments literature.  
-Indeed, early work in this literature addressed the challenge of learning 
+well beyond the scope of Bayesian inference. The design of surrogate models for Bayesian 
+inverse problems may be informed by the vast literature from the computer experiments, 
+engineering, applied math, machine learning, and statistics communities. As a starting point, 
+we refer readers to \citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
+and the references therein. It is worth taking a moment to clarify the scope of our review 
+with respect to related work in the computer experiments literature in particular.
+Indeed, early work in this field addressed the challenge of learning 
 model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
 commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
 for a review). When cast as a problem of Bayesian inference, the calibration problem falls within the 
 framework considered in this article. However, much of this early calibration work focused on 
 the added challenge of learning a discrepancy term between the computer model $\fwd$ and the 
-true underlying system. For example, the pioneering work \citet{KOH} considers jointly learning 
+true underlying system \citep{ModelDiscrepancy,emPostDens,OakleyllikEm}. 
+For example, the pioneering work \citet{KOH} considers jointly learning 
 a forward model emulator, calibration parameters, and a discrepancy function within a single 
 Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
-focus on the alternative modular \citep{modularization} workflow, where the surrogate is fit offline 
-without seeing the calibration data $\obs$. This modular two-stage approach naturally leads to 
+focus on the alternative modular workflow, where the surrogate is fit offline 
+without seeing the calibration data $\obs$ \citep{modularization} . 
+This modular two-stage approach naturally leads to 
 the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
 of the central questions motivating this review.
-
 
 \section{Posterior Approximation}
 \subsection{Marginal Posterior}
