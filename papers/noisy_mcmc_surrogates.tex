@@ -180,9 +180,44 @@ finite dimensional parameter, making \cref{alg:sample-approx} readily implementa
 However, no solution is offered for the common nonparametric setting.
 
 \subsection{Unnormalized Density Approximations}
+Owing to the difficulties caused by the dependence of $\llikEmRdm[\Ndesign]{\normCst}$ on the 
+potentially infinite-dimensional surrogate predictive distribution, most previous literature instead
+focuses on deriving deterministic approximations of the unnormalized
+density surrogate $\llikEmRdmDens[\Ndesign](\Par)$. As opposed to the EP method, these 
+approximations are computed \textit{pointwise} in $\Par$; for GP surrogates, this implies 
+that they do not incorporate the GP predictive covariance. We present the most common 
+pointwise approximations below with respect to forward model and log-posterior density 
+surrogates (the definitions for log-likelihood surrogates are nearly identical). The definitions 
+are given for approximations to the \textit{unnormalized} posterior density, with the normalizing 
+constants being implicitly defined. We refer to [our review paper] for in-depth reviews of these methods.
+
+\subsubsection{Plug-In Mean}
+By considering only the surrogate predictive mean, the stochastic surrogate is reduced 
+to a deterministic approximation, which induces a deterministic approximation of the 
+posterior. We term the resulting posteriors
+\begin{align}
+&\llikEmMeanDens[\Ndesign](\Par; \fwdEm[\Ndesign](\Par)) \Def \postDens(\Par; \E[\fwdEm[\Ndesign]]),
+&&\llikEmMeanDens[\Ndesign](\Par; \lpostEm[\Ndesign]) \Def \Exp{\E[\lpostEm[\Ndesign](\Par)]}
+\end{align}
+\textit{plug-in mean}, or succinctly \textit{mean}, approximations. This approximation fails to account 
+for the uncertainty introduced by the surrogate model, which can lead to overconfidence in downstream
+posterior inference. The mean approximation has been considered in various contexts; e.g., 
+\citep{VehtariParallelGP,trainDynamics}.
+For theoretical analysis, see 
+\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
+ 
+\subsubsection{Expected Likelihood}
 
 
+\begin{align}
+&\llikEmMargDens[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \E_{\Ndesign}\left[\postDens(\Par; \fwdEm[\Ndesign])\right],
+&&\llikEmMargDens[\Ndesign](\Par; \lpostEm[\Ndesign]) \Def \E_{\Ndesign}\left[\Exp{\lpostEm[\Ndesign](\Par)}\right],
+\end{align}
 
+\subsubsection{Other Pointwise Approximations}
+Expected log-likelihood, quantile approx, upper confidence bound type approx used in PDA CES FATES paper.
+
+\subsection{Unified Perspective: Metropolis-Hastings Approximations}
 
 
 % Active Learning
