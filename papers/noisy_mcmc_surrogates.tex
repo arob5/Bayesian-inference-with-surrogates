@@ -141,7 +141,7 @@ distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesig
 Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter.
 Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
-be used to draw independent samples from $\llikEmSampDensNorm$.
+be used to draw independent samples from $\llikEmSampDensNorm$. 
 
 \begin{algorithm}
     \caption{Monte Carlo Representation of $\llikEmSampDensNorm$}
@@ -156,6 +156,32 @@ be used to draw independent samples from $\llikEmSampDensNorm$.
 	\EndFunction
     \end{algorithmic}
 \end{algorithm}
+
+A practical implementation 
+would entail first sampling a trajectory of the surrogate model, which induces a sample 
+trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. A parameter sample 
+could then be drawn from the distribution implied by this unnormalized density using standard 
+methods (e.g., MCMC). The output of the algorithm thus represents a mixture across an 
+ensemble of posterior distributions. With a nonparametric emulator, the practical difficulty in 
+implementing \cref{alg:ep} is the requirement to sample a full infinite-dimensional 
+trajectory from the surrogate model.
+These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
+approaches. As far as we are aware, \citet{trainDynamics} is the only work to attempt an 
+implementation of \cref{alg:ep} in the nonparametric context. Their method consists of approximating GP 
+trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
+the trajectory as the GP mean, conditional on the sampled values at these points.
+This approach introduces the challenge of choosing the conditioning locations; the authors' 
+suggest sampling the points via a space-filling algorithm confined within the region of parameter 
+space where the GP predictions for the posterior density exceed some threshold.
+
+The work \citet{BurknerSurrogate} studies \cref{alg:sample-approx} in the context of finite-dimensional
+parametric surrogate models. In this case, sampling a surrogate trajectory reduces to sampling a 
+finite dimensional parameter, making \cref{alg:sample-approx} readily implementable in practice.
+However, no solution is offered for the common nonparametric setting.
+
+\subsection{Unnormalized Density Approximations}
+
+
 
 
 
