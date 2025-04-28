@@ -117,15 +117,46 @@ with a fixed surrogate. We discuss sequential design strategies in section \todo
 The predictive distribution of the probabilistic surrogate model induces a random approximation 
 of the unnormalized posterior density. Normalizing this quantity yields a random measure
 \begin{align}
-\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
-&\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par) 
-\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \label{post_dens_random_llik},
+&\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
+&&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par.
+\label{post_dens_random_llik}
 \end{align}
-with normalizing constant given by 
-\begin{align}
-\llikEmRdm[\Ndesign]{\normCst}
-&= \int \llikEmRdmDens[\Ndesign](\Par)d\Par \label{norm_cst_random_llik}. 
-\end{align}
+
+The approximation $\llikEmRdm[\Ndesign]{\postDensNorm}$ may be induced by either a 
+forward model or log-density emulator. While $\llikEmRdmDens[\Ndesign](\Par)$ depends 
+only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
+depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
+the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
+$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
+\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar},
+A natural approach is thus to consider taking the expectation of $\llikEmRdm[\Ndesign]{\postDensNorm}$
+as the approximation to $\postDensNorm$. Formally, this yields the deterministic distribution
+\begin{equation}
+\llikEmSampDensNorm \Def \E_{\Ndesign}\left[ \llikEmRdm[\Ndesign]{\postDensNorm} \right], \label{eq:ep-approx}
+\end{equation}
+which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+We use the notation $\E_{\Ndesign}$ to indicate that the expectation is taken with respect to the 
+distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
+Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
+respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter.
+Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
+be used to draw independent samples from $\llikEmSampDensNorm$.
+
+\begin{algorithm}
+    \caption{Monte Carlo Representation of $\llikEmSampDensNorm$}
+    \label{alg:ep}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample$}     
+        \For{$\sampleIndex \gets1,\NSample$} 
+        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample a distribution}
+		\State $\Par^{(\sampleIndex)} \sim \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample a parameter}
+	\EndFor
+	\State \Return $(\Par^{(1)}, \dots, \Par^{(\NSample)})$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
 
 
 % Active Learning
