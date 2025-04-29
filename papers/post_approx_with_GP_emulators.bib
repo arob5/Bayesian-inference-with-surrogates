@@ -23,6 +23,55 @@ journal={ESS Open Archive},
 author={Nina Raoult, Natalie Douglas, Natasha MacBean, et al.}, 
 year={2024}} 
 
+% Reinforcement learning
+@misc{BadiaRL,
+      title={Never Give Up: Learning Directed Exploration Strategies}, 
+      author={Adrià Puigdomènech Badia and Pablo Sprechmann and Alex Vitvitskyi and Daniel Guo and Bilal Piot and Steven Kapturowski and Olivier Tieleman and Martín Arjovsky and Alexander Pritzel and Andew Bolt and Charles Blundell},
+      year={2020},
+      eprint={2002.06038},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2002.06038}, 
+}
+
+% Reinforcement learning
+@misc{LiuRL,
+      title={Decoupling Exploration and Exploitation for Meta-Reinforcement Learning without Sacrifices}, 
+      author={Evan Zheran Liu and Aditi Raghunathan and Percy Liang and Chelsea Finn},
+      year={2021},
+      eprint={2008.02790},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2008.02790}, 
+}
+
+% Bandits
+@InProceedings{banditsEmpirical,
+author="Vermorel, Joann{\`e}s
+and Mohri, Mehryar",
+editor="Gama, Jo{\~a}o
+and Camacho, Rui
+and Brazdil, Pavel B.
+and Jorge, Al{\'i}pio M{\'a}rio
+and Torgo, Lu{\'i}s",
+title="Multi-armed Bandit Algorithms and Empirical Evaluation",
+booktitle="Machine Learning: ECML 2005",
+year="2005",
+publisher="Springer Berlin Heidelberg",
+address="Berlin, Heidelberg",
+pages="437--448",
+isbn="978-3-540-31692-3"
+}
+
+% Bandit algorithms book
+@book{LattimoreBandits, 
+place={Cambridge}, 
+title={Bandit Algorithms}, 
+publisher={Cambridge University Press}, 
+author={Lattimore, Tor and Szepesvári, Csaba}, 
+year={2020}}
+
+
 %  ---------------------------------------------------------------------------------------------------
 % Sampling/Initial design methods (low-discrepancy, space-filling, etc.)
 %  ---------------------------------------------------------------------------------------------------
@@ -524,11 +573,71 @@ note = {\url{https://doi.org/10.1007/978-3-319-99525-0}},
 year = {2018}
 }
 
+% Stochastic computer models review
+@article{stochasticComputerModels,
+author = {Evan Baker and Pierre Barbillon and Arindam Fadikar and Robert B. Gramacy and Radu Herbei and David Higdon and Jiangeng Huang and Leah R. Johnson and Pulong Ma and Anirban Mondal and Bianica Pires and Jerome Sacks and Vadim Sokolov},
+title = {{Analyzing Stochastic Computer Models: A Review with Opportunities}},
+volume = {37},
+journal = {Statistical Science},
+number = {1},
+publisher = {Institute of Mathematical Statistics},
+pages = {64 -- 89},
+keywords = {agent based model, Calibration, computer experiment, computer model, Emulator, Gaussian process, surrogates, uncertainty quantification},
+year = {2022},
+doi = {10.1214/21-STS822},
+URL = {https://doi.org/10.1214/21-STS822}
+}
+
+% Importance of Model Discrepancy
+@article{ModelDiscrepancy,
+doi = {10.1088/0266-5611/30/11/114007},
+url = {https://dx.doi.org/10.1088/0266-5611/30/11/114007},
+year = {2014},
+month = {oct},
+publisher = {IOP Publishing},
+volume = {30},
+number = {11},
+pages = {114007},
+author = {Brynjarsdóttir, Jenný and OʼHagan, Anthony},
+title = {Learning about physical parameters: the importance of model discrepancy},
+journal = {Inverse Problems}
+}
 
 
 %  ---------------------------------------------------------------------------------------------------
 % Log-Likelihood (or unnormalized log posterior) emulation with GPs
 %  ---------------------------------------------------------------------------------------------------
+
+% Log likelihood emulation used for importance sampling proposal distribution
+@article{OakleyllikEm,
+author = {Jeremy E. Oakley and Benjamin D. Youngman},
+title = {Calibration of Stochastic Computer Simulators Using Likelihood Emulation},
+journal = {Technometrics},
+volume = {59},
+number = {1},
+pages = {80--92},
+year = {2017},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2015.1125391},
+URL = { https://doi.org/10.1080/00401706.2015.1125391},
+eprint = {https://doi.org/10.1080/00401706.2015.1125391}
+}
+
+% Emulating unnormalized log posterior density
+@article{emPostDens,
+author = {Dietzel, A. and Reichert, P.},
+title = {Bayesian inference of a lake water quality model by emulating its posterior density},
+journal = {Water Resources Research},
+volume = {50},
+number = {10},
+pages = {7626-7647},
+keywords = {Gaussian stochastic process emulator, posterior distribution, lake water quality model, structurally uncertain model, model complexity},
+doi = {https://doi.org/10.1002/2012WR013086},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2012WR013086},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2012WR013086},
+year = {2014}
+}
+
 
 % Emulate unnormalized log-posterior. The focus is on sequential design schemes that take the form of a modified upper confidence 
 % bound optimization. Numerical examples (only in 1d and 3d) focused on parameter estimation for ODEs. Consider 
@@ -718,6 +827,20 @@ year = {2020}
    year={2018},
    month=jan, pages={1600–1629} 
  }
+ 
+   
+@article{TeckHyperpar,
+author = {Teckentrup, Aretha L.},
+title = {Convergence of Gaussian Process Regression with Estimated Hyper-Parameters and Applications in Bayesian Inverse Problems},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {8},
+number = {4},
+pages = {1310-1337},
+year = {2020},
+doi = {10.1137/19M1284816},
+URL = {https://doi.org/10.1137/19M1284816},
+eprint = {https://doi.org/10.1137/19M1284816}
+}
    
 % Example application of Emulate, calibrate, sample approach. 
 @article{idealizedGCM,
@@ -845,6 +968,39 @@ author = {Oliver R. a. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and M
       primaryClass={stat.CO}
 }
 
+% ---------------------------------------------------------------------------------------------------
+% Other: surrogate modeling for Bayesian inverse problems
+% ---------------------------------------------------------------------------------------------------
+
+@article{Rynn_2019,
+doi = {10.1088/1681-7575/aaf984},
+url = {https://dx.doi.org/10.1088/1681-7575/aaf984},
+year = {2019},
+month = {jan},
+publisher = {IOP Publishing},
+volume = {56},
+number = {1},
+pages = {015018},
+author = {Rynn, James A J and Cotter, Simon L and Powell, Catherine E and Wright, Louise},
+title = {Surrogate accelerated Bayesian inversion for the determination of the thermal diffusivity of a material},
+journal = {Metrologia}
+}
+
+@article{MCMCExpensivePosts,
+author = {Mark Fielding and David J. Nott and Shie-Yui Liong and},
+title = {Efficient MCMC Schemes for Computationally Expensive Posterior Distributions},
+journal = {Technometrics},
+volume = {53},
+number = {1},
+pages = {16--28},
+year = {2011},
+publisher = {ASA Website},
+doi = {10.1198/TECH.2010.09195},
+URL = {https://doi.org/10.1198/TECH.2010.09195},
+eprint = {https://doi.org/10.1198/TECH.2010.09195}
+}
+
+
 
 % ---------------------------------------------------------------------------------------------------
 % Emulating simulators with high-dimensional output: Basis functions
@@ -906,6 +1062,19 @@ year = {2017},
 month = {07},
 pages = {},
 title = {Data-Driven Analysis and Common Proper Orthogonal Decomposition (CPOD)-Based Spatio-Temporal Emulator for Design Exploration}
+}
+
+% Neural network emulation for CLM, using basis vectors.
+@Article{DagonCLM,
+AUTHOR = {Dagon, K. and Sanderson, B. M. and Fisher, R. A. and Lawrence, D. M.},
+TITLE = {A machine learning approach to emulation and biophysical parameter estimation with the Community Land Model, version 5},
+JOURNAL = {Advances in Statistical Climatology, Meteorology and Oceanography},
+VOLUME = {6},
+YEAR = {2020},
+NUMBER = {2},
+PAGES = {223--244},
+URL = {https://ascmo.copernicus.org/articles/6/223/2020/},
+DOI = {10.5194/ascmo-6-223-2020}
 }
 
 % ---------------------------------------------------------------------------------------------------
@@ -1192,6 +1361,33 @@ Statistics},
    year={2024},
    month={July}
   }
+  
+ @article{CLMBayesianCalibration,
+author = {Huang, Maoyi and Ray, Jaideep and Hou, Zhangshuan and Ren, Huiying and Liu, Ying and Swiler, Laura},
+title = {On the applicability of surrogate-based Markov chain Monte Carlo-Bayesian inversion to the Community Land Model: Case studies at flux tower sites},
+journal = {Journal of Geophysical Research: Atmospheres},
+volume = {121},
+number = {13},
+pages = {7548-7563},
+keywords = {Community Land Model, MCMC-Bayesian, surrogate, flux towers},
+doi = {https://doi.org/10.1002/2015JD024339},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2015JD024339},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2015JD024339},
+year = {2016}
+}
+
+@article{CLMSurrogates,
+author = {Ray, J. and Hou, Z. and Huang, M. and Sargsyan, K. and Swiler, L.},
+title = {Bayesian Calibration of the Community Land Model Using Surrogates},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {3},
+number = {1},
+pages = {199-233},
+year = {2015},
+doi = {10.1137/140957998},
+URL = { https://doi.org/10.1137/140957998},
+eprint = {https://doi.org/10.1137/140957998}
+}
 
 %  ---------------------------------------------------------------------------------------------------
 % Uncertainty Propagation for surrogates
@@ -1217,6 +1413,87 @@ doi = {10.1162/neco_a_01127}
   year={2023},
   volume={abs/2312.05153},
   url={https://api.semanticscholar.org/CorpusID:266149965}
+}
+
+
+%  ---------------------------------------------------------------------------------------------------
+% Other adaptive approaches
+%  ---------------------------------------------------------------------------------------------------
+
+% Local polynomial surrogates constructed within MCMC scheme
+@article{Li_2014,
+   title={Adaptive Construction of Surrogates for the Bayesian Solution of Inverse Problems},
+   volume={36},
+   ISSN={1095-7197},
+   url={http://dx.doi.org/10.1137/130938189},
+   DOI={10.1137/130938189},
+   number={3},
+   journal={SIAM Journal on Scientific Computing},
+   publisher={Society for Industrial & Applied Mathematics (SIAM)},
+   author={Li, Jinglai and Marzouk, Youssef M.},
+   year={2014},
+   month=jan, pages={A1163–A1186} }
+
+% Another local surrogate approach within MCMC algorithm
+@article{ConradLocalExactMCMC,
+author = {Patrick R. Conrad and Youssef M. Marzouk and Natesh S. Pillai and Aaron Smith and},
+title = {Accelerating Asymptotically Exact MCMC for Computationally Intensive Models via Local Approximations},
+journal = {Journal of the American Statistical Association},
+volume = {111},
+number = {516},
+pages = {1591--1607},
+year = {2016},
+publisher = {ASA Website},
+doi = {10.1080/01621459.2015.1096787},
+URL = { https://doi.org/10.1080/01621459.2015.1096787},
+eprint = {https://doi.org/10.1080/01621459.2015.1096787}
+}
+
+@article{Semler_2023,
+   title={Adaptive Gaussian process regression for efficient building of surrogate models in inverse problems},
+   volume={39},
+   ISSN={1361-6420},
+   url={http://dx.doi.org/10.1088/1361-6420/ad0028},
+   DOI={10.1088/1361-6420/ad0028},
+   number={12},
+   journal={Inverse Problems},
+   publisher={IOP Publishing},
+   author={Semler, Phillip and Weiser, Martin},
+   year={2023},
+   month=oct, pages={125003} }
+
+@misc{Semler2024GradientEnhanced,
+      title={Adaptive Gradient Enhanced Gaussian Process Surrogates for Inverse Problems}, 
+      author={Phillip Semler and Martin Weiser},
+      year={2024},
+      eprint={2404.01864},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2404.01864}, 
+}
+
+@misc{villani2024posteriorsamplingadaptivegaussian,
+      title={Posterior sampling with Adaptive Gaussian Processes in Bayesian parameter identification}, 
+      author={Paolo Villani and Daniel Andrés-Arcones and Jörg F. Unger and Martin Weiser},
+      year={2024},
+      eprint={2411.17858},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2411.17858}, 
+}
+
+@article{DelayedAcceptance,
+author = {J. Andrés Christen and Colin Fox and},
+title = {Markov chain Monte Carlo Using an Approximation},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {14},
+number = {4},
+pages = {795--810},
+year = {2005},
+publisher = {ASA Website},
+doi = {10.1198/106186005X76983},
+URL = {https://doi.org/10.1198/106186005X76983},
+eprint = {https://doi.org/10.1198/106186005X76983}
 }
 
 
@@ -1313,7 +1590,7 @@ eprint = {
 }
 
 
-@article{doi:10.1080/00401706.2013.775897,
+@article{calibrationSpatioTemporal,
 author = { Matthew T.   Pratola  and  Stephan R.   Sain  and  Derek   Bingham  and  Michael   Wiltberger  and  E.   Joshua   Rigler },
 title = {Fast Sequential Computer Model Calibration of Large Nonstationary Spatial-Temporal Processes},
 journal = {Technometrics},

@@ -11,7 +11,6 @@
 \newcommand{\diag}{\textrm{diag}}
 \newcommand{\law}{\textrm{law}}
 
-
 % --------------------------------------------------------------------------------------------------
 % Bayesian inverse problem: general setup 
 % --------------------------------------------------------------------------------------------------
@@ -26,10 +25,11 @@
 \newcommand{\obsSpace}{\mathcal{Y}} % Output space
 \newcommand{\dimObs}{P} % Dimension of data observation vector
 \newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
-\newcommand{\fwd}{G} % Forward model
+\newcommand{\fwd}{\mathcal{G}} % Forward model
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood 
 \newcommand{\priorDens}{\pi_0} % Prior density 
 \newcommand{\postDens}{\pi} % Unnormalized posterior density.
+\newcommand{\lpost}{\llik^{\postDens}} % Log unnormalized posterior density.
 \newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
@@ -71,6 +71,8 @@
 \newcommand{\funcEm}[1][\Ndesign]{\func_{#1}}
 \newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
 \newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
+\newcommand{\lpostEm}[1][\Ndesign]{\llik^{\postDens}_{#1}} 
+\newcommand{\postEm}[1][\Ndesign]{\postDens_{#1}} 
 \newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
 \newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
@@ -85,7 +87,7 @@
 \newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
 \newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
-\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{samp}}}
+\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{EP}}}
 
 % Marginal approximations. 
 \newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
