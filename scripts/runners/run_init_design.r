@@ -48,8 +48,8 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Design methods settings.
-n_design <- 5L
-design_method <- "simple" 
+n_design <- 7L
+design_method <- "lhs_extrap" 
 
 # Initial design tag.
 design_tag <- paste(design_method, n_design, sep="_")
@@ -79,7 +79,9 @@ settings <- list(experiment_tag=experiment_tag,
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
-out_dir <- file.path(experiment_dir, "output", "round1", "design", design_tag)
+design_dir <- file.path(experiment_dir, "output", "round1", "design")
+out_dir <- file.path(design_dir, design_tag)
+alg_settings_dir <- file.path(experiment_dir, "output", "alg_settings")
 
 # Create output directories.
 print(paste0("Output directory: ", out_dir))
@@ -100,19 +102,36 @@ source(file.path(src_dir, "gp_mcmc_functions.r"))
 # Load inverse problem setup information.
 inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
 
+# Read initial design algorithm settings.
+alg_settings_path <- file.path(alg_settings_dir, "init_design_settings.rds")
+alg_settings <- readRDS(alg_settings_path)
+
+if(!(design_method %in% names(alg_settings))) {
+  stop("Design method `", design_method, "` not found in algorithm settings: ",
+       alg_settings_path)
+}
+
+design_func <- alg_settings[[design_method]]
+
+# Save design settings.
 print("Saving design settings.")
-saveRDS(settings, file.path(out_dir, "design_settings.rds"))
+design_settings_path <- file.path(out_dir, "design_settings.rds")
+if(file.exists(design_settings_path)) {
+  stop("Design settings already exists: ", design_settings_path)
+}
+
+saveRDS(settings, design_settings_path)
 
 # ------------------------------------------------------------------------------
 # Define function that creates a single replicate initial design.
 # ------------------------------------------------------------------------------
 
-construct_init_design <- function(seed, i) {
+save_init_design <- function(seed, i) {
   print("-------------- Initiating new design --------------")
   set.seed(seed)
   print(paste0("Design: ", i, " -----  Seed: ", seed))
   
-  design_info <- get_init_design_list(inv_prob, design_method, n_design)
+  design_info <- design_func(inv_prob, n_design)
   out_dir_design <- file.path(out_dir, paste0("design_", i))
   dir.create(out_dir_design)
   saveRDS(design_info, file=file.path(out_dir_design, "design_info.rds"))
@@ -130,12 +149,23 @@ seeds <- sample.int(n=.Machine$integer.max, size=settings$n_rep)
 # Save ID map file.
 dt <- data.table(design_tag=design_tag, design_id=seq_len(settings$n_rep),
                  seed=seeds)
-fwrite(dt, file.path(out_dir, "id_map.csv"))
+id_map_path <- file.path(file.path(design_dir, "id_map.csv"))
+
+if(file.exists(id_map_path)) {
+  print(paste0("Appending to current ID map: ", id_map_path))
+  id_map <- fread(id_map_path)
+  id_map <- rbindlist(list(id_map, dt), use.names=TRUE)
+} else {
+  print(paste0("Saving new ID map: ", id_map_path))
+  id_map <- copy(dt)
+}
+
+fwrite(id_map, id_map_path)
 
 # Generate replicate designs.
 for(i in seq_along(seeds)) {
   seed <- seeds[i]
-  construct_init_design(seed, i)
+  save_init_design(seed, i)
 }
 
 

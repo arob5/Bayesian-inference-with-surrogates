@@ -1,0 +1,142 @@
+---
+title: "noisy_mcmc_1d_noise_lvl_test"
+output: html_document
+---
+
+Tests to do:
+- Compare algs when noise level of GP is varied.
+- Effect of stationary prior; test what happens with noisy MCMC.
+
+```{r}
+set.seed(63462)
+
+library(data.table)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(grid)
+library(support)
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(code_dir, "src")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
+```
+
+# Inverse problem setup
+```{r}
+
+# TODO:
+# Maybe do something more grounded in a real problem here. Estimating
+# spring constant? Or parameter in Volterra model?
+
+# Identity forward model.
+fwd <- function(x) 3*x
+
+# Gaussian likelihood.
+llik <- function(x) dnorm(fwd(x), mean=0, sd=1, log=TRUE)
+
+# Gaussian prior.
+prior_var <- 1
+par_prior <- data.frame(dist="Gaussian", param1=0, param2=sqrt(prior_var))
+lprior <- get_lprior_dens(par_prior)
+```
+
+# Grid for plotting.
+```{r}
+n_grid <- 100L
+grid_min <- -8
+grid_max <- 8
+
+grid_input <- seq(grid_min, grid_max, length.out=n_grid)
+design_grid <- list(input=cbind(u=grid_input), fwd=cbind(y=fwd(grid_input)),
+                    llik=llik(grid_input))
+design_grid_dt <- data.table(u=drop(design_grid$input), fwd=drop(design_grid$fwd),
+                             llik=design_grid$llik, lprior=lprior(design_grid$input))
+design_grid_dt[, lpost := llik + lprior]
+```
+
+```{r}
+plt_fwd <- ggplot() +
+           geom_line(aes(x=u, y=fwd), design_grid_dt, color="black")
+
+plt_dens <- ggplot() + 
+              geom_line(aes(x=u, y=llik), design_grid_dt, color="green") +
+              geom_line(aes(x=u, y=lprior), design_grid_dt, color="blue") +
+              geom_line(aes(x=u, y=lpost), design_grid_dt, color="red") +
+              ylim(-30, 0)
+
+plot(plt_fwd)
+plot(plt_dens)
+```
+
+
+
+
+
+
+# Design
+```{r}
+n_design <- 4L
+design_input <- seq(prior_min, prior_max, length.out=n_design)
+design_info <- list(input=cbind(u=design_input), fwd=cbind(y=fwd(design_input)),
+                    llik=llik(design_input))
+design_info_dt <- data.table(u=drop(design_info$input), fwd=drop(design_info$fwd),
+                             llik=design_info$llik)
+```
+
+```{r}
+plt_fwd <- ggplot() +
+           geom_line(aes(x=u, y=fwd), design_grid_dt, color="black") +
+           geom_point(aes(x=u, y=fwd), design_info_dt, color="red")
+
+plt_llik <- ggplot() + 
+            geom_line(aes(x=u, y=llik), design_grid_dt, color="black") + 
+            geom_point(aes(x=u, y=llik), design_info_dt, color="red")
+
+plot(plt_fwd)
+plot(plt_llik)
+```
+
+# Fit forward model and log-likelihood GPs.
+```{r}
+# GPs.
+gp_fwd <- gpWrapperHet(design_info$input, design_info$fwd,
+                       scale_input=TRUE, normalize_output=TRUE)
+gp_fwd$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gp_fwd$fit()
+
+# Log-likelihood emulators.
+gp_llik <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1L),
+                        scale_input=TRUE, normalize_output=TRUE)
+gp_llik$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gp_llik$fit()
+```
+
+Plan: vary the noise level in the GPs by simply scaling the GP variance 
+prediction. Run noisy MCMC algs at different levels. Compare each to
+pseudo-marginal and closed-form marginal. Do we see agreement between
+pseudo-marginal/marginal and mcwmh-ind at small noise levels? How do the 
+algorithms diverge at large noise levels?
+
+
+
+
+
+
+
+
+
+
+
+
