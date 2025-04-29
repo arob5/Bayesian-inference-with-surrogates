@@ -16,6 +16,10 @@
 \usepackage{fancyvrb} % For writing using verbatim font inline. 
 % \usepackage[demo]{graphicx}
 
+% For tables
+\usepackage{array}
+\usepackage{booktabs}
+
 % Bibliography
 \bibliographystyle{plainnat}
 
@@ -174,9 +178,9 @@ This approach introduces the challenge of choosing the conditioning locations; t
 suggest sampling the points via a space-filling algorithm confined within the region of parameter 
 space where the GP predictions for the posterior density exceed some threshold.
 
-The work \citet{BurknerSurrogate} studies \cref{alg:sample-approx} in the context of finite-dimensional
+The work \citet{BurknerSurrogate} studies \cref{alg:ep} in the context of finite-dimensional
 parametric surrogate models. In this case, sampling a surrogate trajectory reduces to sampling a 
-finite dimensional parameter, making \cref{alg:sample-approx} readily implementable in practice.
+finite dimensional parameter, making \cref{alg:ep} readily implementable in practice.
 However, no solution is offered for the common nonparametric setting.
 
 \subsection{Unnormalized Density Approximations}
@@ -196,7 +200,7 @@ By considering only the surrogate predictive mean, the stochastic surrogate is r
 to a deterministic approximation, which induces a deterministic approximation of the 
 posterior. We term the resulting posteriors
 \begin{align}
-&\llikEmMeanDens[\Ndesign](\Par; \fwdEm[\Ndesign](\Par)) \Def \postDens(\Par; \E[\fwdEm[\Ndesign]]),
+&\llikEmMeanDens[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \postDens(\Par; \E[\fwdEm[\Ndesign]]),
 &&\llikEmMeanDens[\Ndesign](\Par; \lpostEm[\Ndesign]) \Def \Exp{\E[\lpostEm[\Ndesign](\Par)]}
 \end{align}
 \textit{plug-in mean}, or succinctly \textit{mean}, approximations. This approximation fails to account 
@@ -207,17 +211,75 @@ For theoretical analysis, see
 \citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
  
 \subsubsection{Expected Likelihood}
-
-
+To propagate the surrogate uncertainty, one can consider taking pointwise expectations of 
+$\postEm[\Ndesign](\Par)$ with respect to the surrogate predictive distribution. We refer to the 
+resulting posteriors
 \begin{align}
 &\llikEmMargDens[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \E_{\Ndesign}\left[\postDens(\Par; \fwdEm[\Ndesign])\right],
 &&\llikEmMargDens[\Ndesign](\Par; \lpostEm[\Ndesign]) \Def \E_{\Ndesign}\left[\Exp{\lpostEm[\Ndesign](\Par)}\right],
 \end{align}
+as \textit{expected likelihood} approximations, again borrowing terminology from \citet{BurknerSurrogate}.
+\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
+$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
+
 
 \subsubsection{Other Pointwise Approximations}
 Expected log-likelihood, quantile approx, upper confidence bound type approx used in PDA CES FATES paper.
 
 \subsection{Unified Perspective: Metropolis-Hastings Approximations}
+
+\begin{table}[h]
+\centering
+\small % (optional) shrink slightly if needed
+\renewcommand{\arraystretch}{1.6} % row height
+\setlength{\tabcolsep}{10pt} % column separation
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}} % centered column of width #1
+
+\begin{tabular}{lC{10cm}}
+\toprule
+\textbf{Posterior Approximation} & \textbf{MH Approximation} \\
+\midrule
+Plug-In Mean & 
+\(\displaystyle \min\left\{1, \frac{\Exp{\E[\lpostEm[\Ndesign](\propPar)]}}{\Exp{\E[\lpostEm[\Ndesign](\Par)]}} \right\}\) \\ 
+Expected Likelihood & 
+\(\displaystyle \min\left\{1, \frac{\E \left[\Exp{\lpostEm[\Ndesign](\propPar)}\right]}{\E\left[\Exp{\lpostEm[\Ndesign](\Par)}\right]} \right\}\) \\
+Expected Likelihood Ratio & 
+\(\displaystyle \min\left\{1, \E\left[\frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}}\right] \right\}\) \\
+Expected Acc. Prob. & 
+\(\displaystyle \E\left[\min\left\{1, \frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}} \right\}\right]\) \\
+\bottomrule
+\end{tabular}
+\caption{The approximations to the Metropolis-Hastings (MH) acceptance probability implied by different posterior approximations. All
+expectations are with respect to the underlying surrogate predictive distribution. For brevity, the acceptance probabilities 
+are presented for the case of a symmetric proposal distribution, but this assumption is not required.}
+\label{tab:acc-prob-comparison}
+\end{table}
+
+
+\begin{tabular}{lC{10cm}}
+\toprule
+\textbf{Posterior Approximation} & \textbf{MH Approximation} \\
+\midrule
+Plug-In Mean & 
+\(\displaystyle \min\left(1, \Exp{\E[\lpostEm[\Ndesign](\propPar)] - \E[\lpostEm[\Ndesign](\Par)]} \right)\) \\ 
+Expected Likelihood & 
+\(\displaystyle \min\left(1, \E \left[\Exp{\lpostEm[\Ndesign](\propPar)}\right] / \E\left[\Exp{\lpostEm[\Ndesign](\Par)}\right] \right)\) \\
+Expected Likelihood Ratio & 
+\(\displaystyle \min\left(1, \E\left[\Exp{\lpostEm[\Ndesign](\propPar) - \lpostEm[\Ndesign](\Par)} \right] \right)\) \\
+Expected Acc. Prob. & 
+\(\displaystyle \E\left[\min\left(1, \Exp{\lpostEm[\Ndesign](\propPar) - \lpostEm[\Ndesign](\Par)}\right)\right]\) \\
+\bottomrule
+\end{tabular}
+\caption{The approximations to the Metropolis-Hastings (MH) acceptance probability implied by different posterior approximations. All
+expectations are with respect to the underlying surrogate predictive distribution. For brevity, the acceptance probabilities 
+are presented for the case of a symmetric proposal distribution, but this assumption is not required.}
+\label{tab:acc-prob-comparison}
+\end{table}
+
+
+
+
+
 
 
 % Active Learning
