@@ -38,11 +38,13 @@ dir.create(out_dir, recursive=TRUE)
 source(alg_definition_script)
 
 # Load settings lists.
+init_design_settings <- get_init_design_settings()
 em_settings <- get_emulator_settings()
 mcmc_settings <- get_mcmc_settings()
-acq_settings <- get_design_settings()
+acq_settings <- get_acq_settings()
 
 # Save to file.
+saveRDS(init_design_settings, file.path(out_dir, "init_design_settings.rds"))
 saveRDS(em_settings, file.path(out_dir, "em_settings.rds"))
 saveRDS(mcmc_settings, file.path(out_dir, "mcmc_settings.rds"))
 saveRDS(acq_settings, file.path(out_dir, "acq_settings.rds"))

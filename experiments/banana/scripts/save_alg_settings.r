@@ -10,6 +10,62 @@
 # TODO: Create an "adapt_settings" sublist, similar to "ic_settings".
 #
 
+get_init_design_settings <- function() {
+  # Returns a named list, with the names being the initial design tags.
+  # Each element is a function that returns a list representing an initial
+  # design, of the form as returned by `get_init_design_list()`. Each 
+  # function should take two arguments: `inv_prob` and `n`, where `n` is the 
+  # number of design points.
+  
+  l <- list()
+  
+  l$simple <- function(inv_prob, n) {
+    get_init_design_list(inv_prob, design_method="simple", N_design=n)
+  }
+  
+  l$lhs <- function(inv_prob, n) {
+    get_init_design_list(inv_prob, design_method="LHS", N_design=n)
+  }
+  
+  l$lhs_extrap <- function(inv_prob, n) {
+    # Combine LHS prior-based points with fixed "extrapolation points" geared
+    # towards capturing the global trend.
+    if(n < 4L) {
+      stop("`lhs_extrap()` design requires at least 4 points, since 4 ",
+           " 'extrapolation points' are fixed automatically.")
+    }
+    
+    # Extrapolation points: put far in the tails of the prior along each
+    # coordinate axis. Note that the prior for each parameter is iid N(0,1).
+    extrap_scale <- 1.8
+    q <- qnorm(c(.001, .999))
+    extrap_inputs <- rbind(c(0, extrap_scale * q[2]),
+                           c(extrap_scale * q[2], 0),
+                           c(0, extrap_scale * q[1]),
+                           c(extrap_scale * q[1], 0))
+    colnames(extrap_inputs) <- inv_prob$par_names
+    design_extrap <- get_init_design_list(inv_prob, "manual", 4L, 
+                                          inputs=extrap_inputs)
+    
+    # Prior-based LHS design points.
+    n_lhs <- n - 4L
+    if(n_lhs <= 0L) return(design_extrap)
+    
+    design_lhs <- get_init_design_list(inv_prob, design_method="LHS", 
+                                       N_design=n_lhs)
+    
+    # Combine into one design.
+    design_info <- list(input = rbind(design_lhs$input, design_extrap$input),
+                        fwd = rbind(design_lhs$fwd, design_extrap$fwd),
+                        llik = c(design_lhs$llik, design_extrap$llik),
+                        lprior = c(design_lhs$lprior, design_extrap$lprior),
+                        lpost = c(design_lhs$lpost, design_extrap$lpost))
+    return(design_info)
+  }
+  
+  return(l)
+}
+
 
 get_emulator_settings <- function() {
   # Different emulator models are stored in a list. The names of the list
@@ -43,6 +99,26 @@ get_emulator_settings <- function() {
     return(llik_em)
   }
   
+  # # Unnormalized Log-posterior density emulator. Gaussian kernel, constant mean.
+  # em_list$em_lpost$em_label <- "em_lpost"
+  # em_list$em_lpost$is_fwd_em <- FALSE
+  # em_list$em_lpost$fit_em <- function(design_info, inv_prob) {
+  #   
+  #   # Fit GP for log-post.
+  #   gp_obj <- gpWrapperHet(design_info$input, matrix(design_info$lpost, ncol=1),
+  #                          scale_input=TRUE, normalize_output=TRUE)
+  #   gp_obj$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+  #   gp_obj$fit()
+  #   
+  #   # Instantiate and save log-likelihood emulator object.
+  #   lpost_em <- llikEmulatorGP("em_lpost", gp_obj, default_conditional=FALSE, 
+  #                              default_normalize=TRUE, 
+  #                              lik_par=inv_prob$llik_obj$get_lik_par(), 
+  #                              llik_bounds=inv_prob$llik_obj$get_llik_bounds())
+  #   
+  #   return(lpost_em)
+  # }
+  
   # Forward model emulator. Gaussian kernel, constant mean.
   em_list$em_fwd$em_label <- "em_fwd"
   em_list$em_fwd$is_fwd_em <- TRUE
@@ -71,7 +147,7 @@ get_emulator_settings <- function() {
 }
 
 
-get_mcmc_settings <- function(experiment_dir) {
+get_mcmc_settings <- function() {
   # Returns list, each element of which defines an MCMC algorithm. Each of these
   # elements is itself a list containing the MCMC settings defining that 
   # algorithm. The "test_label" element of each of these lists is used as 
@@ -151,7 +227,7 @@ get_mcmc_settings <- function(experiment_dir) {
 }
 
 
-get_design_settings <- function(experiment_dir) {
+get_acq_settings <- function() {
   # Returns a list, with each element a sublist defining a sequential design
   # method/acquisition function. The "acq_label" element of each sub-list
   # serves as a unique identifier for the method. For acquisition functions,
