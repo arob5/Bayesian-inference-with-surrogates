@@ -73,6 +73,7 @@
 \newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
 \newcommand{\lpostEm}[1][\Ndesign]{\llik^{\postDens}_{#1}} 
 \newcommand{\postEm}[1][\Ndesign]{\postDens_{#1}} 
+\newcommand{\postNormEm}[1][\Ndesign]{\postDensNorm_{#1}} 
 \newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
 \newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
@@ -83,11 +84,16 @@
 \newcommand{\emKer}[2][\Ndesign]{\gpKerBase^{#2}_{#1}}
 
 % Random (sample) approximations. 
+\newcommand{\normCstEm}[1][\Ndesign]{\normCst_{#1}}
 \newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
 \newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
 \newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{EP}}}
+
+% Approximations of unnormalized posterior density.
+\newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\textrm{mean}}}
+\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\textrm{EL}}}  
 
 % Marginal approximations. 
 \newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
