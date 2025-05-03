@@ -64,6 +64,18 @@
 
 \maketitle
 
+Simulation-based computer models have emerged as a key tool for studying complex systems 
+within the physical, biological, and engineering sciences. These models often require specifying 
+values for uncertain input parameters in order to tune the model for the application of interest. 
+A common approach is to calibrate model parameters to align simulation outputs with observational data.
+This is naturally cast as a statistical parameter estimation problem, and a Bayesian framework is commonly
+employed to quantify parameter uncertainty. However, standard Bayesian inference algorithms such 
+as Markov chain Monte Carlo (MCMC) are often hindered by the computational cost of the simulation model.
+A popular approach to deal with this issue is to train a surrogate model (i.e., emulator) as a computationally
+thrifty approximation of the expensive computer code. A canonical surrogate choice is a Gaussian 
+process (GP), which provides a probabilistic prediction of the simulation output at any input parameter 
+value. There has been increasing interest in methods for leveraging the [\todo: finish intro]
+
 The main contribution of this paper is introduce a new framework for conducting surrogate-based
 posterior inference based around approximating the acceptance probability of Metropolis-Hastings
 algorithms. In particular, we develop practical noisy MCMC algorithms that require only the ability
@@ -71,6 +83,157 @@ to sample from the predictive distribution of the surrogate model. We also propo
 sequential design algorithms that target improvement in the posterior approximation. 
 Finally, we provide practical recommendations on emulating unnormalized posterior densities, 
 including prior predictive checks for avoiding common pathologies. 
+
+% Surrogates for Bayesian Inverse Problems
+\section{Surrogates for Bayesian Inverse Problems}
+
+\subsection{Bayesian Inference Setting}
+Our general goal is to estimate parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$ given 
+observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$. Adopting a Bayesian viewpoint,
+we assume prior knowledge is encoded by a density $\priorDens(\Par)$. The goal is then to 
+characterize the posterior distribution 
+\begin{align}
+&\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst} \priorDens(\Par) p(\obs \given \Par), 
+&&\normCst = \int_{\parSpace} \priorDens(\Par) p(\obs \given \Par) d\Par, \label{post_dens_generic}
+\end{align}
+where $\normCst$ is an (intractable) normalizing constant. 
+We let $\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par)$ denote the unnormalized posterior 
+density, which plays a central role in surrogate-based Bayesian inference. 
+We assume that pointwise evaluations of  $\postDens(\Par)$ can be computed, but at significant 
+computational expense. This renders standard iterative optimization and sampling algorithms 
+(e.g., MCMC) infeasible, as each iteration requires a new density evaluation $\postDens(\Par)$.
+Our focus in this work is on methods that overcome this computational bottleneck by replacing 
+the expensive simulator with a computationally thrifty approximation, which we refer to synonymously 
+as a \textit{surrogate} or \textit{emulator} model. Our interest is in \textit{probabilistic} surrogate models, 
+which output predictions in the form of a probability distribution, as opposed to just point estimates.
+In the following, we motivate this setup by introducing common surrogate modeling strategies used 
+in solving Bayesian inverse problems, and describe how each of these strategies induces a random 
+approximation of the density $\postDens(\Par)$.
+
+\subsection{Bayesian Inverse Problems}
+The challenge posed by computationally expensive density evaluations $\postDens(\Par)$ commonly 
+arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. In this setting, 
+the likelihood often takes the form $\obs = \fwd(\Par) + \noise$ for some \textit{parameter-to-observable map}
+$\fwd: \parSpace \to \obsSpace$. For a concrete example, we consider the problem of estimating the 
+parameters in a system of ordinary differential equations (ODEs)
+\begin{align}
+\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
+\end{align}
+where the dynamics depend on parameters $\Par$. Each value for $\Par$ implies a different state trajectory
+$[\state(\Time, \Par)]_{\timeStart \leq \Time \leq \timeEnd}$, which we encode by the
+map $\solutionOp: \Par \mapsto [\state(\Time, \Par)]_{\timeStart \leq \Time \leq \timeEnd.}$. The goal is then 
+to identify the parameters that yield state trajectories that are in agreement with observed data 
+$\obs$, which is assumed to be some noise-corrupted function $\obsOp$ of the true trajectory. Thus, the 
+likelihood is of the form 
+\begin{align}
+&\obs = \fwd(\Par) + \noise, &&\fwd \Def \obsOp \circ \solutionOp.
+\end{align}
+In practice, the ODE is solved numerically so $\solutionOp$ represents the map induced by a numerical 
+solver. Therefore, in this setting the computational cost of computing $\postDens(\Par)$ stems from the 
+dependence of the likelihood on $\fwd(\Par)$, and in particular on the solver $\solutionOp(\Par)$.
+
+\subsection{Common Surrogate Strategies} \label{sec:surrogate-examples}
+
+
+
+A common solution to this computational bottleneck is to learn a statistical approximation of the map 
+$\Par \mapsto \postDens(\Par)$, which we refer to synonymously as a \textit{surrogate} or \textit{emulator}
+model. Learning the surrogate typically consists of an initial offline step where training data 
+is generated by running the expensive simulator at a set of input parameter values. A regression model 
+is then fit to this training set to learn an approximation of the input-output relationship 
+$\Par \mapsto \postDens(\Par)$. Our interest is in \textit{probabilistic} surrogate models, which output
+a prediction for $\postDens(\Par)$ in the form of a probability distribution, as opposed to just a point estimate.
+We let $\postEm[\Ndesign](\Par)$ denote the random variable representing the surrogate prediction 
+of $\postDens(\Par)$, with the subscript indicating the number of exact simulation runs that were used 
+to train the surrogate. We refer to the distribution of $\postEm[\Ndesign](\Par)$ as the surrogate 
+\textit{predictive distribution} at input $\Par$; we allow this distribution to be arbitrary, and potentially 
+only accessible through samples. Note that the map $\Par \mapsto \postDens(\Par)$ is typically not 
+approximated directly; rather, an emulator is fit to a quantity on which $\postDens(\Par)$ depends 
+(e.g., the log-likelihood or an underlying mechanistic model), which then induces a random approximation 
+of $\postDens(\Par)$. Our framework thus seeks to be agnostic to the particular quantity that is 
+being emulated. Concrete examples of typical surrogate modeling workflows are given in \cref{sec:surrogate-examples}.
+
+Given $\postEm[\Ndesign]$, a fixed random approximation of $\postDens$, a natural question is how to 
+utilize this surrogate in approximating the posterior distribution in \cref{post_dens_generic}. \Cref{sec:post-approx}
+is dedicated to this question, in which we summarize previous approaches and present our proposed method.
+
+
+
+
+We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
+density 
+\begin{equation}
+\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par) \label{post_dens_generic}
+\end{equation}
+are available, but expensive owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
+commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
+Consider a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing 
+some system of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose that 
+we have noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ 
+seeks to approximate. The \textit{inverse problem} concerns learning the parameter values $\Par$ such
+ that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating} the model so that it agrees with the observations. 
+ The statistical approach to this problem assumes that the link between model outputs and 
+observations is governed by a probability distribution on $\obs \given \Par$. We assume that this distribution 
+admits a density with corresponding log-likelihood 
+\begin{align}
+\llik: \parSpace \to \R, \label{log_likelihood}
+\end{align}
+such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
+on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
+calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
+are fixed. We discuss inference for such nuisance parameters in \Cref{section_lik_par}.
+
+The Bayesian approach completes this specification with a prior distribution 
+on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
+by the posterior distribution
+\begin{align}
+\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst}\postDens(\Par) = \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
+\end{align}
+with normalizing constant given by 
+\begin{align}
+\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
+\end{align}
+We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
+posterior density. We will also find it useful to introduce the notation
+\begin{equation}
+\lpost(\Par) \Def \log \postDens(\Par) = \log \priorDens(\Par) + \llik(\Par) \label{eq:lpost}
+\end{equation}
+for the logarithm of the unnormalized posterior density.
+When relevant, we will make explicit the dependence on the forward 
+model by writing $\llik(\Par; \fwd)$, $\lpost(\Par; \fwd)$, and $\postDens(\Par; \fwd)$. 
+
+In addition to considering 
+generic likelihoods, we will give special attention to the additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\end{align}
+with corresponding log-likelihood 
+\begin{align}
+\llik(\Par; \fwd) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
+= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)), \label{llik_Gaussian}
+\end{align}
+as this model features prominently in the inverse problems literature.
+In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
+standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
+algorithm. Such algorithms are serial in nature, often requiring $\sim 10^5 - 10^7$ iterations, with each 
+iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
+In the inverse problem context, this computational requirement is often prohibitive when the forward model 
+evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
+expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
+cheap approximations to either $\fwd(\Par)$ or $\lpost(\Par)$ (note that approximating the former induces 
+an approximation of the latter). We focus on surrogate models that take the form of statistical 
+regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
+\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
+that exploit the specific structure of the forward model; see, e.g., \todo.}
+We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
+model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
+map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
+Throughout this review, we will typically view the functions
+$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
+such maps as \textit{simulators}, owing to the fact that in typical applications evaluating these maps requires
+running an expensive computer code. The following section provides a concrete example of such a simulation
+model stemming from the numerical solution of differential equations.
 
 % Surrogate Construction
 \section{Surrogate Construction}
@@ -81,14 +244,14 @@ Use log density emulation to refer to both log-likelihood and unnormalized log p
 \subsection{Existence and Tail Behavior}
 
 % Posterior Approximation
-\section{Posterior Approximation} \label{sec:post_approx}
+\section{Posterior Approximation} \label{sec:post-approx}
 With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
 posterior distribution of the Bayesian inverse problem. We view this as a question of uncertainty propagation; in realistic 
 settings with restrictive computational budgets, the surrogate predictive distribution may retain a high degree of 
 epistemic uncertainty stemming from the sparsity of the design. Our interest is in constructing posterior 
 approximations that incorporate this additional source of uncertainty. We note that such approximations 
 may serve one of various downstream goals. If computational constraints prevent further reduction of epistemic
-uncertainty due to due to the high cost of augmenting the design, then one must accept that posterior inference 
+uncertainty due to the high cost of augmenting the design, then one must accept that posterior inference 
 will be approximate. Therefore, when using the posterior
 to answer the scientific question of interest, the surrogate posterior should be acknowledged to prevent 
 overconfidence and misleading conclusions. Alternatively, the posterior approximation may only 
@@ -125,6 +288,15 @@ of the unnormalized posterior density. Normalizing this quantity yields a random
 \Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
 &&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par.
 \label{post_dens_random_llik}
+\end{align}
+
+After 
+normalizing $\postEm[\Ndesign]$, the random density  
+\begin{align}
+&\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
+&&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par.
+\label{eq:sample-approx}
 \end{align}
 
 The approximation $\llikEmRdm[\Ndesign]{\postDensNorm}$ may be induced by either a 
@@ -276,14 +448,8 @@ are presented for the case of a symmetric proposal distribution, but this assump
 \label{tab:acc-prob-comparison}
 \end{table}
 
-
-
-
-
-
-
 % Active Learning
-\section{Active Learning} \label{sec:active_learning}
+\section{Active Learning} \label{sec:active-learning}
 
 Various works have focused on active learning algorithms that guarantee convergence to the 
 true posterior distribution. In the previous section, we already summarized the subset of 

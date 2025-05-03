@@ -543,13 +543,14 @@ unnormalized posterior density; we write $\postDens(\Par; \llikEm[\Ndesign])$ an
 when it is necessary to emphasize the quantity that is directly emulated.
 The log-likelihood emulation approach is considered in 
 \citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
-A related approach is explored in \citep{wang2018adaptive,adaptiveMultimodal}. 
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios}.
 The closely-related unnormalized log-posterior density (i.e., joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
 We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
-Emulating the log-density as opposed to the density itself is typically preferred as a way to improve numerical stability,
+A related method is used in \citep{wang2018adaptive,adaptiveMultimodal}, in which surrogates are constructed 
+to approximate a sequence of functions designed to be more regular than the log-likelihood.   
+In general, emulating densities on the log scale is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
 as opposed to the potentially high-dimensional output space of the forward model. This notion is referred 
@@ -667,12 +668,111 @@ For example, the pioneering work \citet{KOH} considers jointly learning
 a forward model emulator, calibration parameters, and a discrepancy function within a single 
 Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
 focus on the alternative modular workflow, where the surrogate is fit offline 
-without seeing the calibration data $\obs$ \citep{modularization} . 
+without seeing the calibration data $\obs$ \citep{modularization}. 
+\footnote{This point is specific to the forward model emulation setting. Log-density emulators 
+do depend on $\obs$, since the log-likelihood is a function of the data.}
 This modular two-stage approach naturally leads to 
 the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
 of the central questions motivating this review.
 
 \section{Posterior Approximation}
+With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
+posterior distribution of the Bayesian inverse problem. We view this as a question of uncertainty propagation. 
+In realistic settings with restrictive computational budgets, the surrogate predictive distribution may retain a high degree of 
+epistemic uncertainty stemming from the sparsity of the design; our interest is in constructing posterior 
+approximations that incorporate this uncertainty. We note that such approximations 
+may serve various downstream goals. If computational constraints prevent further reduction of epistemic
+uncertainty due to the high cost of augmenting the design, then one must accept that posterior inference 
+will be approximate. In such cases, the surrogate uncertainty should be acknowledged to prevent 
+overconfidence when drawing scientific conclusions. In other settings, it may be feasible to refine the surrogate 
+via additional queries to the simulator. An approximate posterior constructed using the current 
+surrogate may serve as a guide to determine the new input parameters at which the simulator will be 
+evaluated. In this case, propagating surrogate uncertainty is key in weighing the exploration vs. exploitation 
+tradeoff to select new design points (see \cref{sec:seq_design}).
+This uncertainty propagation viewpoint aligns closely with the perspective taken in \citep{BurknerSurrogate}, 
+who consider several MCMC-based methods for propagating surrogate uncertainty in a Bayesian framework. 
+Alternative lines of research (reviewed in \cref{sec:seq_design}) have instead emphasized iterative schemes 
+designed to achieve asymptotic convergence to the exact posterior. The tradeoff is that such approaches 
+still typically require a large number of simulator evaluations--often performed serially-- and thus remain 
+impractical in settings with computationally-intensive simulators.
+Motivated by this fact, our focus in this section is on approximate posterior inference and uncertainty propagation
+with a fixed surrogate.
+
+\subsection{Expected Posterior}
+The predictive distribution of the probabilistic surrogate model induces a random approximation 
+of the unnormalized posterior density. Normalizing this quantity yields a random measure
+\begin{align}
+&\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
+&&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par.
+\label{post_dens_random_llik}
+\end{align}
+
+After 
+normalizing $\postEm[\Ndesign]$, the random density  
+\begin{align}
+&\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
+&&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par.
+\label{eq:sample-approx}
+\end{align}
+
+The approximation $\llikEmRdm[\Ndesign]{\postDensNorm}$ may be induced by either a 
+forward model or log-density emulator. While $\llikEmRdmDens[\Ndesign](\Par)$ depends 
+only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
+depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
+the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
+$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
+\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar},
+A natural approach is thus to consider taking the expectation of $\llikEmRdm[\Ndesign]{\postDensNorm}$
+as the approximation to $\postDensNorm$. Formally, this yields the deterministic distribution
+\begin{equation}
+\llikEmSampDensNorm \Def \E_{\Ndesign}\left[ \llikEmRdm[\Ndesign]{\postDensNorm} \right], \label{eq:ep-approx}
+\end{equation}
+which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+We use the notation $\E_{\Ndesign}$ to indicate that the expectation is taken with respect to the 
+distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
+Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
+respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter.
+Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
+be used to draw independent samples from $\llikEmSampDensNorm$. 
+
+\begin{algorithm}
+    \caption{Monte Carlo Representation of $\llikEmSampDensNorm$}
+    \label{alg:ep}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample$}     
+        \For{$\sampleIndex \gets1,\NSample$} 
+        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample a distribution}
+		\State $\Par^{(\sampleIndex)} \sim \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample a parameter}
+	\EndFor
+	\State \Return $(\Par^{(1)}, \dots, \Par^{(\NSample)})$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+A practical implementation 
+would entail first sampling a trajectory of the surrogate model, which induces a sample 
+trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. A parameter sample 
+could then be drawn from the distribution implied by this unnormalized density using standard 
+methods (e.g., MCMC). The output of the algorithm thus represents a mixture across an 
+ensemble of posterior distributions. With a nonparametric emulator, the practical difficulty in 
+implementing \cref{alg:ep} is the requirement to sample a full infinite-dimensional 
+trajectory from the surrogate model.
+These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
+approaches. As far as we are aware, \citet{trainDynamics} is the only work to attempt an 
+implementation of \cref{alg:ep} in the nonparametric context. Their method consists of approximating GP 
+trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
+the trajectory as the GP mean, conditional on the sampled values at these points.
+This approach introduces the challenge of choosing the conditioning locations; the authors' 
+suggest sampling the points via a space-filling algorithm confined within the region of parameter 
+space where the GP predictions for the posterior density exceed some threshold.
+
+The work \citet{BurknerSurrogate} studies \cref{alg:ep} in the context of finite-dimensional
+parametric surrogate models. In this case, sampling a surrogate trajectory reduces to sampling a 
+finite dimensional parameter, making \cref{alg:ep} readily implementable in practice.
+However, no solution is offered for the common nonparametric setting.
+
 \subsection{Marginal Posterior}
 Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
 computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
@@ -708,10 +808,27 @@ Fit quadratic mean function: \citet{emPostDens}
 The log density of this approximation (after subtracting off the normalizing constant) is used as the 
 mean function.
 
+Both \cite{VehtariParallelGP} and \cite{StuartTeck1} assume $\parSpace$ is a compact subset of $\R^{\dimPar}$
+
 \section{Sequential Design} \label{sec:seq_design}
 \subsection{Asymptotic Consistency}
 Note that the algorithms that are appropriate for certain problems will significantly depend on 
 how expensive the simulator is.
+
+These methods effectively combine posterior
+inference and sequential design within a single algorithm.
+The papers \citet{Li_2014,ConradLocalExactMCMC} 
+adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
+exactness by showing the polynomial 
+approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
+also conducts sequential design within an MCMC algorithm, using emulator predictions at points where the 
+surrogate is confident, and running exact simulations at points that exceed a user-defined uncertainty tolerance.
+In \citet{MCMC_GP_proposal}, an algorithm is proposed to accelerate Hamiltonian Monte Carlo by using a 
+GP only for proposals, but running the exact simulation when computing the acceptance probability to 
+ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
+asymptotic consistency \citep{DelayedAcceptance}.
+These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
+maintaining asymptotic exactness.  We discuss sequential design strategies in \cref{sec:seq_design}.
 
 
 
