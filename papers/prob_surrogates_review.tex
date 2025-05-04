@@ -797,7 +797,13 @@ approximation, again borrowing terminology from
 meaning the expected likelihood approximation is a ratio estimator of the form 
  $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
  Note the difference with respect to the expected posterior approximation 
- $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$. 
+ $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$.
+ The expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian 
+ decision-theoretic viewpoint as the minimizer of an expected $L^2$ risk. However, this does not 
+ confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
+ see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. To our knowledge, the papers
+ \citep{SinsbeckNowak,StuartTeck1} are two of the first to consider the expected likelihood approximation
+ to propagate surrogate uncertainty.
  
  If the pointwise expectation 
  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is computable in closed-form, then 
@@ -811,23 +817,55 @@ with a Monte Carlo estimate derived from surrogate samples. In their method, the
 are simulated once and then the likelihood approximation is fixed throughout the MCMC run. 
 This approach is not directly applicable to nonparametric surrogate models; in the parametric 
 setting, it produces samples that are approximately distributed according to 
-$\postApproxNormMarg[\Ndesign]$.
+$\postApproxNormMarg[\Ndesign]$. Though the likelihood approximation is not explicitly defined,
+\citet{hydrologicalModel} appear to propose a similar technique.
+In the nonparametric case, most previous literature 
+has focused on the Gaussian settings from \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}
+due to their analytic tractability. We summarize these special cases of the expected likelihood below.
+
+\subsubsection{Gaussian Setting: Forward Model Emulator}
+\begin{prop} \label{prop:post-approx-fwd-EL-Gaussian}
+Consider the setting in \cref{prop:fwd-em-Gaussian}, where both the forward model emulator 
+and likelihood are Gaussian. Under these assumptions, the expected likelihood approximation
+is given by
+\begin{align}
+\postApproxMarg[\Ndesign](\Par) 
+&= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right). \label{eq:post-approx-fwd-EL-Gaussian}
+\end{align}
+\Cref{eq:post-approx-fwd-EL-Gaussian} can be seen to be the unnormalized posterior corresponding to the modified
+Bayesian inverse problem
+\begin{align}
+\obs &= \emMean[\Ndesign]{\fwd}(\Par) + \eta_{\Ndesign}(\Par) + \noise \label{inv_prob_Gaussian_modified} \\
+\Par &\sim \priorDens \nonumber \\
+\eta_{\Ndesign}(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
+\noise &\sim \Gaussian(0, \likPar), \nonumber 
+\end{align}
+where $\noise$, $\Par$, and $\eta_{\Ndesign}(\Par)$ are pairwise a priori independent for all $\Par$.
+[\todo: how best to format this? Looks weird.]
+\end{prop}
+
+Observe that, conditional on $\Par$, the expected likelihood in this setting is a Gaussian distribution with mean equal 
+to the surrogate mean and covariance that is the sum of the observation noise covariance and the GP predictive covariance at $\Par$.
+We emphasize that even if the prior $\priorDens$ is Gaussian, the posterior approximation will still be non-Gaussian
+due to the nonlinear mean function $\emMean[\Ndesign]{\fwd}(\Par)$, in addition to the fact that the likelihood covariance 
+depends on $\Par$ through $\emKer[\Ndesign]{\fwd}(\Par)$. The modified inverse problem viewpoint 
+in \cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
+this viewpoint extends beyond the Gaussian setting, even when analytical expressions for $\postApproxMarg[\Ndesign](\Par) $ 
+may not exist.
+The closed-form expression \cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
+\citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
+\citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
+villani2024posteriorsamplingadaptivegaussian,hydrologicalModel}. 
+
+
+\subsubsection{Gaussian Setting: Log-Density Emulator}
 
 
 
- The following results provide closed-form expressions for $\postApproxMarg[\Ndesign](\Par)$ in 
- the Gaussian settings introduced in \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}.
+This result is immediate from \cref{prop:fwd-em-Gaussian}.
 
 
-In this section, we define multiple unnormalized density approximations that have been 
-used in practice. Unlike in the previous section, the precise definition of these approximations
-will depend on the underlying quantity being emulated; we present generic definitions for forward 
-model $\fwdEm[\Ndesign]$ and log-likelihood $\llikEm[\Ndesign]$ emulators (the analogs 
-for log-posterior emulators are similar to the log-likelihood case). 
-We also provide closed-form unnormalized density approximations for the Gaussian settings defined in 
-\cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}.
-The definitions throughout this section are given for approximations to the \textit{unnormalized} posterior 
-density, with the normalizing constants implicitly defined.
+
 
 \begin{tabular}{lC{10cm}}
 \toprule
@@ -849,15 +887,7 @@ are presented for the case of a symmetric proposal distribution, but this assump
 
 \paragraph{Gaussian setting: Forward Model Emulation}
 
-\begin{prop} \label{prop:post-approx-fwd-EL-Gaussian}
-Consider the setting in \cref{prop:fwd-em-Gaussian}, where both the forward model emulator 
-and likelihood are Gaussian. Under these assumptions, the expected likelihood approximation
-is given by
-\begin{align}
-\postApproxMarg[\Ndesign](\Par) 
-&= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right).
-\end{align}
-\end{prop}
+
 
 \begin{prop} \label{prop:llik-em-Gaussian}
 Consider the setting in \cref{prop:llik-em-Gaussian} with a Gaussian log-posterior emulator. The 
