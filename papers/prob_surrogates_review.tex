@@ -684,11 +684,11 @@ of the central questions motivating this review.
 With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
 posterior distribution of the Bayesian inverse problem. We view this as a question of uncertainty propagation. 
 In realistic settings with restrictive computational budgets, the surrogate predictive distribution may retain a high degree of 
-epistemic uncertainty stemming from the sparsity of the design; our interest is in constructing posterior 
+epistemic uncertainty stemming from the sparsity of the design points; our interest is in constructing posterior 
 approximations that incorporate this uncertainty. We note that such approximations 
-may serve various downstream goals. If computational constraints prevent further reduction of epistemic
-uncertainty due to the high cost of augmenting the design, then one must accept that posterior inference 
-will be approximate. In such cases, the surrogate uncertainty should be acknowledged to prevent 
+may serve various downstream goals. If computational constraints prevent the acquisition of additional 
+design points, then one must accept a fixed posterior approximation.
+In such cases, the surrogate uncertainty should be acknowledged to prevent 
 overconfidence when drawing scientific conclusions. In other settings, it may be feasible to refine the surrogate 
 via additional queries to the simulator. An approximate posterior constructed using the current 
 surrogate may serve as a guide to determine the new input parameters at which the simulator will be 
@@ -706,15 +706,17 @@ with a fixed surrogate.
 \subsection{Expected Posterior}
 Consider a random surrogate $\postEm[\Ndesign]$ for the unnormalized posterior density, 
 induced by some underlying emulator model (e.g., a forward model or log-density emulator).
+We will use the notation $\E_{\Ndesign}$ to indicate expectations with respect to the 
+distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
 By normalizing $\postEm[\Ndesign]$, we obtain a random density
 \footnote{More generally, this is a random measure. We work with densities to avoid measure-theoretic technicalities.}
 \begin{align}
-&\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
-\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par),
-&&\llikEmRdm[\Ndesign]{\normCst} \Def \int_{\parSpace} \llikEmRdmDens[\Ndesign](\Par)d\Par
+&\postNormEm[\Ndesign](\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \postEm[\Ndesign](\Par),
+&&\normCstEm[\Ndesign]\Def \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
 \label{eq:sample-approx}
 \end{align}
-that summarizes the uncertainty about the true posterior. 
+which summarizes the uncertainty about the true posterior. 
 While $\postEm[\Ndesign](\Par)$ depends 
 only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
 depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
@@ -723,11 +725,9 @@ $\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} appr
 \citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar}.
 To construct a deterministic approximation to $\postDens$, we can consider the expectation
 \begin{equation}
-\postNormEm[\Ndesign] \Def \E_{\Ndesign}\left[ \postEm[\Ndesign] \right], \label{eq:ep-approx}
+\postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
 \end{equation}
 which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
-We use the notation $\E_{\Ndesign}$ to indicate that the expectation is taken with respect to the 
-distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
 Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter.
 Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
@@ -769,14 +769,56 @@ parametric surrogate models. In this case, sampling a surrogate trajectory reduc
 finite dimensional parameter, making \cref{alg:ep} readily implementable in practice.
 However, no solution is offered for the common nonparametric setting.
 
-\subsection{Unnormalized Density Approximations}
+\subsection{Expected Likelihood}
 Given the challenge of implementing \cref{alg:ep} with a nonparametric emulator, the majority of 
 previous literature instead proposes deterministic approximations of the \textit{unnormalized}
 density. As opposed to the expected posterior method, these approximations are computed 
 \textit{pointwise} in $\Par$; for GP surrogates, this implies that they do not incorporate the GP 
-predictive covariance.
-The practical benefit of this approach is that the unnormalized density approximation
-can be input into standard Bayesian computation software.
+predictive covariance. The practical benefit of this approach is that the unnormalized density 
+approximation can be input into standard Bayesian computation software.
+
+We start by considering the approximation derived by computing the pointwise expectation 
+of $\postEm(\Par)$ and then normalizing after-the-fact.
+This yields the unnormalized density estimate
+\begin{align}
+\postApproxMarg[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right], \label{eq:post-approx-EL}
+\end{align}
+which we refer to as the \textit{expected likelihood (EL)}
+\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
+$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
+approximation, again borrowing terminology from
+ \citet{BurknerSurrogate}. \citet{StuartTeck1} instead refer to this as the \textit{marginal} approximation, 
+ and show the normalizing constant implied by \cref{eq:post-approx-EL} is given by
+ \begin{equation}
+ \int_{\parSpace} \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right] d\Par 
+ = \E_{\Ndesign} \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
+ = \E_{\Ndesign}\left[\normCstEm \right],
+ \end{equation} 
+meaning the expected likelihood approximation is a ratio estimator of the form 
+ $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
+ Note the difference with respect to the expected posterior approximation 
+ $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$. 
+ 
+ If the pointwise expectation 
+ $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is computable in closed-form, then 
+the expected likelihood approximation can be sampled using standard MCMC software.
+In cases where this expectation is intractable, pseudo-marginal MCMC 
+\citep{pseudoMarginalMCMC} may be employed, so long as 
+samples can be drawn from the surrogate predictive distribution $\postEm[\Ndesign](\Par)$
+at any input $\Par$. We discuss this further in \cref{sec:MH-approx}.
+\citet{BurknerSurrogate} alternatively propose to replace  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$
+with a Monte Carlo estimate derived from surrogate samples. In their method, these samples 
+are simulated once and then the likelihood approximation is fixed throughout the MCMC run. 
+This approach is not directly applicable to nonparametric surrogate models; in the parametric 
+setting, it produces samples that are approximately distributed according to 
+$\postApproxNormMarg[\Ndesign]$.
+
+
+
+ The following results provide closed-form expressions for $\postApproxMarg[\Ndesign](\Par)$ in 
+ the Gaussian settings introduced in \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}.
+
+
 In this section, we define multiple unnormalized density approximations that have been 
 used in practice. Unlike in the previous section, the precise definition of these approximations
 will depend on the underlying quantity being emulated; we present generic definitions for forward 
@@ -805,28 +847,7 @@ are presented for the case of a symmetric proposal distribution, but this assump
 \label{tab:acc-prob-comparison}
 \end{table}
 
-\subsubsection{Expected Likelihood}
-The expected posterior approximation considers the expectation of $\normCstEm[\Ndesign]^{-1} \postEm(\Par)$.
-We could instead consider taking the expectation of $\postEm(\Par)$ and normalizing after-the-fact.
-This yields the unnormalized density estimate
-\begin{align}
-\postApproxMarg[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right] \label{eq:post-approx-EL}
-\end{align}
-which we refer to as the \textit{expected likelihood (EL)}
-\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
-$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
-approximation, again borrowing terminology from
- \citet{BurknerSurrogate}. As shown in \citet{StuartTeck1}, the normalizing constant implied by 
- \cref{eq:post-approx-EL} is given by
- \begin{equation}
- \int_{\parSpace} \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right] d\Par 
- = \E_{\Ndesign} \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
- = \E_{\Ndesign}\left[\normCstEm \right],
- \end{equation} 
- implying that the expected likelihood approximation is a ratio estimator of the form 
- $\E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
- The following results provide closed-form expressions for $\postApproxMarg[\Ndesign](\Par)$ in 
- the Gaussian settings introduced in \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}.
+\paragraph{Gaussian setting: Forward Model Emulation}
 
 \begin{prop} \label{prop:post-approx-fwd-EL-Gaussian}
 Consider the setting in \cref{prop:fwd-em-Gaussian}, where both the forward model emulator 
@@ -846,8 +867,9 @@ expected likelihood approximation is given by
 \end{align}
 \end{prop}
 
+\subsection{Other Unnormalized Density Approximations}
+plug-in mean, expected log-likelihood, quantile, special case of quantile used in FATES-CES paper
 
-\subsubsection{Plug-In Mean}
 By considering only the surrogate predictive mean, the stochastic surrogate is reduced 
 to a deterministic approximation, which induces a deterministic approximation of the 
 posterior. We term the resulting posteriors
@@ -864,37 +886,7 @@ If the emulator predictive mean is known to be highly accurate then this approxi
 but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
 both inaccurate and overly confident \citep{BurknerSurrogate}. 
 
-\subsubsection{Expected Likelihood}
-To propagate the surrogate uncertainty, one can consider taking pointwise expectations of 
-$\postEm[\Ndesign](\Par)$ with respect to the surrogate predictive distribution. We refer to the 
-resulting posteriors
-\begin{align}
-&\postApproxMarg[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \E_{\Ndesign}\left[\postDens(\Par; \fwdEm[\Ndesign])\right],
-&&\postApproxMarg[\Ndesign](\Par; \lpostEm[\Ndesign]) \Def \priorDens(\Par)\E_{\Ndesign}\left[\Exp{\llikEm[\Ndesign](\Par)}\right],
-\end{align}
-as \textit{expected likelihood (EL)} approximations, again borrowing terminology from \citet{BurknerSurrogate}.
-\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
-$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
-
-\todo: move EL before plug-in mean. Can then use generic definition $\E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right]$
-without having to define for different emulator cases.
-
-
-
-\subsubsection{Other Approximations}
-expected log-likelihood, quantile, special case of quantile used in FATES-CES paper
-
-\subsection{Marginal Posterior}
-Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
-computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
-issues with nonparametric emulators. They also mention the use of the prior log density as a 
-mean for the emulator.
-
-\subsection{Unnormalized Density Approximations}
-Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
-computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
-issues with nonparametric emulators. They also mention the use of the prior log density as a 
-mean for the emulator.
+\subsection{Metropolis-Hastings Approximations} \label{sec:MH-approx}
 
 \subsection{Existence and Integrability} \label{sec:existence}
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
@@ -917,6 +909,9 @@ The log density of this approximation (after subtracting off the normalizing con
 mean function.
 
 Both \cite{VehtariParallelGP} and \cite{StuartTeck1} assume $\parSpace$ is a compact subset of $\R^{\dimPar}$
+
+
+
 
 \section{Sequential Design} \label{sec:seq_design}
 \subsection{Asymptotic Consistency}
