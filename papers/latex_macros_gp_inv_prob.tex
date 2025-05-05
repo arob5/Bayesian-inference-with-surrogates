@@ -85,17 +85,18 @@
 
 % Posterior Approximations
 \newcommand{\normCstEm}[1][\Ndesign]{\normCst_{#1}}
-\newcommand{\postApproxEP}[1][\Ndesign]{\postDensNorm_{#1}^{\textrm{EP}}}
-\newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\textrm{mean}}}
-\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\textrm{EL}}}
-\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\textrm{EL}}}
+\newcommand{\postApproxEP}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EP}}}
+\newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\mathrm{mean}}}
+\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\mathrm{EL}}}
+\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EL}}}
+\newcommand{\postApproxNormMean}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{mean}}}
 
 
 \newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
 \newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
 \newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
-\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{EP}}}
+\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\mathrm{EP}}}
 
 
 
