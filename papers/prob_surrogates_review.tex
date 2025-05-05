@@ -983,7 +983,7 @@ This procedure is summarized in \cref{alg:MH}.
     \end{algorithmic}
 \end{algorithm}
 
-We will now consider replacing $\acceptProbMH(\Par, \propPar)$ with a surrogate-induced approximation.
+We will now replace $\accProbMH(\Par, \propPar)$ with a surrogate-induced approximation.
 As previously, we consider a generic random surrogate $\postEm[\Ndesign]$ for the 
 unnormalized posterior density, induced by an underlying emulator. By inserting $\postEm[\Ndesign]$
 in place of $\postDens$ in $\accProbMH(\Par, \propPar)$, the surrogate induces a random approximation
@@ -998,12 +998,13 @@ choosing the acceptance probability as the approximation target offers the oppor
 joint structure from the surrogate predictive distribution, as opposed to approximations derived via 
 pointwise approximations of the unnormalized posterior density. \citet{surrogateNoisyMCMC} propose 
 performing approximate inference by running the MH algorithm using the expected acceptance probability
-$\E_{\Ndesign}\left[\accProbMHEm[\Ndesign](\Par, \propPar)\right]$. A practical algorithm is given in 
-\cref{alg:MH-noisy}, which proceeds by drawing a sample of $\accProbMHEm[\Ndesign](\Par, \propPar)$ at
+$\E_{\Ndesign}\left[\accProbMHEm[\Ndesign](\Par, \propPar)\right]$ in place of $\accProbMH(\Par, \propPar)$. 
+A practical algorithm is given in \cref{alg:MH-noisy}, which proceeds by drawing a sample of 
+$\accProbMHEm[\Ndesign](\Par, \propPar)$ at
  each iteration. In addition to incorporating the joint structure of the surrogate, this algorithm has the 
  benefit of only requiring the ability to draw samples from the joint distribution of
- $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. It thus does not rely on Gaussian assumptions 
- or the requirement to approximate infinite-dimensional sample trajectories. 
+ $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. It thus does not rely on Gaussian assumptions, 
+ nor the requirement to approximate infinite-dimensional sample trajectories. 
  
  \begin{algorithm}
     \caption{Metropolis-Hastings with Expected Acceptance Probability}
@@ -1024,6 +1025,16 @@ $\E_{\Ndesign}\left[\accProbMHEm[\Ndesign](\Par, \propPar)\right]$. A practical 
     \end{algorithmic}
 \end{algorithm}
 
+\Cref{alg:MH-noisy} can alternatively be viewed as sampling a trajectory from $\postEm[\Ndesign]$
+at each iteration, then projecting onto the finite-dimensional distribution at the inputs $(\Par, \propPar)$.
+Given this perspective, \citet{surrogateNoisyMCMC} discuss how \cref{alg:MH-noisy} can be 
+viewed as an approximation to the expected posterior sampling scheme in \cref{alg:ep}.
+The algorithm also bears a close resemblance to pseudo-marginal MCMC
+\citep{pseudoMarginalMCMC,noisyMCMC,noisyMCSurvey}. Indeed, if \cref{alg:MH-noisy}
+is modified so that only $\postEm[\Ndesign](\propPar)$ is sampled at each iteration, with 
+the value for $\postEm[\Ndesign](\Par)$ recycled from the previous iteration, then 
+the result is a pseudo-marginal MCMC algorithm with target distribution $\postApproxNormMarg[\Ndesign]$
+\citet{surrogateNoisyMCMC} .
 
 \subsection{Existence and Integrability} \label{sec:existence}
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
