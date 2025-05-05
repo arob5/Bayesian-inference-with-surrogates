@@ -947,6 +947,83 @@ a connection with power-scaled likelihoods. However, the authors ultimately reco
 posterior and expected likelihood as preferred alternatives to this method.
 
 \subsection{Metropolis-Hastings Approximations} \label{sec:MH-approx}
+In this section we demonstrate that the surrogate-induced posteriors introduced above can be viewed as
+invoking particular approximations of the acceptance probability in a Metropolis-Hastings (MH) MCMC 
+algorithm. This perspective yields a family of posterior approximation algorithms that take the MH acceptance
+probability, as opposed to the unnormalized posterior density, as the target quantity for approximation.
+This approach is proposed in \citet{surrogateNoisyMCMC}, which we refer to for additional details.
+
+We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
+$\propDens(\Par, \cdot)$. If the Markov chain is in the current state $\Par \in \parSpace$ then 
+the next state is defined by sampling the proposal $\propPar \sim \propDens(\Par, \cdot)$, which is 
+accepted with probability
+\begin{align}
+&\accProbMH(\Par, \propPar) \Def 
+\min\left\{1, \frac{\postDens(\propPar)\propDens(\propPar, \Par)}{\postDens(\Par) \propDens(\Par, \propPar)} \right\}.
+\label{MH_acc_prob_exact}
+\end{align}
+If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
+This procedure is summarized in \cref{alg:MH}. 
+\begin{algorithm}
+    \caption{Metropolis-Hastings}
+    \label{alg:MH}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
+        \For{$\mcmcIndex \gets1,\NMCMC$} 
+        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$
+		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\postDens(\propPar)\propDens(\propPar, \Par)}{\postDens(\Par) \propDens(\Par, \propPar)} \right\}\right\}$
+		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
+		\If{$b = 1$}
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
+		\Else
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
+		\EndIf
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+We will now consider replacing $\acceptProbMH(\Par, \propPar)$ with a surrogate-induced approximation.
+As previously, we consider a generic random surrogate $\postEm[\Ndesign]$ for the 
+unnormalized posterior density, induced by an underlying emulator. By inserting $\postEm[\Ndesign]$
+in place of $\postDens$ in $\accProbMH(\Par, \propPar)$, the surrogate induces a random approximation
+\begin{equation}
+\accProbMHEm[\Ndesign](\Par, \propPar) 
+\Def \min\left\{1, \frac{\postEm[\Ndesign](\propPar)\propDens(\propPar, \Par)}{\postEm[\Ndesign](\Par) \propDens(\Par, \propPar)} \right\}
+\label{eq:MH-prob-surrogate}
+\end{equation}
+of the MH acceptance probability. Notice that $\accProbMHEm[\Ndesign](\Par, \propPar)$ depends on the 
+bivariate surrogate predictive distribution $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. Therefore, 
+choosing the acceptance probability as the approximation target offers the opportunity for incorporating 
+joint structure from the surrogate predictive distribution, as opposed to approximations derived via 
+pointwise approximations of the unnormalized posterior density. \citet{surrogateNoisyMCMC} propose 
+performing approximate inference by running the MH algorithm using the expected acceptance probability
+$\E_{\Ndesign}\left[\accProbMHEm[\Ndesign](\Par, \propPar)\right]$. A practical algorithm is given in 
+\cref{alg:MH-noisy}, which proceeds by drawing a sample of $\accProbMHEm[\Ndesign](\Par, \propPar)$ at
+ each iteration. In addition to incorporating the joint structure of the surrogate, this algorithm has the 
+ benefit of only requiring the ability to draw samples from the joint distribution of
+ $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. It thus does not rely on Gaussian assumptions 
+ or the requirement to approximate infinite-dimensional sample trajectories. 
+ 
+ \begin{algorithm}
+    \caption{Metropolis-Hastings with Expected Acceptance Probability}
+    \label{alg:MH-noisy}
+    \begin{algorithmic}[1]
+    \Function{MHApprox}{$\indexMCMC[0]{\Par}, \NMCMC$}     
+        \For{$\mcmcIndex \gets1,\NMCMC$} 
+        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$
+		\State $\accProbMH^\prime \sim \mathrm{law}\left(\accProbMHEm[\Ndesign](\Par, \propPar)\right)$
+		\State $b \sim \text{Bernoulli}(\accProbMH^\prime)$
+		\If{$b = 1$}
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
+		\Else
+			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
+		\EndIf
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
 
 \subsection{Existence and Integrability} \label{sec:existence}
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
@@ -1426,25 +1503,6 @@ accepted with probability $\accProbMH(\Par, \propPar)$, defined by
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
 This procedure is summarized in \Cref{alg:MH}. 
-\begin{algorithm}
-    \caption{Metropolis-Hastings}
-    \label{alg:MH}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
-        \For{$\mcmcIndex \gets1,\NMCMC$} 
-        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ \Comment{Proposal}
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\priorDens(\propPar)\Exp{\llik(\propPar)}
-				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) \Exp{\llik(\indexMCMC{\Par})}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
-		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
-		\If{$b = 1$}
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
-		\Else
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
-		\EndIf
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
 
 For notational convenience in deriving approximations 
 of the acceptance probability, we define 
