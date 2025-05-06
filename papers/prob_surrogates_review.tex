@@ -401,8 +401,8 @@ to iteratively construct the design in order to target high-posterior regions (s
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
 be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
-\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware}, which uses 
-Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
+\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware,FATES_CES}, 
+which uses Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
 \citet{emPostDens} utilizes a sequence of importance sampling steps to construct a Gaussian 
 approximation of the posterior, which is then sampled from to produce an initial surrogate design.
 We do not discuss these methods further in this review, but note that continued methodological 
@@ -707,9 +707,9 @@ with a fixed surrogate.
 Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
 ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
 of the random surrogate model. Plugging the predictive mean in place of the quantity it is emulating induces 
-a deterministic approximation $\postApproxNormMean[\Ndesign](\Par)$ of the posterior distribution 
-$\postDensNorm(\Par)$, which we refer to as the \textit{plug-in mean}, or simply \textit{mean}, approximation. 
-In the forward model and log-likelihoo emulation settings, this implies the unnormalized density approximations 
+a deterministic approximation $\postApproxNormMean[\Ndesign]$ of the posterior distribution 
+$\postDensNorm$, which we refer to as the \textit{plug-in mean}, or simply \textit{mean}, approximation. 
+In the forward model and log-likelihood emulation settings, this implies the unnormalized density approximations 
 \begin{align}
 &\postApproxMean[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \postDens(\Par; \emMean[\Ndesign]{\fwd}), \label{eq:mean-approx-fwd}
 &&\postApproxMean[\Ndesign](\Par; \llikEm[\Ndesign]) \Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}, \label{eq:mean-approx_llik}
@@ -762,7 +762,7 @@ be used to draw samples from $\llikEmSampDensNorm$.
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
         \For{$\sampleIndex \gets1,\NSample$} 
-        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample a distribution}
+        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample posterior trajectory}
 		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample parameters}
 	\EndFor
 	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
@@ -774,8 +774,7 @@ A practical implementation
 would entail first sampling a trajectory of the surrogate model, which induces a sample 
 trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. Parameter samples
 could then be drawn from the distribution implied by this unnormalized density using standard 
-methods (e.g., MCMC), thus representing a Metropolis within Monte Carlo 
-approach \citep{garegnani2021NoisyMCMC}.
+methods (e.g., MCMC).
 The output of the algorithm thus represents a mixture over an 
 ensemble of posterior distributions. Choosing $M = 1$  (drawing one sample per
 trajectory of $\postNormEm[\Ndesign]$) implies that \cref{alg:ep} returns independent 
@@ -786,7 +785,7 @@ only provide a summary of a single trajectory from $\postNormEm[\Ndesign]$ and t
 in general provide a poor representation of this random density.
 
 \Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
-of $\postNormEm[\Ndesign]$, which will generally be possible for finite-dimensional 
+of $\postEm[\Ndesign]$, which will generally be possible for finite-dimensional 
 parametric surrogate models. \citet{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate}
 both investigate \cref{alg:ep} in such settings. Under certain assumptions, the former paper 
 bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
@@ -803,18 +802,17 @@ We note that an alternative approach could involve constructing a finite-dimensi
 of the surrogate in order to provide the practical means to simulate (approximate) trajectories 
 of $\postEm[\Ndesign]$. In the GP setting, approaches such as the Karhunen-Loeve expansion 
 and random Fourier features could be leveraged for this purpose \citep{dimRedPolyChaos,samplingGPPosts}. 
-As with \citet{trainDynamics}, this approach only approximates \cref{alg:ep}.
-
-[\todo: check \citet{trainDynamics} again; they might not be trying to implement the direct sampling 
-approach, but rather sampling trajectories within a single MCMC scheme.]
+As with the \citet{trainDynamics} method, this approach is only an approximate implementation of \cref{alg:ep}.
 
 \subsection{Expected Likelihood}
 Given the challenge of implementing \cref{alg:ep} with a nonparametric emulator, the majority of 
 previous literature instead proposes deterministic approximations of the unnormalized
 density. As opposed to the expected posterior method, these approximations are computed 
-pointwise in $\Par$; for GP surrogates, this implies that they do not incorporate the GP 
-predictive covariance. The practical benefit of this approach is that the unnormalized density 
-approximation can be input into standard Bayesian computation software.
+pointwise in $\Par$. This is a potential downside of this approach, as it does not leverage 
+the full structure of the surrogate predictive distribution (e.g., the predictive covariance of a GP emulator).
+However, the focus on unnormalized density approximation has several practical benefits, 
+including that it does not require approximating surrogate trajectories, and is amenable to the application of 
+standard Bayesian inference procedures using a single MCMC run.
 
 We start by considering the approximation derived by computing the pointwise expectation 
 of $\postEm(\Par)$ and then normalizing after-the-fact.
@@ -836,8 +834,8 @@ approximation, again borrowing terminology from
 meaning the expected likelihood approximation is a ratio estimator of the form 
  $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
  Note the difference with respect to the expected posterior approximation 
- $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$.
- This difference is highlighted in \cref{tab:post-approx-comparison} in the forward model emulation setting. 
+ $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
+ which we highlight in \cref{tab:post-approx-comparison} in the forward model emulation setting.  
  The expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
  decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
  confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
@@ -851,13 +849,20 @@ the expected likelihood approximation can be sampled using standard MCMC softwar
 In cases where this expectation is intractable, pseudo-marginal MCMC 
 \citep{pseudoMarginalMCMC} may be employed, so long as 
 samples can be drawn from the surrogate predictive distribution $\postEm[\Ndesign](\Par)$
-at any input $\Par$. We discuss this further in \cref{sec:MH-approx}.
+at any input $\Par$. \citet{garegnani2021NoisyMCMC} investigates the pseudo-marginal 
+approach, as well as the closely-related Monte Carlo within Metropolis-Hastings (MCwMH)
+method \citep{noisyMCSurvey,stabilityNoisyMH}. MCwMH does not sample from 
+$\postApproxNormMarg[\Ndesign]$ exactly, but can achieve 
+much faster mixing relative to the pseudo-marginal method \citep{noisyMCMC}.
+We discuss these methods, and related generalizations, further in \cref{sec:MH-approx}.
+
 \citet{BurknerSurrogate} alternatively propose to replace  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$
-with a Monte Carlo estimate derived from surrogate samples. In their method, these samples 
-are simulated once and then the likelihood approximation is fixed throughout the MCMC run. 
-This approach is not directly applicable to nonparametric surrogate models, but in the parametric 
-setting it produces samples that are approximately distributed according to 
-$\postApproxNormMarg[\Ndesign]$. \citet{hydrologicalModel} propose a similar approach.
+with a Monte Carlo estimate derived from surrogate samples. Their method differs from the 
+pseudo-marginal and MCwMH algorithms in that the Monte Carlo samples are simulated once 
+and then fixed throughout the MCMC run. It therefore allows for the application of standard 
+MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$.
+This approach is well-suited to finite-dimensional surrogate models, but is not directly 
+applicable in the nonparametric setting. 
 In the nonparametric case, most previous literature 
 has focused on the Gaussian settings from \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}
 due to their analytic tractability. We summarize these special cases below.
@@ -941,7 +946,7 @@ and expected posterior approximations in the forward model emulation setting.}
 Various alternative approximations have been proposed for the unnormalized posterior density. 
 Instead of computing pointwise expectations, one can consider summarizing $\postEm[\Ndesign](\Par)$
 by computing pointwise quantiles \citep{VehtariParallelGP,quantileApprox}. In the log-likelihood 
-emulation setting with a GP emulator, \cite{VehtariParallelGP} computes the $\quantileProb$-quantile of 
+emulation setting with a GP emulator, \cite{VehtariParallelGP} considers the $\quantileProb$-quantile of 
 the likelihood surrogate
 \begin{equation}
 \mathrm{Quantile}_{\quantileProb}(\Exp{\llikEm[\Ndesign](\Par)})
