@@ -754,28 +754,44 @@ which we refer to as the \textit{expected posterior (EP)}, following the termino
 Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
 Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
-be used to draw independent samples from $\llikEmSampDensNorm$. 
+be used to draw samples from $\llikEmSampDensNorm$. 
 
 \begin{algorithm}
     \caption{Direct sampling from $\llikEmSampDensNorm$}
     \label{alg:ep}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample$}     
+    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
         \For{$\sampleIndex \gets1,\NSample$} 
         		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample a distribution}
-		\State $\Par^{(\sampleIndex)} \sim \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample a parameter}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample parameters}
 	\EndFor
-	\State \Return $(\Par^{(1)}, \dots, \Par^{(\NSample)})$
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
 	\EndFunction
     \end{algorithmic}
 \end{algorithm}
 
 A practical implementation 
 would entail first sampling a trajectory of the surrogate model, which induces a sample 
-trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. A parameter sample 
+trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. Parameter samples
 could then be drawn from the distribution implied by this unnormalized density using standard 
-methods (e.g., MCMC). The output of the algorithm thus represents a mixture over an 
-ensemble of posterior distributions. With a nonparametric emulator, the practical difficulty in 
+methods (e.g., MCMC), thus representing a Metropolis within Monte Carlo 
+approach \citep{garegnani2021NoisyMCMC}.
+The output of the algorithm thus represents a mixture over an 
+ensemble of posterior distributions. Choosing $M = 1$  (drawing one sample per
+trajectory of $\postNormEm[\Ndesign]$) implies that \cref{alg:ep} returns independent 
+samples from $\postApproxEP[\Ndesign]$. For $M > 1$, the samples will be dependent.
+For example, in the extreme case $\NSample = 1$ they will 
+still have the correct marginal distribution $\postApproxEP[\Ndesign]$, but will 
+only provide a summary of a single trajectory from $\postNormEm[\Ndesign]$ and thus 
+in general provide a poor representation of this random density.
+
+\Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
+of $\postNormEm[\Ndesign]$, which will generally be possible for finite-dimensional 
+parametric surrogate models. \citet{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate}
+both investigate \cref{alg:ep} in such settings. Under certain assumptions, the former paper 
+bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
+
+With a nonparametric emulator, the practical difficulty in 
 implementing \cref{alg:ep} is the requirement to sample an infinite-dimensional 
 trajectory from the surrogate model.
 These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
@@ -783,14 +799,14 @@ approaches. As far as we are aware, \citet{trainDynamics} is the only work to at
 implementation of \cref{alg:ep} in the nonparametric context. Their method consists of approximating GP 
 trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
 the trajectory as the GP mean, conditional on the sampled values at these points.
-This approach introduces the challenge of choosing the conditioning locations; the authors' 
-suggest sampling the points via a space-filling algorithm confined within the region of parameter 
-space where the GP predictions for the posterior density exceed some threshold.
+We note that an alternative approach could involve constructing a finite-dimensional approximation 
+of the surrogate in order to provide the practical means to simulate (approximate) trajectories 
+of $\postEm[\Ndesign]$. In the GP setting, approaches such as the Karhunen-Loeve expansion 
+and random Fourier features could be leveraged for this purpose \citep{dimRedPolyChaos,samplingGPPosts}. 
+As with \citet{trainDynamics}, this approach only approximates \cref{alg:ep}.
 
-\citet{BurknerSurrogate} studies \cref{alg:ep} in the context of finite-dimensional
-parametric surrogate models. In this case, sampling a surrogate trajectory reduces to sampling a 
-finite dimensional parameter, making \cref{alg:ep} readily implementable in practice.
-However, no solution is offered for the nonparametric setting.
+[\todo: check \citet{trainDynamics} again; they might not be trying to implement the direct sampling 
+approach, but rather sampling trajectories within a single MCMC scheme.]
 
 \subsection{Expected Likelihood}
 Given the challenge of implementing \cref{alg:ep} with a nonparametric emulator, the majority of 
@@ -1037,6 +1053,23 @@ the result is a pseudo-marginal MCMC algorithm with target distribution $\postAp
 \citet{surrogateNoisyMCMC} .
 
 \subsection{Existence and Integrability} \label{sec:existence}
+We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
+introduced above are well-defined. This theoretical technicality points to important practical 
+issues in constructing emulators for use in posterior approximation. The primary concern
+is that the tail behavior of the surrogate may lead to approximations of $\postDens(\Par)$ that 
+are not integrable. Such pathologies can easily arise if utilizing a stationary surrogate, where 
+the predictive mean and variance stabilize at constant values as distance from the design points 
+increases. Table \todo illustrates simple examples of such cases. In order to avoid issues related to
+tail behavior, previous work tends to restrict to the setting where $\parSpace$
+is a compact subset of $\R^{\dimPar}$ \citep{StuartTeck1, VehtariParallelGP}.
+In \citet{random_fwd_models}, this assumption is relaxed and various existence conditions are 
+established for generic random surrogates and general $\parSpace$.
+
+
+
+
+
+
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
 function. This paper actually argues that this may be useful as a diagnostic to assess the quality 
 of the design. Their logic goes as follows: if the Markov chain moves far away from the design 
