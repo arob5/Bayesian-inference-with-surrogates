@@ -373,7 +373,9 @@ Bayesian inverse problems. We highlight commonly-used surrogates, emphasizing
 models that provide a probabilistic representation of emulator uncertainty in addition to 
 standard point predictions. We conclude the section with discussions of the tradeoffs
 between the forward and log-density emulation strategies, and connections with the 
-broader computer experiments literature.
+broader computer experiments literature. Our aim is not to investigate any specific 
+model in depth; see \cref{sec:existence} for broad practical recommendations for 
+constructing surrogate models for use in posterior approximation.
 
 \subsection{Initial Design}
 Before discussing specific emulators, we comment on the general process of surrogate fitting.
@@ -1055,24 +1057,58 @@ The algorithm also bears a close resemblance to pseudo-marginal MCMC
 is modified so that only $\postEm[\Ndesign](\propPar)$ is sampled at each iteration, with 
 the value for $\postEm[\Ndesign](\Par)$ recycled from the previous iteration, then 
 the result is a pseudo-marginal MCMC algorithm with target distribution $\postApproxNormMarg[\Ndesign]$
-\citet{surrogateNoisyMCMC} .
+\citet{surrogateNoisyMCMC}.
+[\todo: cite Istem here, and garegnani2021NoisyMCMC]
 
 \subsection{Existence and Integrability} \label{sec:existence}
 We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
-introduced above are well-defined. This theoretical technicality points to important practical 
-issues in constructing emulators for use in posterior approximation. The primary concern
-is that the tail behavior of the surrogate may lead to approximations of $\postDens(\Par)$ that 
+introduced above are well-defined. Consideration of this theoretical technicality points to important 
+practical issues in constructing emulators for use in posterior approximation. The primary concern
+is that the tail behavior of the surrogate may lead to approximations of $\postDens$ that 
 are not integrable. Such pathologies can easily arise if utilizing a stationary surrogate, where 
 the predictive mean and variance stabilize at constant values as distance from the design points 
-increases. Table \todo illustrates simple examples of such cases. In order to avoid issues related to
+increases. This issue is especially a concern if emulating the log-posterior density, as the prior 
+density is being modeled and hence cannot be relied upon to ensure integrability \citep{emPostDens}.
+Table \todo illustrates simple examples where such pathologies can occur.
+In order to avoid issues related to
 tail behavior, previous work tends to restrict to the setting where $\parSpace$
 is a compact subset of $\R^{\dimPar}$ \citep{StuartTeck1, VehtariParallelGP}.
-In \citet{random_fwd_models}, this assumption is relaxed and various existence conditions are 
-established for generic random surrogates and general $\parSpace$.
+Other applications have not directly addressed this issue, but in numerical experiments focus on 
+prior distributions with compact support \citet{trainDynamics,FATES_CES} or truncate an unbounded
+prior to achieve compact support \citep{gp_surrogates_random_exploration,FerEmulation}. 
+\citet{emPostDens} address this issue in depth, describing how the use of stationary log-posterior
+surrogates can lead to divergent MCMC chains when performing approximate posterior inference.
+Theoretical treatments have also explored conditions to ensure existence over generic unbounded
+domains \citep{random_fwd_models,garegnani2021NoisyMCMC}. We refer to 
+\citep{StuartTeck1,StuartTeck2} for a comprehensive theoretical treatment in the GP setting.
+
+We now provide some practical guidelines motivated by these integrability considerations.
+Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
+is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \cref{alg:ep}, 
+which assumes that each sampled trajectory of $\postEm[\Ndesign]$ induces a valid probability 
+distribution from which samples can be drawn. This requirement can be weakened for other 
+approximations; for example, in \cref{prop:llik-em-Gaussian} we observe the requirement is that
+$\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
+decays sufficiently quickly as $\norm{\Par} \to \infty$. From a practical perspective, our general 
+recommendation is to design the surrogate model to ensure that $\lpostEm[\Ndesign](\Par) \to -\infty$
+almost surely as $\norm{\Par} \to \infty$. As a prior predictive check, we propose to   
+assess the limiting behavior of the predictive distribution along different directions in parameter
+space. For example, this could take the form of a graphical check by plotting quantiles of 
+the predictive distribution at sequences of points along the coordinate axes. 
+See table \todo for an example. Performing this simple check does not require any additional 
+evaluations of the expensive simulator, and can prevent wasting resources by uncovering 
+issues with the surrogate during approximate inference (for example, \citet{emPostDens}
+use divergent MCMC chains as a sort of surrogate diagnostic check).
+
+In order to achieve the requirement $\lpostEm[\Ndesign](\Par) \to -\infty$, we find that it is 
+necessary to achieve a reasonable approximation of the global trend of the response 
+surface that is being emulated over $\parSpace$. This is particularly important in the
+log-density emulation setting. In this case, we generally recommend against the use of 
+stationary surrogate models, though they can perform reasonably well in particular cases.
 
 
-
-
+While stationary surrogate models may be 
+a reasonable choice in 
 
 
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
