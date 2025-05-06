@@ -169,6 +169,19 @@ keywords = {Bayesian quadrature, numerical integration, Gaussian process, produc
 abstract = {Bayesian quadrature treats the problem of numerical integration as one of statistical inference. A prior Gaussian process distribution is assumed for the integrand, observations arise from evaluating the integrand at selected points, and a posterior distribution is derived for the integrand and the integral. Methods are developed for quadrature in Rp. A particular application is integrating the posterior density arising from some other Bayesian analysis. Simulation results are presented, to show that the resulting Bayes–Hermite quadrature rules may perform better than the conventional Gauss–Hermite rules for this application. A key result is derived for product designs, which makes Bayesian quadrature practically useful for integrating in several dimensions. Although the method does not at present provide a solution to the more difficult problem of quadrature in high dimensions, it does seem to offer real improvements over existing methods in relatively low dimensions.}
 }
 
+@inproceedings{quadratureLogGP,
+ author = {Osborne, Michael and Garnett, Roman and Ghahramani, Zoubin and Duvenaud, David K and Roberts, Stephen J and Rasmussen, Carl},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {F. Pereira and C.J. Burges and L. Bottou and K.Q. Weinberger},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Active Learning of Model Evidence Using Bayesian Quadrature},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2012/file/6364d3f0f495b6ab9dcf8d3b5c6e0b01-Paper.pdf},
+ volume = {25},
+ year = {2012}
+}
+
+
 % Kernels for vector-valued functions
 @BOOK{multiOutputKernels,
   author={Álvarez, Mauricio A. and Rosasco, Lorenzo and Lawrence, Neil D.},
@@ -794,6 +807,48 @@ DOI = {10.5194/bg-15-5801-2018}
       url={https://arxiv.org/abs/2411.13361}
 }
 
+% Application to ABC. Emulate log-likelihood with quadratic mean function.
+@InProceedings{llikEmABC,
+  title = 	 {{Accelerating ABC methods using Gaussian processes}},
+  author = 	 {Wilkinson, Richard},
+  booktitle = 	 {Proceedings of the Seventeenth International Conference on Artificial Intelligence and Statistics},
+  pages = 	 {1015--1023},
+  year = 	 {2014},
+  editor = 	 {Kaski, Samuel and Corander, Jukka},
+  volume = 	 {33},
+  series = 	 {Proceedings of Machine Learning Research},
+  address = 	 {Reykjavik, Iceland},
+  month = 	 {22--25 Apr},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v33/wilkinson14.pdf},
+  url = 	 {https://proceedings.mlr.press/v33/wilkinson14.html}
+}
+
+% Use GP to emulate log-discrepancy function in ABC. Include quadratic trend.
+@article{ABCGP,
+  author  = {Michael U. Gutmann and Jukka Cor and er},
+  title   = {Bayesian Optimization for Likelihood-Free Inference of Simulator-Based Statistical Models},
+  journal = {Journal of Machine Learning Research},
+  year    = {2016},
+  volume  = {17},
+  number  = {125},
+  pages   = {1--47},
+  url     = {http://jmlr.org/papers/v17/15-017.html}
+}
+
+% Use GPs to accelerate pseudo-marginal MCMC. Fit GP with quadratic mean.
+@article{pseudoMarginalGP,
+title = {Accelerating pseudo-marginal MCMC using Gaussian processes},
+journal = {Computational Statistics & Data Analysis},
+volume = {118},
+pages = {1-17},
+year = {2018},
+issn = {0167-9473},
+doi = {https://doi.org/10.1016/j.csda.2017.09.002},
+url = {https://www.sciencedirect.com/science/article/pii/S0167947317301950},
+author = {Christopher C. Drovandi and Matthew T. Moores and Richard J. Boys},
+keywords = {Gaussian processes, Likelihood-free methods, Markov processes, Particle Markov chain Monte Carlo, Pseudo-marginal methods, State space models}
+}
 
 %  ---------------------------------------------------------------------------------------------------
 % Forward model emulation: marginal approximation

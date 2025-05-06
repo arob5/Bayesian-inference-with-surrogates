@@ -135,7 +135,7 @@ using a new set of exact simulation evaluations. This constitutes a sequential d
 whereby the selection of new training points is optimized to yield maximal improvement in the induced 
 posterior approximation. This leads to an instance of the ``exploration vs. exploitation'' balancing act,
 familiar to fields such as Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, reinforcement learning 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, reinforcement learning 
 \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, among others.
 In the present setting, this 
 manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
@@ -549,9 +549,11 @@ As with forward model surrogates, log-density surrogates induce a random approxi
 unnormalized posterior density; we write $\postDens(\Par; \llikEm[\Ndesign])$ and $\postDens(\Par; \lpostEm[\Ndesign])$
 when it is necessary to emphasize the quantity that is directly emulated.
 The log-likelihood emulation approach is considered in 
-\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
+\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,
+StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
-integration \citep{BayesQuadrature,BayesQuadRatios}.
+integration \citep{BayesQuadrature,BayesQuadRatios} and approximate Bayesian 
+computation \citep{llikEmABC}.
 The closely-related unnormalized log-posterior density (i.e., joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
 We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
@@ -1100,15 +1102,19 @@ evaluations of the expensive simulator, and can prevent wasting resources by unc
 issues with the surrogate during approximate inference (for example, \citet{emPostDens}
 use divergent MCMC chains as a sort of surrogate diagnostic check).
 
-In order to achieve the requirement $\lpostEm[\Ndesign](\Par) \to -\infty$, we find that it is 
+In order to achieve the requirement $\lpostEm[\Ndesign](\Par) \to -\infty$, it is 
 necessary to achieve a reasonable approximation of the global trend of the response 
 surface that is being emulated over $\parSpace$. This is particularly important in the
 log-density emulation setting. In this case, we generally recommend against the use of 
 stationary surrogate models, though they can perform reasonably well in particular cases.
-
-
-While stationary surrogate models may be 
-a reasonable choice in 
+Instead, one natural approach is to fit a trend to capture the global structure, along with an 
+additional model to capture local deviations from the trend. In the GP setting, this idea has 
+been realized by combining quadratic mean functions with stationary kernels 
+\citep{emPostDens,SinsbeckNowak,VehtariParallelGP,llikEmABC,ABCGP,pseudoMarginalGP}. In 
+\citet{emPostDens} the quadratic trend is constructed via a sequential importance sampling
+scheme, while in the other articles the coefficients are learned alongside the kernel hyperparameters.
+Various works have also proposed combining polynomial chaos expansions and 
+Gaussian processes (\todo: cite).
 
 
 \citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
@@ -1130,8 +1136,7 @@ Fit quadratic mean function: \citet{emPostDens}
 The log density of this approximation (after subtracting off the normalizing constant) is used as the 
 mean function.
 
-Both \cite{VehtariParallelGP} and \cite{StuartTeck1} assume $\parSpace$ is a compact subset of $\R^{\dimPar}$
-
+Wilkinson (2014); Gutmann and Corander (2016); Drovandi et al. (2018),
 
 
 
