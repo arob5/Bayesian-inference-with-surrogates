@@ -1082,66 +1082,14 @@ $\Par \in \parSpace$ then the next state is defined by sampling the proposal
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
 This procedure is summarized in \cref{alg:MH}. 
-\begin{algorithm}
-    \caption{Metropolis-Hastings}
-    \label{alg:MH}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
-        \For{$\mcmcIndex \gets 1, \dots, \NMCMC$} 
-        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\postDens(\propPar)\propDens(\propPar, \indexMCMC{\Par})}{\postDens(\indexMCMC{\Par}) \propDens(\indexMCMC{\Par}, \propPar)} \right\}\right\}$
-		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
-		\If{$b = 1$}
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
-		\Else
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
-		\EndIf
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-We consider a family of algorithms that approximate $\accProbMH(\Par, \propPar)$ by
-replacing $\postDens(\Par)$  and $\postDens(\propPar)$ in \Cref{MH_acc_prob_exact}
-with approximations that are sampled from a specified distribution. The particular choice of 
-this distribution yields different algorithms, all of which are ``noisy'' in the sense that 
-an additional Monte Carlo step has been injected within the standard MH scheme
-\citep{noisyMCSurvey,noisyMCMC,stabilityNoisyMH}. In particular, we assume 
-that the approximation of $[\postDens(\Par), \postDens(\propPar)]$ is sampled as
-\begin{equation}
-[\hat{\postDens}_{\Par}, \hat{\postDens}_{\propPar}] \sim \postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot),
-\end{equation}
-where $\postSampleKernel$ is a Markov kernel mapping from source $\parSpace^2 \times \R_+$
-to target $\R^2_{+}$. The generic noisy MH algorithm is stated in \Cref{alg:MH-noisy}. Consider 
-the following three special cases.
-
- \begin{algorithm}
-    \caption{Noisy Metropolis-Hastings}
-    \label{alg:MH-noisy}
-    \begin{algorithmic}[1]
-    \Function{MH-Noisy}{$\indexMCMC[0]{\Par}, \NMCMC, \postSampleKernel$}
-    	\State $\hat{\postDens}_{\text{curr}} \sim \mathrm{law}(\postEm[\Ndesign](\indexMCMC[0]{\Par}))$
-        \For{$\mcmcIndex \gets 1, \dots, \NMCMC$} 
-        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$
-		\State $[\hat{\postDens}_{\indexMCMC{\Par}}, \hat{\postDens}_{\tilde{\Par}}] \sim \postSampleKernel([\indexMCMC{\Par}, \propPar, \hat{\postDens}_{\text{curr}}],\cdot)$
-		\State $\hat{\accProbMH} \gets \min\left\{1, \frac{\hat{\postDens}_{\tilde{\Par}} \cdot \propDens(\propPar, \indexMCMC{\Par})}{\hat{\postDens}_{\indexMCMC{\Par}} \cdot \propDens(\indexMCMC{\Par}, \propPar)} \right\}\right\}$
-		\State $b \sim \text{Bernoulli}(\hat{\accProbMH})$
-		\If{$b = 1$}
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$
-			\State $\hat{\postDens}_{\text{curr}} \gets \hat{\postDens}_{\tilde{\Par}}$
-		\Else
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
-		\EndIf
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
 
 \begin{figure}[ht]
 \centering
 \begin{minipage}[t]{0.495\textwidth}
+    \floatname{algorithm}{Alg.}
     \captionsetup{type=algorithm}
-    \caption*{Metropolis-Hastings}
+    \caption{Metropolis-Hastings}
+    \label{alg:MH}
     \begin{algorithmic}[1]
     \Function{MH}{$\Par_0, \NMCMC$}     
         \For{$k \gets 0, \dots, \NMCMC$} 
@@ -1159,8 +1107,10 @@ the following three special cases.
 \end{minipage}
 \hfill
 \begin{minipage}[t]{0.495\textwidth}
+    \floatname{algorithm}{Alg.}
     \captionsetup{type=algorithm}
-    \caption*{Noisy Metropolis-Hastings}
+    \caption{Noisy Metropolis-Hastings}
+    \label{alg:MH-noisy}
     \begin{algorithmic}[1]
     \Function{MH-Noisy}{$\Par_0, \NMCMC, \postSampleKernel$}
         \State $\hat{\pi}_{\text{curr}} \sim \mathrm{law}(\postEm[\Ndesign](\indexMCMC[0]{\Par}))$
@@ -1182,8 +1132,19 @@ the following three special cases.
 \caption{Side-by-side comparison of Metropolis-Hastings and Noisy Metropolis-Hastings algorithms.}
 \end{figure}
 
-
-
+We consider a family of algorithms that approximate $\accProbMH(\Par, \propPar)$ by
+replacing $\postDens(\Par)$  and $\postDens(\propPar)$ in \Cref{MH_acc_prob_exact}
+with approximations that are sampled from a specified distribution. The particular choice of 
+this distribution yields different algorithms, all of which are ``noisy'' in the sense that 
+an additional Monte Carlo step has been injected within the standard MH scheme
+\citep{noisyMCSurvey,noisyMCMC,stabilityNoisyMH}. In particular, we assume 
+that the approximation of $[\postDens(\Par), \postDens(\propPar)]$ is sampled as
+\begin{equation}
+[\hat{\postDens}_{\Par}, \hat{\postDens}_{\propPar}] \sim \postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot),
+\end{equation}
+where $\postSampleKernel$ is a Markov kernel mapping from source $\parSpace^2 \times \R_+$
+to target $\R^2_{+}$. The generic noisy MH algorithm is stated in the left column of \Cref{alg:MH-noisy}. 
+Consider the following three special cases.
 
 \paragraph{Pseudo-Marginal.}
 We first consider the choice 
