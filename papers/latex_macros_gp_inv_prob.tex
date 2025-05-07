@@ -128,6 +128,7 @@
 \newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
 
 % Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
+\newcommand{\postSampleKernel}{\mathcal{K}}
 \newcommand{\mcwmhJointLabel}{\textrm{mcwmh-joint}}
 \newcommand{\mcwmhIndLabel}{\textrm{mcwmh-ind}}
 \newcommand{\mhPseudoMargLabel}{\textrm{mh-pseudo-marg}}
@@ -190,7 +191,7 @@
 \newcommand{\sampleIndex}{k} % Generic index for samples. 
 \newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
 \newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
-\newcommand{\NMCMC}{\NSample_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\NMCMC}{\NSample} % Proposal covariance matrix
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 \newcommand{\avgAccProbMH}{\overline{a}}
 \newcommand{\accProbRatio}{r}
