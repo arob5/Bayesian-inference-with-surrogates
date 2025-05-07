@@ -1071,6 +1071,11 @@ In this section, we describe an alternative approach to surrogate-based inferenc
 that focuses on constructing approximations to MCMC algorithms as opposed to approximations
 of the unnormalized posterior density. Some of these methods provide algorithms for sampling 
 from approximate posteriors already defined above, while others represent new approaches to inference.
+The benefits of these approaches include ease of implementation, as well as the fact that
+they only require the ability to draw samples from finite-dimensional projections of 
+the surrogate predictive distribution. Therefore, these algorithms do not rely on distributional 
+assumptions on the surrogate or likelihood, and can be used in the nonparametric surrogate setting.
+
 To start, we recall the standard Metropolis-Hastings (MH) algorithm, which is defined by a proposal 
 kernel with density $\propDens(\Par, \cdot)$. If the Markov chain is in the current state 
 $\Par \in \parSpace$ then the next state is defined by sampling the proposal
@@ -1129,12 +1134,14 @@ This procedure is summarized in \cref{alg:MH}.
     \EndFunction
     \end{algorithmic}
 \end{minipage}
-\caption{Side-by-side comparison of Metropolis-Hastings and Noisy Metropolis-Hastings algorithms.}
+\caption{(Left) A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \codt)$.
+(Right) A generic noisy Metropolis-Hastings algorithm. The choice of Markov kernel $\postSampleKernel$ 
+defines particular algorithms, as described in \Cref{sec:MH-approx}.}
 \end{figure}
 
-We consider a family of algorithms that approximate $\accProbMH(\Par, \propPar)$ by
-replacing $\postDens(\Par)$  and $\postDens(\propPar)$ in \Cref{MH_acc_prob_exact}
-with approximations that are sampled from a specified distribution. The particular choice of 
+We consider a family of algorithms that replace $\accProbMH(\Par, \propPar)$ by
+substituting the exact densities $\postDens(\Par)$  and $\postDens(\propPar)$ 
+with approximations sampled from a specified distribution. The particular choice of 
 this distribution yields different algorithms, all of which are ``noisy'' in the sense that 
 an additional Monte Carlo step has been injected within the standard MH scheme
 \citep{noisyMCSurvey,noisyMCMC,stabilityNoisyMH}. In particular, we assume 
@@ -1143,8 +1150,8 @@ that the approximation of $[\postDens(\Par), \postDens(\propPar)]$ is sampled as
 [\hat{\postDens}_{\Par}, \hat{\postDens}_{\propPar}] \sim \postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot),
 \end{equation}
 where $\postSampleKernel$ is a Markov kernel mapping from source $\parSpace^2 \times \R_+$
-to target $\R^2_{+}$. The generic noisy MH algorithm is stated in the left column of \Cref{alg:MH-noisy}. 
-Consider the following three special cases.
+to target $\R^2_{+}$. The generic noisy MH algorithm is stated in \Cref{alg:MH-noisy}. 
+We consider three special cases below.
 
 \paragraph{Pseudo-Marginal.}
 We first consider the choice 
@@ -1156,7 +1163,7 @@ which implies that at each iteration only the density value at the proposed poin
 $\postEm[\Ndesign](\propPar)$  is sampled, while the value at the current point 
 is recycled from the previous iteration. This is a pseudo-marginal algorithm 
 targeting the stationary distribution $\postApproxNormMarg[\Ndesign]$ \citep{pseudoMarginalMCMC}.
-In principle, it thus provides an exact MCMC scheme to sample from the expected likelihood 
+In principle, it provides an exact MCMC scheme to sample from the expected likelihood 
 approximation even when the expectation $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is intractable, 
 a fact noted in \citet{StuartTeck1}. The key property ensuring invariance with respect to 
 $\postApproxNormMarg[\Ndesign]$ is that the value $\hat{\postDens}_{\tilde{\Par}}$ sampled from 
@@ -1168,7 +1175,7 @@ Therefore, the method remains valid for estimators of the form
 \end{align}
 It is well-known that pseudo-marginal methods
 can suffer from slow mixing, but that efficiency can be improved by reducing the variance 
-in the estimate of from $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$; e.g., by increasing $J$ in
+in the estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$; e.g., by increasing $J$ in
 \cref{eq:pm-unbiased-est} \citep{pseudoMarginalMCMC,pseudoMarginalEfficiency}.
 The pseudo-marginal approach to sampling $\postApproxNormMarg[\Ndesign]$ is studied 
 in \citet{garegnani2021NoisyMCMC}.
@@ -1184,7 +1191,7 @@ at each iteration (the kernel does not depend on $\postDens^\prime$). Algorithms
 typically referred to as Monte Carlo within Metropolis Hastings (MCwMH), and have been studied as an
 efficient alternative to the pseudo-marginal algorithm \citep{noisyMCMC,stabilityNoisyMH}.
 The sampled density values can also be replaced with sample means as in \Cref{eq:pm-unbiased-est},
-though the efficiency of MCwMH is typically less sensitive to the variance in the estimate
+though the efficiency of MCwMH is generally less sensitive to the variance in the estimate
 \citep{garegnani2021NoisyMCMC,stabilityNoisyMH}.
 The MCwMH is typically referred to as inexact, in the sense that it does not admit 
 $\postApproxNormMarg[\Ndesign]$ as an invariant distribution. However, in the present setting
@@ -1192,29 +1199,35 @@ $\postApproxNormMarg[\Ndesign]$ is itself an approximation of $\postDensNorm$ so
 view MCwMH as an alternative method for propagating surrogate uncertainty, 
 on equal footing with $\postApproxNormMarg[\Ndesign]$. This perspective is taken in 
 \citet{surrogateNoisyMCMC}, while \citet{garegnani2021NoisyMCMC} studies MCwMH
-as an approximation to $\postApproxNormMarg[\Ndesign]$. A variant of this algorithm 
-is employed in \citet{FerEmulation}
-
+as an approximation to $\postApproxNormMarg[\Ndesign]$. A variant of MCwMH
+is employed in \citet{FerEmulation}.
 
 \paragraph{Expected Acceptance Probability.}
- 
-\Cref{alg:MH-noisy} can alternatively be viewed as sampling a trajectory from $\postEm[\Ndesign]$
-at each iteration, then projecting onto the finite-dimensional distribution at the inputs $(\Par, \propPar)$.
-Given this perspective, \citet{surrogateNoisyMCMC} discuss how \cref{alg:MH-noisy} can be 
-viewed as an approximation to the expected posterior sampling scheme in \cref{alg:ep}.
-The algorithm also bears a close resemblance to pseudo-marginal MCMC
-\citep{pseudoMarginalMCMC,noisyMCMC,noisyMCSurvey}. Indeed, if \cref{alg:MH-noisy}
-is modified so that only $\postEm[\Ndesign](\propPar)$ is sampled at each iteration, with 
-the value for $\postEm[\Ndesign](\Par)$ recycled from the previous iteration, then 
-the result is a pseudo-marginal MCMC algorithm with target distribution $\postApproxNormMarg[\Ndesign]$
-\citet{surrogateNoisyMCMC}.
-[\todo: cite Istem here, and garegnani2021NoisyMCMC]
+Finally, we consider
+\begin{equation}
+\postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot)
+\Def \mathrm{law}(\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)),
+\end{equation}
+implying that both density values are re-sampled each iteration, but now from
+the joint distribution implied by the surrogate $\postEm[\Ndesign]$. 
+We refer to this as the \textit{expected acceptance probability (E-Acc)} approximation,
+as it can be viewed as marginalizing the MH acceptance probability with respect
+to the surrogate. Indeed, by inserting $\postEm[\Ndesign]$
+in place of $\postDens$ in $\accProbMH(\Par, \propPar)$, the surrogate induces a random 
+approximation
+\begin{equation}
+\accProbMHEm[\Ndesign](\Par, \propPar) 
+\Def \min\left\{1, \frac{\postEm[\Ndesign](\propPar)\propDens(\propPar, \Par)}{\postEm[\Ndesign](\Par) \propDens(\Par, \propPar)} \right\}
+\label{eq:MH-prob-surrogate}
+\end{equation}
+of the MH acceptance probability. The E-Acc algorithm is identical to the standard 
+MH scheme in \Cref{alg:MH} but with $\E_{\Ndesign}[\accProbMHEm[\Ndesign](\Par, \propPar)]$
+replacing $\accProbMH(\Par, \propPar)$. Table [\todo] compares the E-Acc approximation
+to the alternative approximations of $\accProbMH(\Par, \propPar)$ that are implicitly 
+induced by approximations of the unnormalized posterior density. 
+\citet{surrogateNoisyMCMC} propose the E-Acc algorithm, 
+and explore connections to the expected posterior approximation in in \Cref{alg:ep}.
 
-In this section we demonstrate that the surrogate-induced posteriors introduced above can be viewed as
-invoking particular approximations of the acceptance probability in a Metropolis-Hastings (MH) MCMC 
-algorithm. This perspective yields a family of posterior approximation algorithms that take the MH acceptance
-probability, as opposed to the unnormalized posterior density, as the target quantity for approximation.
-This approach is proposed in \citet{surrogateNoisyMCMC}, which we refer to for additional details.
 
 We will now replace $\accProbMH(\Par, \propPar)$ with a surrogate-induced approximation.
 As previously, we consider a generic random surrogate $\postEm[\Ndesign]$ for the 
