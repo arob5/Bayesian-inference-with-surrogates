@@ -418,7 +418,7 @@ between parametric and nonparametric surrogates.
 
 \subsubsection{Common Models}
 
-\paragraph{Gaussian Process.}
+\paragraph{Gaussian Processes.}
 Gaussian processes (GP) have emerged as a canonical surrogate model, and provide the 
 basis for examples given throughout this review (refer to \Cref{gp_review} for GP
 background and notation). GPs have been extensively applied in a wide variety of 
@@ -430,11 +430,28 @@ emulators with non-Gaussian predictive distributions. For example, fully Bayesia
 GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
 typically yield predictions in the form of (infinite) mixtures of Gaussians.
 
-\paragraph{Polynomial Chaos Expansion.}
-
-Polynomial chaos expansions (PCE) represent a popular alternative to GPs, particularly in
-the engineering and applied math communities \citep{polyChaosReview,MarzoukPolyChaos}
-(\todo: add a couple sentences of description here).
+\paragraph{Polynomials.}
+Surrogates that consist of linear combinations of polynomial basis functions are 
+commonly used in the engineering and applied math communities. Polynomial 
+chaos expansions (PCE) are a particular example whereby a polynomial 
+basis is used to approximate a random variable $\func(\Par)$ as a function of
+a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
+\begin{equation}
+\funcEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
+\end{equation}
+where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
+to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
+approximate statistical moments of $\func(\Par)$. More relevant to our context,
+the map $\funcEm[\dimBasis](\Par)$ can also be used as a surrogate for $\func(\Par)$.
+With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
+within our definition of probabilistic surrogates. We nonetheless highlight them here
+due to their popularity, the fact that they can be converted into random surrogates by 
+considering Bayesian treatments of the coefficients 
+\citep{BayesianPCE1,BayesianPCE2,BurknerSurrogate},
+and their use in conjunction with probabilistic surrogates (e.g., as the mean function
+of a GP; \citet{PCEGPWind,PCEGP2,SinsbeckNowak}). PCE surrogates have been
+employed to accelerate Bayesian inversion in various applications 
+\citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
 
 \paragraph{Probabilistic Neural Networks.}
 In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
