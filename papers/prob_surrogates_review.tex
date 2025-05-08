@@ -224,7 +224,7 @@ cheap approximations to either $\fwd(\Par)$ or $\lpost(\Par)$ (note that approxi
 an approximation of the latter). We focus on surrogate models that take the form of statistical 
 regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
 \footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
-that exploit the specific structure of the forward model; see, e.g., \todo.}
+that exploit the specific structure of the forward model; see \citet{multifidelityReview} for a detailed review.}
 We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
 model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
 map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
@@ -373,8 +373,7 @@ We begin our review by summarizing the surrogate modeling workflow in the contex
 Bayesian inverse problems. We highlight commonly-used surrogates, emphasizing
 models that provide a probabilistic representation of emulator uncertainty in addition to 
 standard point predictions. We conclude the section with discussions of the tradeoffs
-between the forward and log-density emulation strategies, and connections with the 
-broader computer experiments literature. Our aim is not to investigate any specific 
+between the forward and log-density emulation strategies. Our aim is not to investigate any specific 
 model in depth; see \cref{sec:existence} for broad practical recommendations for 
 constructing surrogate models for use in posterior approximation.
 
@@ -412,20 +411,32 @@ We do not discuss these methods further in this review, but note that continued 
 development investigating such workflows may prove a fruitful avenue for future research. 
 
 \subsection{Probabilistic Surrogates}
-We now briefly review common emulator models, focusing on those that provide a probabilistic 
-description of approximation uncertainty. The canonical example is a Gaussian process (GP),
-which has been extensively applied in a wide variety of surrogate modeling tasks, including 
-as emulators for solving Bayesian inverse problems. The Gaussian predictive distribution of a 
+Our focus in this review is on probabilistic (i.e., random/stochastic) surrogates, which 
+are emulator models that provide a probabilistic description of approximation uncertainty.
+We review common models falling within this category, and highlight the distinction
+between parametric and nonparametric surrogates. 
+
+\subsubsection{Common Models}
+
+\paragraph{Gaussian Process.}
+Gaussian processes (GP) have emerged as a canonical surrogate model, and provide the 
+basis for examples given throughout this review (refer to \Cref{gp_review} for GP
+background and notation). GPs have been extensively applied in a wide variety of 
+surrogate modeling tasks, including as emulators for solving Bayesian inverse problems.
+The Gaussian predictive distribution of a 
 GP facilitates many convenient closed-form computations, which we will derive and present 
 throughout this review. Extensions of the GP methodology can produce more flexible 
 emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
-GPs yield predictions in the form of (continuous) mixtures of Gaussians, while deep GPs
-\citep{deepGPVecchia,deepGPAL} allow for very flexible predictive distributions.
+GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
+typically yield predictions in the form of (infinite) mixtures of Gaussians.
+
+\paragraph{Polynomial Chaos Expansion.}
 
 Polynomial chaos expansions (PCE) represent a popular alternative to GPs, particularly in
 the engineering and applied math communities \citep{polyChaosReview,MarzoukPolyChaos}
 (\todo: add a couple sentences of description here).
 
+\paragraph{Probabilistic Neural Networks.}
 In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
 surrogate. This generic perspective is considered in \citep{BurknerSurrogate}, where the 
 authors assume only that samples can be drawn from the posterior distribution over 
@@ -452,6 +463,48 @@ Of particular note are conformal prediction methods, which allow for the constru
 pointwise prediction intervals for models that might otherwise only produce point 
 estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conformalEvidentialSurrogate,conformalBayesOpt}.
 [\todo{add a few sentences on conformal prediction}]
+
+\subsubsection{Parametric vs. Nonparametric Models}
+The distinction between parametric and nonparametric surrogate models will 
+prove significant at several points throughout this review. We illustrate this
+distinction for a generic random surrogate $\funcEm[\Ndesign]$ for some 
+function $\func$. 
+
+\paragraph{Parametric Model.}
+We refer to $\funcEm[\Ndesign]$ as parametric 
+or finite-dimensional if the randomness in $\funcEm[\Ndesign]$ stems from 
+a finite-dimensional parameter $\theta_{\Ndesign}$; i.e., 
+$\funcEm[\Ndesign](\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
+random vector $\theta_{\Ndesign}$ and non-random function $g$.
+In this case, it is feasible to sample trajectories (sample paths) of 
+$\funcEm[\Ndesign]$ via 
+\begin{align}
+&\func_{\mathrm{samp}}(\cdot) \Def g(\cdot, \theta_{\mathrm{samp}}),
+&&\theta_{\mathrm{samp}} \sim \mathrm{law}(\theta_{\Ndesign}).
+\end{align}
+The sampled function $\func_{\mathrm{samp}}(\cdot)$ can now 
+be evaluated at any input value. A standard example is a linear 
+regression model of the form
+\begin{align}
+\funcEm[\Ndesign](\cdot) &= \sum_{\idxBasis=1}^{\dimBasis} (\theta_{\Ndesign})_{\idxBasis} \basisVec_{\idxBasis}.
+\label{eq:finite-basis}
+\end{align}
+for some fixed basis vectors $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$.
+ 
+\paragraph{Nonparametric Model.} For a nonparametric model, no such finite-dimensional 
+parameter $\theta_{\Ndesign}$ exists. In this setting, a generic view of a 
+surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
+over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
+for the generic implementation of surrogate models in software packages such as 
+BoTorch \citep{botorch}. It is therefore feasible to sample the finite-dimensional distributions
+$\funcEm[\Ndesign](\parMat)$ for finite input sets $\parMat$, but sampling trajectories
+$\func_{\mathrm{samp}}(\cdot) \sim \mathrm{law}(\funcEm[\Ndesign])$ would require 
+infinite computing resources. Practical techniques to sample approximate trajectories have been
+extensively studied when $\funcEm[\Ndesign]$ is a GP, including work in 
+Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
+and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}.
+Common approaches construct finite-rank approximations of the form  
+\Cref{eq:finite-basis}.
 
 \begin{figure}
      \centering
@@ -714,32 +767,6 @@ likelihood parameters along with $\Par$.
 Approaches such as this can be considered a variation of log-density emulation, or an instance of 
 forward model emulation with a particular definition of $\fwd$.
  
-\subsection{Connection to Computer Model Calibration} \label{computer_calibration_connection}
-The challenge of emulating a black-box computer model has received widespread attention 
-well beyond the scope of Bayesian inference. The design of surrogate models for Bayesian 
-inverse problems may be informed by the vast literature from the computer experiments, 
-engineering, applied math, machine learning, and statistics communities. As a starting point, 
-we refer readers to \citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
-and the references therein. It is worth taking a moment to clarify the scope of our review 
-with respect to related work in the computer experiments literature in particular.
-Indeed, early work in this field addressed the challenge of learning 
-model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
-commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
-for a review). When cast as a problem of Bayesian inference, the calibration problem falls within the 
-framework considered in this article. However, much of this early calibration work focused on 
-the added challenge of learning a discrepancy term between the computer model $\fwd$ and the 
-true underlying system \citep{ModelDiscrepancy,emPostDens,OakleyllikEm}. 
-For example, the pioneering work \citet{KOH} considers jointly learning 
-a forward model emulator, calibration parameters, and a discrepancy function within a single 
-Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
-focus on the alternative modular workflow, where the surrogate is fit offline 
-without seeing the calibration data $\obs$ \citep{modularization}. 
-\footnote{This point is specific to the forward model emulation setting. Log-density emulators 
-do depend on $\obs$, since the log-likelihood is a function of the data.}
-This modular two-stage approach naturally leads to 
-the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
-of the central questions motivating this review.
-
 \section{Posterior Approximation}
 With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
 posterior distribution of the Bayesian inverse problem. We view this as a question of uncertainty propagation. 
@@ -860,7 +887,7 @@ be used to draw samples from $\llikEmSampDensNorm$.
     \label{alg:ep}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
-        \For{$\sampleIndex \gets1,\NSample$} 
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
         		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample posterior trajectory}
 		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample parameters}
 	\EndFor
@@ -1222,40 +1249,44 @@ approximation
 \end{equation}
 of the MH acceptance probability. The E-Acc algorithm is identical to the standard 
 MH scheme in \Cref{alg:MH} but with $\E_{\Ndesign}[\accProbMHEm[\Ndesign](\Par, \propPar)]$
-replacing $\accProbMH(\Par, \propPar)$. Table [\todo] compares the E-Acc approximation
-to the alternative approximations of $\accProbMH(\Par, \propPar)$ that are implicitly 
+replacing $\accProbMH(\Par, \propPar)$. \Cref{tab:acc-prob-comparison} compares the E-Acc 
+approximation to the alternative approximations of $\accProbMH(\Par, \propPar)$ that are implicitly 
 induced by approximations of the unnormalized posterior density. 
 \citet{surrogateNoisyMCMC} propose the E-Acc algorithm, 
-and explore connections to the expected posterior approximation in in \Cref{alg:ep}.
+and explore connections to the expected posterior approximation.
 
+\begin{table}[h]
+\centering
+\small % (optional) shrink slightly if needed
+\renewcommand{\arraystretch}{1.6} % row height
+\setlength{\tabcolsep}{10pt} % column separation
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}} % centered column of width #1
 
-We will now replace $\accProbMH(\Par, \propPar)$ with a surrogate-induced approximation.
-As previously, we consider a generic random surrogate $\postEm[\Ndesign]$ for the 
-unnormalized posterior density, induced by an underlying emulator. By inserting $\postEm[\Ndesign]$
-in place of $\postDens$ in $\accProbMH(\Par, \propPar)$, the surrogate induces a random approximation
-\begin{equation}
-\accProbMHEm[\Ndesign](\Par, \propPar) 
-\Def \min\left\{1, \frac{\postEm[\Ndesign](\propPar)\propDens(\propPar, \Par)}{\postEm[\Ndesign](\Par) \propDens(\Par, \propPar)} \right\}
-\label{eq:MH-prob-surrogate}
-\end{equation}
-of the MH acceptance probability. Notice that $\accProbMHEm[\Ndesign](\Par, \propPar)$ depends on the 
-bivariate surrogate predictive distribution $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. Therefore, 
-choosing the acceptance probability as the approximation target offers the opportunity for incorporating 
-joint structure from the surrogate predictive distribution, as opposed to approximations derived via 
-pointwise approximations of the unnormalized posterior density. \citet{surrogateNoisyMCMC} propose 
-performing approximate inference by running the MH algorithm using the expected acceptance probability
-$\E_{\Ndesign}\left[\accProbMHEm[\Ndesign](\Par, \propPar)\right]$ in place of $\accProbMH(\Par, \propPar)$. 
-A practical algorithm is given in \cref{alg:MH-noisy}, which proceeds by drawing a sample of 
-$\accProbMHEm[\Ndesign](\Par, \propPar)$ at
- each iteration. In addition to incorporating the joint structure of the surrogate, this algorithm has the 
- benefit of only requiring the ability to draw samples from the joint distribution of
- $[\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)]$. It thus does not rely on Gaussian assumptions, 
- nor the requirement to approximate infinite-dimensional sample trajectories.
+\begin{tabular}{lC{10cm}}
+\toprule
+\textbf{Posterior Approximation} & \textbf{MH Approximation} \\
+\midrule
+Plug-In Mean & 
+\(\displaystyle \min\left\{1, \frac{\Exp{\E[\lpostEm[\Ndesign](\propPar)]}}{\Exp{\E[\lpostEm[\Ndesign](\Par)]}} \right\}\) \\ 
+Expected Likelihood & 
+\(\displaystyle \min\left\{1, \frac{\E \left[\Exp{\lpostEm[\Ndesign](\propPar)}\right]}{\E\left[\Exp{\lpostEm[\Ndesign](\Par)}\right]} \right\}\) \\
+Expected Likelihood Ratio & 
+\(\displaystyle \min\left\{1, \E\left[\frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}}\right] \right\}\) \\
+Expected Acc. Prob. & 
+\(\displaystyle \E\left[\min\left\{1, \frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}} \right\}\right]\) \\
+\bottomrule
+\end{tabular}
+\caption{The approximations to the Metropolis-Hastings (MH) acceptance probability implied by different posterior approximations using a log-posterior surrogate $\lpostEm[\Ndesign]$. All expectations are with respect to 
+the underlying surrogate predictive distribution. For brevity, the acceptance probabilities 
+are presented for the case of a symmetric proposal distribution.}
+\label{tab:acc-prob-comparison}
+\end{table}
 
 \subsection{Existence and Integrability} \label{sec:existence}
 We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
-introduced above are well-defined. Consideration of this theoretical technicality points to important 
-practical issues in constructing emulators for use in posterior approximation. The primary concern
+introduced above are well-defined. Consideration of this question points to important 
+practical issues in constructing emulators for use in posterior approximation. See
+\Cref{sec:recs} for practical recommendations. The primary concern
 is that the tail behavior of the surrogate may lead to approximations of $\postDens$ that 
 are not integrable. Such pathologies can easily arise if utilizing a stationary surrogate, where 
 the predictive mean and variance stabilize at constant values as distance from the design points 
@@ -1273,15 +1304,40 @@ surrogates can lead to divergent MCMC chains when performing approximate posteri
 Theoretical treatments have also explored conditions to ensure existence over generic unbounded
 domains \citep{random_fwd_models,garegnani2021NoisyMCMC}. We refer to 
 \citep{StuartTeck1,StuartTeck2} for a comprehensive theoretical treatment in the GP setting.
-
-We now provide some practical guidelines motivated by these integrability considerations.
-Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
+Ideally, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
 is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \cref{alg:ep}, 
 which assumes that each sampled trajectory of $\postEm[\Ndesign]$ induces a valid probability 
 distribution from which samples can be drawn. This requirement can be weakened for other 
 approximations; for example, in \cref{prop:llik-em-Gaussian} we observe the requirement is that
 $\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
-decays sufficiently quickly as $\norm{\Par} \to \infty$. From a practical perspective, our general 
+decays sufficiently quickly as $\norm{\Par} \to \infty$. 
+
+\section{Sequential Design} \label{sec:seq_design}
+\subsection{Asymptotic Consistency}
+Note that the algorithms that are appropriate for certain problems will significantly depend on 
+how expensive the simulator is.
+
+These methods effectively combine posterior
+inference and sequential design within a single algorithm.
+The papers \citet{Li_2014,ConradLocalExactMCMC} 
+adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
+exactness by showing the polynomial 
+approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
+also conducts sequential design within an MCMC algorithm, using emulator predictions at points where the 
+surrogate is confident, and running exact simulations at points that exceed a user-defined uncertainty tolerance.
+In \citet{MCMC_GP_proposal}, an algorithm is proposed to accelerate Hamiltonian Monte Carlo by using a 
+GP only for proposals, but running the exact simulation when computing the acceptance probability to 
+ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
+asymptotic consistency \citep{DelayedAcceptance}.
+These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
+maintaining asymptotic exactness.  We discuss sequential design strategies in \cref{sec:seq_design}.
+
+\section{Practical Recommendations} \label{sec:recs}
+
+\paragraph{Model the Global Trend.}
+We now provide some practical guidelines motivated by these integrability considerations.
+Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
+is integrable (i.e., $\normCstEm$ exists almost surely). From a practical perspective, our general 
 recommendation is to design the surrogate model to ensure that $\lpostEm[\Ndesign](\Par) \to -\infty$
 almost surely as $\norm{\Par} \to \infty$. As a prior predictive check, we propose to   
 assess the limiting behavior of the predictive distribution along different directions in parameter
@@ -1307,25 +1363,46 @@ kernel hyperparameters. Various works have also proposed combining polynomial ch
 expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
 \todo: cite Roshan Joseph paper here as well
 
-\section{Sequential Design} \label{sec:seq_design}
-\subsection{Asymptotic Consistency}
-Note that the algorithms that are appropriate for certain problems will significantly depend on 
-how expensive the simulator is.
+\paragraph{The Design Should Oversample the Tails.}
+\paragraph{Enforce Bound Constraints.}
 
-These methods effectively combine posterior
-inference and sequential design within a single algorithm.
-The papers \citet{Li_2014,ConradLocalExactMCMC} 
-adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
-exactness by showing the polynomial 
-approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
-also conducts sequential design within an MCMC algorithm, using emulator predictions at points where the 
-surrogate is confident, and running exact simulations at points that exceed a user-defined uncertainty tolerance.
-In \citet{MCMC_GP_proposal}, an algorithm is proposed to accelerate Hamiltonian Monte Carlo by using a 
-GP only for proposals, but running the exact simulation when computing the acceptance probability to 
-ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
-asymptotic consistency \citep{DelayedAcceptance}.
-These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
-maintaining asymptotic exactness.  We discuss sequential design strategies in \cref{sec:seq_design}.
+
+\section{Numerical Case Study} \label{sec:case-study}
+
+\section{Related Work} \label{sec:related-work}
+
+\subsection{Computer Model Calibration} \label{sec:computer-model-calibration}
+The challenge of emulating a black-box computer model has received widespread attention 
+well beyond the scope of Bayesian inference. The design of surrogate models for Bayesian 
+inverse problems may be informed by the vast literature from the computer experiments, 
+engineering, applied math, machine learning, and statistics communities. As a starting point, 
+we refer readers to \citet{gramacy2020surrogates,design_analysis_computer_experiments,SanterCompExp,UQpredCompSci} 
+and the references therein. It is worth taking a moment to clarify the scope of our review 
+with respect to related work in the computer experiments literature in particular.
+Indeed, early work in this field addressed the challenge of learning 
+model parameters  $\Par$ from observational data via the use of a surrogate for $\fwd$, a problem 
+commonly referred to as \textit{computer model calibration} (see \citet{computerModelCalibrationReview}
+for a review). When cast as a problem of Bayesian inference, the calibration problem falls within the 
+framework considered in this article. However, much of this early calibration work focused on 
+the added challenge of learning a discrepancy term between the computer model $\fwd$ and the 
+true underlying system \citep{ModelDiscrepancy,emPostDens,OakleyllikEm}. 
+For example, the pioneering work \citet{KOH} considers jointly learning 
+a forward model emulator, calibration parameters, and a discrepancy function within a single 
+Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
+focus on the alternative modular workflow, where the surrogate is fit offline 
+without seeing the calibration data $\obs$ \citep{modularization}. 
+\footnote{This point is specific to the forward model emulation setting. Log-density emulators 
+do depend on $\obs$, since the log-likelihood is a function of the data.}
+This modular two-stage approach naturally leads to 
+the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
+of the central questions motivating this review.
+
+\subsection{Probabilistic Numerics} \label{sec:prob-numerics}
+
+\subsection{Approximate Bayesian Computation} \label{sec:abc}
+
+\subsection{Other}
+Multifidelity methods? Active subspaces?
 
 % Appendix 
 \section{Appendix}
