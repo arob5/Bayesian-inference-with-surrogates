@@ -992,17 +992,11 @@ the expected likelihood approximation can be sampled using standard MCMC softwar
 In cases where this expectation is intractable, pseudo-marginal MCMC 
 \citep{pseudoMarginalMCMC} may be employed, so long as 
 samples can be drawn from the surrogate predictive distribution $\postEm[\Ndesign](\Par)$
-at any input $\Par$. \citet{garegnani2021NoisyMCMC} investigates the pseudo-marginal 
-approach, as well as the closely-related Monte Carlo within Metropolis-Hastings (MCwMH)
-method \citep{noisyMCSurvey,stabilityNoisyMH}. MCwMH does not sample from 
-$\postApproxNormMarg[\Ndesign]$ exactly, but can achieve 
-much faster mixing relative to the pseudo-marginal method \citep{noisyMCMC}.
-We discuss these methods, and related generalizations, further in \cref{sec:MH-approx}.
-
+at any input $\Par$. The pseudo-marginal approach is discussed in \Cref{sec:MH-approx}.
 \citet{BurknerSurrogate} alternatively propose to replace  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$
 with a Monte Carlo estimate derived from surrogate samples. Their method differs from the 
-pseudo-marginal and MCwMH algorithms in that the Monte Carlo samples are simulated once 
-and then fixed throughout the MCMC run. It therefore allows for the application of standard 
+pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
+and then fixed throughout the MCMC run. This allows for the application of standard 
 MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$.
 This approach is well-suited to finite-dimensional surrogate models, but is not directly 
 applicable in the nonparametric setting. 
@@ -1330,7 +1324,82 @@ $\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2
 decays sufficiently quickly as $\norm{\Par} \to \infty$. 
 
 \section{Sequential Design} \label{sec:seq_design}
-\subsection{Asymptotic Consistency}
+Up until this point, we have considered a fixed surrogate model trained using a set of
+$\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
+updating the emulator using additional rounds of simulator runs. Given limited 
+computational budgets, the new evaluation points should be carefully chosen with regard
+to the goal at hand. This cycle of iteratively selecting new design points and updating 
+the surrogate represents a particular instance of a \textit{sequential design},
+or \textit{active learning}, problem. We focus on active learning strategies
+tailored to the goal of approximating the posterior distribution $\postDens$. 
+In particular, we emphasize that traditional active learning criteria
+that target improvements in the underlying emulators 
+(e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
+respect to the goal of improving the induced posterior surrogate $\postEm[\Ndesign]$.
+To remain agnostic to the quantity being emulated, we state algorithms with respect to
+a generic underlying emulator $\funcEm[\Ndesign]$, which approximates some function
+$\func$ (e.g., the forward model or log-likelihood). As in previous sections,
+we provide closed-from solutions in special cases involving forward model and
+log-density emulators.
+
+\subsection{Acquisition Function Framework}
+Given a current surrogate fit to design inputs $\designIn[\Ndesign] \in \parSpace^{\Ndesign}$,
+our goal is to select a new batch of inputs $\designBatchIn \in \parSpace^{\Nbatch}$
+to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$.
+After running the simulator at the new points $\designBatchIn$ and updating the emulator, we obtain
+an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select $\designBatchIn$
+to yield the best possible approximation $\postEm[\Naugment]$. The selection of design inputs is naturally
+cast as an optimization problem 
+\begin{equation}
+\designBatchIn \in \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)
+\label{eq:acq-opt}
+\end{equation}
+with respect to some objective function $\acq[\Ndesign]: \parSpace^{\Nbatch} \to \R$. 
+In this context, the objective function is typically called the \textit{acquisition function} or \textit{design criterion}.
+Depending on computational resources, this optimization can be repeated over a sequence of 
+rounds $\Nrounds$, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
+
+\begin{algorithm}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
+    	\State $\hat{\func} \gets \mathrm{fit}(\funcPrior \given \designIn[\Ndesign], \func(\designIn[\Ndesign]))$
+	\Comment{Initial Design}	
+        \For{$\designIndex \gets 1, \dots, \Nrounds$} \Comment{Sequential Design Loop}
+        		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)$ 
+		\State $\hat{f} \gets \mathrm{update}(\hat{f} \given \designBatchIn, \func(\designBatchIn))$
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+    \label{alg:seq-des-loop}
+    \caption{Sequential Design Loop}
+\end{algorithm}
+
+\Cref{alg:seq-des-loop} defines a generic sequential design loop for a probabilistic model $\funcPrior$. 
+The model is first
+fit to an initial design $\{\designIn[\Ndesign], \func(\designIn[\Ndesign])\}$ and is then 
+updated at each iteration using a new design 
+$\{\designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)})\}$
+For GPs, these updates
+will involve conditioning and potentially also re-fitting of hyperparameters. One could of course
+consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
+we keep $\Nbatch$ constant. The special case $\Nbatch = 1$ corresponds to the 
+pure sequential design setting in which the function $\func$ is evaluated at each acquired point before
+considering the subsequent acquisition. The more challenging batch sequential design setting
+$\Nbatch > 1$ requires selection of inputs without observing the responses for the other points
+in the batch. In practice, batch selection may be a necessity when simulations are costly but can 
+be run in parallel. We note that, while the design framework summarized in \Cref{alg:seq_des_loop} 
+does allow for consideration of within-batch interactions between design points, 
+it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
+Non-myopic strategies have been considered
+through a dynamic programming lens, though they typically come at the cost of significant 
+computational expense \citep{SURThesis, supermartingaleSUR}.
+
+The batch sequential design setting $\Nbatch > 1$ is more
+challenging, owing to the fact that $\func$ is only evaluated after an entire batch $\designBatchIn$
+has been acquired, meaning that inputs must be selected without observing the responses 
+for the other points in the batch. 
+
+
 Note that the algorithms that are appropriate for certain problems will significantly depend on 
 how expensive the simulator is.
 
