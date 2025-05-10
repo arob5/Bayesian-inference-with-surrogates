@@ -1342,7 +1342,7 @@ $\func$ (e.g., the forward model or log-likelihood). As in previous sections,
 we provide closed-from solutions in special cases involving forward model and
 log-density emulators.
 
-\subsection{Acquisition Function Framework}
+\subsection{Sequential Design Loop}
 Given a current surrogate fit to design inputs $\designIn[\Ndesign] \in \parSpace^{\Ndesign}$,
 our goal is to select a new batch of inputs $\designBatchIn \in \parSpace^{\Nbatch}$
 to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$.
@@ -1351,58 +1351,97 @@ an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select
 to yield the best possible approximation $\postEm[\Naugment]$. The selection of design inputs is naturally
 cast as an optimization problem 
 \begin{equation}
-\designBatchIn \in \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)
+\designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat)
 \label{eq:acq-opt}
 \end{equation}
-with respect to some objective function $\acq[\Ndesign]: \parSpace^{\Nbatch} \to \R$. 
-In this context, the objective function is typically called the \textit{acquisition function} or \textit{design criterion}.
+with respect to some objective function $\acq[]: \parSpace^{\Nbatch} \to \R$, typically
+called the \textit{acquisition function} or \textit{design criterion}.
 Depending on computational resources, this optimization can be repeated over a sequence of 
 rounds $\Nrounds$, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
 
 \begin{algorithm}
+    \caption{Sequential Design Loop}
+    \label{alg:seq-des-loop}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
     	\State $\hat{\func} \gets \mathrm{fit}(\funcPrior \given \designIn[\Ndesign], \func(\designIn[\Ndesign]))$
 	\Comment{Initial Design}	
         \For{$\designIndex \gets 1, \dots, \Nrounds$} \Comment{Sequential Design Loop}
-        		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)$ 
-		\State $\hat{f} \gets \mathrm{update}(\hat{f} \given \designBatchIn, \func(\designBatchIn))$
+        		\State $\designBatchIn^{(\designIndex)} \gets \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[]^{(\designIndex)}(\parMat)$ 
+		\State $\hat{f} \gets \mathrm{update}(\hat{f} \given \designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)}))$
 	\EndFor
 	\EndFunction
     \end{algorithmic}
-    \label{alg:seq-des-loop}
-    \caption{Sequential Design Loop}
 \end{algorithm}
 
 \Cref{alg:seq-des-loop} defines a generic sequential design loop for a probabilistic model $\funcPrior$. 
 The model is first
 fit to an initial design $\{\designIn[\Ndesign], \func(\designIn[\Ndesign])\}$ and is then 
-updated at each iteration using a new design 
-$\{\designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)})\}$
-For GPs, these updates
-will involve conditioning and potentially also re-fitting of hyperparameters. One could of course
-consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
+updated at each iteration $\designIndex$ by augmenting the existing design with newly 
+acquired points $\{\designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)})\}$.
+For GPs, these updates involve conditioning and potentially also re-fitting hyperparameters. 
+One could of course consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
 we keep $\Nbatch$ constant. The special case $\Nbatch = 1$ corresponds to the 
 pure sequential design setting in which the function $\func$ is evaluated at each acquired point before
 considering the subsequent acquisition. The more challenging batch sequential design setting
 $\Nbatch > 1$ requires selection of inputs without observing the responses for the other points
 in the batch. In practice, batch selection may be a necessity when simulations are costly but can 
-be run in parallel. We note that, while the design framework summarized in \Cref{alg:seq_des_loop} 
-does allow for consideration of within-batch interactions between design points, 
-it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
+be run in parallel. Though it accommodates batch acquisitions, \Cref{alg:seq-des-loop} is
+still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
 Non-myopic strategies have been considered
 through a dynamic programming lens, though they typically come at the cost of significant 
 computational expense \citep{SURThesis, supermartingaleSUR}.
 
-The batch sequential design setting $\Nbatch > 1$ is more
-challenging, owing to the fact that $\func$ is only evaluated after an entire batch $\designBatchIn$
-has been acquired, meaning that inputs must be selected without observing the responses 
-for the other points in the batch. 
+\subsection{Goal-Oriented Acquisition Functions}
+We now make \Cref{alg:seq-des-loop} concrete by introducing several acquisition functions
+that explicitly target the goal of posterior approximation. We draw a distinction between 
+acquisition criteria restricted to the pure sequential ($\Nbatch = 1$) setting
+and those naturally defined in the batch setting. \Cref{sec:batch-heuristic} discusses 
+greedy methods to employ a single point criterion for batch optimization.
+
+\subsubsection{Single Point Criteria}
+If optimizing for a single design point, a natural strategy is to simply select the input
+where the uncertainty in $\postEm[\Ndesign](\Par)$ is largest. If predictive variance
+is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
+\begin{equation}
+\acq[](\Par) \Def -\Var_{\Ndesign}[\postEm[\Ndesign](\Par)], \label{eq:acq-maxvar}
+\end{equation}
+which is negated to align with our convention of minimizing acquisition functions.
+This is a natural modification of standard active learning criteria that target inputs 
+where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal (\todo: cite); we instead 
+simply consider the variance of a function of $\funcEm[\Ndesign](\Par)$ to encode the 
+goal of approximating the posterior. The predictive variance of $\postEm[\Ndesign](\Par)$
+is given in closed-form in \Cref{prop:fwd-em-Gaussian, prop:llik-em-Gaussian} for 
+forward model and log-density emulators in the Gaussian settings. Re-stating the 
+log-posterior example
+\begin{equation}
+\Var\left[\postEm[\Ndesign](\Par; \lpostEm[\Ndesign])\right] &= 
+\left[\Exp{\emKer[\Ndesign]{\lpost}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\lpost}(\Par) + \emKer[\Ndesign]{\lpost}(\Par)},
+\end{equation}
+we see that the criterion favors inputs where both the expected density $\emMean[\Ndesign]{\lpost}(\Par)$
+and epistemic uncertainty $\emKer[\Ndesign]{\lpost}$ are large, encoding an exploration-exploitation
+tradeoff.
+
+\todo: discuss alternative approach of adapting acq critera from BayesOpt, including the Sanz-Alonso paper.
+
+\subsubsection{Multipoint Criteria}
+
+\begin{equation}
+\acq[](\parMat) \Def 
+\int_{\parSpace} \E_{\Ndesign} \Var[\postDens(\Par; \funcEm[\Naugment]) \given \gamma] \ \weightDens(\Par) d\Par,
+ \label{eq:acq-intvar}
+\end{equation}
 
 
-Note that the algorithms that are appropriate for certain problems will significantly depend on 
-how expensive the simulator is.
+\subsection{Batch Design Strategies}
+\subsubsection{Multipoint Optimization}
+Federov exchange, stochastic optimization, continuous optimization, SAA
 
+\subsubsection{Greedy Heuristic Methods} \label{sec:batch-heuristic}
+\subsubsection{Sampling-Based Design}
+Connection to Thompson sampling
+
+\subsection{Other Approaches}
 These methods effectively combine posterior
 inference and sequential design within a single algorithm.
 The papers \citet{Li_2014,ConradLocalExactMCMC} 
@@ -1416,7 +1455,8 @@ GP only for proposals, but running the exact simulation when computing the accep
 ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
 asymptotic consistency \citep{DelayedAcceptance}.
 These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
-maintaining asymptotic exactness.  We discuss sequential design strategies in \cref{sec:seq_design}.
+maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq_design}.
+
 
 \section{Practical Recommendations} \label{sec:recs}
 
