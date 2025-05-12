@@ -1495,6 +1495,50 @@ expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
 \paragraph{Embrace Multi-Modal Posteriors.}
 
 \section{Numerical Case Study} \label{sec:case-study}
+We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
+the practical recommendations given in the previous section.
+Our illustrative example is motivated by the problem of producing near-term forecasts of the 
+terrestrial carbon cycle. In this setting, both model parameters and initial conditions are typically
+unknown and must be learned from observational data. Performing such parameter estimation 
+runs into computational challenges for large-scale land surface models, underscoring the 
+potential for surrogates in this domain \citep{}.  
+
+
+\subsection{Model Setup}
+
+
+can be 
+highly uncertain, 
+
+\subsubsection{Mechanistic Model}
+As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
+structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
+describes the evolution of the state vector
+\begin{align*}
+\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}, 
+\end{align*}
+with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, below-ground 
+vegetation (roots), and soil reservoirs, respectively. The VSEM model is given by the system of coupled 
+ordinary differential equations
+\begin{align}
+\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
+\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
+\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
+\end{align}
+where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
+(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
+\begin{align}
+\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
+\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
+\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
+\end{align} 
+We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
+time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
+$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables.
+
+\subsubsection{Statistical Model}
+
 
 \section{Related Work} \label{sec:related-work}
 
