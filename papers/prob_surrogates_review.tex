@@ -251,7 +251,7 @@ from observations, we consider the parameter-to-state map
 \end{align}
 In practice, the solution is typically approximated via a numerical discretization of the form 
 \begin{align}
-\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
+\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. \label{eq:ode-solution-op}
 \end{align}
 Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map induced by a numerical solver, 
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
@@ -1498,17 +1498,14 @@ expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
 We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
 the practical recommendations given in the previous section.
 Our illustrative example is motivated by the problem of producing near-term forecasts of the 
-terrestrial carbon cycle. In this setting, both model parameters and initial conditions are typically
-unknown and must be learned from observational data. Performing such parameter estimation 
-runs into computational challenges for large-scale land surface models, underscoring the 
-potential for surrogates in this domain \citep{}.  
-
+terrestrial carbon cycle \citep{nearTermForecasts,FerEmulation}. In this setting, both model parameters 
+and initial conditions are typically unknown and must be learned from observational data. Performing 
+such parameter estimation runs into computational challenges for large-scale land surface models, 
+underscoring the potential for surrogates in this domain \citep{paramLSM}.  
 
 \subsection{Model Setup}
-
-
-can be 
-highly uncertain, 
+We start by introducing the mechanistic simulator model, and then define a Bayesian inverse 
+problem with respect to this model.
 
 \subsubsection{Mechanistic Model}
 As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
@@ -1526,18 +1523,53 @@ ordinary differential equations
 \dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
 \end{align}
 where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
-(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
+(\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
 Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
 \begin{align}
 \NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
 \GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
-\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
+\LAI(\stateV) &= \LAR \cdot \stateV, \nonumber
 \end{align} 
-We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
-time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
-$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables.
+where $\GPP(\stateV, \forcing)$ and $\LAI(\stateV)$ model Gross Primary Productivity (GPP; \textrm{kg C/$m^2$/day})
+and Leaf Area Index (LAI; \textrm{$m^2/m^2$}), respectively.
+Note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
+time-dependent forcing $\forcing(\Time)$. Given a value of $\Par$, we numerically solve the ODE at a daily time step
+via the basic Euler scheme implemented in the R \verb+BayesianTools+ package \citep{vsem}. We recall the discretized 
+parameter-to-state map 
+$\solutionOp: \Par \mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top$, 
+as defined in \Cref{eq:ode-solution-op}.
+
+Potential calibration parameters in this model include 
+$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \KEXT, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state
+variables $\{\stateV(0), \stateR(0), \stateS(0)\}$.
+Noting that the model is over-parameterized, we will focus on estimating 
+$\Par \Def \{\KEXT, \fracRespiration, \tauV, \dstateV(0)\}$ with the remaining parameters held fixed. Figure \todo summarizes
+variation in the three state trajectories as $\Par$ varies.
 
 \subsubsection{Statistical Model}
+We consider estimating the parameters $\Par$ given noisy monthly averages of LAI over a two year period.
+We assume an additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{eq:vsem-inv-prob} \\
+\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\end{align}
+where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages; i.e., the first entry of $\fwd(\Par)$
+is given by 
+\begin{equation}
+\fwd_{1}(\Par) \Def \frac{\LAR}{30} \sum_{\timeIndex=1}^{30} \state_{\textrm{v},\timeIndex}(\Par),
+\end{equation}
+and the remaining entries simply change the indices of the summation. For simplicity, we fix $\likPar$
+and assume a priori independence over the entries of $\Par$. Synthetic data $\obs$ is simulated
+using \Cref{eq:vsem-inv-prob} with fixed ground truth values for $\Par$ and $\likPar$. The same 
+model is used when solving the inverse problem, but the values of the fixed parameters (those not
+being estimated) and the noise covariance are changed, implying the presence of parametric misspecification.
+Table \todo compares these misspecified values relative to the ground truth, while
+table \todo summarizes the prior distribution $\Par \sim \priorDens$. 
+
+\subsection{Initial Surrogate Fits}
+
+\subsubsection{Forward Model Emulator}
+\subsubsection{Log-Posterior Emulator}
 
 
 \section{Related Work} \label{sec:related-work}
@@ -2135,7 +2167,7 @@ In these settings the comparison between the approximate posteriors becomes even
 
 
 
-\bibliography{post_approx_with_GP_emulators} 
+\bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}
 
 \end{document}
