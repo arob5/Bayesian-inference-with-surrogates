@@ -1543,28 +1543,92 @@ Potential calibration parameters in this model include
 $\{\alphaV, \tauV, \tauR, \tauS, \LUE, \KEXT, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state
 variables $\{\stateV(0), \stateR(0), \stateS(0)\}$.
 Noting that the model is over-parameterized, we will focus on estimating 
-$\Par \Def \{\KEXT, \fracRespiration, \tauV, \dstateV(0)\}$ with the remaining parameters held fixed. Figure \todo summarizes
-variation in the three state trajectories as $\Par$ varies.
+$\Par \Def \{\KEXT, \fracRespiration, \tauV, \stateV(0)\}$ with the remaining parameters held fixed.
 
 \subsubsection{Statistical Model}
 We consider estimating the parameters $\Par$ given noisy monthly averages of LAI over a two year period.
 We assume an additive Gaussian noise model
 \begin{align}
 \obs &= \fwd(\Par) + \noise \label{eq:vsem-inv-prob} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\noise &\sim \Gaussian(0, \sigma^2 I) \nonumber 
 \end{align}
 where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages; i.e., the first entry of $\fwd(\Par)$
 is given by 
 \begin{equation}
 \fwd_{1}(\Par) \Def \frac{\LAR}{30} \sum_{\timeIndex=1}^{30} \state_{\textrm{v},\timeIndex}(\Par),
 \end{equation}
-and the remaining entries simply change the indices of the summation. For simplicity, we fix $\likPar$
+and the remaining entries simply change the indices of the summation. For simplicity, we fix $\sigma^2$
 and assume a priori independence over the entries of $\Par$. Synthetic data $\obs$ is simulated
-using \Cref{eq:vsem-inv-prob} with fixed ground truth values for $\Par$ and $\likPar$. The same 
+using \Cref{eq:vsem-inv-prob} with fixed ground truth values $\{\Par_{\star}, \sigma^2_{\star}\}$. The same 
 model is used when solving the inverse problem, but the values of the fixed parameters (those not
-being estimated) and the noise covariance are changed, implying the presence of parametric misspecification.
+being estimated) and the noise variance are changed, implying the presence of parametric misspecification.
 Table \todo compares these misspecified values relative to the ground truth, while
-table \todo summarizes the prior distribution $\Par \sim \priorDens$. 
+table \todo summarizes the prior distribution $\Par \sim \priorDens$. As a baseline for comparison, we 
+draw samples from the posterior using exact MCMC. \Cref{fig:vsem_prior_post} compares the prior 
+and posterior marginal distributions, while \Cref{fig:vsem_pred_dists} compares the prior and 
+posterior predictive distributions over LAI trajectories.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.24\textwidth} % Cv 
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_Cv.png}}
+         \caption{$\stateV(0)$}
+         \label{fig:vsem_prior_post_Cv}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.24\textwidth} % GAMMA
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_GAMMA.png}}
+         \caption{$\gamma$}
+         \label{fig:vsem_prior_post_GAMMA}
+     \end{subfigure}
+      \begin{subfigure}[b]{0.24\textwidth} % tauV
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_tauV.png}}
+         \caption{$\tauV$}
+         \label{fig:vsem_prior_post_tauV}
+     \end{subfigure}
+          \begin{subfigure}[b]{0.24\textwidth} % KEXT
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_KEXT.png}}
+         \caption{$\KEXT$}
+         \label{fig:vsem_prior_post_KEXT}
+     \end{subfigure}
+        \caption{Marginal prior (black dashed) and posterior (red) distributions for the four
+        calibration parameters.}
+        \label{fig:vsem_prior_post}
+\end{figure}
+
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % Prior predictive distribution
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_pred_dist.png}}
+         \caption{Prior Predictive}
+         \label{fig:vsem_prior_pred}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % Posterior predictive distribution
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/post_pred_dist.png}}
+         \caption{Posterior Predictive}
+         \label{fig:vsem_post_pred}
+     \end{subfigure}
+        \caption{(Left) The distribution over LAI trajectories induced by $\Par \sim \priorDens$. 
+        The red points are the observed noisy observations of monthly LAI averages, with the 
+        vertical bars indicating $\pm \sigma$ observation noise. The blue shaded region captures 
+        90\% prior predictive probability. The gray lines are prior predictive samples, and the black 
+        line is ground truth LAI trajectory used to generate the data. (Right) The analogous plot
+        for the posterior predictive distribution; i.e., the distribution over LAI trajectories induced 
+        by $\Par \sim \postDens$.}
+        \label{fig:vsem_pred_dists}
+\end{figure}
+
+
+
+
 
 \subsection{Initial Surrogate Fits}
 
