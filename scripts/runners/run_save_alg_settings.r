@@ -16,7 +16,7 @@
 # Settings.
 # ------------------------------------------------------------------------------
 
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 
 

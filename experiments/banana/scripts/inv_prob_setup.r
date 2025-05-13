@@ -1,5 +1,5 @@
 #
-# banana_setup.r
+# inv_prob_setup.r
 #
 # Defines a Bayesian inverse problem with a banana-shaped posterior distribution.
 # The input (parameter space) dimension is 2d and the observation space

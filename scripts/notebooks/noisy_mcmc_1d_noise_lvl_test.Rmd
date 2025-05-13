@@ -7,6 +7,22 @@ Tests to do:
 - Compare algs when noise level of GP is varied.
 - Effect of stationary prior; test what happens with noisy MCMC.
 
+Nice examples:
+
+List 1:
+
+List 2:
+#2: Example where marginal is multimodal but mcwmh-joint is not (results in 
+basically inflating the tails). mcwmh-ind has some divergence issues.
+Design points: (-7, -2, 2, 7)
+
+#6: This is an interesting one that illustrates a few different points.
+Shows the benefit of the marginal approx over the mean approx. Interesting case
+where the marginal sampler converges but the mcwmh samplers diverge. This makes
+complete sense in this example: 
+
+
+
 ```{r}
 set.seed(63462)
 
@@ -33,23 +49,9 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 ```
 
-# Inverse problem setup
+# Target log density
 ```{r}
-
-# TODO:
-# Maybe do something more grounded in a real problem here. Estimating
-# spring constant? Or parameter in Volterra model?
-
-# Identity forward model.
-fwd <- function(x) 3*x
-
-# Gaussian likelihood.
-llik <- function(x) dnorm(fwd(x), mean=0, sd=1, log=TRUE)
-
-# Gaussian prior.
-prior_var <- 1
-par_prior <- data.frame(dist="Gaussian", param1=0, param2=sqrt(prior_var))
-lprior <- get_lprior_dens(par_prior)
+ldens <- function(x) dnorm(x, mean=0, sd=1, log=TRUE)
 ```
 
 # Grid for plotting.
@@ -58,79 +60,178 @@ n_grid <- 100L
 grid_min <- -8
 grid_max <- 8
 
-grid_input <- seq(grid_min, grid_max, length.out=n_grid)
-design_grid <- list(input=cbind(u=grid_input), fwd=cbind(y=fwd(grid_input)),
-                    llik=llik(grid_input))
-design_grid_dt <- data.table(u=drop(design_grid$input), fwd=drop(design_grid$fwd),
-                             llik=design_grid$llik, lprior=lprior(design_grid$input))
-design_grid_dt[, lpost := llik + lprior]
+grid_info <- list(input = seq(grid_min, grid_max, length.out=n_grid))
+grid_info$ldens <- ldens(grid_info$input)
+grid_info_dt <- as.data.table(grid_info)
 ```
 
 ```{r}
-plt_fwd <- ggplot() +
-           geom_line(aes(x=u, y=fwd), design_grid_dt, color="black")
+plt_ldens <- ggplot() +
+              geom_line(aes(x=input, y=ldens), grid_info_dt, color="black")
 
-plt_dens <- ggplot() + 
-              geom_line(aes(x=u, y=llik), design_grid_dt, color="green") +
-              geom_line(aes(x=u, y=lprior), design_grid_dt, color="blue") +
-              geom_line(aes(x=u, y=lpost), design_grid_dt, color="red") +
-              ylim(-30, 0)
+plt_dens <- ggplot() +
+              geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
 
-plot(plt_fwd)
+plot(plt_ldens)
 plot(plt_dens)
 ```
 
-
-
-
-
-
-# Design
+# Designs
 ```{r}
-n_design <- 4L
-design_input <- seq(prior_min, prior_max, length.out=n_design)
-design_info <- list(input=cbind(u=design_input), fwd=cbind(y=fwd(design_input)),
-                    llik=llik(design_input))
-design_info_dt <- data.table(u=drop(design_info$input), fwd=drop(design_info$fwd),
-                             llik=design_info$llik)
+n_vals <- c(1, 2, 3, 4, 5)
+
+# First design list is contained within [-2,2]. "Wide" design list is 
+# contained within [-4,4].
+design_list <- list()
+design_list_wide <- list()
+
+for(i in seq_along(n_vals)) {
+  n <- n_vals[i]
+  
+  u <- c(-7, 7, seq(-2, 2, length.out=n))
+  l <- ldens(u)
+  design_list[[i]] <- list(input=u, ldens=l)
+  
+  u_wide <- c(-7, 7, seq(-4, 4, length.out=n))
+  l_wide <- ldens(u_wide)
+  design_list_wide[[i]] <- list(input=u_wide, ldens=l_wide)
+}
+
+design_list <- c(design_list, design_list_wide)
+```
+
+
+# Fit log-density emulator.
+```{r}
+em_list <- list()
+
+for(i in seq_along(design_list)) {
+  design <- design_list[[i]]
+  
+  # Fit GP.
+  gp <- gpWrapperHet(matrix(design$input, ncol=1L), 
+                     matrix(design$ldens, ncol=1L),
+                     scale_input=TRUE, normalize_output=TRUE)
+  gp$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+  gp$fit()
+  
+  # Create llikEmulator object.
+  em_list[[i]] <- llikEmulatorGP("em_ldens", gp, default_conditional=FALSE, 
+                                 default_normalize=TRUE)
+}
+```
+
+
+# Predict at grid points with log-density emulator.
+```{r}
+pred_list <- list()
+U <- matrix(grid_info$input, ncol=1L)
+
+for(i in seq_along(em_list)) {
+  ldens_em <- em_list[[i]]
+  ldens_pred <- ldens_em$predict(U)
+  pred_list[[i]] <- list(ldens = em$predict(U, em_pred_list=ldens_pred),
+                         dens = em$predict_lik(U, llik_pred_list=ldens_pred, log_scale=TRUE))
+}
+```
+
+
+```{r}
+# Plot ldens predictions.
+
+idx <- 6L
+
+CI_prob <- 0.9
+q_lower <- 0.5 * (1-CI_prob)
+alpha <- qnorm(q_lower)  
+pred_dt <- as.data.table(pred_list[[idx]]$ldens)
+pred_dt[, input := grid_info$input]
+pred_dt[, upper := pred_dt$mean + alpha * sqrt(pred_dt$var)]
+pred_dt[, lower := pred_dt$mean - alpha * sqrt(pred_dt$var)]
+
+plt_ldens + 
+  geom_point(aes(x=input, y=ldens), as.data.table(design_list[[idx]]), color="red") +
+  geom_line(aes(x=input, y=mean), pred_dt, color="blue") +
+  geom_ribbon(aes(x=input, ymin=lower, ymax=upper), pred_dt, fill="skyblue", alpha=0.4)
+
 ```
 
 ```{r}
-plt_fwd <- ggplot() +
-           geom_line(aes(x=u, y=fwd), design_grid_dt, color="black") +
-           geom_point(aes(x=u, y=fwd), design_info_dt, color="red")
+# Plot dens predictions.
+pred_dt <- cbind(pred_dt, as.data.table(pred_list[[idx]]$dens))
+pred_dt[, upper_ln := qlnorm(1-q_lower, meanlog=mean, sdlog=sqrt(var))]
+pred_dt[, lower_ln := qlnorm(q_lower, meanlog=mean, sdlog=sqrt(var))]
 
-plt_llik <- ggplot() + 
-            geom_line(aes(x=u, y=llik), design_grid_dt, color="black") + 
-            geom_point(aes(x=u, y=llik), design_info_dt, color="red")
+plt_dens + 
+  geom_point(aes(x=input, y=exp(ldens)), as.data.table(design_list[[idx]]), color="red") +
+  geom_line(aes(x=input, y=exp(log_mean)), pred_dt, color="blue") +
+  geom_ribbon(aes(x=input, ymin=lower_ln, ymax=upper_ln), pred_dt, fill="skyblue", alpha=0.4) +
+  theme_minimal()
 
-plot(plt_fwd)
-plot(plt_llik)
 ```
 
-# Fit forward model and log-likelihood GPs.
+# MCMC
+
 ```{r}
-# GPs.
-gp_fwd <- gpWrapperHet(design_info$input, design_info$fwd,
-                       scale_input=TRUE, normalize_output=TRUE)
-gp_fwd$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
-gp_fwd$fit()
+# MCMC Settings.
 
-# Log-likelihood emulators.
-gp_llik <- gpWrapperHet(design_info$input, matrix(design_info$llik, ncol=1L),
-                        scale_input=TRUE, normalize_output=TRUE)
-gp_llik$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
-gp_llik$fit()
+n_chain <- 4L
+common_settings <- list(n_itr=10000L, try_parallel=TRUE, n_chain=n_chain,
+                        itr_start=5000L, adapt_cov_prop=FALSE, 
+                        adapt_scale_prop=FALSE, cov_prop=matrix(1),
+                        log_scale_prop=0, 
+                        par_init=matrix(seq(-2, 2, length.out=n_chain), ncol=1L))
+
+mcmc_settings <- list(
+  c(list(test_label="mean", approx_type="mean", adjustment="none",
+         mcmc_func_name="mcmc_gp_unn_post_dens_approx"), common_settings),
+  c(list(test_label="marginal", approx_type="marginal", adjustment="none",
+         mcmc_func_name="mcmc_gp_unn_post_dens_approx"), common_settings),
+  c(list(test_label="mcwmh-joint", mode="mcwmh", use_joint=TRUE, adjustment="none",
+         mcmc_func_name="mcmc_noisy_llik"), common_settings),
+  c(list(test_label="mcwmh-ind", mode="mcwmh", use_joint=FALSE, adjustment="none",
+         mcmc_func_name="mcmc_noisy_llik"), common_settings),
+  c(list(test_label="pm", mode="pseudo-marginal", use_joint=FALSE, adjustment="none",
+         mcmc_func_name="mcmc_noisy_llik"), common_settings)
+)
+
+names(mcmc_settings) <- sapply(mcmc_settings, function(x) x$test_label)
 ```
 
-Plan: vary the noise level in the GPs by simply scaling the GP variance 
-prediction. Run noisy MCMC algs at different levels. Compare each to
-pseudo-marginal and closed-form marginal. Do we see agreement between
-pseudo-marginal/marginal and mcwmh-ind at small noise levels? How do the 
-algorithms diverge at large noise levels?
+
+```{r}
+# Run MCMC.
+mcmc_list <- list()
+par_prior <- "flat"
+
+for(i in seq_along(em_list)) {
+  print(paste0("Emulator ", i))
+  mcmc_list[[i]] <- run_mcmc_comparison(em_list[[i]], par_prior, 
+                                        mcmc_settings, return=TRUE)
+}
 
 
+saveRDS(mcmc_list, "/projectnb/dietzelab/arober/bip-surrogates-paper/scripts/notebooks/mcmc_list_new.rds")
+```
 
+```{r}
+plts <- get_trace_plots(mcmc_list[[6]]$marginal$samp)
+for(plt in plts) plot(plt)
+```
+
+```{r}
+samp_temp <- mcmc_list[[6]]$`mcwmh-joint`$samp
+kde_plt <- get_1d_kde_plots(samp_temp)
+
+plot(kde_plt[[1]]) + geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
+```
+
+```{r}
+samp_temp <- mcmc_list[[6]]$`mcwmh-joint`$samp
+kde_plt <- get_1d_kde_plots(samp_temp)
+
+plot(kde_plt[[1]]) + geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
+```
 
 
 

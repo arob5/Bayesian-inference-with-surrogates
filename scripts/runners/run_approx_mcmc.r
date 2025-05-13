@@ -37,6 +37,9 @@ run_list <- list(
   em_llik = NULL
 )
 
+# If TRUE, will overwrite existing MCMC sample `.rds` files. Otherwise, 
+# will not execute any runs that are present in an existing ID map file.
+overwrite <- FALSE
 
 # ------------------------------------------------------------------------------
 # Setup 
@@ -96,8 +99,8 @@ if(length(invalid_em_tags) > 0L) {
 em_ids <- em_ids[em_tag %in% em_tags]
 
 # Create MCMC IDs/ID map.
-mcmc_id_map <- data.table(mcmc_id=integer(), mcmc_tag=character(), 
-                          em_tag=character(), em_id=integer(), seed=integer())
+mcmc_id_map <- data.table(mcmc_tag=character(), em_tag=character(), 
+                          em_id=integer(), seed=integer())
 
 for(e_tag in em_tags) {
   id_map_em_tag <- em_ids[em_tag == e_tag]
@@ -105,18 +108,54 @@ for(e_tag in em_tags) {
   for(mcmc_tag in run_list[[e_tag]]) {
     id_map_mcmc_tag <- copy(id_map_em_tag)
     seeds <- sample.int(n=.Machine$integer.max, size=nrow(id_map_mcmc_tag))
-    id_map_mcmc_tag[, `:=`(mcmc_id=1:.N, mcmc_tag=mcmc_tag, seed=seeds)]
+    id_map_mcmc_tag[, `:=`(mcmc_tag=mcmc_tag, seed=seeds)]
     mcmc_id_map <- rbindlist(list(mcmc_id_map, id_map_mcmc_tag), use.names=TRUE)
   }
 }
 
-# Save to file.
+# ------------------------------------------------------------------------------
+# Read existing MCMC ID map, check for overlap.
+# ------------------------------------------------------------------------------
+
 print(paste0("Creating MCMC directory: ", mcmc_dir))
 dir.create(mcmc_dir, recursive=TRUE)
 
 mcmc_id_map_path <- file.path(mcmc_dir, "id_map.csv")
-print(paste0("Saving MCMC ID map: ", mcmc_id_map_path))
-fwrite(mcmc_id_map, mcmc_id_map_path)
+
+if(file.exists(mcmc_id_map_path)) {
+  print(paste0("Mergining new runs with existing ID map: ", mcmc_id_map_path))
+  mcmc_id_map_curr <- fread(mcmc_id_map_path)
+  
+  # Combine existing and new table.
+  id_map_comb <- data.table::merge.data.table(mcmc_id_map, mcmc_id_map_curr,
+                                              all=TRUE, by=c("mcmc_tag", "em_tag", "em_id"))
+  id_map_comb[, source := fifelse(!is.na(seed.x) & !is.na(seed.y), "both",
+                                  fifelse(is.na(seed.x), "old", "new"))]
+  print("Breakdown between current ID map file and new runs:")
+  print(id_map_comb[, .N, by=source])
+  
+  # Create new MCMC IDs for new runs.
+  new_id_start <- id_map_comb[, max(mcmc_id, na.rm=TRUE) + 1L]
+  id_map_comb[source=="new", mcmc_id := seq(new_id_start, new_id_start + .N - 1L), by="mcmc_tag"]
+  
+  # Set seeds.
+  id_map_comb[source != "new", seed := seed.y]
+  id_map_comb[source == "new", seed := seed.x]
+  id_map_comb[, `:=`(seed.x=NULL, seed.y=NULL)]
+  
+  # Extract rows that will be run.
+  sel <- ifelse(overwrite, c("new", "both"), "new")
+  mcmc_id_map <- id_map_comb[source %in% sel]
+  mcmc_id_map[, source := NULL]
+  
+  # Write combined map to file.
+  id_map_comb[, source := NULL]
+  fwrite(id_map_comb, mcmc_id_map_path)
+} else {
+  print(paste0("Creating new MCMC ID map: ", mcmc_id_map_path))
+  mcmc_id_map[, mcmc_id := 1:.N, by="mcmc_tag"]
+}
+
 
 # ------------------------------------------------------------------------------
 # Batch out jobs.

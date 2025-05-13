@@ -38,6 +38,10 @@ round <- 1L
 rhat_threshold <- 1.05
 min_itr_threshold <- 500L
 
+# `overwrite = TRUE` will re-compute post-processing results for runs already
+# found in "group_info.csv" and "mcmc_summary.csv". Otherwise, will only 
+# post-process new runs and append to these existing files.
+overwrite <- FALSE
 
 # ------------------------------------------------------------------------------
 # Setup 
@@ -72,6 +76,11 @@ source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 # Should also update `process_mcmc_round` to save to file periodically.
 mcmc_ids <- fread(mcmc_ids_path)[, .(mcmc_tag, em_tag, em_id, mcmc_id)]
 print(paste0("Preparing to process ", nrow(mcmc_ids), " MCMC runs."))
+
+
+# ------------------------------------------------------------------------------
+# Run processing code.
+# ------------------------------------------------------------------------------
 
 start_time <- tic()
 results <- process_mcmc_round(experiment_dir, round, mcmc_ids, 

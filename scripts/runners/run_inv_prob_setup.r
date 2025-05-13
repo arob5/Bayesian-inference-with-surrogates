@@ -40,29 +40,29 @@ library(assertthat)
 # ------------------------------------------------------------------------------
 
 # Seed for random number generator.
-seed <- 6434235
+seed <- 865754
 set.seed(seed)
 
 # The experiment base directory.
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 
 # Number of points in each of the two validation sets.
-n_test_prior <- 25^2
-n_test_post <- 500L
+n_test_prior <- 1000L
+n_test_post <- 1000L
 
 # Sampling method to use in constructing the prior validation set.
-design_method_test <- "tensor_product_grid"
+design_method_test <- "LHS"
 
 # Number of prior samples to save.
-n_samp_prior <- 100000L
+n_samp_prior <- 50000L
 
 # Specifications for exact MCMC.
 mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
-                      sampler="DEzs", n_itr=200000L, try_parallel=FALSE,  
+                      sampler="DEzs", n_itr=100000L, try_parallel=TRUE,  
                       n_chain=4L, defer_ic=TRUE)
 
 # Starting iteration defining the end of the burn-in/warm-up for exact MCMC.
-burn_in_start <- 150000L
+burn_in_start <- 75000L
 
 
 # ------------------------------------------------------------------------------
