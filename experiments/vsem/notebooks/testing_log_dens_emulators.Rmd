@@ -1,0 +1,438 @@
+---
+title: "Testing Log-Density Emulators for VSEM Inverse Problem"
+output: html_document
+---
+
+```{r}
+set.seed(543653)
+
+library(data.table)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(grid)
+library(support)
+
+experiment_tag <- "vsem"
+
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+src_dir <- file.path(code_dir, "src")
+experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
+out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
+alg_settings_dir <- file.path(experiment_dir, "output", "alg_settings")
+plt_dir <- file.path(out_dir, "plots")
+
+# Source required files.
+source(file.path(src_dir, "general_helper_functions.r"))
+source(file.path(src_dir, "statistical_helper_functions.r"))
+source(file.path(src_dir, "inv_prob_test_functions.r"))
+source(file.path(src_dir, "plotting_helper_functions.r"))
+source(file.path(src_dir, "mcmc_helper_functions.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "gp_helper_functions.r"))
+source(file.path(src_dir, "gpWrapper.r"))
+source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
+source(file.path(base_dir, "..", "sipnet_calibration", "src", "prob_dists.r"))
+source(file.path(base_dir, "..", "sipnet_calibration", "src", "eki_pecan.r"))
+```
+
+```{r}
+# Read data/plots saved to file.
+samp_dt <- fread(file.path(out_dir, "samp_exact.csv"))
+samp_dt_prior <- fread(file.path(out_dir, "prior_samp.csv"))
+inv_prob <- readRDS(file.path(out_dir, "inv_prob_list.rds"))
+test_info_prior <- readRDS(file.path(out_dir, "test_info_prior.rds"))
+test_info_post <- readRDS(file.path(out_dir, "test_info_post.rds"))
+em_settings <- readRDS(file.path(alg_settings_dir, "em_settings.rds"))
+
+par_prior <- inv_prob$par_prior
+lprior <- get_lprior_dens(par_prior)
+llik_obj <- inv_prob$llik_obj
+lpost <- function(U) lprior(U) + llik_obj$assemble_llik(U)
+```
+
+
+# Investigate use of EKI to define mean function for emulator
+
+```{r}
+# Initial design
+design <- get_init_design_list(inv_prob, "LHS", 80)
+
+# Inputs to EKI algorithm.
+Sig <- diag(llik_obj$lik_par, nrow=inv_prob$dim_obs, ncol=inv_prob$dim_obs)
+fwd_eki <- function(U, ...) inv_prob$par_to_obs_op(U)
+prior_list <- convert_par_info_to_list(par_prior)
+par_maps <- get_par_map_funcs(prior_list)
+
+# Run EKI.
+eki_results <- run_eki_pecan(drop(inv_prob$y), fwd_eki, Sig, 
+                             prior_list, n_itr=1L, U0=design$input)
+
+# Combine EKI samples with posterior and prior samples.
+samp_dt_comb <- combine_samp_dt(samp_dt, samp_dt_prior)
+samp_dt_comb <- append_samples_mat(samp_dt_comb, eki_results$U, param_type="par",
+                                   test_label="eki")
+```
+
+```{r}
+# Plot prior, posterior, and EKI marginals.
+kde_plots <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior")
+
+for(plt in kde_plots) plot(plt)
+```
+```{r}
+# Bivariate marginals.
+dens_2d_plots <- get_2d_density_plots(samp_dt_comb)
+```
+```{r}
+# Exact MCMC
+for(plt in dens_2d_plots$exact) plot(plt)
+```
+
+```{r}
+# EKI
+for(plt in dens_2d_plots$eki) plot(plt)
+```
+
+## Using EKI Gaussian ansatz as mean function
+
+```{r}
+# First try in transformed phi-space and original space.
+lpost_phi_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
+                                           transform=FALSE, normalize=FALSE)
+lpost_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
+                                       transform=TRUE, normalize=FALSE)
+
+# Construct density of transformed (unconstrained) variables.
+lprior_phi <- function(phi) {
+  par <- par_maps$inv(phi)
+  log_det_J <- attr(par, "log_det_J")
+  
+  lprior(par) + log_det_J
+}
+
+# Adjust llik to account for parameter transformation.
+llik_phi <- function(phi, ...) {
+  llik_obj$assemble_llik(par_maps$inv(phi), ...)
+}
+
+# Log-unnormalized posterior density as function of transformed parameter.
+lpost_phi <- function(phi) lprior_phi(phi) + llik_phi(phi)
+```
+
+
+```{r}
+# Prepare points for plotting projections.
+prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.000001)
+fixed_vals <- sample_prior(par_prior, n=5L)
+input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
+                                            X_fixed=fixed_vals,
+                                            X_bounds=prior_bounds, 
+                                            n_points_default=300L)
+
+# In transformed space.
+input_grids_phi <- list()
+for(i in seq_along(input_grids)) {
+  par_name <- names(input_grids)[i]
+  input_grids_phi[[par_name]] <- list()
+  
+  for(j in seq_along(input_grids[[i]])) {
+    input_grids_phi[[par_name]][[j]] <- par_maps$fwd(input_grids[[par_name]][[j]])
+  }
+}
+
+names(input_grids_phi) <- colnames(input_grids_phi[[1]][[1]])
+```
+
+```{r}
+# Exact Log posterior.
+proj_lpost_plots <- plot_1d_proj(lpost, input_grids=input_grids)
+
+# EKI approximation.
+proj_lpost_plots_eki <- plot_1d_proj(lpost_eki, input_grids=input_grids)
+```
+
+```{r}
+for(plt in proj_lpost_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_plots_eki) plot(plt)
+```
+
+```{r}
+# Exact Log posterior as function of transformed parameter.
+proj_lpost_phi_plots <- plot_1d_proj(lpost_phi, input_grids=input_grids_phi)
+
+# EKI approximation.
+proj_lpost_phi_plots_eki <- plot_1d_proj(lpost_phi_eki, input_grids=input_grids_phi)
+```
+
+```{r}
+for(plt in proj_lpost_phi_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_phi_plots_eki) plot(plt)
+```
+# Comparing EKI density to true density.
+
+```{r}
+# Comparing at points sampled from the prior.
+lpost_eki_prior_pred <- lpost_eki(test_info_prior$input)
+lpost_eki_post_pred <- lpost_eki(test_info_post$input)
+```
+
+```{r}
+# Plot predictions at prior points.
+dt_plt_eki_trend_prior <- data.table(test_info_prior$input,
+                                     true=test_info_prior$lpost,
+                                     eki=lpost_eki_prior_pred)
+
+plt_eki_prior_pred <- ggplot(dt_plt_eki_trend_prior) +
+                        geom_point(aes(x=true, y=eki)) +
+                        geom_abline(slope=1, intercept=0, color="red")
+
+plot(plt_eki_prior_pred)
+```
+
+```{r}
+# Plot predictions at posterior points.
+dt_plt_eki_trend_post <- data.table(test_info_post$input,
+                                    true=test_info_post$lpost,
+                                    eki=lpost_eki_post_pred)
+
+plt_eki_post_pred <- ggplot(dt_plt_eki_trend_post) +
+                        geom_point(aes(x=true, y=eki)) +
+                        geom_abline(slope=1, intercept=0, color="red")
+
+plot(plt_eki_post_pred)
+```
+
+# Fit log-posterior emulator
+
+```{r}
+resids <- design$lpost - lpost_eki(design$input)
+print(quantile(resids, seq(.1, 1, .1)))
+
+# Fit GP.
+gp_obj <- gpWrapperHet(design$input, matrix(resids, ncol=1L),
+                       scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gp_obj$fit()
+
+marg_sd <- sqrt(gp_obj$gp_model$y1$nu_hat) * gp_obj$Y_std
+print(paste0("GP marginal sd: ", marg_sd))
+
+# Create llikEmulator object. Note that this actually constitutes a log-posterior
+# emulator. The shift accounts for the mean function.
+lpost_bounds <- function(U) {
+  llik_bounds <- llik_obj$get_llik_bounds()
+  lprior_vals <- lprior(U)
+  list(lower=llik_bounds[1]+lprior_vals, upper=llik_bounds[2]+lprior_vals)
+}
+
+lpost_em <- llikEmulatorGP("em_lpost", gp_obj, default_conditional=FALSE, 
+                           default_normalize=TRUE, 
+                           lik_par=inv_prob$llik_obj$get_lik_par(), 
+                           shift_func=lpost_eki, llik_bounds=lpost_bounds)
+
+```
+
+
+```{r}
+# Predictions at prior points.
+lpost_em$plot_pred_validation(test_info_prior$input, 
+                              true_llik=test_info_prior$lpost, CI_prob=0.9)
+```
+```{r}
+# Predictions at posterior points.
+lpost_em$plot_pred_validation(test_info_post$input, 
+                              true_llik=test_info_post$lpost, CI_prob=0.9)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Investigating the tails of the log-likelihood and log-posterior.
+
+```{r}
+# Prior in original and transformed space.
+lprior <- get_lprior_dens(par_prior)
+prior_list <- convert_par_info_to_list(par_prior)
+par_maps <- get_par_map_funcs(prior_list)
+
+# Construct density of transformed (unconstrained) variables.
+lprior_phi <- function(phi) {
+  par <- par_maps$inv(phi)
+  log_det_J <- attr(par, "log_det_J")
+  
+  lprior(par) + log_det_J
+}
+
+test <- function(phi) {
+  par <- par_maps$inv(phi)
+  log_det_J <- attr(par, "log_det_J")
+  
+  lpost_eki(par) + log_det_J
+}
+
+
+# Adjust llik to account for parameter transformation.
+llik_phi <- function(phi, ...) {
+  llik_obj$assemble_llik(par_maps$inv(phi), ...)
+}
+
+# Log-unnormalized posterior density as function of transformed parameter.
+lpost_phi <- function(phi) lprior_phi(phi) + llik_phi(phi)
+lpost <- function(par) lprior(par) + llik_obj$assemble_llik(par)
+```
+
+
+```{r}
+# Prepare points for plotting projections.
+prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.00001)
+fixed_vals <- sample_prior(par_prior, n=5L)
+input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
+                                            X_fixed=fixed_vals,
+                                            X_bounds=prior_bounds, 
+                                            n_points_default=300L)
+
+# In transformed space.
+input_grids_phi <- list()
+for(i in seq_along(input_grids)) {
+  par_name <- names(input_grids)[i]
+  input_grids_phi[[par_name]] <- list()
+  
+  for(j in seq_along(input_grids[[i]])) {
+    input_grids_phi[[par_name]][[j]] <- par_maps$fwd(input_grids[[par_name]][[j]])
+  }
+}
+
+names(input_grids_phi) <- colnames(input_grids_phi[[1]][[1]])
+```
+
+```{r}
+# Log-Likelihood.
+llik_extrap_plots <- llik_obj$plot_1d_proj_approx_lik(input_grids=input_grids)
+
+for(plt in llik_extrap_plots) plot(plt)
+```
+
+```{r}
+# Log-Posterior. 
+lpost_extrap_plots <- llik_obj$plot_1d_proj_approx_lik(input_grids=input_grids,
+                                                       shift_func_new=lprior)
+for(plt in lpost_extrap_plots) plot(plt)
+```
+
+```{r}
+# Log posterior as function of transformed parameter.
+phi_plots <- plot_1d_proj(lpost_phi, input_grids=input_grids_phi)
+
+for(plt in phi_plots) plot(plt)
+```
+
+```{r}
+# Designs.
+
+# Latin Hypercube.
+design1 <- get_init_design_list(inv_prob, "LHS", 80)
+
+```
+
+```{r}
+llik_em1 <- em_settings$em_llik$fit_em(design1, inv_prob)
+```
+
+```{r}
+llik_em1_plt <- llik_em1$plot_1d_proj_approx_lik(input_grids=input_grids,
+                                                 approx_type="mean",
+                                                 shift_func_new=NULL,
+                                                 adjustment="rectified")
+
+for(plt in llik_em1_plt) plot(plt)
+```
+
+```{r}
+test <- llik_em1$calc_quantiles(input_grids$KEXT[[3]], 0.2, adjustment="rectified")
+  
+head(test)
+```
+
+```{r}
+
+Sig <- diag(llik_obj$lik_par, nrow=inv_prob$dim_obs, ncol=inv_prob$dim_obs)
+fwd_eki <- function(U, ...) inv_prob$par_to_obs_op(U)
+
+eki_results <- run_eki_pecan(drop(inv_prob$y), fwd_eki ,Sig, 
+                             prior_list, n_itr=1L, U0=design1$input)
+
+lpost_eki <- get_Gaussian_ldens_approx(eki_results, inv_prob$y,
+                                       normalize=FALSE, transform=TRUE)
+lpost_eki_phi <- get_Gaussian_ldens_approx(eki_results, inv_prob$y,
+                                           normalize=FALSE, transform=FALSE)
+```
+
+
+```{r}
+# Log posterior as function of transformed parameter.
+plots_eki_phi <- plot_1d_proj(lpost_eki_phi, input_grids=input_grids_phi)
+
+for(plt in plots_eki_phi) plot(plt)
+```
+
+```{r}
+# Log posterior as function of untransformed parameter.
+plots_eki <- plot_1d_proj(lpost_eki, input_grids=input_grids)
+
+for(plt in plots_eki) plot(plt)
+```
+
+
+```{r}
+eki_results8 <- run_eki_pecan(drop(inv_prob$y), fwd_eki ,Sig, 
+                              prior_list, n_itr=8L, U0=design1$input)
+
+samp_dt_comb <- append_samples_mat(samp_dt_comb, eki_results8$U, param_type="par",
+                                   test_label="eki8")
+
+test_kde <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior")
+
+for(plt in test_kde) plot(plt)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
