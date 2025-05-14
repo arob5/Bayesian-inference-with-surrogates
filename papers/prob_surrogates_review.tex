@@ -14,6 +14,7 @@
 \usepackage{bbm}
 \usepackage{caption, subcaption} % Captions and sub-figures. 
 \usepackage{fancyvrb} % For writing using verbatim font inline. 
+\usepackage{float}
 % \usepackage[demo]{graphicx}
 
 % Bibliography
@@ -40,7 +41,7 @@
 \setlist[enumerate,2]{label=(\alph*),ref=(\alph*)}
 
 % For embedding images
-\graphicspath{{./figures/}}
+\graphicspath{{./../output/plots/}}
 
 % Specifically for paper formatting 
 \renewcommand{\baselinestretch}{1.2} % Spaces manuscript for easy reading
@@ -135,7 +136,7 @@ using a new set of exact simulation evaluations. This constitutes a sequential d
 whereby the selection of new training points is optimized to yield maximal improvement in the induced 
 posterior approximation. This leads to an instance of the ``exploration vs. exploitation'' balancing act,
 familiar to fields such as Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios}, reinforcement learning 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, reinforcement learning 
 \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, among others.
 In the present setting, this 
 manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
@@ -223,7 +224,7 @@ cheap approximations to either $\fwd(\Par)$ or $\lpost(\Par)$ (note that approxi
 an approximation of the latter). We focus on surrogate models that take the form of statistical 
 regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
 \footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
-that exploit the specific structure of the forward model; see, e.g., \todo.}
+that exploit the specific structure of the forward model; see \citet{multifidelityReview} for a detailed review.}
 We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
 model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
 map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
@@ -250,7 +251,7 @@ from observations, we consider the parameter-to-state map
 \end{align}
 In practice, the solution is typically approximated via a numerical discretization of the form 
 \begin{align}
-\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. 
+\solutionOp: \Par &\mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top. \label{eq:ode-solution-op}
 \end{align}
 Here, $\solutionOp: \parSpace \to \R^{\NTimeStep \times \dimState}$ represents the map induced by a numerical solver, 
 and $\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par)$ are approximations of the state 
@@ -372,8 +373,9 @@ We begin our review by summarizing the surrogate modeling workflow in the contex
 Bayesian inverse problems. We highlight commonly-used surrogates, emphasizing
 models that provide a probabilistic representation of emulator uncertainty in addition to 
 standard point predictions. We conclude the section with discussions of the tradeoffs
-between the forward and log-density emulation strategies, and connections with the 
-broader computer experiments literature.
+between the forward and log-density emulation strategies. Our aim is not to investigate any specific 
+model in depth; see \cref{sec:existence} for broad practical recommendations for 
+constructing surrogate models for use in posterior approximation.
 
 \subsection{Initial Design}
 Before discussing specific emulators, we comment on the general process of surrogate fitting.
@@ -401,28 +403,57 @@ to iteratively construct the design in order to target high-posterior regions (s
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
 be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
-\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware}, which uses 
-Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
+\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware,FATES_CES}, 
+which uses Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
 \citet{emPostDens} utilizes a sequence of importance sampling steps to construct a Gaussian 
 approximation of the posterior, which is then sampled from to produce an initial surrogate design.
 We do not discuss these methods further in this review, but note that continued methodological 
 development investigating such workflows may prove a fruitful avenue for future research. 
 
 \subsection{Probabilistic Surrogates}
-We now briefly review common emulator models, focusing on those that provide a probabilistic 
-description of approximation uncertainty. The canonical example is a Gaussian process (GP),
-which has been extensively applied in a wide variety of surrogate modeling tasks, including 
-as emulators for solving Bayesian inverse problems. The Gaussian predictive distribution of a 
+Our focus in this review is on probabilistic (i.e., random/stochastic) surrogates, which 
+are emulator models that provide a probabilistic description of approximation uncertainty.
+We review common models falling within this category, and highlight the distinction
+between parametric and nonparametric surrogates. 
+
+\subsubsection{Common Models}
+
+\paragraph{Gaussian Processes.}
+Gaussian processes (GP) have emerged as a canonical surrogate model, and provide the 
+basis for examples given throughout this review (refer to \Cref{gp_review} for GP
+background and notation). GPs have been extensively applied in a wide variety of 
+surrogate modeling tasks, including as emulators for solving Bayesian inverse problems.
+The Gaussian predictive distribution of a 
 GP facilitates many convenient closed-form computations, which we will derive and present 
 throughout this review. Extensions of the GP methodology can produce more flexible 
 emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
-GPs yield predictions in the form of (continuous) mixtures of Gaussians, while deep GPs
-\citep{deepGPVecchia,deepGPAL} allow for very flexible predictive distributions.
+GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
+typically yield predictions in the form of (infinite) mixtures of Gaussians.
 
-Polynomial chaos expansions (PCE) represent a popular alternative to GPs, particularly in
-the engineering and applied math communities \citep{polyChaosReview,MarzoukPolyChaos}
-(\todo: add a couple sentences of description here).
+\paragraph{Polynomials.}
+Surrogates that consist of linear combinations of polynomial basis functions are 
+commonly used in the engineering and applied math communities. Polynomial 
+chaos expansions (PCE) are a particular example whereby a polynomial 
+basis is used to approximate a random variable $\func(\Par)$ as a function of
+a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
+\begin{equation}
+\funcEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
+\end{equation}
+where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
+to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
+approximate statistical moments of $\func(\Par)$. More relevant to our context,
+the map $\funcEm[\dimBasis](\Par)$ can also be used as a surrogate for $\func(\Par)$.
+With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
+within our definition of probabilistic surrogates. We nonetheless highlight them here
+due to their popularity, the fact that they can be converted into random surrogates by 
+considering Bayesian treatments of the coefficients 
+\citep{BayesianPCE1,BayesianPCE2,BurknerSurrogate},
+and their use in conjunction with probabilistic surrogates (e.g., as the mean function
+of a GP; \citet{PCEGPWind,PCEGP2,SinsbeckNowak}). PCE surrogates have been
+employed to accelerate Bayesian inversion in various applications 
+\citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
 
+\paragraph{Probabilistic Neural Networks.}
 In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
 surrogate. This generic perspective is considered in \citep{BurknerSurrogate}, where the 
 authors assume only that samples can be drawn from the posterior distribution over 
@@ -450,15 +481,110 @@ pointwise prediction intervals for models that might otherwise only produce poin
 estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conformalEvidentialSurrogate,conformalBayesOpt}.
 [\todo{add a few sentences on conformal prediction}]
 
+\subsubsection{Parametric vs. Nonparametric Models}
+The distinction between parametric and nonparametric surrogate models will 
+prove significant at several points throughout this review. We illustrate this
+distinction for a generic random surrogate $\funcEm[\Ndesign]$ for some 
+function $\func$. 
+
+\paragraph{Parametric Model.}
+We refer to $\funcEm[\Ndesign]$ as parametric 
+or finite-dimensional if the randomness in $\funcEm[\Ndesign]$ stems from 
+a finite-dimensional parameter $\theta_{\Ndesign}$; i.e., 
+$\funcEm[\Ndesign](\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
+random vector $\theta_{\Ndesign}$ and non-random function $g$.
+In this case, it is feasible to sample trajectories (sample paths) of 
+$\funcEm[\Ndesign]$ via 
+\begin{align}
+&\func_{\mathrm{samp}}(\cdot) \Def g(\cdot, \theta_{\mathrm{samp}}),
+&&\theta_{\mathrm{samp}} \sim \mathrm{law}(\theta_{\Ndesign}).
+\end{align}
+The sampled function $\func_{\mathrm{samp}}(\cdot)$ can now 
+be evaluated at any input value. A standard example is a linear 
+regression model of the form
+\begin{align}
+\funcEm[\Ndesign](\cdot) &= \sum_{\idxBasis=1}^{\dimBasis} (\theta_{\Ndesign})_{\idxBasis} \basisVec_{\idxBasis}.
+\label{eq:finite-basis}
+\end{align}
+for some fixed basis vectors $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$.
+ 
+\paragraph{Nonparametric Model.} For a nonparametric model, no such finite-dimensional 
+parameter $\theta_{\Ndesign}$ exists. In this setting, a generic view of a 
+surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
+over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
+for the generic implementation of surrogate models in software packages such as 
+BoTorch \citep{botorch}. It is therefore feasible to sample the finite-dimensional distributions
+$\funcEm[\Ndesign](\parMat)$ for finite input sets $\parMat$, but sampling trajectories
+$\func_{\mathrm{samp}}(\cdot) \sim \mathrm{law}(\funcEm[\Ndesign])$ would require 
+infinite computing resources. Practical techniques to sample approximate trajectories have been
+extensively studied when $\funcEm[\Ndesign]$ is a GP, including work in 
+Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
+and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}.
+Common approaches construct finite-rank approximations of the form  
+\Cref{eq:finite-basis}.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.3\textwidth} % GP dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/fwd_dist_fwdem.png}}
+         \caption{$\fwdEm[\Ndesign]$}
+         \label{fig:fwd_dist_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/llik_dist_fwdem.png}}
+         \caption{$\llik(\cdot; \fwdEm[\Ndesign])$}
+         \label{fig:llik_dist_fwd}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/lik_dist_fwdem.png}}
+         \caption{$\Exp{\llik(\cdot; \fwdEm[\Ndesign])}$}
+         \label{fig:lik_dist_fwdem}
+     \end{subfigure}
+     \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik] (equal to llik dist so excluding)
+     \includegraphics[width=\textwidth]{}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik] 
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/llik_dist_llikem.png}}
+         \caption{$\llikEm[\Ndesign]$}
+         \label{fig:llik_dist_llikem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/lik_dist_llikem.png}}
+         \caption{$\Exp{\llikEm[\Ndesign]}$}
+         \label{fig:lik_dist_llikem}
+     \end{subfigure}
+        \caption{Comparison of forward model and log-likelihood emulation in the simple one-dimensional problem 
+        ($\dimPar = \dimObs = 1$) described in $\todo$. The top and bottom rows correspond to the forward model 
+        emulation and log-likelihood emulation settings, respectively. The columns correspond to (1) the forward model emulator;
+        (2) the log-likelihood emulator induced by the underlying GP; 
+        (3) the likelihood emulator induced by the underlying GP. When directly emulating the 
+        log-likelihood, the underlying GP is itself the log-likelihood emulator, and there is no forward model emulator.
+        The black line is the ground truth and the red points are the design points used for emulator training. 
+        The blue line is the mean of the respective emulators, and the shaded area corresponds to 90\% credible 
+        intervals for the predictive distributions.}
+        \label{fig:em_dist_1d}
+\end{figure}
+
 \subsection{Forward Model Emulation}
 We now begin our discussion of emulation strategies geared towards the goal of Bayesian inversion.
 One natural approach is to fit an emulator approximating the forward model map $\Par \mapsto \fwd(\Par)$,
 which entails fitting a predictive model to a design $\{\designIn, \fwd(\designIn)\}$. 
 We let $\fwdEm[\Ndesign]$ denote a stochastic surrogate that has been fit to this design,
 thus representing a distribution over functions that summarizes the uncertainty about the 
-numerically-inaccessible function $\fwd$.
+numerically-inaccessible function $\fwd$. We let $\emMean[\Ndesign]{\fwd}(\Par)$ and 
+$\emKer[\Ndesign]{\fwd}(\Par)$ denote the mean and variance of the random 
+variable $\fwdEm[\Ndesign](\Par)$, even when $\fwdEm[\Ndesign]$ is not a GP.
 Plugging the random function $\fwdEm[\Ndesign]$ in place of $\fwd$ in the log-likelihood 
-thus induces random approximations of the likelihood and posterior. In general, we use 
+induces random approximations of the likelihood and posterior. In general, we use 
 $\llikEm[\Ndesign]$ to denote a stochastic approximation to the log-likelihood, induced
 by an underlying emulator fit to $\Ndesign$ design points. We write 
 $\llikEm[\Ndesign](\Par) = \llik(\Par; \fwdEm[\Ndesign])$ when it is necessary to specify that
@@ -467,7 +593,9 @@ the notation $\postEm(\Par) = \postDens(\Par; \fwdEm[\Ndesign])$ and
 $\lpostEm(\Par) = \lpost(\Par; \fwdEm[\Ndesign])$ for the induced unnormalized 
 posterior density and log posterior density approximations. The induced distributions for 
 these quantities depend on the predictive distribution of the forward model emulator, as
-well as the structure of the likelihood function. Gaussian processes and polynomial 
+well as the structure of the likelihood function. The first row of \cref{fig:em_dist_1d} 
+demonstrates how a GP forward model emulator induces predictive distributions 
+for the log-likelihood and likelihood. Gaussian processes and polynomial 
 chaos expansions have been extensively employed as forward model emulators in 
 practice (\todo: cite). The specific structure of the surrogate, which depends heavily on the 
 characteristics of $\fwd$, is not the focus of this review. However, we do note that 
@@ -492,7 +620,7 @@ In this section we consider the special case where both the likelihood and $\fwd
 These two distributional assumptions combine to allow closed-form computations, and thus have 
 been considered frequently in the literature \citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,Surer2023sequential,VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
 
-\begin{prop} \label{fwd_em_lik_emulator_moments_Gaussian}
+\begin{prop} \label{prop:fwd-em-Gaussian}
 Assume that $\fwdEm[\Ndesign]$ is a forward model emulator with Gaussian predictive distribution; 
 that is, $\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
 for all $\Par \in \parSpace$. Then, in the additive Gaussian likelihood setting, the induced unnormalized 
@@ -518,7 +646,7 @@ $\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim 
 which constitutes the forward model emulator.
 Unless otherwise indicated, we assume the mean and kernel hyperparameters are
 fixed, so that the GP predictive distribution remains Gaussian. This is a common assumption in the literature, 
-and facilitates the presentation of analytical expressions (such as \Cref{fwd_em_lik_emulator_moments_Gaussian})
+and facilitates the presentation of analytical expressions (such as \Cref{prop:fwd-em-Gaussian})
 that aid intuition. We will make clear when such assumptions are being 
 leveraged, and later highlight methodology that is agnostic to the predictive distribution of the surrogate model.
 
@@ -529,7 +657,7 @@ each scalar output variable. However, if $\dimObs$ is large or the outputs are h
 then the independent GP approach may be infeasible.  
 In such contexts, a popular 
 alternative is to leverage the basis reduction strategy in \cref{basis_func_model,basis_func_GPs,basis_func_noise}.
-The surrogate predictive distribution remains Gaussian under this model, and thus \cref{fwd_em_lik_emulator_moments_Gaussian} still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator using the basis vector approach is explored in \citet{Surer2023sequential}. 
+The surrogate predictive distribution remains Gaussian under this model, and thus \cref{prop:fwd-em-Gaussian} still applies in this setting. The particular setup of a Gaussian likelihood with a GP forward model emulator using the basis vector approach is explored in \citet{Surer2023sequential}. 
 
 \subsection{Log-Density Emulation} \label{log_density_emulation}
 Observe in \cref{post_dens} that the expensive forward model evaluations appear in the posterior density only through the 
@@ -537,19 +665,27 @@ likelihood. Thus, for the purposes of posterior inference, it is sufficient to d
 $\Par \mapsto \llik(\Par)$ or $\Par \mapsto \lpost(\Par)$ without obtaining an approximation of the forward model.
 This implies fitting a surrogate model to the design $\{\designIn, \llik(\designIn)\}$ or $\{\designIn, \lpost(\designIn)\}$,
 which results in emulators $\llikEm[\Ndesign]$ and $\lpostEm[\Ndesign]$, respectively.
-We refer to these approaches collectively as \textit{log-density emulation}.
+As with forward model emulators, we generically use $\emMean[\Ndesign]{\llik}(\Par)$ and $\emKer[\Ndesign]{\llik}(\Par)$ 
+to denote the mean and variance of $\llikEm[\Ndesign](\Par)$. We likewise write $\emMean[\Ndesign]{\lpost}(\Par)$ and 
+$\emKer[\Ndesign]{\lpost}(\Par)$ for the mean and variance of $\lpostEm[\Ndesign](\Par)$.
+We refer to these two approaches collectively as \textit{log-density emulation}.
 As with forward model surrogates, log-density surrogates induce a random approximation $\postEm[\Ndesign]$ of the 
 unnormalized posterior density; we write $\postDens(\Par; \llikEm[\Ndesign])$ and $\postDens(\Par; \lpostEm[\Ndesign])$
 when it is necessary to emphasize the quantity that is directly emulated.
+The second row of \cref{fig:em_dist_1d} demonstrates how a GP log-likelihood emulator induces a predictive 
+distribution for the likelihood.
 The log-likelihood emulation approach is considered in 
-\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
-A related approach is explored in \citep{wang2018adaptive}. 
+\citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,
+StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm}.
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
-integration \citep{BayesQuadrature,BayesQuadRatios}.
+integration \citep{BayesQuadrature,BayesQuadRatios} and approximate Bayesian 
+computation \citep{llikEmABC}.
 The closely-related unnormalized log-posterior density (i.e., joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
 We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
-Emulating the log-density as opposed to the density itself is typically preferred as a way to improve numerical stability,
+A related method is used in \citep{wang2018adaptive,adaptiveMultimodal}, in which surrogates are constructed 
+to approximate a sequence of functions designed to be more regular than the log-likelihood.   
+In general, emulating densities on the log scale is typically preferred as a way to improve numerical stability,
 enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
 Perhaps the most significant benefit of this approach is the reduction to a scalar-valued output quantity for emulation,
 as opposed to the potentially high-dimensional output space of the forward model. This notion is referred 
@@ -594,30 +730,30 @@ posterior approximations.
 \subsubsection{Gaussian Setting} \label{ldens_Gaussian}
 A Gaussian log-density emulator induces an approximation of the unnormalized posterior 
 density with a predictive distribution that can be characterized fully in closed-form. The following 
-result is the analog of \Cref{fwd_em_lik_emulator_moments_Gaussian} in the forward model 
+result is the analog of \Cref{prop:fwd-em-Gaussian} in the forward model 
 emulation setting.
 
-\begin{prop} \label{llik_em_lik_emulator_moments_Gaussian}
+\begin{prop} \label{prop:llik-em-Gaussian}
 Assume that $\lpostEm[\Ndesign]$ is a log-posterior emulator with Gaussian predictive distribution; 
-that is, $\lpostEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\postDens}(\Par), \emKer[\Ndesign]{\postDens}(\Par))$
+that is, $\lpostEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par))$
 for all $\Par \in \parSpace$. Then the induced unnormalized posterior density surrogate 
 $\postEm[\Ndesign](\Par) = \Exp{\lpostEm[\Ndesign](\Par)}$ is given by
 \begin{align}
-\postEm[\Ndesign](\Par) &\sim \text{LN}\left(\emMean[\Ndesign]{\postDens}(\Par), \emKer[\Ndesign]{\postDens}(\Par)\right),
+\postEm[\Ndesign](\Par) &\sim \text{LN}\left(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par)\right),
 \end{align}
 which implies 
 \begin{align}
-\E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\postDens}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\postDens}(\Par)}, \\
-\Var\left[\postEm[\Ndesign](\Par)\right] &= \left[\Exp{\emKer[\Ndesign]{\postDens}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\postDens}(\Par) + \emKer[\Ndesign]{\postDens}(\Par)}.
+\E\left[\postEm[\Ndesign](\Par)\right] &= \Exp{\emMean[\Ndesign]{\lpost}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\lpost}(\Par)}, \\
+\Var\left[\postEm[\Ndesign](\Par)\right] &= \left[\Exp{\emKer[\Ndesign]{\lpost}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\lpost}(\Par) + \emKer[\Ndesign]{\lpost}(\Par)}.
 \end{align}
 \end{prop}
 
-The assumptions in \cref{llik_em_lik_emulator_moments_Gaussian} are satisfied when either the 
+The assumptions in \cref{prop:llik-em-Gaussian} are satisfied when either the 
 log-likelihood or log-posterior are emulated by GPs. This follows from specifying either of the 
 prior distributions
 \begin{align}
 &\llikEm[0] \sim \GP(\emMean[0]{\llik}, \emKer[0]{\llik}),
-&&\lpostEm[0] \sim \GP(\emMean[0]{\postDens}, \emKer[0]{\postDens})
+&&\lpostEm[0] \sim \GP(\emMean[0]{\lpost}, \emKer[0]{\lpost})
 \end{align}
 and then defining the surrogates as the conditional processes 
 \begin{equation}
@@ -625,14 +761,14 @@ and then defining the surrogates as the conditional processes
 \end{equation}
 or
 \begin{equation} 
-\lpostEm[\Ndesign] \Def \lpostEm[0]  | [\lpostEm[0](\designIn) = \lpost(\designIn)] \sim \GP(\emMean[\Ndesign]{\postDens}, \emKer[\Ndesign]{\postDens}),
+\lpostEm[\Ndesign] \Def \lpostEm[0]  | [\lpostEm[0](\designIn) = \lpost(\designIn)] \sim \GP(\emMean[\Ndesign]{\lpost}, \emKer[\Ndesign]{\lpost}),
 \end{equation}
 respectively. In these cases, the induced unnormalized log-posterior density approximation 
 $\postEm[\Ndesign]$ is the exponential of a Gaussian process, which we refer to as a 
 \textit{log-normal process}.
 
-Note that \cref{llik_em_lik_emulator_moments_Gaussian} is agnostic to the specific form of the 
-likelihood, unlike \cref{fwd_em_lik_emulator_moments_Gaussian}. However, particular likelihood
+Note that \cref{prop:llik-em-Gaussian} is agnostic to the specific form of the 
+likelihood, unlike \cref{prop:fwd-em-Gaussian}. However, particular likelihood
 structures may be leveraged to enable improved emulation in certain settings. For example, 
 \citet{FerEmulation} consider a Gaussian likelihood with block-diagonal covariance structure, yielding
 the log-likelihood
@@ -648,7 +784,861 @@ likelihood parameters along with $\Par$.
 Approaches such as this can be considered a variation of log-density emulation, or an instance of 
 forward model emulation with a particular definition of $\fwd$.
  
-\subsection{Connection to Computer Model Calibration} \label{computer_calibration_connection}
+\section{Posterior Approximation}
+With a fit emulator in hand, we now turn to the question of how best to leverage the surrogate in approximating the 
+posterior distribution of the Bayesian inverse problem. We view this as a question of uncertainty propagation. 
+In realistic settings with restrictive computational budgets, the surrogate predictive distribution may retain a high degree of 
+epistemic uncertainty stemming from the sparsity of the design points; our interest is in constructing posterior 
+approximations that incorporate this uncertainty. We note that such approximations 
+may serve various downstream goals. If computational constraints prevent the acquisition of additional 
+design points, then one must accept a fixed posterior approximation.
+In such cases, the surrogate uncertainty should be acknowledged to prevent 
+overconfidence when drawing scientific conclusions. In other settings, it may be feasible to refine the surrogate 
+via additional queries to the simulator. An approximate posterior constructed using the current 
+surrogate may serve as a guide to determine the new input parameters at which the simulator will be 
+evaluated. In this case, propagating surrogate uncertainty is key in weighing the exploration vs. exploitation 
+tradeoff to select new design points (see \cref{sec:seq_design}).
+This uncertainty propagation viewpoint aligns closely with the perspective taken in \citep{BurknerSurrogate}, 
+who consider several MCMC-based methods for propagating surrogate uncertainty in a Bayesian framework. 
+Alternative lines of research (reviewed in \cref{sec:seq_design}) have instead emphasized iterative schemes 
+designed to achieve asymptotic convergence to the exact posterior. The tradeoff is that such approaches 
+still typically require a large number of simulator evaluations--often performed serially-- and thus remain 
+impractical in settings with computationally-intensive simulators.
+Motivated by this fact, our focus in this section is on approximate posterior inference and uncertainty propagation
+with a fixed surrogate.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/lpost_dist_fwdem_trim.png}}
+         \caption{$\lpost(\cdot; \fwdEm[\Ndesign])$}
+         \label{fig:lpost_dist_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/post_norm_approx_fwdem.png}}
+         \caption{$\postDensNorm$ approx}
+         \label{fig:post_norm_approx_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/lpost_dist_llikem_trim.png}}
+         \caption{$\lpost(\cdot; \llikEm[\Ndesign])$}
+         \label{fig:lpost_dist_llikem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [llik] 
+         \centering
+         \includegraphics[width=\textwidth]{{toy_1d/post_norm_approx_llikem.png}}
+         \caption{$\postDensNorm$ approx}
+         \label{fig:post_norm_approx_llikem}
+     \end{subfigure}
+        \caption{A continuation of the example in \cref{fig:em_dist_1d}. The top and bottom rows correspond
+        to the forward model and log-likelihood emulation settings, respectively. The first column summarizes
+        the distributions of the log-posterior approximations induced by the underlying emulators, with 
+        the predictive mean in blue and the shaded region containing 90\% of the mass. The second column 
+        plots compares various (normalized) posterior approximations derived from the log-posterior 
+        emulator. Note that even though  the emulators interpolate the design points, the posterior
+        approximations do not owing to the normalization.}
+        \label{fig:post_norm_approx_1d}
+\end{figure}
+
+\subsection{Plug-In Mean}
+Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
+ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
+of the random surrogate model. Plugging the predictive mean in place of the quantity it is emulating induces 
+a deterministic approximation $\postApproxNormMean[\Ndesign]$ of the posterior distribution 
+$\postDensNorm$, which we refer to as the \textit{plug-in mean}, or simply \textit{mean}, approximation. 
+In the forward model and log-likelihood emulation settings, this implies the unnormalized density approximations 
+\begin{align}
+&\postApproxMean[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \postDens(\Par; \emMean[\Ndesign]{\fwd}), \label{eq:mean-approx-fwd}
+&&\postApproxMean[\Ndesign](\Par; \llikEm[\Ndesign]) \Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}, \label{eq:mean-approx_llik}
+\end{align}
+with the normalizing constants $\normCstEm(\emMean[\Ndesign]{\fwd})$ and 
+$\normCstEm(\emMean[\Ndesign]{\llik})$ defined by integrating the unnormalized densities over $\parSpace$
+(existence of these integrals is discussed in \cref{sec:existence}).
+The mean approximation has been applied in various contexts
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration} and analyzed
+theoretically 
+\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
+If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
+but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
+both inaccurate and overly confident \citep{BurknerSurrogate}. 
+
+\subsection{Expected Posterior}
+We now transition to focus on posterior approximations that incorporate the surrogate uncertainty.
+Consider a random surrogate $\postEm[\Ndesign]$ for the unnormalized posterior density, 
+induced by some underlying emulator model (e.g., a forward model or log-density emulator).
+We will use the notation $\E_{\Ndesign}$ to indicate expectations with respect to the 
+distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
+By normalizing $\postEm[\Ndesign]$, we obtain a random density
+\footnote{More generally, this is a random measure. We work with densities to avoid measure-theoretic technicalities.}
+\begin{align}
+&\postNormEm[\Ndesign](\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \postEm[\Ndesign](\Par),
+&&\normCstEm[\Ndesign]\Def \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
+\label{eq:sample-approx}
+\end{align}
+which summarizes the uncertainty about the true posterior. 
+While $\postEm[\Ndesign](\Par)$ depends 
+only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
+depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
+the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
+$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
+\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar}.
+To construct a deterministic approximation to $\postDens$, we can consider the expectation
+\begin{equation}
+\postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
+\end{equation}
+which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+Under a nonparametric surrogate model (e.g., a GP), the expectation in \cref{eq:ep-approx} is with 
+respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
+Assuming the expectation exists, the Monte Carlo scheme outlined in \cref{alg:ep} could in principle 
+be used to draw samples from $\llikEmSampDensNorm$. 
+
+\begin{algorithm}
+    \caption{Direct sampling from $\llikEmSampDensNorm$}
+    \label{alg:ep}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
+        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample posterior trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample parameters}
+	\EndFor
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+A practical implementation 
+would entail first sampling a trajectory of the surrogate model, which induces a sample 
+trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. Parameter samples
+could then be drawn from the distribution implied by this unnormalized density using standard 
+methods (e.g., MCMC).
+The output of the algorithm thus represents a mixture over an 
+ensemble of posterior distributions. Choosing $M = 1$  (drawing one sample per
+trajectory of $\postNormEm[\Ndesign]$) implies that \cref{alg:ep} returns independent 
+samples from $\postApproxEP[\Ndesign]$. For $M > 1$, the samples will be dependent.
+For example, in the extreme case $\NSample = 1$ they will 
+still have the correct marginal distribution $\postApproxEP[\Ndesign]$, but will 
+only provide a summary of a single trajectory from $\postNormEm[\Ndesign]$ and thus 
+in general provide a poor representation of this random density.
+
+\Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
+of $\postEm[\Ndesign]$, which will generally be possible for finite-dimensional 
+parametric surrogate models. \citet{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate}
+both investigate \cref{alg:ep} in such settings. Under certain assumptions, the former paper 
+bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
+
+With a nonparametric emulator, the practical difficulty in 
+implementing \cref{alg:ep} is the requirement to sample an infinite-dimensional 
+trajectory from the surrogate model.
+These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
+approaches. As far as we are aware, \citet{trainDynamics} is the only work to attempt an 
+implementation of \cref{alg:ep} in the nonparametric context. Their method consists of approximating GP 
+trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
+the trajectory as the GP mean, conditional on the sampled values at these points.
+We note that an alternative approach could involve constructing a finite-dimensional approximation 
+of the surrogate in order to provide the practical means to simulate (approximate) trajectories 
+of $\postEm[\Ndesign]$. In the GP setting, approaches such as the Karhunen-Loeve expansion 
+and random Fourier features could be leveraged for this purpose \citep{dimRedPolyChaos,samplingGPPosts}. 
+As with the \citet{trainDynamics} method, this approach is only an approximate implementation of \cref{alg:ep}.
+
+\subsection{Expected Likelihood}
+Given the challenge of implementing \cref{alg:ep} with a nonparametric emulator, the majority of 
+previous literature instead proposes deterministic approximations of the unnormalized
+density. As opposed to the expected posterior method, these approximations are computed 
+pointwise in $\Par$. This is a potential downside of this approach, as it does not leverage 
+the full structure of the surrogate predictive distribution (e.g., the predictive covariance of a GP emulator).
+However, the focus on unnormalized density approximation has several practical benefits, 
+including that it does not require approximating surrogate trajectories, and is amenable to the application of 
+standard Bayesian inference procedures using a single MCMC run.
+
+We start by considering the approximation derived by computing the pointwise expectation 
+of $\postEm(\Par)$ and then normalizing after-the-fact.
+This yields the unnormalized density estimate
+\begin{align}
+\postApproxMarg[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right], \label{eq:post-approx-EL}
+\end{align}
+which we refer to as the \textit{expected likelihood (EL)}
+\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
+$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
+approximation, again borrowing terminology from
+ \citet{BurknerSurrogate}. \citet{StuartTeck1} instead refer to this as the \textit{marginal} approximation, 
+ and show the normalizing constant implied by \cref{eq:post-approx-EL} is given by
+ \begin{equation}
+ \int_{\parSpace} \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right] d\Par 
+ = \E_{\Ndesign} \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
+ = \E_{\Ndesign}\left[\normCstEm \right],
+ \end{equation} 
+meaning the expected likelihood approximation is a ratio estimator of the form 
+ $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
+ Note the difference with respect to the expected posterior approximation 
+ $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
+ which we highlight in \cref{tab:post-approx-comparison} in the forward model emulation setting.  
+ The expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
+ decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
+ confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
+ see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. To our knowledge, the papers
+ \citep{SinsbeckNowak,StuartTeck1} are two of the first to consider the expected likelihood approximation
+ to propagate surrogate uncertainty.
+ 
+ If the pointwise expectation 
+ $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is computable in closed-form, then 
+the expected likelihood approximation can be sampled using standard MCMC software.
+In cases where this expectation is intractable, pseudo-marginal MCMC 
+\citep{pseudoMarginalMCMC} may be employed, so long as 
+samples can be drawn from the surrogate predictive distribution $\postEm[\Ndesign](\Par)$
+at any input $\Par$. The pseudo-marginal approach is discussed in \Cref{sec:MH-approx}.
+\citet{BurknerSurrogate} alternatively propose to replace  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$
+with a Monte Carlo estimate derived from surrogate samples. Their method differs from the 
+pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
+and then fixed throughout the MCMC run. This allows for the application of standard 
+MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$.
+This approach is well-suited to finite-dimensional surrogate models, but is not directly 
+applicable in the nonparametric setting. 
+In the nonparametric case, most previous literature 
+has focused on the Gaussian settings from \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}
+due to their analytic tractability. We summarize these special cases below.
+
+\subsubsection{Gaussian Setting: Forward Model Emulator}
+\begin{prop} \label{prop:post-approx-fwd-EL-Gaussian}
+Consider the setting in \cref{prop:fwd-em-Gaussian}, where both the forward model emulator 
+and likelihood are Gaussian. Under these assumptions, the expected likelihood approximation
+is given by
+\begin{align}
+\postApproxMarg[\Ndesign](\Par) 
+&= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right). \label{eq:post-approx-fwd-EL-Gaussian}
+\end{align}
+\Cref{eq:post-approx-fwd-EL-Gaussian} can be seen to be the unnormalized posterior corresponding to the modified
+Bayesian inverse problem
+\begin{align}
+&\obs = \emMean[\Ndesign]{\fwd}(\Par) + \eta_{\Ndesign}(\Par) + \noise
+&&\noise \sim \Gaussian(0, \likPar)  \label{inv_prob_Gaussian_modified} \\
+&\eta_{\Ndesign}(\Par) \sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par))
+&&\Par \sim \priorDens  \nonumber
+\end{align}
+where $\noise$, $\Par$, and $\eta_{\Ndesign}(\Par)$ are pairwise a priori independent for all $\Par$.
+\end{prop}
+
+The approximate likelihood retains a Gaussian form, where the surrogate predictive mean
+$\emMean[\Ndesign]{\fwd}$ has replaced the true forward model $\fwdEm[\Ndesign]$. The surrogate uncertainty
+is incorporated via the addition of $\emKer[\Ndesign]{\fwd}(\Par)$ to the noise covariance $\likPar$.
+We emphasize that even if the prior $\priorDens$ is Gaussian, the posterior approximation will typically be non-Gaussian
+due to the nonlinearity of $\emMean[\Ndesign]{\fwd}(\Par)$ and the fact that the likelihood covariance depends on 
+$\Par$ through $\emKer[\Ndesign]{\fwd}(\Par)$. The modified inverse problem viewpoint 
+in \cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
+this viewpoint extends beyond the Gaussian setting, even when analytical expressions for $\postApproxMarg[\Ndesign](\Par) $ 
+may not exist.
+The closed-form expression in \cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
+\citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
+\citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
+villani2024posteriorsamplingadaptivegaussian,hydrologicalModel}. 
+
+\subsubsection{Gaussian Setting: Log-Density Emulator}
+A closed form expression for $\postApproxMarg[\Ndesign](\Par)$ is available when using a log-likelihood
+or log-posterior emulator with a Gaussian predictive distribution. We present the result for a log-likelihood 
+emulator; in the log-posterior case the prior density term is removed.
+
+\begin{prop} \label{prop:post-approx-llik-EL-Gaussian}
+Consider the setting in \cref{prop:llik-em-Gaussian} with a Gaussian log-likelihood emulator. The 
+expected likelihood approximation is then given by the unnormalized density 
+\begin{align}
+\postApproxMarg[\Ndesign](\Par) 
+&= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)}
+= \postApproxMean(\Par) \Exp{\frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)}. \label{eq:post-approx-llik-EL-Gaussian}
+\end{align}
+\end{prop}
+
+The density in \cref{eq:post-approx-llik-EL-Gaussian} can be viewed as inflating the mean approximation 
+at points where the emulator is uncertain. 
+It is notable that the uncertainty inflation factor $\Exp{\frac{1}{2}\emKer[\Ndesign]{\lpost}(\Par)}$ scales 
+very quickly as the surrogate variance increases.
+In practice, this sensitivity to the predictive variance can lead $\postApproxNormMarg[\Ndesign]$ to be highly 
+multimodal, or heavily concentrated in small regions with high predictive variance. 
+This pathology is noted in \cite{VehtariParallelGP}, who recommend against the use of the expected
+likelihood approximation in their application of interest (log-likelihood emulation with noisy log-likelihood evaluations). 
+This posterior approximation is analyzed theoretically in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors,random_fwd_models,TeckHyperpar}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{>{\centering\arraybackslash}p{4cm} >{\centering\arraybackslash}p{5cm} >{\centering\arraybackslash}p{5cm}}
+\toprule
+\textbf{Plug-In Mean} & \textbf{Expected Likelihood} & \textbf{Expected Posterior} \\
+\midrule
+$\displaystyle \frac{\postDens(\Par; \E_{\Ndesign}[\fwdEm[\Ndesign]])}{\normCst(\E_{\Ndesign}[\fwdEm[\Ndesign]])}$ & 
+$\displaystyle \frac{\E_{\Ndesign}\left[\postDens(\Par; \fwdEm[\Ndesign])\right]}{\E_{\Ndesign}\left[\normCstEm[\Ndesign]\right]}$ & 
+$\displaystyle \E_{\Ndesign}\left[\frac{\postDens(\Par; \fwdEm[\Ndesign])}{\normCstEm[\Ndesign]}\right]$ \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of the normalized density approximations implied by the plug-in mean, expected likelihood,
+and expected posterior approximations in the forward model emulation setting.}
+\label{tab:post-approx-comparison}
+\end{table}
+
+\subsection{Other Unnormalized Density Approximations}
+Various alternative approximations have been proposed for the unnormalized posterior density. 
+Instead of computing pointwise expectations, one can consider summarizing $\postEm[\Ndesign](\Par)$
+by computing pointwise quantiles \citep{VehtariParallelGP,quantileApprox}. In the log-likelihood 
+emulation setting with a GP emulator, \cite{VehtariParallelGP} considers the $\quantileProb$-quantile of 
+the likelihood surrogate
+\begin{equation}
+\mathrm{Quantile}_{\quantileProb}(\Exp{\llikEm[\Ndesign](\Par)})
+= \Exp{\emMean[\Ndesign]{\llik}(\Par) + \GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}},
+\label{eq:post-approx-quantile}
+\end{equation}
+where $\GaussianCDF$ denotes the standard Gaussian distribution function. This expression is of the same form 
+as the expected likelihood in \cref{eq:post-approx-llik-EL-Gaussian}, but the uncertainty inflation term 
+$\Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}}$ scales much more slowly than 
+$\Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}$. The special case $\quantileProb = 1/2$ (i.e., the median) 
+reduces to the mean approximation in \cref{eq:mean-approx_llik}, while values $\quantileProb > 1/2$ imply 
+the density will be inflated in regions of higher surrogate uncertainty. \citet{FATES_CES} also utilize the 
+approximation in \cref{eq:post-approx-quantile}, though they do not explicitly draw the connection to 
+the quantile estimator.
+
+In the forward model emulation setting, \citet{BurknerSurrogate} also consider an \textit{expected log-likelihood}
+approximation of the form $\priorDens(\Par) \Exp{\E_{\Ndesign}[\llik(\Par; \fwdEm[\Ndesign])]}$ and draw 
+a connection with power-scaled likelihoods. However, the authors ultimately recommend the expected 
+posterior and expected likelihood as preferred alternatives to this method.
+
+\subsection{Noisy MCMC Approximations} \label{sec:MH-approx}
+In this section, we describe an alternative approach to surrogate-based inference
+that focuses on constructing approximations to MCMC algorithms as opposed to approximations
+of the unnormalized posterior density. Some of these methods provide algorithms for sampling 
+from approximate posteriors already defined above, while others represent new approaches to inference.
+The benefits of these approaches include ease of implementation, as well as the fact that
+they only require the ability to draw samples from finite-dimensional projections of 
+the surrogate predictive distribution. Therefore, these algorithms do not rely on distributional 
+assumptions on the surrogate or likelihood, and can be used in the nonparametric surrogate setting.
+
+To start, we recall the standard Metropolis-Hastings (MH) algorithm, which is defined by a proposal 
+kernel with density $\propDens(\Par, \cdot)$. If the Markov chain is in the current state 
+$\Par \in \parSpace$ then the next state is defined by sampling the proposal
+ $\propPar \sim \propDens(\Par, \cdot)$, which is accepted with probability
+\begin{align}
+&\accProbMH(\Par, \propPar) \Def 
+\min\left\{1, \frac{\postDens(\propPar)\propDens(\propPar, \Par)}{\postDens(\Par) \propDens(\Par, \propPar)} \right\}.
+\label{MH_acc_prob_exact}
+\end{align}
+If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
+This procedure is summarized in \cref{alg:MH}. 
+
+\begin{figure}[ht]
+\centering
+\begin{minipage}[t]{0.495\textwidth}
+    \floatname{algorithm}{Alg.}
+    \captionsetup{type=algorithm}
+    \caption{Metropolis-Hastings}
+    \label{alg:MH}
+    \begin{algorithmic}[1]
+    \Function{MH}{$\Par_0, \NMCMC$}     
+        \For{$k \gets 0, \dots, \NMCMC$} 
+            \State $\tilde{\Par} \sim q(\Par_{k}, \cdot)$
+            \State $\alpha \gets \min\left\{1, \frac{\pi(\tilde{\Par}) q(\tilde{\Par}, \Par_k)}{\pi(\Par_k) q(\Par_k, \tilde{\Par})} \right\}$
+            \State $b \sim \text{Bernoulli}(\alpha)$
+            \If{$b = 1$}
+                \State $\Par_{k+1} \gets \tilde{\Par}$ 
+            \Else
+                \State $\Par_{k+1} \gets \Par_k$
+            \EndIf
+        \EndFor
+    \EndFunction
+    \end{algorithmic}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.495\textwidth}
+    \floatname{algorithm}{Alg.}
+    \captionsetup{type=algorithm}
+    \caption{Noisy Metropolis-Hastings}
+    \label{alg:MH-noisy}
+    \begin{algorithmic}[1]
+    \Function{MH-Noisy}{$\Par_0, \NMCMC, \postSampleKernel$}
+        \State $\hat{\pi}_{\text{curr}} \sim \mathrm{law}(\postEm[\Ndesign](\indexMCMC[0]{\Par}))$
+        \For{$k \gets 0, \dots, \NMCMC$} 
+            \State $\tilde{\Par} \sim q(\Par_k, \cdot)$
+            \State $[\hat{\pi}_{\Par}, \hat{\pi}_{\tilde{\Par}}] \sim \postSampleKernel([\Par_k, \tilde{\Par}, \hat{\pi}_{\text{curr}}], \cdot)$
+            \State $\hat{\alpha} \gets \min\left\{1, \frac{\hat{\pi}_{\tilde{\Par}} \cdot q(\tilde{\Par}, \Par_k)}{\hat{\pi}_{\Par} \cdot q(\Par_k, \tilde{\Par})} \right\}$
+            \State $b \sim \text{Bernoulli}(\hat{\alpha})$
+            \If{$b = 1$}
+                \State $\Par_{k+1} \gets \tilde{\Par}$
+                \State $\hat{\pi}_{\text{curr}} \gets \hat{\pi}_{\tilde{\Par}}$
+            \Else
+                \State $\Par_{k+1} \gets \Par_k$
+            \EndIf
+        \EndFor
+    \EndFunction
+    \end{algorithmic}
+\end{minipage}
+\caption{(Left) A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \codt)$.
+(Right) A generic noisy Metropolis-Hastings algorithm. The choice of Markov kernel $\postSampleKernel$ 
+defines particular algorithms, as described in \Cref{sec:MH-approx}.}
+\end{figure}
+
+We consider a family of algorithms that replace $\accProbMH(\Par, \propPar)$ by
+substituting the exact densities $\postDens(\Par)$  and $\postDens(\propPar)$ 
+with approximations sampled from a specified distribution. The particular choice of 
+this distribution yields different algorithms, all of which are ``noisy'' in the sense that 
+an additional Monte Carlo step has been injected within the standard MH scheme
+\citep{noisyMCSurvey,noisyMCMC,stabilityNoisyMH}. In particular, we assume 
+that the approximation of $[\postDens(\Par), \postDens(\propPar)]$ is sampled as
+\begin{equation}
+[\hat{\postDens}_{\Par}, \hat{\postDens}_{\propPar}] \sim \postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot),
+\end{equation}
+where $\postSampleKernel$ is a Markov kernel mapping from source $\parSpace^2 \times \R_+$
+to target $\R^2_{+}$. The generic noisy MH algorithm is stated in \Cref{alg:MH-noisy}. 
+We consider three special cases below.
+
+\paragraph{Pseudo-Marginal.}
+We first consider the choice 
+\begin{equation}
+\postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot)
+\Def \delta_{\postDens^\prime} \otimes \mathrm{law}(\postEm[\Ndesign](\propPar)),
+\end{equation}
+which implies that at each iteration only the density value at the proposed point 
+$\postEm[\Ndesign](\propPar)$  is sampled, while the value at the current point 
+is recycled from the previous iteration. This is a pseudo-marginal algorithm 
+targeting the stationary distribution $\postApproxNormMarg[\Ndesign]$ \citep{pseudoMarginalMCMC}.
+In principle, it provides an exact MCMC scheme to sample from the expected likelihood 
+approximation even when the expectation $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is intractable, 
+a fact noted in \citet{StuartTeck1}. The key property ensuring invariance with respect to 
+$\postApproxNormMarg[\Ndesign]$ is that the value $\hat{\postDens}_{\tilde{\Par}}$ sampled from 
+$\postSampleKernel$ is an unbiased estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$.
+Therefore, the method remains valid for estimators of the form 
+\begin{align}
+&\hat{\postDens}_{\tilde{\Par}}^{J} \Def \frac{1}{J} \sum_{j=1}^{J} \hat{\postDens}_{\tilde{\Par}}^{(j)},
+&&\hat{\postDens}_{\tilde{\Par}}^{(j)} \overset{\mathrm{iid}}{\sim} \mathrm{law}(\postEm[\Ndesign](\propPar)). \label{eq:pm-unbiased-est}
+\end{align}
+It is well-known that pseudo-marginal methods
+can suffer from slow mixing, but that efficiency can be improved by reducing the variance 
+in the estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$; e.g., by increasing $J$ in
+\cref{eq:pm-unbiased-est} \citep{pseudoMarginalMCMC,pseudoMarginalEfficiency}.
+The pseudo-marginal approach to sampling $\postApproxNormMarg[\Ndesign]$ is studied 
+in \citet{garegnani2021NoisyMCMC}.
+
+\paragraph{Monte Carlo within Metropolis Hastings.}
+We next consider the Markov kernel 
+\begin{equation}
+\postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot)
+\Def \mathrm{law}(\postEm[\Ndesign](\Par)) \otimes \mathrm{law}(\postEm[\Ndesign](\propPar)),
+\end{equation}
+which independently re-samples the density values at both the current and proposed locations
+at each iteration (the kernel does not depend on $\postDens^\prime$). Algorithms of this form are 
+typically referred to as Monte Carlo within Metropolis Hastings (MCwMH), and have been studied as an
+efficient alternative to the pseudo-marginal algorithm \citep{noisyMCMC,stabilityNoisyMH}.
+The sampled density values can also be replaced with sample means as in \Cref{eq:pm-unbiased-est},
+though the efficiency of MCwMH is generally less sensitive to the variance in the estimate
+\citep{garegnani2021NoisyMCMC,stabilityNoisyMH}.
+The MCwMH is typically referred to as inexact, in the sense that it does not admit 
+$\postApproxNormMarg[\Ndesign]$ as an invariant distribution. However, in the present setting
+$\postApproxNormMarg[\Ndesign]$ is itself an approximation of $\postDensNorm$ so we might
+view MCwMH as an alternative method for propagating surrogate uncertainty, 
+on equal footing with $\postApproxNormMarg[\Ndesign]$. This perspective is taken in 
+\citet{surrogateNoisyMCMC}, while \citet{garegnani2021NoisyMCMC} studies MCwMH
+as an approximation to $\postApproxNormMarg[\Ndesign]$. A variant of MCwMH
+is employed in \citet{FerEmulation}.
+
+\paragraph{Expected Acceptance Probability.}
+Finally, we consider
+\begin{equation}
+\postSampleKernel([\Par, \propPar, \postDens^\prime], \cdot)
+\Def \mathrm{law}(\postEm[\Ndesign](\Par), \postEm[\Ndesign](\propPar)),
+\end{equation}
+implying that both density values are re-sampled each iteration, but now from
+the joint distribution implied by the surrogate $\postEm[\Ndesign]$. 
+We refer to this as the \textit{expected acceptance probability (E-Acc)} approximation,
+as it can be viewed as marginalizing the MH acceptance probability with respect
+to the surrogate. Indeed, by inserting $\postEm[\Ndesign]$
+in place of $\postDens$ in $\accProbMH(\Par, \propPar)$, the surrogate induces a random 
+approximation
+\begin{equation}
+\accProbMHEm[\Ndesign](\Par, \propPar) 
+\Def \min\left\{1, \frac{\postEm[\Ndesign](\propPar)\propDens(\propPar, \Par)}{\postEm[\Ndesign](\Par) \propDens(\Par, \propPar)} \right\}
+\label{eq:MH-prob-surrogate}
+\end{equation}
+of the MH acceptance probability. The E-Acc algorithm is identical to the standard 
+MH scheme in \Cref{alg:MH} but with $\E_{\Ndesign}[\accProbMHEm[\Ndesign](\Par, \propPar)]$
+replacing $\accProbMH(\Par, \propPar)$. \Cref{tab:acc-prob-comparison} compares the E-Acc 
+approximation to the alternative approximations of $\accProbMH(\Par, \propPar)$ that are implicitly 
+induced by approximations of the unnormalized posterior density. 
+\citet{surrogateNoisyMCMC} propose the E-Acc algorithm, 
+and explore connections to the expected posterior approximation.
+
+\begin{table}[h]
+\centering
+\small % (optional) shrink slightly if needed
+\renewcommand{\arraystretch}{1.6} % row height
+\setlength{\tabcolsep}{10pt} % column separation
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}} % centered column of width #1
+
+\begin{tabular}{lC{10cm}}
+\toprule
+\textbf{Posterior Approximation} & \textbf{MH Approximation} \\
+\midrule
+Plug-In Mean & 
+\(\displaystyle \min\left\{1, \frac{\Exp{\E[\lpostEm[\Ndesign](\propPar)]}}{\Exp{\E[\lpostEm[\Ndesign](\Par)]}} \right\}\) \\ 
+Expected Likelihood & 
+\(\displaystyle \min\left\{1, \frac{\E \left[\Exp{\lpostEm[\Ndesign](\propPar)}\right]}{\E\left[\Exp{\lpostEm[\Ndesign](\Par)}\right]} \right\}\) \\
+Expected Likelihood Ratio & 
+\(\displaystyle \min\left\{1, \E\left[\frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}}\right] \right\}\) \\
+Expected Acc. Prob. & 
+\(\displaystyle \E\left[\min\left\{1, \frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}} \right\}\right]\) \\
+\bottomrule
+\end{tabular}
+\caption{The approximations to the Metropolis-Hastings (MH) acceptance probability implied by different posterior approximations using a log-posterior surrogate $\lpostEm[\Ndesign]$. All expectations are with respect to 
+the underlying surrogate predictive distribution. For brevity, the acceptance probabilities 
+are presented for the case of a symmetric proposal distribution.}
+\label{tab:acc-prob-comparison}
+\end{table}
+
+\subsection{Existence and Integrability} \label{sec:existence}
+We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
+introduced above are well-defined. Consideration of this question points to important 
+practical issues in constructing emulators for use in posterior approximation. See
+\Cref{sec:recs} for practical recommendations. The primary concern
+is that the tail behavior of the surrogate may lead to approximations of $\postDens$ that 
+are not integrable. Such pathologies can easily arise if utilizing a stationary surrogate, where 
+the predictive mean and variance stabilize at constant values as distance from the design points 
+increases. This issue is especially a concern if emulating the log-posterior density, as the prior 
+density is being modeled and hence cannot be relied upon to ensure integrability \citep{emPostDens}.
+Table \todo illustrates simple examples where such pathologies can occur.
+In order to avoid issues related to
+tail behavior, previous work tends to restrict to the setting where $\parSpace$
+is a compact subset of $\R^{\dimPar}$ \citep{StuartTeck1, VehtariParallelGP}.
+Other applications have not directly addressed this issue, but in numerical experiments focus on 
+prior distributions with compact support \citet{trainDynamics,FATES_CES} or truncate an unbounded
+prior to achieve compact support \citep{gp_surrogates_random_exploration,FerEmulation}. 
+\citet{emPostDens} address this issue in depth, describing how the use of stationary log-posterior
+surrogates can lead to divergent MCMC chains when performing approximate posterior inference.
+Theoretical treatments have also explored conditions to ensure existence over generic unbounded
+domains \citep{random_fwd_models,garegnani2021NoisyMCMC}. We refer to 
+\citep{StuartTeck1,StuartTeck2} for a comprehensive theoretical treatment in the GP setting.
+Ideally, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
+is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \cref{alg:ep}, 
+which assumes that each sampled trajectory of $\postEm[\Ndesign]$ induces a valid probability 
+distribution from which samples can be drawn. This requirement can be weakened for other 
+approximations; for example, in \cref{prop:llik-em-Gaussian} we observe the requirement is that
+$\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
+decays sufficiently quickly as $\norm{\Par} \to \infty$. 
+
+\section{Sequential Design} \label{sec:seq_design}
+Up until this point, we have considered a fixed surrogate model trained using a set of
+$\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
+updating the emulator using additional rounds of simulator runs. Given limited 
+computational budgets, the new evaluation points should be carefully chosen with regard
+to the goal at hand. This cycle of iteratively selecting new design points and updating 
+the surrogate represents a particular instance of a \textit{sequential design},
+or \textit{active learning}, problem. We focus on active learning strategies
+tailored to the goal of approximating the posterior distribution $\postDens$. 
+In particular, we emphasize that traditional active learning criteria
+that target improvements in the underlying emulators 
+(e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
+respect to the goal of improving the induced posterior surrogate $\postEm[\Ndesign]$.
+To remain agnostic to the quantity being emulated, we state algorithms with respect to
+a generic underlying emulator $\funcEm[\Ndesign]$, which approximates some function
+$\func$ (e.g., the forward model or log-likelihood). As in previous sections,
+we provide closed-from solutions in special cases involving forward model and
+log-density emulators.
+
+\subsection{Sequential Design Loop}
+Given a current surrogate fit to design inputs $\designIn[\Ndesign] \in \parSpace^{\Ndesign}$,
+our goal is to select a new batch of inputs $\designBatchIn \in \parSpace^{\Nbatch}$
+to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$.
+After running the simulator at the new points $\designBatchIn$ and updating the emulator, we obtain
+an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select $\designBatchIn$
+to yield the best possible approximation $\postEm[\Naugment]$. The selection of design inputs is naturally
+cast as an optimization problem 
+\begin{equation}
+\designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat)
+\label{eq:acq-opt}
+\end{equation}
+with respect to some objective function $\acq[]: \parSpace^{\Nbatch} \to \R$, typically
+called the \textit{acquisition function} or \textit{design criterion}.
+Depending on computational resources, this optimization can be repeated over a sequence of 
+rounds $\Nrounds$, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
+
+\begin{algorithm}
+    \caption{Sequential Design Loop}
+    \label{alg:seq-des-loop}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+    \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
+    	\State $\hat{\func} \gets \mathrm{fit}(\funcPrior \given \designIn[\Ndesign], \func(\designIn[\Ndesign]))$
+	\Comment{Initial Design}	
+        \For{$\designIndex \gets 1, \dots, \Nrounds$} \Comment{Sequential Design Loop}
+        		\State $\designBatchIn^{(\designIndex)} \gets \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[]^{(\designIndex)}(\parMat)$ 
+		\State $\hat{f} \gets \mathrm{update}(\hat{f} \given \designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)}))$
+	\EndFor
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+\Cref{alg:seq-des-loop} defines a generic sequential design loop for a probabilistic model $\funcPrior$. 
+The model is first
+fit to an initial design $\{\designIn[\Ndesign], \func(\designIn[\Ndesign])\}$ and is then 
+updated at each iteration $\designIndex$ by augmenting the existing design with newly 
+acquired points $\{\designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)})\}$.
+For GPs, these updates involve conditioning and potentially also re-fitting hyperparameters. 
+One could of course consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
+we keep $\Nbatch$ constant. The special case $\Nbatch = 1$ corresponds to the 
+pure sequential design setting in which the function $\func$ is evaluated at each acquired point before
+considering the subsequent acquisition. The more challenging batch sequential design setting
+$\Nbatch > 1$ requires selection of inputs without observing the responses for the other points
+in the batch. In practice, batch selection may be a necessity when simulations are costly but can 
+be run in parallel. Though it accommodates batch acquisitions, \Cref{alg:seq-des-loop} is
+still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
+Non-myopic strategies have been considered
+through a dynamic programming lens, though they typically come at the cost of significant 
+computational expense \citep{SURThesis, supermartingaleSUR}.
+
+\subsection{Goal-Oriented Acquisition Functions}
+We now make \Cref{alg:seq-des-loop} concrete by introducing several acquisition functions
+that explicitly target the goal of posterior approximation. We draw a distinction between 
+acquisition criteria restricted to the pure sequential ($\Nbatch = 1$) setting
+and those naturally defined in the batch setting. \Cref{sec:batch-heuristic} discusses 
+greedy methods to employ a single point criterion for batch optimization.
+
+\subsubsection{Single Point Criteria}
+If optimizing for a single design point, a natural strategy is to simply select the input
+where the uncertainty in $\postEm[\Ndesign](\Par)$ is largest. If predictive variance
+is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
+\begin{equation}
+\acq[](\Par) \Def -\Var_{\Ndesign}[\postEm[\Ndesign](\Par)], \label{eq:acq-maxvar}
+\end{equation}
+which is negated to align with our convention of minimizing acquisition functions.
+This is a natural modification of standard active learning criteria that target inputs 
+where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal (\todo: cite); we instead 
+simply consider the variance of a function of $\funcEm[\Ndesign](\Par)$ to encode the 
+goal of approximating the posterior. The predictive variance of $\postEm[\Ndesign](\Par)$
+is given in closed-form in \Cref{prop:fwd-em-Gaussian, prop:llik-em-Gaussian} for 
+forward model and log-density emulators in the Gaussian settings. Re-stating the 
+log-posterior example
+\begin{equation}
+\Var\left[\postEm[\Ndesign](\Par; \lpostEm[\Ndesign])\right] &= 
+\left[\Exp{\emKer[\Ndesign]{\lpost}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\lpost}(\Par) + \emKer[\Ndesign]{\lpost}(\Par)},
+\end{equation}
+we see that the criterion favors inputs where both the expected density $\emMean[\Ndesign]{\lpost}(\Par)$
+and epistemic uncertainty $\emKer[\Ndesign]{\lpost}$ are large, encoding an exploration-exploitation
+tradeoff.
+
+\todo: discuss alternative approach of adapting acq critera from BayesOpt, including the Sanz-Alonso paper.
+
+\subsubsection{Multipoint Criteria}
+
+\begin{equation}
+\acq[](\parMat) \Def 
+\int_{\parSpace} \E_{\Ndesign} \Var[\postDens(\Par; \funcEm[\Naugment]) \given \gamma] \ \weightDens(\Par) d\Par,
+ \label{eq:acq-intvar}
+\end{equation}
+
+
+\subsection{Batch Design Strategies}
+\subsubsection{Multipoint Optimization}
+Federov exchange, stochastic optimization, continuous optimization, SAA
+
+\subsubsection{Greedy Heuristic Methods} \label{sec:batch-heuristic}
+\subsubsection{Sampling-Based Design}
+Connection to Thompson sampling
+
+\subsection{Other Approaches}
+These methods effectively combine posterior
+inference and sequential design within a single algorithm.
+The papers \citet{Li_2014,ConradLocalExactMCMC} 
+adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
+exactness by showing the polynomial 
+approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
+also conducts sequential design within an MCMC algorithm, using emulator predictions at points where the 
+surrogate is confident, and running exact simulations at points that exceed a user-defined uncertainty tolerance.
+In \citet{MCMC_GP_proposal}, an algorithm is proposed to accelerate Hamiltonian Monte Carlo by using a 
+GP only for proposals, but running the exact simulation when computing the acceptance probability to 
+ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
+asymptotic consistency \citep{DelayedAcceptance}.
+These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
+maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq_design}.
+
+
+\section{Practical Recommendations} \label{sec:recs}
+
+\paragraph{Model the Global Trend.}
+We now provide some practical guidelines motivated by these integrability considerations.
+Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
+is integrable (i.e., $\normCstEm$ exists almost surely). From a practical perspective, our general 
+recommendation is to design the surrogate model to ensure that $\lpostEm[\Ndesign](\Par) \to -\infty$
+almost surely as $\norm{\Par} \to \infty$. As a prior predictive check, we propose to   
+assess the limiting behavior of the predictive distribution along different directions in parameter
+space. For example, this could take the form of a graphical check by plotting quantiles of 
+the predictive distribution at sequences of points spaced along the coordinate axes. 
+See table \todo for an example. Performing this simple check does not require any additional 
+evaluations of the expensive simulator, and can prevent wasting resources by uncovering 
+issues with the surrogate during approximate inference (for example, \citet{emPostDens}
+use divergent MCMC chains as a sort of surrogate diagnostic check).
+
+In order to achieve the requirement $\lpostEm[\Ndesign](\Par) \to -\infty$, it is 
+necessary to achieve a reasonable approximation of the global trend of the response 
+surface that is being emulated over $\parSpace$. This is particularly important in the
+log-density emulation setting. In this case, we generally recommend against the use of 
+stationary surrogate models, though they can perform reasonably well in particular cases.
+Instead, one natural approach is to fit a trend to capture the global structure, along with an 
+additional model to capture local deviations from the trend. In the GP setting, this idea has 
+been realized by combining quadratic mean functions with stationary kernels 
+\citep{emPostDens,SinsbeckNowak,VehtariParallelGP,llikEmABC,ABCGP,pseudoMarginalGP}. In 
+\citet{emPostDens} the quadratic trend is constructed via a sequential importance sampling
+scheme, while in the other articles the quadratic coefficients are learned alongside the 
+kernel hyperparameters. Various works have also proposed combining polynomial chaos
+expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
+\todo: cite Roshan Joseph paper here as well
+
+\paragraph{The Design Should Oversample the Tails.}
+\paragraph{Enforce Bound Constraints.}
+\paragraph{Use Efficient Sub-Sampling Strategies.}
+\paragraph{Embrace Multi-Modal Posteriors.}
+
+\section{Numerical Case Study} \label{sec:case-study}
+We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
+the practical recommendations given in the previous section.
+Our illustrative example is motivated by the problem of producing near-term forecasts of the 
+terrestrial carbon cycle \citep{nearTermForecasts,FerEmulation}. In this setting, both model parameters 
+and initial conditions are typically unknown and must be learned from observational data. Performing 
+such parameter estimation runs into computational challenges for large-scale land surface models, 
+underscoring the potential for surrogates in this domain \citep{paramLSM}.  
+
+\subsection{Model Setup}
+We start by introducing the mechanistic simulator model, and then define a Bayesian inverse 
+problem with respect to this model.
+
+\subsubsection{Mechanistic Model}
+As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
+structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
+describes the evolution of the state vector
+\begin{align*}
+\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}, 
+\end{align*}
+with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, below-ground 
+vegetation (roots), and soil reservoirs, respectively. The VSEM model is given by the system of coupled 
+ordinary differential equations
+\begin{align}
+\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
+\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
+\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
+\end{align}
+where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
+(\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
+\begin{align}
+\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
+\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
+\LAI(\stateV) &= \LAR \cdot \stateV, \nonumber
+\end{align} 
+where $\GPP(\stateV, \forcing)$ and $\LAI(\stateV)$ model Gross Primary Productivity (GPP; \textrm{kg C/$m^2$/day})
+and Leaf Area Index (LAI; \textrm{$m^2/m^2$}), respectively.
+Note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
+time-dependent forcing $\forcing(\Time)$. Given a value of $\Par$, we numerically solve the ODE at a daily time step
+via the basic Euler scheme implemented in the R \verb+BayesianTools+ package \citep{vsem}. We recall the discretized 
+parameter-to-state map 
+$\solutionOp: \Par \mapsto \left[\indexTime[0]{\state}(\Par), \dots, \indexTime[\NTimeStep]{\state}(\Par) \right]^\top$, 
+as defined in \Cref{eq:ode-solution-op}.
+
+Potential calibration parameters in this model include 
+$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \KEXT, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state
+variables $\{\stateV(0), \stateR(0), \stateS(0)\}$.
+Noting that the model is over-parameterized, we will focus on estimating 
+$\Par \Def \{\KEXT, \fracRespiration, \tauV, \stateV(0)\}$ with the remaining parameters held fixed.
+
+\subsubsection{Statistical Model}
+We consider estimating the parameters $\Par$ given noisy monthly averages of LAI over a two year period.
+We assume an additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{eq:vsem-inv-prob} \\
+\noise &\sim \Gaussian(0, \sigma^2 I) \nonumber 
+\end{align}
+where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages; i.e., the first entry of $\fwd(\Par)$
+is given by 
+\begin{equation}
+\fwd_{1}(\Par) \Def \frac{\LAR}{30} \sum_{\timeIndex=1}^{30} \state_{\textrm{v},\timeIndex}(\Par),
+\end{equation}
+and the remaining entries simply change the indices of the summation. For simplicity, we fix $\sigma^2$
+and assume a priori independence over the entries of $\Par$. Synthetic data $\obs$ is simulated
+using \Cref{eq:vsem-inv-prob} with fixed ground truth values $\{\Par_{\star}, \sigma^2_{\star}\}$. The same 
+model is used when solving the inverse problem, but the values of the fixed parameters (those not
+being estimated) and the noise variance are changed, implying the presence of parametric misspecification.
+Table \todo compares these misspecified values relative to the ground truth, while
+table \todo summarizes the prior distribution $\Par \sim \priorDens$. As a baseline for comparison, we 
+draw samples from the posterior using exact MCMC. \Cref{fig:vsem_prior_post} compares the prior 
+and posterior marginal distributions, while \Cref{fig:vsem_pred_dists} compares the prior and 
+posterior predictive distributions over LAI trajectories.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.24\textwidth} % Cv 
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_Cv.png}}
+         \caption{$\stateV(0)$}
+         \label{fig:vsem_prior_post_Cv}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.24\textwidth} % GAMMA
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_GAMMA.png}}
+         \caption{$\gamma$}
+         \label{fig:vsem_prior_post_GAMMA}
+     \end{subfigure}
+      \begin{subfigure}[b]{0.24\textwidth} % tauV
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_tauV.png}}
+         \caption{$\tauV$}
+         \label{fig:vsem_prior_post_tauV}
+     \end{subfigure}
+          \begin{subfigure}[b]{0.24\textwidth} % KEXT
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_post_par_KEXT.png}}
+         \caption{$\KEXT$}
+         \label{fig:vsem_prior_post_KEXT}
+     \end{subfigure}
+        \caption{Marginal prior (black dashed) and posterior (red) distributions for the four
+        calibration parameters.}
+        \label{fig:vsem_prior_post}
+\end{figure}
+
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % Prior predictive distribution
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/prior_pred_dist.png}}
+         \caption{Prior Predictive}
+         \label{fig:vsem_prior_pred}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % Posterior predictive distribution
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/post_pred_dist.png}}
+         \caption{Posterior Predictive}
+         \label{fig:vsem_post_pred}
+     \end{subfigure}
+        \caption{(Left) The distribution over LAI trajectories induced by $\Par \sim \priorDens$. 
+        The red points are the observed noisy observations of monthly LAI averages, with the 
+        vertical bars indicating $\pm \sigma$ observation noise. The blue shaded region captures 
+        90\% prior predictive probability. The gray lines are prior predictive samples, and the black 
+        line is the ground truth LAI trajectory used to generate the data. (Right) The analogous plot
+        for the posterior predictive distribution; i.e., the distribution over LAI trajectories induced 
+        by $\Par \sim \postDens$.}
+        \label{fig:vsem_pred_dists}
+\end{figure}
+
+
+
+
+
+\subsection{Initial Surrogate Fits}
+
+\subsubsection{Forward Model Emulator}
+\subsubsection{Log-Posterior Emulator}
+
+
+\section{Related Work} \label{sec:related-work}
+
+\subsection{Computer Model Calibration} \label{sec:computer-model-calibration}
 The challenge of emulating a black-box computer model has received widespread attention 
 well beyond the scope of Bayesian inference. The design of surrogate models for Bayesian 
 inverse problems may be informed by the vast literature from the computer experiments, 
@@ -667,1300 +1657,19 @@ For example, the pioneering work \citet{KOH} considers jointly learning
 a forward model emulator, calibration parameters, and a discrepancy function within a single 
 Bayesian model. By contrast, we do not consider discrepancy modeling in this review, and moreover
 focus on the alternative modular workflow, where the surrogate is fit offline 
-without seeing the calibration data $\obs$ \citep{modularization} . 
+without seeing the calibration data $\obs$ \citep{modularization}. 
+\footnote{This point is specific to the forward model emulation setting. Log-density emulators 
+do depend on $\obs$, since the log-likelihood is a function of the data.}
 This modular two-stage approach naturally leads to 
 the question of how to propagate the surrogate uncertainty in the calibration stage, which is one 
 of the central questions motivating this review.
 
-\section{Posterior Approximation}
-\subsection{Marginal Posterior}
-Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
-computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
-issues with nonparametric emulators. They also mention the use of the prior log density as a 
-mean for the emulator.
+\subsection{Probabilistic Numerics} \label{sec:prob-numerics}
 
-\subsection{Unnormalized Density Approximations}
-Present the general marginal posterior (or expected posterior). Cite Burkner, and discuss how 
-computation takes the form of an ensemble of MCMC runs. Then discuss how this runs into 
-issues with nonparametric emulators. They also mention the use of the prior log density as a 
-mean for the emulator.
+\subsection{Approximate Bayesian Computation} \label{sec:abc}
 
-Consider mean approx: \citet{emPostDens,CLMBayesianCalibration}
-
-
-\subsection{Existence and Integrability} \label{sec:existence}
-\citet{emPostDens} mentions the issue with the constant mean GP as leading to a non-integrable 
-function. This paper actually argues that this may be useful as a diagnostic to assess the quality 
-of the design. Their logic goes as follows: if the Markov chain moves far away from the design 
-points and reaches a region in which the GP reverts to its prior, this provides evidence that 
-there is a path of high probability (wrt the approximate posterior) to be able to reach such a region.
-This may mean that the design points are not adequately covering the high density region of the
-posterior. In particular, if the design points are adequately distributed, then the approximate posterior 
-tails should decay (at least at first). This would essentially create a "moat" around the design points
-that would create a region of zero probability to prevent the chain from reaching the regions 
-where the GP reverts to its prior.
-
-The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
-work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
-a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
-Fit quadratic mean function: \citet{emPostDens}
-\citet{emPostDens} fits a quadratic mean via constructing a Gaussian approximation using importance sampling.
-The log density of this approximation (after subtracting off the normalizing constant) is used as the 
-mean function.
-
-\section{Sequential Design} \label{sec:seq_design}
-\subsection{Asymptotic Consistency}
-Note that the algorithms that are appropriate for certain problems will significantly depend on 
-how expensive the simulator is.
-
-
-
-
-
-
-
-
-
-
-% An Overview of Surrogate modeling in Bayesian inference 
-\section{An Overview of Surrogate Modeling in Bayesian Inference}
-In this section, we provide an overview of the typical workflow for Bayesian inference using surrogate models. We note 
-that surrogate models are widely used for tasks other than Bayesian inversion, including optimization, sensitivity analysis, 
-and contour estimation [\todo: add citations]. This review is restricted to settings in which the surrogate is utilized to induce
-an approximation of a Bayesian posterior distribution. 
-
-\subsection{Initial Design}
-
-
-Given that the GP is ultimately used to approximate a posterior distribution, various papers have noted the benefit of 
-focusing the model evaluation locations in regions of significant posterior probability 
-\citep{CES,idealizedGCM}.
-
-\todo: add Roshan Joseph's recent initial design work
-
-\subsection{Surrogate Model}
-llik vs fwd model emulation (mention that latter can be viewed as generically as emulating any function of the parameter, on 
-which the likelihood depends). Different model choices (neural network, GP). 
-
-\subsection{Posterior Approximation}
-Different approaches. Large amount of work focused on approximating the likelihood/posterior density. Closed-from expressions for 
-GP llik emulators/closed form expressions for forward model emulators in the context of a additive Gaussian likelihood, common setup
-in the inverse problems literature. Cite new paper on Monte Carlo approximations that are model agnostic.
-
-\subsection{Sequential Design}
-Calibration vs. consistency. Consistency: SUR framework, Youssef MCMC work, Teckentrup work, Sanz-Alonso paper
-
-% Setting and Background 
-\section{Setting and Background}
-
-\subsubsection{A Toy Carbon Cycle Model}
-As a simple concrete example, we utilize the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
-structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
-describes the evolution of the state vector
-\begin{align*}
-\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}, 
-\end{align*}
-with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, below-ground 
-vegetation (roots), and soil reservoirs, respectively. The VSEM model is given by the system of coupled 
-ordinary differential equations
-\begin{align}
-\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
-\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
-\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
-\end{align}
-where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
-(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
-Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
-\begin{align}
-\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
-\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
-\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
-\end{align} 
-We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
-time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
-$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables.
- 
-
-\subsection{Surrogate Construction}
-We now consider modeling either $\fwd$ or $\llik$ with a GP, referring to these cases as \textit{forward model emulation} and 
-\textit{log-likelihood emulation}, respectively. As mentioned previously, computationally costly forward models render 
-standard inference algorithms intractable for solving Bayesian inverse problems due to the large number of model 
-evaluations that must be conducted iteratively. The main idea of model emulation is to front-load the forward model 
-runs, which can often be computed in parallel, to obtain a design $\{\designIn, \fwd(\designIn)\}$ or 
-$\{\designIn, \llik(\designIn)\}$ which can then be used to train a model that 
-approximates $\fwd$ or $\llik$. A basic illustration of forward model and log-likelihood GP emulators, along with the 
-(log) likelihood approximations they induce, is provided in \Cref{fig:em_dist_1d}. 
-As we will demonstrate, the practical considerations one must consider differ significantly across the two emulation 
-strategies. The majority of existing work in the Bayesian inverse problems and computer modeling literature tends 
-to favor the forward model emulation strategy, often coupled with the assumption of a Gaussian likelihood to enable
-convenient closed-form computations \citep{HigdonBasis,functionValuedModels,hydrologicalModel,VillaniAdaptiveGP}. 
-A growing number of papers have also begun to explore the log-likelihood emulation option 
-\citep{VehtariParallelGP,gp_surrogates_random_exploration,FerEmulation,ActiveLearningMCMC,quantileApprox,llikRBF,trainDynamics,MCMC_GP_proposal,landslideCalibration,Kandasamy_2017,wang2018adaptive}. 
-Both methods have their merits and drawbacks; our intention is not to argue universally in favor of one approach, but rather
-to illustrate the implications of this choice in defining a surrogate-induced posterior approximation. The papers 
-\citet{StuartTeck1,StuartTeck2,random_fwd_models} also consider the distinction between these two strategies, 
-with a focus on proving theoretical posterior consistency results. In \citet{GP_PDE_priors}, both options are compared 
-for developing emulators for inverse problems derived from PDE models.
-
-\subsubsection{Forward Model Emulation}
-
-\subsubsection{Log-Likelihood Emulation}
-We observe in \ref{post_dens} that the forward model evaluations appear in the posterior density only through the 
-likelihood. Thus, for the purposes of posterior inference, it is sufficient to directly approximate $\llik(\Par)$ without 
-obtaining an approximation of the forward model. It is typically preferable to focus on approximating the logarithm 
-of the likelihood, which usually results in a smoother response surface more amenable to GP emulation [\todo: cite]. 
-The emulator construction proceeds as before; a GP prior $\llikPrior \sim \GP(\emMeanPrior{\llik}, \emKerPrior{\llik})$ 
-is specified and the predictive distribution 
-\begin{align*}
-\llikEm[\Ndesign] \Def \llikPrior | [\llikPrior(\designIn) = \llik(\designIn)] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})
-\end{align*}
-is obtained by conditioning on the design $\{\designIn, \llik(\designIn)\}$. 
-The distribution of $\llikEm[\Ndesign]$ is Gaussian, unlike
-the log-likelihood surrogate $\llikEmFwd[\Ndesign]$ in the forward model emulation setting. The analog to 
-\Cref{fwd_em_lik_emulator_moments_Gaussian} is stated below. In this case, the distribution of the induced likelihood 
-surrogate is immediately seen to be log-normal
-\footnote{If $f \sim \GP(\gpMean, \gpKer)$ then we refer to the exponential of $f$ as a \textit{log-normal process}, 
-denoted by $\Exp{f} \sim \LNP(\gpMean, \gpKer)$.}.
-
-\begin{prop} \label{llik_em_lik_emulator_moments}
-Given a GP log-likelihood emulator $\llikEm[\Ndesign] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$, 
-the induced likelihood surrogate is a log-normal process
-$\Exp{\llikEm[\Ndesign]} \sim \LNP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$, with mean and variance given 
-by 
-\begin{align}
-\E_{\llikEm}\left[\Exp{\llikEm(\Par)} \right] 
-&= \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} \\
-\Var_{\llikEm}\left[\Exp{\llikEm(\Par)} \right] 
-&= \left[\Exp{\emKer[\Ndesign]{\llik}(\Par) - 1} \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
-\end{align}
-\end{prop}
-
-The use of GPs to approximate log-likelihoods has been widely used in approximate Bayesian inference 
-\citep{VehtariParallelGP, Kandasamy_2017, llikRBF, trainDynamics, quantileApprox, wang2018adaptive, landslideCalibration}
-and Bayesian quadrature \citep{BayesQuadrature, BayesQuadRatios}. In the context of inverse problems with 
-high-dimensional output spaces, log-likelihood emulation has the clear benefit of reducing to a univariate GP setting. 
-On the other hand, it has several downsides. Even on the log scale, log-likelihoods can be fast-varying and exhibit large 
-dynamic range, proving troublesome for stationary GP priors \cite{wang2018adaptive}. A second potential weakness 
-stems from the fact that log-likelihoods often have known bound constraints, which may not be respected by a GP 
-prior or predictive distribution. Recent work has dealt with this problem by incorporating constraints into the 
-GP hyperparameter optimization \cite{quantileApprox}. A third challenge follows from the fact that, in many applications, 
-the likelihood parameters (e.g., $\likPar$) are typically not known and must also be learned from data. An obvious 
-solution is to extend the input space of the emulator to include the likelihood parameters, though the resulting response surface 
-may prove more challenging to emulate; this approach is explored in \cite{llikRBF}. Alternatively, specific likelihood 
-choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters. This method is employed 
-in \cite{FerEmulation}, which focuses on the Gaussian likelihood \ref{llik_Gaussian} in the specific case $\likPar = \sigma^2 I$. In this 
-case, a surrogate can be constructed to approximate the sufficient statistic $\norm{\obs - \fwd(\Par)}_2^2$, 
-which does not depend on the likelihood parameter $\sigma^2$. 
-Finally, we note that it may be difficult to incorporate prior domain knowledge 
-into the GP prior for the log-likelihood, whereas in certain settings it is easier to do so when constructing a forward model 
-surrogate \cite{GP_PDE_priors}. The paper \cite{VehtariParallelGP} finds that a GP with a quadratic mean function tends to 
-work well for log-likelihood emulation, perhaps reflecting the fact that many log-likelihoods tend to be well-approximated by 
-a quadratic at a coarse scale, with the GP kernel correcting for finer-scale variations. 
-Despite all of these challenges, we emphasize that the reduction to a scalar-valued output space is a significant benefit which 
-may outweigh the downsides of log-likelihood emulation in many applications. 
-
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.3\textwidth} % GP dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/gp_dist_fwdem.png}}
-         \caption{$\fwdEm$}
-         \label{fig:gp_dist_fwd}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_fwdem.png}}
-         \caption{$\llikEmFwd$}
-         \label{fig:llik_dist_fwd}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_fwdem.png}}
-         \caption{$\Exp{\llikEmFwd}$}
-         \label{fig:lik_dist_fwd}
-     \end{subfigure}
-     \begin{subfigure}[b]{0.3\textwidth} % GP dist [llik] (equal to llik dist so excluding)
-     \includegraphics[width=\textwidth]{}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik] 
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/llik_dist_llikem.png}}
-         \caption{$\llikEm$}
-         \label{fig:llik_dist_llik}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/lik_dist_llikem.png}}
-         \caption{$\Exp{\llikEm}$}
-         \label{fig:lik_dist_llik}
-     \end{subfigure}
-        \caption{Comparison of forward model and log-likelihood emulation in the simple one-dimensional problem ($\dimPar = \dimObs = 1$)
-        described in \Cref{vsem_1d}. The top and bottom rows correspond to the forward model emulation and log-likelihood 
-        emulation settings, respectively. The columns correspond to (1) the forward model emulator; (2) the log-likelihood 
-        emulator induced by the underlying GP; (3) the likelihood emulator induced by the underlying GP. When directly emulating the 
-        log-likelihood, the underlying GP is itself the log-likelihood emulator, and there is no forward model emulator.
-        The dashed black line is the ground truth forward model or (log) likelihood and the red points are the 
-        design points used for emulator training. The blue line is the mean of the respective emulators, and the gray area 
-        covers the region within $1.64$ standard deviations of the mean (capturing approximately 90\% of the predictive distribution in the 
-        cases where the distribution is Gaussian).}
-        \label{fig:em_dist_1d}
-\end{figure}
-
-% Posterior Approximation
-\section{Posterior Approximation} \label{sec:post_approx}
-With a fit GP emulator in hand, we now turn to the question of how best to utilize the resulting likelihood surrogate 
-in approximating the posterior 
-distribution of the Bayesian inverse problem. We systematically review the various methods that have been considered in the 
-literature, and propose a new approach based on noisy approximations of MCMC algorithms. For succinctness, we restrict 
-to the log-likelihood emulation setting when introducing posterior approximation methods throughout this section. Natural 
-analogs exist in the forward model emulation setting, with the caveat that the availability of closed-form computations will 
-be dependent on the specific choice of likelihood. Such considerations for posterior approximation using forward model 
-surrogates are discussed in \Cref{post_approx_fwd}. 
-
-% Random Densities and the Sample-Based Approximation
-\subsection{Random Densities and the Sample-Based Approximation}
-We begin by recalling that the GP emulator $\llikEm$ results in the Gaussian predictor 
- $\llikEm[\Ndesign](\parMat) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat))$
- at any parameter set $\parMat$. Plugging this surrogate into the posterior density expression \ref{post_dens} yields
-\begin{align}
-\llikEmRdm[\Ndesign]{\postDensNorm}(\Par) 
-&\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \llikEmRdmDens[\Ndesign](\Par) 
-\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \label{post_dens_random_llik},
-\end{align}
-with normalizing constant given by 
-\begin{align}
-\llikEmRdm[\Ndesign]{\normCst}
-&= \int \priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} d\Par \label{norm_cst_random_llik}. 
-\end{align}
-The density $\llikEmRdm[\Ndesign]{\postDensNorm}$ is random; each sample trajectory from the 
-underlying GP induces a different posterior.
-\footnote{In general, \ref{norm_cst_random_llik} can be defined as a random probability measure. We simplify the 
-discussion by considering the case where almost all sample paths of the log-likelihood emulator induce probability 
-distributions that admit a Lebesgue density.}
-\citet{StuartTeck1} refers to this random representation of the posterior as the \textit{sample-based} approximation. 
-It is worth noting that $\llikEmRdmDens[\Ndesign](\Par)$,
-the unnormalized random density evaluated at an input $\Par$, inherits its randomness only from the scalar random 
-variable $\llikEm(\Par)$. However, its normalized counterpart $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$ depends 
-on the entire (infinite-dimensional) GP distribution through the normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$.
-In theory, inference for the parameters $\Par$ can then be performed by marginalizing the emulator, resulting in the 
-deterministic density
-\begin{align}
-\llikEmSampDensNorm[\Ndesign](\Par)
-&\Def \E_{\llikEm}\left[\frac{\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)}}{\int \priorDens(\Par^\prime) \Exp{\llikEm[\Ndesign](\Par^\prime)} d\Par^\prime} \right].
-\label{samp_dens_norm}
-\end{align}
-Given that \ref{samp_dens_norm} fully incorporates the GP predictive distribution, we consider 
-$\llikEmSampDensNorm[\Ndesign]$ to be the baseline posterior approximation to which other methods will
-be compared. Theoretically, this posterior can be sampled via the Monte Carlo procedure summarized in
-\Cref{alg:sample-approx} [\todo: subscript notation indexing samples in algorithm might 
-be a bit confusing given subscript on prior density; maybe change this or just define the algorithm as returning 
-a single sample]. However, the requirement of sampling the infinite-dimensional GP trajectory renders this algorithm 
-infeasible in practice. Various discretized approximations might be considered, but face challenges scaling beyond a 
-small number of input dimensions. In \citet{trainDynamics}, the authors circumvent this difficulty by sampling the GP
-only at a finite grid of points, and then approximating the trajectory as GP mean, conditional on the sampled values.
-This approach introduces the challenge of choosing the conditioning locations; the authors' suggest sampling the 
-points via a space-filling algorithm confined within the region of parameter space where the GP expects the posterior
-density to be larger. Owing to these difficulties, other work has noted the challenges of implementing \cref{alg:sample-approx}
-in passing, opting to focus on alternative posterior approximation methods \citep{StuartTeck1,VehtariParallelGP}.
-A Monte Carlo approximation of the form \cref{alg:sample-approx} is also proposed in \citet{BurknerSurrogate}, 
-and we borrow their terminology by referring to \cref{samp_dens_norm} as the
-\textit{expected posterior (EP)} approximation. However, the generic framework in \citet{BurknerSurrogate}
-(not specifically tailored to GPs) is focused mainly on marginalizing a finite-dimensional parameter, and therefore 
-offers no solution to difficulty posed by infinite-dimensional likelihood trajectories.
-We note that \cref{samp_dens_norm} is only well-defined if almost every realization from the likelihood 
-surrogate induces a valid probability density, a property that will depend on the GP emulator [\todo: maybe get rid of this sentence or move elsewhere].
-
-\begin{algorithm}
-    \caption{Monte Carlo Representation of the Sample-Based Approximation}
-    \label{alg:sample-approx}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{sampleApprox}{$\llikEm, \NSample$}     
-        \For{$\sampleIndex \gets1,\NSample$} 
-        		\State $\indexSample{\ell} \sim \law(\llikEm)$ \Comment{Sample GP trajectory}
-		\State $\indexSample{\postDens}(\Par) \gets \priorDens(\Par)\Exp{\indexSample{\ell}(\Par)}$ \Comment{Induced unnormalized density}
-		\State $\indexSample{\Par} \sim \indexSample{\postDensNorm}$ \Comment{Draw from sampled density}
-	\EndFor
-	\State \Return $(\indexSample[1]{\Par}, \dots, \indexSample[\NSample]{\Par})$
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-Given that the primary difficulties stem from the normalizing constant
-\ref{norm_cst_random_llik}, the typical approach is to instead focus on approximations of the \textit{unnormalized}
-random density $\llikEmRdm[\Ndesign]{\postDens}$. We discuss such approaches in the following subsection, and 
-propose a new class of GP-induced posterior approximations in \Cref{post_approx_mcmc}. 
-Existence of these approximate posteriors is an important question that we discuss in \Cref{post_existence}. 
-\Cref{tbl:post-approx} summarizes the various approximations considered. \Cref{fig:post_approx_1d} provides a 
-one-dimensional illustration of the posterior approximations discussed below, utilizing the same emulators 
-from \Cref{fig:em_dist_1d}.
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{ |p{3cm}||p{3cm}|p{3cm}|p{3cm}|  } 
- \hline
- \multicolumn{4}{|c|}{GP-Induced Posterior Approximations} \\
- \hline
- Approximation Target& Plug-In Mean & Pointwise Expectation & Joint Expectation\\
- \hline
- $\llikEmRdm[\Ndesign]{\postDensNorm}$ & $\llikEmMeanDens[\Ndesign]$ & 
- 	$\llikEmSampDensNorm[\Ndesign]$ & $\llikEmSampDensNorm[\Ndesign]$ \\
- $\llikEmRdm[\Ndesign]{\postDens}$& $\llikEmMeanDens[\Ndesign]$ & $\llikEmMargDens[\Ndesign]$   &-\\
- $\textrm{MH}(\Em[\Ndesign]{\likRatio})$ & $\llikEmMeanDens[\Ndesign]$ & &  \\
-  $\textrm{MH}(\Em[\Ndesign]{\accProbMH})$ & $\llikEmMeanDens[\Ndesign]$ & &  \\
- \hline
-\end{tabular} 
-\caption{\todo: caption}
-\label{tbl:post-approx}
-\end{table}
-
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/post_approx_fwdem.png}}
-         \caption{$\postDensNorm(\Par)$ approximation using $\fwdEm$}
-         \label{fig:y equals x}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % Posterior approximations [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/post_approx_llikem.png}}
-         \caption{$\postDensNorm(\Par)$ approximation using $\llikEm$}
-         \label{fig:three sin x}
-     \end{subfigure}
-        \caption{Posterior density approximations derived from the emulators in \Cref{fig:em_dist_1d}, a continuation of 
-        the example detailed in \Cref{vsem_1d}. The left and right 
-        figures plot the approximations derived from the forward model emulator and log-likelihood emulator, 
-        respectively. The dashed black line is the true posterior density (no emulation). The exact posterior, as well 
-        as the mean and marginal approximations, are normalized by approximating the normalizing constant using 
-        numerical integration. The $\mcwmhJointLabel$ and $\mcwmhIndLabel$ densities are kernel density estimates 
-        constructed from MCMC samples. Note that in general the normalized posterior density approximations do not 
-        interpolate the design points due to differences in normalizing constants. \todo: change design points to vertical 
-        dashed lines and add a second row to the legend so it doesn't get cut off.}
-        \label{fig:post_approx_1d}
-\end{figure}
-
- % Approximating the Unnormalized Density
-\subsection{Approximating the Unnormalized Posterior Density} \label{post_approx_unn_dens}
-We now consider the construction of posterior distributions by targeting approximations of the 
-unnormalized random density $\llikEmRdm[\Ndesign]{\postDens}$. For succinctness, we define 
-the posterior approximations in terms of their unnormalized densities, with the associated 
-normalizing constants implicitly defined. An immediate consequence of choosing 
-$\llikEmRdm[\Ndesign]{\postDens}(\Par) = \priorDens(\Par) \Exp{\llikEm(\Par)}$ as the target
-quantity is that the resulting approximations ignore the predictive correlation across different inputs
-$\Par$. The methods we propose in \Cref{post_approx_mcmc} seek to leverage this additional 
-information. \todo: transition
-
-Arguably the simplest approach is to reduce the stochastic surrogate to a deterministic 
-one by considering only the GP predictive mean. We term the resulting posterior
-\begin{align}
-\llikEmMeanDens[\Ndesign](\Par) &\Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} 
-\label{post_dens_mean_llik},
-\end{align}
-the \textit{plug-in mean}, or succinctly \textit{mean}, approximation. 
-This approximation fails to account for the uncertainty introduced by the surrogate model, which can lead 
-to overconfidence in downstream posterior inference. The plug-in mean approximation 
-is analyzed theoretically in \cite{StuartTeck1} and \cite{gp_surrogates_random_exploration}, 
-with error bounds provided in Hellinger distance. In \cite{VehtariParallelGP}, 
-the approximation \ref{post_dens_mean_llik} is also considered but is instead referred to as the 
-\textit{median approximation}, owing to the fact that the median formula for a log-normal random variable 
-gives $\text{median}(\Exp{\llikEm[\Ndesign](\Par)}) = \Exp{\emMean[\Ndesign]{\fwd}(\Par)}$; 
-i.e., the median of the likelihood emulator yields the same estimator as plugging in the mean of the 
-\textit{log}-likelihood emulator. The same approximation is also discussed in \citet{trainDynamics}, where
-it is called the ``kriging predictor'' method.
-The approximate posterior $\llikEmMeanDens[\Ndesign]$ can be 
-shown to be optimal in an $L^1$ sense \citep{VehtariParallelGP, StuartTeck2}, with the caveat that 
-optimality is only guaranteed with respect to the \textit{unnormalized} density.
-
-Generalizations of $\text{median}(\Exp{\llikEm[\Ndesign](\Par)})$ have also been considered, resulting 
-in the $\quantileProb$-quantile, $\quantileProb \in (0,1)$ approximation
-\begin{align}
-\llikEmQDens[\Ndesign](\Par) 
-&\Def \priorDens(\Par) \quantile \left[\Exp{\llikEm[\Ndesign](\Par)} \right] \label{post_dens_quantile_llik} \\
-&= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}} 
-\label{post_dens_quantile_llik_simplified} \\
-&= \llikEmMeanDens[\Ndesign](\Par) \Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}},
-\label{post_dens_quantile_llik_var_inflation}
-\end{align}
-where expression \ref{post_dens_quantile_llik_simplified} follows from the well-known form of the log-normal 
-quantile function [\todo: need to define notation $\GaussianCDF$]. 
-We see in \ref{post_dens_quantile_llik_var_inflation} that the quantile approximation can 
-be viewed as the plug-in mean approximation multiplied by an inflation factor that scales with the GP predictive 
-variance. Larger choices of $\alpha$ correspond to more conservative approximations in the sense of inducing 
-a larger degree of posterior inflation in regions where the GP is uncertain. The approximate posterior 
-\ref{post_dens_quantile_llik_simplified} is considered in \citep{VehtariParallelGP, quantileApprox}.
-
-Another approach that has been utilized in the literature is to marginalize $\llikEmRdm[\Ndesign]{\postDens}$
-with respect to underlying GP emulator. This yields the so-called \textit{marginal} \citep{StuartTeck1} approximation 
-\begin{align}
-\llikEmMargDens[\Ndesign](\Par) 
-&\Def \priorDens(\Par) \E_{\llikEm}\left[\Exp{\llikEm[\Ndesign](\Par)} \right] \label{post_dens_marg_llik} \\
-&= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)} \label{post_dens_marg_llik_simplified} \\
-&= \llikEmMeanDens[\Ndesign](\Par) \Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}, \label{post_dens_marg_var_inflation}
-\end{align} 
-where expression \ref{post_dens_marg_llik_simplified} follows from \Cref{llik_em_lik_emulator_moments}. 
-As with the quantile approximation, expression \ref{post_dens_marg_var_inflation} shows that the marginal 
-approximation can also be viewed as inflating the mean approximation at points where the emulator 
-is uncertain. It is notable, however, that the inflation factor scales much more quickly with the GP 
-uncertainty in this case: with the exponential of the predictive variance rather than the standard deviation.
-In practice, this sensitivity to the predictive variance can lead $\llikEmMargDens[\Ndesign]$ to be highly 
-multimodal, or heavily concentrated in small regions with high predictive variance. 
-This pathology is noted in \cite{VehtariParallelGP}, who recommend against the use of the marginal approximation 
-in their application of interest (log-likelihood emulation with noisy log-likelihood evaluations). 
-\citet{StuartTeck1} and \citet{StuartTeck2} theoretically analyze the marginal approximation under the assumption of 
-a Gaussian likelihood. The marginal approximation can be justified as optimal in an $L^2$ sense, but again 
-with no guarantee of optimality for the normalized density \citep{VehtariParallelGP, StuartTeck1}. 
-
-\todo: might be nice to have a plot that compares the level of posterior inflation for these various algorithms as 
-a function of the number of predictive standard deviations. 
-
- % Approximate MCMC
-\subsection{Approximate MCMC} \label{post_approx_mcmc}
-The methods discussed in the previous section approach the problem of GP-induced posterior approximation 
-by deriving an approximation of the unnormalized posterior density, which can then be passed to standard 
-algorithms to conduct inference (e.g., MCMC). We now propose an alternative approach, whereby the 
-GP surrogate is used to directly approximate the inference algorithm, bypassing an approximation of the 
-unnormalized density. We start by reinterpreting the approximate posteriors introduced in the previous section 
-as inducing different approximations of the Metropolis-Hastings (MH) acceptance probability. 
-We then generalize this idea by introducing acceptance probability approximations that incorporate the 
-GP predictive covariance, a feature that is not possible when targeting the unnormalized posterior 
-density on a $\Par$-by-$\Par$ basis. We consider deterministic approximations of this sort, and also introduce
-a class of MCMC algorithms that produce stochastic approximations to the MH acceptance probability. 
-We analyze these algorithms using results from the so-called noisy MCMC literature 
-\citep{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}.
-
-Before proceeding to the algorithms, we briefly review the MH algorithm and establish notation relevant to the 
-approximate MCMC schemes outlined in the subsequent sections. 
-We recall that the MH algorithm is defined by a proposal kernel, with density that we denote by 
-$\propDens(\Par, \cdot)$. If the Markov chain is in the current state $\Par \in \parSpace$ then 
-the next state is defined by sampling the proposal $\propPar \sim \propDens(\Par, \cdot)$ which is 
-accepted with probability $\accProbMH(\Par, \propPar)$, defined by 
-\begin{align}
-&\accProbMH(\Par, \propPar) = 
-\min\left\{1, \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)} \right\}.
-\label{MH_acc_prob_exact}
-\end{align}
-If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
-This procedure is summarized in \Cref{alg:MH}. 
-\begin{algorithm}
-    \caption{Metropolis-Hastings}
-    \label{alg:MH}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{MH}{$\indexMCMC[0]{\Par}, \NMCMC$}     
-        \For{$\mcmcIndex \gets1,\NMCMC$} 
-        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ \Comment{Proposal}
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\priorDens(\propPar)\Exp{\llik(\propPar)}
-				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) \Exp{\llik(\indexMCMC{\Par})}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
-		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
-		\If{$b = 1$}
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
-		\Else
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
-		\EndIf
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-For notational convenience in deriving approximations 
-of the acceptance probability, we define 
-\begin{align}
-&\accProbRatio(\Par, \propPar) 
-= \frac{\priorDens(\propPar) \Exp{\llik(\propPar)} \propDens(\propPar, \Par)}{\priorDens(\Par) \Exp{\llik(\Par)} \propDens(\Par, \propPar)}, 
-&&\likRatio(\Par, \propPar) = \frac{\Exp{\llik(\propPar)}}{\Exp{\llik(\Par)}},
-\label{MH_acc_prob_exact}
-\end{align}
-and refer to $\accProbRatio(\Par, \propPar)$ and $\likRatio(\Par, \propPar)$ 
-as the \textit{acceptance ratio} and \textit{likelihood ratio}, respectively. We can now define approximate 
-surrogate-based MCMC algorithms by utilizing $\llikEm[\Ndesign]$ to approximate $\accProbMH(\Par, \propPar)$, 
-either directly or by plugging in approximations of $\accProbRatio(\Par, \propPar)$ or $\likRatio(\Par, \propPar)$.  
-We thus consider the random variables $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$, $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$, 
-and $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ defined by inserting the emulated log-likelihood evaluations
-$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ in place of their exact counterparts in \ref{MH_acc_prob_exact}. 
-
-% Deterministic Approximations
-\subsubsection{Deterministic Approximations}
- The mean, marginal, and quantile approximate posteriors introduced in the previous 
-section correspond to the following deterministic, plug-in estimates of $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$:
-\begin{align}
-\llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
-\coloneqq \Exp{\emMean[\Ndesign]{\llik}(\propPar) - \emMean[\Ndesign]{\llik}(\Par)} \\
-\llikEmMarg[\Ndesign]{\likRatio}(\Par, \propPar) 
-\Def \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
-\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) - \emKer[\Ndesign]{\llik}(\Par)\right]} \\
-\llikEmQ[\Ndesign]{\likRatio}(\Par, \propPar) 
-\Def \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar) 
-\Exp{\GaussianCDF^{-1}(\quantileProb)  \left[\sqrt{\emKer[\Ndesign]{\llik}(\propPar)} - \sqrt{\emKer[\Ndesign]{\llik}(\Par)}\right]}.
-\end{align}
-Notice that the marginal and quantile approximations inflate the probability of acceptance when the 
-uncertainty at the proposed state $\propPar$ is greater than that at the current state $\Par$.
-All three of these approximations are derived by independently approximating the numerator and denominator 
-in the ratio $\Exp{\llik(\propPar)} / \Exp{\llik(\Par)}$ and then dividing the two approximations.
-However, the GP emulator $\llikEm[\Ndesign]$ is a random function, meaning that 
-$\llikEm[\Ndesign](\propPar)$ and $\llikEm[\Ndesign](\Par)$ are typically correlated, the covariance
-being given by $\emKer[\Ndesign]{\llik}(\propPar, \Par)$. It is therefore natural to consider incorporating 
-this information into approximations of the likelihood ratio. We define a second marginal approximation 
-by marginalizing $\Em[\Ndesign]{\likRatio}(\Par, \propPar)$ with respect to the \textit{joint} 
-distribution of $[\llikEm[\Ndesign](\propPar), \llikEm[\Ndesign](\Par)]$, which gives
-\begin{align}
-\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar) 
-&\Def \E_{\llikEm[\Ndesign]} \left[\Em[\Ndesign]{\likRatio}(\Par, \propPar) \right] \\
-&= \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  \Exp{\frac{1}{2} \Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]} \\
-&=  \llikEmMean[\Ndesign]{\likRatio}(\Par, \propPar)  
-\Exp{\frac{1}{2}\left[\emKer[\Ndesign]{\llik}(\propPar) + \emKer[\Ndesign]{\llik}(\Par) - 2\emKer[\Ndesign]{\llik}(\propPar, \Par) \right]}. 
-\label{lik_ratio_joint_marg}
-\end{align} 
-The joint marginal approximation inflates the acceptance probability when the GP is uncertain about the 
-\textit{difference} in log-likelihood values at the locations $\propPar$ and $\Par$. For example, it is possible
-that the marginal uncertainty at each location is large, but a large covariance between the locations 
-might imply little uncertainty in the difference $\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par)$. The 
-marginal approximation can be taken a step further by integrating $\llikEm$ out of 
-$\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ or $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead of 
-$\Em[\Ndesign]{\likRatio}(\Par, \propPar)$. The $\Em[\Ndesign]{\accProbRatio}(\Par, \propPar)$ case changes 
-little, given that $\accProbRatio(\Par, \propPar)$ differs from $\likRatio(\Par, \propPar)$ only by a multiplicative 
-constant. Instead, taking the expectation of $\Em[\Ndesign]{\accProbMH}(\Par, \propPar)$ yields 
-\begin{align}
-\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) 
-&\Def \E_{\llikEm[\Ndesign]} \left[\min\left\{1, \Em[\Ndesign]{\accProbRatio}(\Par, \propPar)\right\} \right] \\
-&= w_1(\Par, \propPar) + w_2(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar),
-\label{acc_prob_joint_marg}
-\end{align} 
-where 
-\begin{align*}
-w_1(\Par, \propPar) &\Def \Prob(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \geq 1) \\
-w_2(\Par, \propPar) &\Def \Prob\left(\Em[\Ndesign]{\accProbRatio}(\Par, \propPar) \leq \Exp{-\Var\left[\llikEm[\Ndesign](\propPar) - \llikEm[\Ndesign](\Par) \right]}\right) \\
-\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) 
-&\Def \frac{\priorDens(\propPar) \propDens(\propPar, \Par)}{\priorDens(\Par) \propDens(\Par, \propPar)} 
-\llikEmJointMarg[\Ndesign]{\likRatio}(\Par, \propPar)
-\end{align*}
-This is derived in \Cref{prop:joint-marg-accept-prob} in the appendix. While the plug-in acceptance probability 
-approximation based on $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$ yields 
-$\min\left\{1, \llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar) \right\}$, 
-$\llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar)$ instead takes the form of a linear combination of 
-$1$ and $\llikEmJointMarg[\Ndesign]{\accProbRatio}(\Par, \propPar)$, with weights given by the probabilities 
-$w_1(\Par, \propPar)$, $w_2(\Par, \propPar)$.
-
-% Stochastic Approximations
-\subsubsection{Stochastic Approximations}
-The previous section considered deterministic approximations to the MH acceptance probability. Here we turn 
-to random approximations, thus entering the realm of so-called ``noisy'' MCMC algorithms 
-\cite{noisyMCMC, stabilityNoisyMH, noisyMCSurvey, pseudoMarginalMCMC}. The general framework,
-summarized in \Cref{alg:noisy-MH}, is characterized by the choice of distribution $\llikSampDist_{\Par, \propPar}$
-from which to sample the log-likelihood values $\llikSamp$ and $\llikSampProp$ replacing the exact 
-log-likelihood evaluations $\llik(\Par)$ and $\llik(\propPar)$ in $\accProbMH(\Par, \propPar)$.
-
-\begin{algorithm}
-    \caption{Noisy Metropolis-Hastings}
-    \label{alg:noisy-MH}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{noisyMH}{$\indexMCMC[0]{\Par}, \NMCMC, \propDens, \llikSampDist$}     
-        \For{$\mcmcIndex \gets1,\NMCMC$} 
-        		\State $\propPar \sim \propDens(\indexMCMC{\Par}, \cdot)$ 
-		\State $(\llikSamp, \llikSampProp) \sim \llikSampDist_{\indexMCMC{\Par}, \propPar}$  \Comment{Sample log-likelihood values}
-		\State $\accProbMH(\indexMCMC{\Par}, \propPar) \gets \min\left\{1, \frac{\priorDens(\propPar)e^{\llikSampProp} 
-				\propDens(\propPar, \indexMCMC{\Par})}{\priorDens(\indexMCMC{\Par}) e^{\llikSamp}  \propDens(\indexMCMC{\Par}, \propPar)} \right\}$
-		\State $b \sim \text{Bernoulli}(\accProbMH(\indexMCMC{\Par}, \propPar))$
-		\If{$b = 1$}
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \propPar$ 
-		\Else
-			\State $\indexMCMC[\mcmcIndex+1]{\Par} \gets \indexMCMC{\Par}$
-		\EndIf
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-We define the following noisy MCMC algorithms based on different choices for $\llikSampDist_{\Par, \propPar}$.
-Below we consider various choices, and show that the transition kernel defining the Markov chain of the 
-respective algorithm coincides with that of one of the deterministic approximations considered in the previous 
-section. Thus, the noisy MCMC algorithms provide alternative inference algorithms for sampling from the previously 
-considered approximate posteriors. Moreover, in the forward model emulation setting, they also generalize to 
-situations in which the deterministic approximations yield intractable integrals. For example, these algorithms are 
-not restricted to the setting of a Gaussian likelihood when using forward model emulators. 
-We use the notation $\parMat \Def \{\Par, \propPar\}$ in the below definitions. 
-
-\paragraph{Joint Monte Carlo Within Metropolis-Hastings.}
-We first consider setting $\llikSampDist_{\Par, \propPar}$ to be the joint distribution of 
-$[\llikEm[\Ndesign](\Par), \llikEm[\Ndesign](\propPar)]$, 
-\begin{align}
-\llikSampDist_{\Par, \propPar} \Def \Gaussian(\emMean[\Ndesign]{\llik}(\parMat), \emKer[\Ndesign]{\llik}(\parMat)).
-\label{llik_dist_MCWMH-joint}
-\end{align}
-We call the resulting algorithm \textit{Joint Monte Carlo within Metropolis-Hastings} ($\mcwmhJointLabel$). 
-Like the deterministic joint marginal approximations \ref{lik_ratio_joint_marg} and \ref{acc_prob_joint_marg}, 
-the $\mcwmhJointLabel$ algorithm takes into account the GP covariance structure. Note that since the log-likelihood
-values are sampled independently across iterations, the $\mcwmhJointLabel$ algorithm does indeed define a valid 
-Markov chain. The transition kernel of this Markov chain is given by 
-\footnote{We denote by $\delta_{x}$ the Dirac measure centered at a point $x$, which assigns a unit point mass to $x$.}
-\begin{align}
-\llikEmJointMCWMH[\Ndesign]{\MarkovKernel}(\Par, A) 
-&= \int_{A} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar 
-+ \delta_{\Par}(A) \left[1 - \int_{\parSpace} \propDens(\Par, \propPar) \llikEmJointMarg[\Ndesign]{\accProbMH}(\Par, \propPar) d\propPar \right],
-\label{MCWMH-joint-kernel}
-\end{align}
-which is derived in the appendix, \Cref{transition_kernel_derivations}. This is precisely the transition kernel of the Markov chain 
-defined by the deterministic joint marginal approximation of the acceptance probability \ref{acc_prob_joint_marg}. We note that 
-one might also consider setting 
-$\llikSampDist_{\Par, \propPar} 
-\Def \Gaussian\left(\emMean[\Ndesign]{\llik}(\parMat), \diag\left\{\emKer[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\propPar) \right\}\right)$; 
-that is, ignore the GP covariance structure. We refer to the resulting algorithm as
-\textit{Independent Monte Carlo Within Metropolis-Hastings} ($\mcwmhIndLabel$) and consider this choice as a basis for 
-comparison to assess the influence of incorporating the GP covariance in the approximate posterior [\todo]. 
-An algorithm similar to $\mcwmhIndLabel$ is utilized to calibrate expensive ecosystem models 
-in \cite{FerEmulation}. 
-
-\paragraph{Pseudo-Marginal Metropolis-Hastings.} \label{pseudo-marg}
-Note that the two previous algorithms produce new log-likelihood samples at both the current $\Par$ and proposed 
-$\propPar$ locations at each iteration of the algorithm. An alternative is to draw a new sample only at the 
-proposed location, while recycling the sample at the current location from the previous iteration. Formally, this procedure
-implies the product measure 
-\begin{align}
-\llikSampDist_{\Par, \propPar} 
-= \delta_{\llikSamp} \otimes  
-\Gaussian(\emMean[\Ndesign]{\llik}(\propPar), \emKer[\Ndesign]{\llik}(\propPar)), \label{llik_dist_pseudo_marg}
-\end{align}
-which precisely falls into the pseudo-marginal MCMC framework \citep{pseudoMarginalMCMC}. 
-We thus term 
-this algorithm \textit{Pseudo-Marginal Metropolis-Hastings} ($\mhPseudoMargLabel$). Given a log-likelihood sample 
-$\llikSamp$, then by definition the unnormalized posterior approximation $\priorDens(\Par) \Exp{\llikSamp}$ is 
-an unbiased estimator of 
-$\llikEmMargDens[\Ndesign](\Par) = \E_{\llikEm[\Ndesign]}\left[\priorDens(\Par) \Exp{\llikEm[\Ndesign](\Par)} \right]$. 
-This implies that the $\mhPseudoMargLabel$ algorithm defines a Markov chain with target distribution 
-$\llikEmMargDens[\Ndesign]$, as defined in \ref{post_dens_marg_llik}.
-
- % The Forward Model Emulation Setting
-\subsection{The Forward Model Emulation Setting} \label{post_approx_fwd}
- In this section, we discuss notable differences in the above posterior approximation methods when working 
-with a forward model emulator. In general, each of the previously-discussed methods naturally generalizes 
-to this setting by replacing $\llikEm[\Ndesign]$ with $\llikEmFwd[\Ndesign]$ in the definitions. Continuing 
-along the lines of previous notation, we will differentiate the approximated posterior density using forward 
-model emulation by a superscript $\fwd$. In the log-likelihood emulation case, the marginal and quantile 
-unnormalized density approximations admit closed-form characterizations 
-owing to the log-normality of the likelihood surrogate. Under a forward model emulator, the distribution of 
-$\llikEmFwd[\Ndesign]$ will be dependent on the particular likelihood under consideration, so closed-form 
-marginal and quantile approximations may not be available. In such cases, one might still sample from 
-$\fwdEmMargDens[\Ndesign]$ via the pseudo-marginal method discussed in \Cref{pseudo-marg}.
-Under a Gaussian likelihood (e.g., \ref{inv_prob_Gaussian}), a closed-form marginal approximation is
-available, given by
-\begin{align}
-\fwdEmMargDens[\Ndesign](\Par) 
-&\Def \priorDens(\Par) \E_{\fwdEm}\left[\Exp{\llikEmFwd[\Ndesign](\Par)} \right] \nonumber  \\
-&= \priorDens(\Par) \ \E_{\fwdEm}\left[\Gaussian(\obs | \fwdEm[\Ndesign](\Par), \likPar) \right] \nonumber \\
-&= \priorDens(\Par) \ \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)), \label{post_dens_marg_fwd_Gaussian}
-\end{align}
-which follows immediately from the fact that the expectation is of the form of a convolution 
-of two Gaussian densities (see \Cref{prop:Gaussian_marginal_moments} in the appendix).
-The marginal approximation \ref{post_dens_marg_fwd_Gaussian}
-can be interpreted as the posterior distribution of the modified Bayesian inverse problem 
-\begin{align}
-\obs &= \emMean[\Ndesign]{\fwd}(\Par) + v(\Par) + \noise \label{inv_prob_Gaussian_marginal_approx} \\
-v(\Par) &\sim \Gaussian(0, \emKer[\Ndesign]{\fwd}(\Par)) \nonumber \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber \\
-\Par &\sim \priorDens \nonumber, 
-\end{align}
-where $v(\Par)$ and $\noise$ are independent. It is interesting to note that the GP uncertainty in 
-\ref{post_dens_marg_fwd_Gaussian} manifests in the form of additive variance inflation, distinct 
-from the multiplicative uncertainty inflation in \ref{post_dens_marg_var_inflation} \citep{GP_PDE_priors}.
-The noisy MCMC algorithms defined above only require the ability to sample from the log-likelihood
-approximation, and thus are agnostic to the particular choice of likelihood. 
-[\todo: see if I can derive a result that summarizes when the density is deflated vs. inflated a a function 
-of distance from $\obs$ to the GP mean prediction].  
-The Gaussian posterior approximation \ref{post_dens_marg_fwd_Gaussian} has been considered in 
-\cite{StuartTeck2, hydrologicalModel, GP_PDE_priors, GP_PDE_priors, CES, idealizedGCM, weightedIVAR, trainDynamics}.
-
-
-% Perspectives on Posteriors Induced by Gaussian Process Surrogates 
-\subsection{Perspectives on Posteriors Induced by Gaussian Process Surrogates}
-In the preceding subsections, we have summarized a wide variety of GP-induced posteriors that have been considered 
-in the literature, as well as proposed a new approach based on a noisy approximation of a MH algorithm. This leads to 
-the natural question: \textit{which is the correct posterior approximation to use?} We argue that the answer to this question 
-depends largely on the goal at hand. The existing literature in this area tends to implicitly favor one of two potential 
-viewpoints: (1) forward uncertainty propagation or; (2) posterior error minimization. The former perspective tends to 
-accept that computation is limited and hence completely reducing surrogate-induced error is infeasible. The goal thus 
-becomes to ``honestly'' propagate the surrogate uncertainty with the goal of achieving reasonable posterior coverage. 
-The latter perspective emphasizes minimizing 
-error with respect to the true posterior, and ensuring posterior convergence as the number of design points increases
-(surrogate refinement via the selection of additional design points is the topic of  \Cref{seq_des}). We of course should 
-hope for the ideal, whereby computation-limited approximations exhibit favorable 
-uncertainty calibration in some sense, while also converging towards the true posterior in the event that more 
-computational resources become available. Various papers have theoretically studied the latter property, in which results 
-take the form of posterior consistency statements as $\Ndesign \to \infty$
- \citep{StuartTeck1,StuartTeck2,random_fwd_models,gp_surrogates_random_exploration}. To our knowledge, there is 
- currently no analogous theoretical framework for comparing the quality of various GP-induced posterior approximations
- from an uncertainty calibration perspective. We believe that such a framework should evaluate posterior calibration with 
- respect to the calibration of the GP emulators. If the underlying GP fit is poor, then one would expect the resulting posterior 
- calibration to be poor; the quality of the posterior approximation method should not be conflated with the quality of the 
- underlying GP in this setting. We leave the development of a theoretical framework addressing such questions to future 
- work. In the present article, we take care to assess the various posterior approximation methods using a variety of GP 
- models with different characteristics. 
- 
-\todo: Add comments on the effect of approximating the unnormalized posterior density. 
-
-
-% Existence of approximate posteriors. 
-\subsection{Existence of Approximate Posterior Distributions} \label{post_existence}
-\todo
-
-% Practical Gaussian Process Considerations
-\section{Practical Gaussian Process Considerations}
-\begin{itemize}
-\item Examples from literature: quadratic trend, paper that uses constrained GP, Teckentrup GPs for PDEs
-\item Issues with quadratic trend in higher dimensions. 
-\item Issues with existence for priors with unbounded support: issue with ordinary kriging, marginalizing mean 
-uncertainty, quadratic kernel. 
-\item Potential for constrained GPs.
-\end{itemize}
-
-% Sequential Design
-\section{Sequential Design} \label{seq_des}
-In applications, the GP emulator is often constructed sequentially. In this section, we consider augmenting the 
-initial design $\designIn[\Ndesign]$ with new input points that are chosen to yield maximal improvement in the 
-GP-induced posterior approximation. This can be thought of as a question of experimental design for the 
-solution of a Bayesian inverse problem. We begin by reviewing the relevant background on GP-based 
-sequential design, and then proceed to discuss design methods that are tailored to the goal of 
-posterior approximation.  
-
-\subsection{Background: Sequential Design for Gaussian Processes}
-
-\subsubsection{The Sequential Design Loop}
-Sequential design algorithms for GPs have been studied extensively across several fields. We introduce this topic 
-for a generic GP predictive distribution $\funcEm[\Ndesign] \Def \funcPrior \given [\funcPrior(\designIn) = \func(\designIn)]$, 
-as defined in \ref{generic_gp_conditional}. The task is to identify a new set of $\Nbatch$ inputs $\designBatchIn$ to 
-augment the initial design. The augmented design is thus given by 
-$\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$, where 
-$\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$. 
-Conditioning on the augmented design results in the updated GP
-\begin{align}
-\funcEm[\Naugment] \Def \funcPrior \given [\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \sim \GP(\gpMean[\Naugment], \gpKer[\Naugment]),
-\end{align}
-where the predictive mean $\gpMean[\Naugment]$ and covariance $\gpKer[\Naugment]$ functions are given by \ref{kriging_eqns}
-with $\{\designIn, \func(\designIn)\}$ replaced by $\{\designIn[\Naugment], \func(\designIn[\Naugment])\}$. 
-We note that conditioning in stages is equivalent to conditioning on the entire design at once; i.e.,
-$\funcPrior|[\funcPrior(\designIn[\Naugment]) = \func(\designIn[\Naugment])] \eqDist 
-\funcEm[\Ndesign]|[\funcEm[\Ndesign](\designIn[\Nbatch]) = \func(\designBatchIn)]$, which is justified 
-by \Cref{lemma:gp-condition-order} in the appendix. This fact can be leveraged to avoid the 
-naive $\BigO([\Ndesign + \Nbatch]^3)$ update $\funcPrior \mapsto \funcEm[\Naugment]$, and instead 
-compute $\funcEm[\Ndesign] \mapsto \funcEm[\Naugment]$, which may be achieved in 
-$\BigO(\Nbatch^3 + \Nbatch^2 \Ndesign + \Nbatch \Ndesign^2)$ operations courtesy of the 
-partitioned matrix inverse identity in \Cref{partitioned-matrix-inverse}.
-[\todo: probably should have separate section on computational complexity]
-Naturally, the new batch $\designBatchIn$ should be chosen to 
-yield maximal improvement in the GP model with respect to the downstream task that is to be performed. 
-This idea is formalized by an optimization problem of the form 
-\begin{align}
-\designBatchIn \in \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime), \label{acq_func_opt}
-\end{align}
-where $\acq[\Ndesign]: \parSpace^{\Nbatch} \to \R$ is an \textit{acquisition function} (i.e., \textit{design criterion}) that 
-encodes the quality of a batch of design points in terms of the task at hand. Iterating this procedure $\Nrounds$ times yields the so-called 
-\textit{sequential design} (a.k.a., \textit{active learning}) loop, summarized in \Cref{alg:seq_des_loop}.  
-
-\begin{algorithm}
-    \caption{Gaussian Process Sequential Design Loop}
-    \label{alg:seq_des_loop}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
-	\State $\hat{\func} \gets \funcPrior \given [\funcPrior(\designIn[\Ndesign]) = \func(\designIn[\Ndesign])] \sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$
-	\Comment{Initial Design}
-        \For{$\designIndex \gets 1,\Nrounds$} \Comment{Sequential Design Loop}
-        		\State $\designBatchIn \gets \argmin_{\designBatchIn^\prime \in \parSpace^{\Nbatch}} \acq[\Ndesign](\designBatchIn^\prime)$ 
-		\State $\hat{f} \gets \hat{f} | [\hat{f}(\designBatchIn) = \func(\designBatchIn)]$
-	\EndFor
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-One could of course consider 
-varying the batch size $\Nbatch$ across the $\Nrounds$ iterations, but to simplify notation we keep $\Nbatch$ constant. We note that the 
-special case $\Nbatch = 1$ corresponds to the pure sequential design setting, in which the function $\func$ is evaluated at each acquired 
-point before considering the subsequent acquisition. The \textit{batch} sequential design setting $\Nbatch > 1$ is more challenging,  
-owing to the fact that $\func$ is only evaluated after an entire batch $\designBatchIn$ has been acquired, meaning that inputs must 
-be selected without observing the outputs of the other points in the batch. 
-We note that, while the design framework summarized in \Cref{alg:seq_des_loop} does allow for consideration 
-of within-batch interactions between design points, 
-it is still ``myopic'' in the sense that it disregards the potential for acquisitions in future rounds. 
-Non-myopic strategies have been considered
-through a dynamic programming lens, though they typically come at the cost of significant 
-computational expense \citep{SURThesis, supermartingaleSUR}. 
-
-\subsubsection{Acquisition Functions}
-A large literature exists on the design of acquisition functions $\acq[\Ndesign]$ targeting various goals, including 
-black-box optimization \citep{reviewBayesOpt, gramacy2020surrogates}, 
-numerical integration \citep{BayesQuadrature, BayesQuadrature, BayesQuadRatios},
-contour estimation \citep{contourEstimation, cole2021entropybased}, and response surface estimation 
-\citep{gramacy2020surrogates, SanterCompExp, design_analysis_computer_experiments}.
-It is often desirable to design $\acq[\Ndesign]$ to target points that the GP predictive mean deems favorable 
-(exploitation) while also exploring regions with high GP uncertainty (exploration). We emphasize two 
-generic forms for $\acq[\Ndesign]$ that give rise to many common acquisition functions used in practice
-and form the basis for design criteria specialized to the present setting.
-
-\paragraph{Local Uncertainty.}
-An intuitive design strategy is to simply select inputs where a quantity of interest exhibits high 
-uncertainty. A canonical example in the pure sequential ($\Nbatch = 1$) setting is
-the \textit{maximum variance} ($\maxvarLabel$) criterion
-\begin{equation}
-\labelAcq[\Ndesign]{\maxvarLabel}(\Par) \Def -\Var[\funcEm[\Ndesign](\Par)]  =  -\gpKer(\Par),
-\label{acq_max_var}
-\end{equation}
-which is negated to align with our convention of minimizing acquisition functions. By defining 
-``uncertainty'' in terms of entropy instead of variance, we obtain the \textit{maximum entropy} 
-($\maxentLabel$) acquisition
-\begin{equation}
-\labelAcq[\Ndesign]{\maxentLabel}(\designBatchIn) \Def -\Ent[\funcEm[\Ndesign](\designBatchIn)] + \cst 
-=  -\frac{1}{2} \log\det(\gpKer(\designBatchIn)), 
-\label{acq_max_ent}
-\end{equation}
-where $\Ent[Z]$ denotes the entropy of a random vector $Z$ and $\cst$ is a constant independent 
-of $\designBatchIn$. Note that this criterion is well-defined in the batch ($\Nbatch > 0$) setting.
-We view both \ref{acq_max_var} and \ref{acq_max_ent} as special cases of a broader class 
-of acquisition criteria defined below. To this end, we introduce a nonnegative map 
-$(\designBatchIn, \funcEm) \mapsto \qoiMap(\designBatchIn, \funcEm)$ that encodes the 
-uncertainty in (some function of) the random vector  $\funcEm(\designBatchIn)$. As shorthand, 
-we define the map $\qoi: \parSpace^{\Nbatch} \to [0, \infty)$ by 
-$\qoi(\designBatchIn) \Def \qoiMap(\designBatchIn, \funcEm)$, so that 
-$\qoi(\designBatchIn)$ represents the uncertainty associated with the input batch 
-$\designBatchIn$ with respect to the GP $\funcEm$.
-
-\begin{definition}
-The \textbf{local uncertainty criterion} with respect to the GP $\funcEm$ and the map \
-$\qoi: \parSpace^{\Nbatch} \to [0, \infty)$
-is defined as 
-\begin{equation}
-\acq[\Ndesign](\designBatchIn) \Def -\E\left[\qoi(\designBatchIn) \right]. \label{acq_local_unc}
-\end{equation}
-If $\qoi(\cdot)$ only accepts scalars (i.e., $\Nbatch = 1$), we refer to the resulting acquisition function as
- a \textbf{pointwise uncertainty criterion}.
-\end{definition}
-
-The $\maxvarLabel$ and $\maxentLabel$ criteria in \ref{acq_max_var} and \ref{acq_max_ent} follow 
-as special cases by choosing, respectively, 
-\begin{equation}
-\qoiMap(\Par, \funcEm) &\Def [\funcEm(\Par) - \gpMean[\Ndesign](\Par)]^2 \label{qoi_max_var}
-\end{equation}
-and 
-\begin{equation}
-\qoiMap(\designBatchIn, \funcEm) \Def -\log \Gaussian(\funcEm(\designBatchIn) \given 
-\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn)).  \label{qoi_max_ent}
-\end{equation}
-
-These examples consider uncertainty in the GP 
-evaluations $\funcEm(\designBatchIn)$; we will shortly consider 
-design criteria that target uncertainty in functions of the GP evaluations in order to tailor the acquisitions to the 
-goal of posterior approximation. Local uncertainty criteria are attractive in that they are simple and often straightforward
- to compute. However, they neglect the fact that conditioning on new inputs has a global impact on the surrogate
-model over the entire input space. Moreover, it is not always obvious how to generalize a pointwise measure of 
-uncertainty to the batch setting.
-
-\paragraph{Integrated Conditional Uncertainty.} 
-We next consider addressing the deficiencies of the local criteria by taking into consideration the impact of conditioning 
-over the entire input space.
-The intuition here is to target an input batch that results in the greatest uncertainty reduction on average; that is, integrated
-over $\parSpace$. This notion requires a one-step lookahead into the future, given that the function evaluations 
-$\func(\designBatchIn)$ at a candidate set $\designBatchIn$ have not yet been observed. We therefore represent 
-this unknown quantity with the random variable $\funcVal[\Nbatch] \Def \funcEm(\designBatchIn)$; i.e., we consider 
-marginalizing the unobserved function evaluations under the assumption that they follow the current GP predictive distribution. 
-This leads to the consideration of acquisition functions of the following form.
-\begin{definition}
-Let $\qoi: \parSpace \to [0, \infty)$ be a pointwise uncertainty map, defined with respect to $\funcEm$
-and $\qoiMap$. Let $\weightDens: \parSpace \to [0,\infty)$ be a density on $\parSpace$. 
-The \textbf{integrated conditional uncertainty} criterion with respect to $\funcEm$, $\qoiMap$, and $\weightDens$ is 
-defined as
-\begin{equation}
-\acq[\Ndesign](\designIn[\Nbatch])
-\Def \int_{\parSpace} \E_{\funcVal[\Nbatch]} \E \left[\qoi(\Par) \given 
-\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right] \weightDens(\Par) d\Par. \label{acq_int_cond_unc}
-\end{equation}
-\end{definition}
-[\todo: Could alternately define this with integrand $\E_{\funcVal[\Nbatch]} \E[\qoi[\Naugment](\Par|\funcVal[\Nbatch])]$,
-or something like that]
-In addition to considering the global effect of acquiring new points, notice that these criteria provide the means to 
-extend a pointwise uncertainty criterion to the batch setting. For example, choosing $\qoiMap$ as in \ref{qoi_max_var}
-gives rise to the \textit{integrated variance} ($\intvarLabel$) criterion
-\begin{equation}
-\labelAcq[\Ndesign]{\intvarLabel}(\designBatchIn)
-\Def \int_{\parSpace} \gpKer[\Naugment](\Par) \weightDens(\Par) d\Par. \label{acq_int_var}
-\end{equation}
-In this case, the expectation with respect to $\funcVal[\Nbatch]$ is eliminated owing to the fact that 
-$\gpKer[\Naugment](\Par)$ is not a function of $\funcVal[\Nbatch]$. Integrated variance criteria have 
-been widely studied and applied in various domains 
-\citep{Mercer_kernels_IVAR, Binois_2018, gramacy2020surrogates, parallelSURExcursionSet}. 
-If we instead  choose $\qoi$ as in \ref{qoi_max_ent} (with $\Nbatch=1$) then we obtain the 
-\textit{integrated entropy} ($\intentLabel$) criterion
-\begin{equation}
-\labelAcq[\Ndesign]{\intentLabel}(\designBatchIn)
-\Def \int_{\parSpace} \log(\gpKer[\Naugment](\Par)) \weightDens(\Par) d\Par. \label{acq_int_ent}
-\end{equation}
-[\todo: add citations of papers that utilize integrated entropy acquisitions]
-As with $\intvarLabel$, the $\intentLabel$ acquisition does not require evaluation of the $\funcVal[\Nbatch]$ 
-expectation, as the entropy only depends on the GP kernel. 
-
-In the subsequent section we will consider alternate 
-choices of $\qoiMap$ that are tailored to the goal of posterior approximation. This will produce cases where the 
-inner expectation in \ref{acq_int_cond_unc} depends on $\gpMean[\Naugment](\Par)$, which in turn is a function 
-of $\funcVal[\Nbatch]$. We emphasize this dependence by writing
-\begin{equation}
-\gpMean[\Ndesign](\Par | \designBatchFunc) 
-\Def \E[\funcEm[\Ndesign](\Par) \given \funcEm[\Ndesign](\designBatchIn) = \designBatchFunc].
-\label{conditional-mean-notation}
-\end{equation}
-We state a lemma below that summarizes the dependence of the predictive 
-mean on $\funcVal[\Nbatch]$, under the assumption that the unobserved function values are distributed 
-according to the current GP $\funcEm[\Ndesign]$. A similar result is provided in \cite{VehtariParallelGP}, 
-and a proof is given in the appendix.
- \begin{lemma} \label{lemma:pred-mean-dist}
-Let $\{\designBatchIn, \funcVal[\Nbatch]\}$ be a new batch of $\Nbatch$ design points, with
-$\designBatchFunc | \designBatchIn \sim \Gaussian(\gpMean[\Ndesign](\designBatchIn), \gpKer[\Ndesign](\designBatchIn))$. 
-Viewed as a function of the random variable 
-$\designBatchFunc$, the conditional mean $\gpMean[\Ndesign](\Par| \designBatchFunc)$ is 
-distributed as 
-\begin{align}
-\gpMean[\Ndesign](\Par | \designBatchFunc)
-\sim \Gaussian\left(\gpMean[\Ndesign](\Par), 
-                               \gpKer[\Ndesign](\Par) - \gpKer[\Naugment](\Par) \right) \label{pred-mean-dist}.
-\end{align}
-\end{lemma}
-
-We see that the expectation of $\gpMean[\Ndesign](\Par| \designBatchFunc)$ 
-is equal to the current predictive mean $\gpMean[\Ndesign](\Par)$. Since 
-$\gpMean[\Ndesign](\Par) = \gpMean[\Ndesign](\Par | \gpMean[\Ndesign](\designBatchIn))$, this can also be 
-interpreted as the predictive mean resulting from the conditioning of $\funcEm[\Ndesign]$ on the ``pseudo-data''
-$\{\designBatchIn, \gpMean[\Ndesign](\designBatchIn)\}$; i.e., treating the current GP predictive mean as if it were 
-the true response. The variance of 
-$\gpMean[\Ndesign](\Par | \designBatchFunc)$ is equal to the change in GP variance at the input $\Par$ due to the act 
-of conditioning on the batch $\designBatchIn$. Therefore, the uncertainty in $\gpMean[\Ndesign](\Par | \designBatchFunc)$ 
-is large when the design points $\designBatchIn$ are more ``influential.''
-
-We conclude this section with a computational note. The integrated conditional uncertainty criteria 
-\ref{acq_int_cond_unc} requires the evaluation of three integrals. In this article, we only consider acquisitions in which 
-the two inner expectations can be evaluated in closed-form. This is the case, for example, in \ref{acq_int_var} and 
-\ref{acq_int_ent}. This leaves the outer integral over the $\dimPar$-dimensional input space with respect to the 
-measure $\weightDens$. Outside of very specific circumstances (see, e.g., \cite{Binois_2018}), this integral 
-cannot be computed analytically. The acquisition \ref{acq_int_var} is thus typically replaced with a Monte Carlo or 
-grid-based discrete approximation. For all of the experiments in this paper, we consider the so-called 
-\textit{sample-sum approximation} \citep{Mercer_kernels_IVAR}, in which the grid points are taken to be a 
-single realization of a Monte Carlo sample (as opposed to viewing them as random during the sequential 
-design optimization, which requires stochastic optimization procedures). Thus, in numerical experiments, we replace
-\ref{acq_int_cond_unc} with 
-\begin{equation}
-\acq[\Ndesign](\designIn[\Nbatch])
-\Def \sum_{m=1}^{M} \E_{\funcVal[\Nbatch]} \E \left[\qoi(\Par_m) \given 
-\funcEm[\Ndesign](\designBatchIn) = \designBatchFunc \right], \label{acq_int_cond_unc_grid}
-\end{equation}
-where $\Par_m \sim \weightDens$.
-
-\todo: add latex macro for the "m" index above.
-
-\subsection{Sequential Design for Posterior Approximation}
-The previous section introduced several acquisition functions that seek to improve GP predictions by targeting
-design point batches that cause large reductions of uncertainty in the GP predictive distribution.
-While such criteria may be appropriate when quality predictions are required across all of $\parSpace$, 
-this may not align well with the goal of constructing a GP emulator that induces an accurate posterior 
-approximation. Given that the true posterior may be highly concentrated relative to the prior, one might 
-intuitively expect that the GP emulator need only achieve a high predictive accuracy in regions with high 
-posterior mass, and avoid wasteful acquisition of design points in negligible regions.
-This intuition is placed on more rigorous ground in \cite{StuartTeck2}.
-We discuss analogs of the local and  integrated conditional uncertainty criteria introduced above that aim to 
-achieve such goal-oriented sequential design. For ease of exposition, we start by focusing on variance-based
-criteria in the log-likelihood emulation setting. The analogous criteria for forward model emulators are introduced 
-in \todo, and criteria based on other notions of uncertainty (e.g., entropy) are given in \todo.
-
-\subsubsection{Local Uncertainty}
-To apply the local uncertainty criteria \ref{acq_local_unc} to the present setting, we could simply replace 
-$\funcEm$ with $\llikEm$ in the definitions. For example, we could target inputs at which the log-likelihood 
-emulator variance is large. However, note that the resulting $\maxvarLabel$ and 
-$\maxentLabel$ criteria depend only on $\emKer[\Ndesign]{\llik}$, not $\emMean[\Ndesign]{\llik}$.
-Consequently, these criteria do not leverage the information encoded in the GP mean about 
-regions of high or low posterior mass. A natural remedy is to instead define these local criteria to 
-target $\llikEmRdmDens[\Ndesign](\Par)$ instead of $\llikEm(\Par)$. In the setting of log-likelihood 
-emulation, $\llikEmRdmDens[\Ndesign](\Par)$ is a log-normal random variable 
-(recall \ref{llik_em_lik_emulator_moments}) and thus the below acquisition functions can be viewed 
-as generalizations of $\maxvarLabel$ and $\maxentLabel$ to log-normal processes. The 
-$\maxvarLabel$ generalization follows from setting 
-\begin{equation}
-\qoiMap(\Par, \llikEm) \Def [\llikEmRdmDens[\Ndesign](\Par) - \E[\llikEmRdmDens[\Ndesign](\Par)]]^2, \label{qoi_exp_var}
-\end{equation}
-yielding the $\maxexpvarLabel$ criterion
-\begin{equation}
-\labelAcq[\Ndesign]{\maxexpvarLabel}(\Par) \Def -\Var[\llikEmRdmDens[\Ndesign](\Par)]  
-=  -\priorDens^2(\Par) \left[\Exp{\emKer[\Ndesign]{\llik}(\Par)} - 1 \right] \Exp{2\emMean[\Ndesign]{\llik}(\Par) + \emKer[\Ndesign]{\llik}(\Par)}.
-\label{acq_max_exp_var}
-\end{equation}
-The $\maxexpvarLabel$ criterion is numerically studied in \cite{KandasamyActiveLearning2015, Kandasamy_2017}.
-It strikes a balance between $\emMean[\Ndesign]{\llik}(\Par)$, $\emKer[\Ndesign]{\llik}(\Par)$, and $\priorDens(\Par)$, 
-rather than only considering $\emKer[\Ndesign]{\llik}(\Par)$. However, it still suffers from the drawbacks associated with
- local uncertainty criteria, as discussed previously. 
-  
- \begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_fwd.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
-         \label{fig:y equals x}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % Pointwise acquisitions [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_pw_llik.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
-         \label{fig:three sin x}
-     \end{subfigure}
-     \caption{Pointwise maximum uncertainty acquisition functions evaluated at a grid of input values computed
-        using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
-        The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
-        emulator, respectively. Solid lines correspond to the acquisition functions in \Cref{acq_max_var_ent}; i.e., 
-        those are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions in 
-        \Cref{acq_max_exp_var_ent}; i.e., the analogous criteria tailored to the goal of posterior approximation.
-        Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
-        each acquisition function computed over the input grid.} 
-        \label{fig:pw_max_uncertainty_1d}
-\end{figure}
-
-\subsubsection{Integrated Conditional Uncertainty}
-We now consider specific instantiations of the integrated conditional uncertainty criterion \ref{acq_int_cond_unc}
-that are adapted to the goal of posterior approximation. Under \Cref{acq_int_cond_unc}, the selection of 
-$\qoi$ and $\weightDens$ are the two design decisions at our disposal to construct such criteria. In other 
-words, we consider specific choices of either the integrand or the measure defining the integral.
-
-\paragraph{Targeting the integrand.}
-We start by setting $\qoiMap$ as in \ref{qoi_exp_var}, which results in an integrated conditional 
-variance criterion targeting uncertainty in the unnormalized posterior density.
-\begin{definition}
-We define the $\intExpVarLabel$ criterion as the specific instance of \ref{acq_int_cond_unc} with 
-$\funcEm$ given by $\llikEm$ and $\qoiMap$ set to \ref{qoi_exp_var}; that is, 
-\begin{equation}
-\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchLlik} \Var[\llikEmRdmDens[\Ndesign](\Par) \given 
-\llikEm[\Ndesign](\designBatchIn) = \designBatchLlik] \weightDens(\Par) d\Par \label{acq_int_cond_unc}
-\end{equation}
-\end{definition}
-
-This $\intExpVarLabel$ acquisition is considered in \cite{VehtariParallelGP}, with the goal of sequentially 
-constructing a log-likelihood emulator to accelerate approximate Bayesian computation. The below result
-provides a closed-form expression for the expected conditional variance expression in the 
-integrand of \ref{acq_int_cond_unc}. See 
-\cite{VehtariParallelGP} for a similar result, and the appendix for the derivation.
-
-\begin{prop} \label{prop:int_exp_var_closed_form}
-The $\intExpVarLabel$ criterion \ref{acq_int_cond_unc} can be written as  
-\begin{equation*}
-\labelAcq[\Ndesign]{\intExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace}  \Var\left[\llikEmRdmDens[\Ndesign](\Par) \given
- \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
-\varInflation(\Par; \designBatchIn) \weightDens(\Par) d\Par,
-\end{equation*}
-where 
-\begin{align}
-\Var\left[\llikEmRdmDens[\Ndesign](\Par) \given \llikEm[\Ndesign](\designBatchIn) = \emMean[\Ndesign]{\llik}(\designBatchIn)\right]
-&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
-\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right], \nonumber \\
-\varInflation(\Par; \designBatchIn)
-&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}.
-\end{align}
-\end{prop}
-
-This derivation leverages \Cref{lemma:pred-mean-dist}, which characterizes the distribution of 
-$\emMean[\Ndesign]{\llik}(\Par | \designBatchLlik)$ as a function of $\designBatchLlik$.
-The interpretation of the closed-form expressions in \ref{prop:int_exp_var_closed_form}
-also closely follows the discussion following this lemma. In particular, the variance term in the
-integrand is the variance of the log-normal random variable $\llikEmRdmDens[\Ndesign](\Par)$ 
-conditioned on the ``pseudo-data'' $\{\designBatchIn, \emMean[\Ndesign]{\llik}(\designBatchIn)\}$.
-The second term $\varInflation(\Par; \designBatchIn)$, which we refer to as the 
-\textit{variance inflation factor}, accounts for the uncertainty in the unobserved response
- $\designBatchLlik$. As in \Cref{lemma:evar}, the variance inflation is larger when the 
- input batch $\designBatchIn$ is more influential.
-
-\paragraph{Targeting the measure.}
-Alternatively, we might consider designing the measure $\weightDens$ towards the goal of 
-posterior approximation. In this case, $\qoiMap$ can be defined in a typical way
-(e.g., \ref{acq_max_var} or \ref{acq_max_ent}) to target the underlying GP $\llikEm$.  
-Natural choices for $\weightDens$ include any of the approximate posteriors discussed 
-in \Cref{sec:post_approx}, which implies weighting the integral over $\parSpace$ by 
-the current posterior approximation. This yields acquisitions of the form
-\begin{align}
-&\acq[\Ndesign](\designIn[\Nbatch])
-\Def \sum_{m=1}^{M} \emKer[\Naugment]{\llik}(\Par_m) 
-&&\Par_m \sim \hat{\llikEmRdmDens},
-\end{align}
-where $\hat{\llikEmRdmDens}$ denotes any of the posterior distributions discussed in 
-\Cref{sec:post_approx}. [\todo: need name and/or notation for acquisitions of this form]
-
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % Integrated acquisitions [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_int_fwd.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\fwdEm$}
-         \label{fig:y equals x}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % Integrated acquisitions [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{test_1d_visualization/acq_int_llik.png}}
-         \caption{$\acq[\Ndesign](\Par)$, with respect to $\llikEm$}
-         \label{fig:three sin x}
-     \end{subfigure}
-     \caption{Integrated conditional uncertainty acquisition functions evaluated at a grid of input values computed
-        using the emulators in \Cref{fig:em_dist_1d}, a continuation of the example detailed in \Cref{vsem_1d}. 
-        The left and right figures plot the approximations derived from the forward model emulator and log-likelihood 
-        emulator, respectively. Solid lines correspond to the acquisition functions \ref{acq_int_var} and \ref{acq_int_ent};
-        i.e., those that are defined with respect to the underlying GP. Dashed lines correspond to the acquisition functions
-        \ref{def:int_exp_var_llik} and \ref{fwd-int-exp-var}; i.e., the analogous criteria tailored to the goal of posterior approximation.
-        Vertical dashed red lines indicate design input locations, and square markers correspond to the minimum of 
-        each acquisition function computed over the input grid.
-        \todo: need to define the integrated entropy acquisition targeting posterior approximation.} 
-        \label{fig:pw_max_uncertainty_1d}
-\end{figure}
- 
-\subsubsection{The Forward Model Emulation Setting}
-While we have introduced the above acquisition functions in the log-likelihood emulation setting, analogous 
-criteria can be defined for forward model emulators. However, the tractability of the resulting criteria will in 
-general depend on the specific likelihood structure. We focus here on the Gaussian likelihood setting 
-\ref{llik_Gaussian}, which is amenable to closed-form computations. We start by noting that a closed-form
-expression for $\Var\left[\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar) \right]$ is given in
-\ref{fwd_em_lik_emulator_moments_Gaussian}, implying a closed-form $\maxexpvarLabel$ 
-in this setting. To define an integrated conditional variance criterion analogous to 
-\ref{acq_int_cond_unc}, we first recall that we are considering ``plug-in'' forward model emulators. 
-Thus, the forward model emulator $\fwdEm$ is conditioned on a new batch 
-$\{\designBatchIn, \designBatchFwd\}$ and then the updated emulator is plugged into the density 
-in place of the true forward model. 
-To denote this, we define 
-$\fwdEmCond{\designBatchFwd} \Def \fwdEm | [\fwdEm(\designBatchIn) = \designBatchFwd]$
-\footnote{Note that $\fwdEmCond{\designBatchFwd}$ is conditioned on $\{\designBatchIn, \designBatchFwd\}$, though the 
-dependence on the inputs $\designBatchIn$ is suppressed in the notation.}
-, so that 
-$\postDens(\Par; \fwdEmCond{\designBatchFwd})$ represents the unnormalized posterior density 
-with the updated emulator plugged in.  
-In this setting, the unobserved forward model outputs are modeled 
-as $\designBatchFwd|\designBatchIn \sim \Gaussian(\emMean{\fwd}(\designBatchIn), \emKer{\fwd}(\designBatchIn))$.
-Following the convention from previous sections, we denote 
-$\emMean[\Ndesign]{\fwd}(\Par | \designBatchFwd) \Def \E\left[\fwdEm(\Par) \given \fwdEm(\designBatchIn) = \designBatchFwd\right]$.
-The analogous integrated conditional variance criterion is then defined by 
-\begin{equation}
-\labelAcq[\Ndesign]{\fwdintExpVarLabel}(\designBatchIn) \Def
-\int_{\parSpace} \E_{\designBatchFwd} \Var[\postDens(\Par; \fwdEmCond{\designBatchFwd})]\weightDens(\Par) d\Par. \label{fwd-int-exp-var}
-\end{equation}
-
-To our knowledge, the paper \cite{SinsbeckNowak} is the first to consider a design criterion of the 
-form \ref{fwd-int-exp-var}. In their presentation, a general perspective is adopted for a generic likelihood and 
-potentially non-Gaussian random field emulator, though the authors briefly note that analytical simplifications 
-are possible when both the emulator and likelihood are Gaussian. A more detailed investigation of this 
-special case is provided in \cite{Surer2023sequential}, in which a closed-form expression is derived for the 
-integrand of a similar criterion. While their result is tailored to the basis function approach for forward model 
-emulation (see \ref{fwd_model_basis_func}), we state the result generically for multi-output forward models 
-emulated by independent GPs, with the basis function setting following as a corollary
-[\todo: add the corollary in the appendix].  
-\begin{prop} \label{prop:evar-fwd-emulation}
-Consider 
-$\fwdEm(\Par) \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, interpreted as a set of $\dimObs$ independent 
-GPs, one for each model output. Let $\{\designBatchIn, \designBatchFwd\}$ be a new batch of $\Nbatch$ 
-design points, with
-$\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$.
-Then for $\Par \in \parSpace$, 
-\begin{align}
-\E_{\designBatchFwd} &\Var[\postDens(\Par; \fwdEmCond{\designBatchFwd})] \nonumber \\
-&= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \frac{1}{2}\likPar + \emKer{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \left[\frac{1}{2}\likPar + \emKer{\fwd}(\Par)\right] - \frac{1}{2}\emKer[\Naugment]{\fwd}(\Par) \right)}{2^{\dimObs/2} \det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}} \right] \label{fwd_evar1} \\
-&= \priorDens^2(\Par) \left[\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | \emMean{\fwd}(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}} \right], \label{fwd_evar2}
-\end{align}
-where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$. 
-\end{prop}
-
-\todo: Old, but keeping around for now 
-The problem of GP-based sequential design for Bayesian inverse problems  
-has gained recent attention, and is addressed in 
-\cite{SinsbeckNowak, Surer2023sequential, VehtariParallelGP, briol2017sampling, ranjan2016inverse, 
-	landslideCalibration, KandasamyActiveLearning2015, Kandasamy_2017, wang2018adaptive,   
-	weightedIVAR, quantileApprox, hydrologicalModel}. 
-[\todo: need to look at the method used in \cite{quantileApprox, hydrologicalModel} more closely.]
-
-The $\maxexpvarLabel$ acquisition is considered in 
-\cite{KandasamyActiveLearning2015, Kandasamy_2017}, 
-while $\maxexpentLabel$ is utilized in \cite{wang2018adaptive, landslideCalibration}. 
-
-% Integrated Expected Variance
-\subsubsection{Integrated Expected Variance}
-
-\paragraph{Log-Likelihood Emulation}
-
-\paragraph{Forward Model Emulation}
-
-% Learning Likelihood Parameters
-\section{Learning Likelihood Parameters} \label{section_lik_par}
-
-% Numerical Experiments
-\section{Numerical Experiments}
-
-% Banana-shaped Distribution
-\subsection{Banana-shaped Distribution} \label{banana_example}
-
-% Very Simple Ecosystem Model 
-\subsection{Very Simple Ecosystem Model} \label{vsem_example}
-Our first set of experiments utilizes the \textit{Very Simple Ecosystem Model} (VSEM), a toy model capturing the basic 
-structure of more complex land surface models, thus ideally suited for algorithm evaluation \citep{vsem}. The model 
-describes the evolution of the state vector
-\begin{align*}
-\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R^{3}, 
-\end{align*}
-with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, below-ground 
-vegetation (roots), and soil reservoirs, respectively. The VSEM model is given by the system of coupled 
-ordinary differential equations
-\begin{align}
-\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
-\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
-\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
-\end{align}
-where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
-(PAR; \textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
-Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
-\begin{align}
-\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
-\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
-\LAI(\stateV) &= \LAR \cdot \stateV. \nonumber
-\end{align} 
-We note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamics $\odeRHS$ additionally depend on a 
-time-dependent forcing $\forcing(\Time)$. Potential calibration parameters in this model include 
-$\{\alphaV, \tauV, \tauR, \tauS, \LUE, \fracRespiration, \LAR\}$, as well as the initial conditions for the three state variables. 
-For all experiments, the model is discretized via a standard forward Euler scheme operating at a daily time step using the 
-software provided in the R \verb+BayesianTools+ package \citep{vsem}. The forcing PAR data is simulated using the basic
-radiation model provided by the \verb+VSEMcreatePAR+ function in this package. \\
-\todo: list default and true parameter values. \\
-\todo: Introduce the notation $\ParTrue$ for the true parameter value used to simulate the data. \\
-\todo: Introduce model misspecification by letting the ground truth fixed parameter differ from their defaults, but use the 
-defaults in the calibration. \\
-\todo: define LAI.
-
-\subsubsection{One-Dimensional Example} \label{vsem_1d}
-Here we describe a Bayesian inverse problem setup using the VSEM model with one-dimensional input and output 
-spaces ($\dimPar = \dimObs = 1$). While not representative of the typical difficulties encountered in higher dimensions, 
-this basic example is intended to build intuition by allowing for easy visualization. We consider calibrating the light extinction
-coefficient $\KEXT$ with the remaining parameters fixed at their default values. The model is simulated over a three year period so 
-that the number of time steps is $\NTimeStep \Def 365 \cdot 3$. The observable is defined to be the corresponding three 
-year average of $\LAI$. Using the notation from \cref{dynamical_models}, we define the likelihood by 
-\begin{align*}
-\obs &= (\obsOp \circ \solutionOp)(\Par) + \noise \\
-\noise &\sim \Gaussian(0, 0.277^2),
-\end{align*}
-with
-\begin{align*}
-\obsOp(\indexTime[1]{\state}, \dots, \indexTime[\NTimeStep]{\state}) 
-\Def \frac{1}{\NTimeStep} \sum_{\timeIndex=1}^{\NTimeStep}  \LAR \cdot \indexTime{\left(\stateV\right)}.
-\end{align*}
-The ground truth observable is given by $\fwd(\ParTrue) = (\obsOp \circ \solutionOp)(\ParTrue) \approx 5.55$ with 
-the single observation $\obs \approx 5.17$ simulated by adding a draw from the Gaussian noise, as specified above. 
-[\todo: add model discrepancy and estimate the noise variance]. The single input parameter is equipped with the 
-prior 
-\begin{align*}
-\Par \sim \mathcal{U}(0.2, 1.0), 
-\end{align*}
-thus completing the specification of the Bayesian inverse problem. 
-
-\subsection{Lorenz} \label{lorenz_example}
-
+\subsection{Other}
+Multifidelity methods? Active subspaces?
 
 % Appendix 
 \section{Appendix}
@@ -2361,7 +2070,7 @@ The variance on the righthand side can be expanded as
 &= \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\likPar + \emKer[\Naugment]{\fwd}(\Par) \right)}{\det(2\pi \likPar)^{1/2}}
 - \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par|\designBatchFwd), \frac{1}{2}\left[\likPar + \emKer[\Naugment]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Naugment]{\fwd}(\Par)])^{1/2}}
 \end{align}
-following from an application of \Cref{fwd_em_lik_emulator_moments_Gaussian}. The denominators in the above expression can be 
+following from an application of \Cref{prop:fwd-em-Gaussian}. The denominators in the above expression can be 
 pulled out of the outer expectation and are seen to equal the denominators in the desired expression. We thus complete the proof by 
 computing the expectation of the numerators with respect to 
 $\designBatchFwd | \designBatchIn \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\designBatchIn), \emKer[\Ndesign]{\fwd}(\designBatchIn))$. 
@@ -2522,7 +2231,7 @@ In these settings the comparison between the approximate posteriors becomes even
 
 
 
-\bibliography{post_approx_with_GP_emulators} 
+\bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}
 
 \end{document}

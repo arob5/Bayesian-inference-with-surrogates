@@ -73,6 +73,7 @@
 \newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
 \newcommand{\lpostEm}[1][\Ndesign]{\llik^{\postDens}_{#1}} 
 \newcommand{\postEm}[1][\Ndesign]{\postDens_{#1}} 
+\newcommand{\postNormEm}[1][\Ndesign]{\postDensNorm_{#1}} 
 \newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
 \newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
@@ -81,13 +82,24 @@
 \newcommand{\emKerPrior}[1]{\gpKerPrior^{#1}}
 \newcommand{\emMean}[2][\Ndesign]{\gpMeanBase^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
 \newcommand{\emKer}[2][\Ndesign]{\gpKerBase^{#2}_{#1}}
+\newcommand{\accProbMHEm}[1][\Ndesign]{\accProbMH_{#1}}
 
-% Random (sample) approximations. 
+% Posterior Approximations
+\newcommand{\normCstEm}[1][\Ndesign]{\normCst_{#1}}
+\newcommand{\postApproxEP}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EP}}}
+\newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\mathrm{mean}}}
+\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\mathrm{EL}}}
+\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EL}}}
+\newcommand{\postApproxNormMean}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{mean}}}
+
+
 \newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
 \newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
 \newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
 \newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
-\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\textrm{EP}}}
+\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\mathrm{EP}}}
+
+
 
 % Marginal approximations. 
 \newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
@@ -116,6 +128,7 @@
 \newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
 
 % Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
+\newcommand{\postSampleKernel}{\mathcal{K}}
 \newcommand{\mcwmhJointLabel}{\textrm{mcwmh-joint}}
 \newcommand{\mcwmhIndLabel}{\textrm{mcwmh-ind}}
 \newcommand{\mhPseudoMargLabel}{\textrm{mh-pseudo-marg}}
@@ -178,7 +191,7 @@
 \newcommand{\sampleIndex}{k} % Generic index for samples. 
 \newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
 \newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
-\newcommand{\NMCMC}{\NSample_{\text{MCMC}}} % Proposal covariance matrix
+\newcommand{\NMCMC}{\NSample} % Proposal covariance matrix
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 \newcommand{\avgAccProbMH}{\overline{a}}
 \newcommand{\accProbRatio}{r}
