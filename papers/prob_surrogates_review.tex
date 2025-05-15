@@ -1436,7 +1436,6 @@ tradeoff.
  \label{eq:acq-intvar}
 \end{equation}
 
-
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
 Federov exchange, stochastic optimization, continuous optimization, SAA
@@ -1498,10 +1497,45 @@ expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
 \begin{rec} \label{rec:oversample-tails}
 The design should oversample the tails.
 \end{rec}
+As discussed in \Cref{sec:seq-design}, it is natural to aim to place design points in regions
+where $\postDensNorm(\Par)$ is large. However, it is often critical to also include sufficiently many
+points in regions where $\postDensNorm(\Par)$ is small, and at least initially, where 
+$\priorDens(\Par)$ is small as well. Intuitively, such points are required to 
+learn the global trend of the response surface (see \Cref{rec:multiscale}) and to ``pin down''
+regions of negligible posterior mass. In constructing the initial design, we often find it helpful
+to sample design points from an over-dispersed version of $\priorDens$. In the 
+case study in \Cref{sec:case-study} we sample the initial design from the prior, but also
+explicitly include additional points in the tails of the prior. We also suggest that sequential
+acquisition schemes are designed to ensure sufficient exploration. This can be encoded
+in an acquisition function (e.g., via the choice of $\weightDens[\Ndesign]$ in \Cref{eq:acq-intvar})
+or via the explicit selection of exploratory points.  
+For example, at each active learning iteration \citet{gp_surrogates_random_exploration} 
+select a subset of new inputs by optimizing an acquisition criterion, but also include some 
+points sampled from the prior. Alternatively, \citet{FerEmulation} subsample new points from a
+mixture of the prior with the current posterior approximation. We note that 
+these recommendations are in line with the theoretical results of \citet{StuartTeck2}, who 
+suggest designs based on an over-dispersed version of $\postDensNorm(\Par)$.
+The notion of oversampling the tails has also been proposed to construct designs
+for numerical integration \citep{briol2017sampling}.
 
 \begin{rec} \label{rec:pred-check-tails}
-Check surrogate tail behavior.
+Check the surrogate tails.
 \end{rec}
+As discussed in \Cref{sec:existence}, one must take care in designing emulators that
+induce well-defined posterior approximations. In MCMC-based inference, this is crucial for
+avoiding divergent MCMC chains. \Cref{rec:multiscale, rec:oversample-tails}
+offer modeling suggestions to help avoid such issues, but they do not provide certified 
+guarantees. We suggest an explicit prior predictive check to diagnose problematic 
+tail behavior in the induced posterior surrogate $\postEm[\Ndesign]$. A simple graphical
+check consists of plotting an upper quantile of $\mathrm{law}(\lpostEm[\Nesign](\Par))$ 
+as $\Par$ varies over the parameter space. One should ensure that $\Par$ is allowed to 
+vary well past the extent of the design points in order to assess the extrapolation behavior 
+of the surrogate. A high quantile (say, 95\% or 99\%) is chosen to assess whether 
+the distribution of $\lpostEm[\Ndesign](\Par)$ appears to be converging almost surely 
+to $-\infty$ in the limit. For multidimensional input spaces we suggest varying one 
+parameter at a time, projecting onto different fixed values of the other parameters. 
+See \Cref{fig:vsem-prior-check-lpostem} in the below case study for an example.
+
 
 \begin{rec} \label{rec:bound-constraints}
 Enforce bound constraints.
@@ -1509,8 +1543,8 @@ Enforce bound constraints.
 
 \begin{rec} \label{rec:multimodal-post-approx}
 Embrace multi-modal posterior approximations.
-\begin{rec}
-s
+\end{rec}
+
 \section{Numerical Case Study} \label{sec:case-study}
 We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
 the practical recommendations given in the previous section.
