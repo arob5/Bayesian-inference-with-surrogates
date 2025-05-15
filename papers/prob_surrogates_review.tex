@@ -52,6 +52,7 @@
 \newtheorem{lemma}{Lemma}
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
+\newtheorem{rec}{Recommendation}
 
 % Title and author
 \title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Sequential Design}
@@ -504,7 +505,7 @@ The sampled function $\func_{\mathrm{samp}}(\cdot)$ can now
 be evaluated at any input value. A standard example is a linear 
 regression model of the form
 \begin{align}
-\funcEm[\Ndesign](\cdot) &= \sum_{\idxBasis=1}^{\dimBasis} (\theta_{\Ndesign})_{\idxBasis} \basisVec_{\idxBasis}.
+\funcEm[\Ndesign](\cdot) &= \sum_{\idxBasis=1}^{\dimBasis} (\theta_{\Ndesign})_{\idxBasis} \basisVec_{\idxBasis}(\cdot).
 \label{eq:finite-basis}
 \end{align}
 for some fixed basis vectors $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$.
@@ -522,7 +523,7 @@ extensively studied when $\funcEm[\Ndesign]$ is a GP, including work in
 Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
 and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}.
 Common approaches construct finite-rank approximations of the form  
-\Cref{eq:finite-basis}.
+in \Cref{eq:finite-basis}.
 
 \begin{figure}
      \centering
@@ -608,7 +609,9 @@ engineering design \citep{PODemulation}, ecological forecasting
 \citep{emPostDens,DagonCLM}, and climate modeling \citep{ESM_modeling_2pt0,idealizedGCM}.
 One popular approach to deal with this challenge is to approximate the forward model output
 as a linear combination of a small number of basis vectors, and then emulate the scalar coefficients 
-of these vectors \citep{HigdonBasis,FadikarAgentBased,PODemulation}. Alternatively, surrogates 
+of these vectors \citep{HigdonBasis,FadikarAgentBased,PODemulation}. In \Cref{basis_func_GPs}, 
+we have already defined such a model in the GP setting.
+Alternatively, surrogates 
 can be fit to low-dimensional summaries of the high-dimensional output, such as spatial or 
 temporal averages \citep{ESM_modeling_2pt0,idealizedGCM,CLMBayesianCalibration,CLMSurrogates}.
 A great deal of other approaches have been proposed, including emulators designed 
@@ -1461,7 +1464,9 @@ maintaining asymptotic exactness. We discuss sequential design strategies in \cr
 
 \section{Practical Recommendations} \label{sec:recs}
 
-\paragraph{Model the Global Trend.}
+\begin{rec} \label{rec:multiscale}
+Treat density emulation as a multiscale problem.
+\end{rec}
 We now provide some practical guidelines motivated by these integrability considerations.
 Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
 is integrable (i.e., $\normCstEm$ exists almost surely). From a practical perspective, our general 
@@ -1490,11 +1495,22 @@ kernel hyperparameters. Various works have also proposed combining polynomial ch
 expansions and Gaussian processes \citep{SinsbeckNowak} (\todo: cite others).
 \todo: cite Roshan Joseph paper here as well
 
-\paragraph{The Design Should Oversample the Tails.}
-\paragraph{Enforce Bound Constraints.}
-\paragraph{Use Efficient Sub-Sampling Strategies.}
-\paragraph{Embrace Multi-Modal Posteriors.}
+\begin{rec} \label{rec:oversample-tails}
+The design should oversample the tails.
+\end{rec}
 
+\begin{rec} \label{rec:pred-check-tails}
+Check surrogate tail behavior.
+\end{rec}
+
+\begin{rec} \label{rec:bound-constraints}
+Enforce bound constraints.
+\end{rec}
+
+\begin{rec} \label{rec:multimodal-post-approx}
+Embrace multi-modal posterior approximations.
+\begin{rec}
+s
 \section{Numerical Case Study} \label{sec:case-study}
 We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
 the practical recommendations given in the previous section.
@@ -1642,7 +1658,7 @@ and multivariate log-score (i.e., predictive deviance; \citep{scoringRules})
 &&\parMat \overset{\mathrm{iid}}{\sim} \weightDens[].
 \end{align}
 
-The choice $\weightDens \in \{\priorDens, \postDens\}$ determines whether error is assessed with
+The choice $\weightDens \in \{\priorDens, \postDensNorm\}$ determines whether error is assessed with
 respect to the prior or true posterior; both scores are approximated by sampling $1000$ points 
 from the relevant distribution. We similarly compute 
 \begin{align}
@@ -1650,6 +1666,42 @@ from the relevant distribution. We similarly compute
 \int_{\parSpace} \abs{\postApproxMean[\Ndesign](\Par) - \postDens(\Par)} \weightDens[](\Par) d\Par,
 \end{align}
 to evaluate the quality of the plug-in mean posterior approximation.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.49\textwidth} % lpost em, prior evaluation
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/pred_scatter_prior_lpostem.png}}
+         \caption{$\lpostEm[\Ndesign], \weightDens[] = \priorDens$}
+         \label{fig:vsem_pred_scatter_prior_lpostem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.49\textwidth} % lpost em, posterior evaluation
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/pred_scatter_post_lpostem.png}}
+         \caption{$\lpostEm[\Ndesign], \weightDens[] = \postDensNorm$}
+         \label{fig:vsem_pred_scatter_post_lpostem}
+     \end{subfigure}
+          \begin{subfigure}[b]{0.49\textwidth} % fwd em, prior evaluation
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/pred_scatter_prior_lpostem.png}}
+         \caption{$\fwdEm[\Ndesign], \weightDens[] = \priorDens$}
+         \label{fig:vsem_pred_scatter_prior_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.49\textwidth} % fwd em, posterior evaluation
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/pred_scatter_post_lpostem.png}}
+         \caption{$\fwdEm[\Ndesign], \weightDens[] = \postDensNorm$}
+         \label{fig:vsem_pred_scatter_post_fwdem}
+     \end{subfigure}
+        \caption{Emulator predictions based on the initial design. The top and bottom rows correspond
+        to the forward model and log-posterior emulator, respectively. The left and right columns correspond
+        to evaluation inputs sampled from the prior and exact posterior, respectively. The points summarize
+        emulator mean predictions, while vertical bars are 90\% emulator predictive intervals. The orange 
+        bars indicate that the 90\% interval does not contain the truth.}
+        \label{fig:vsem_pred_scatter}
+\end{figure}
 
 \subsubsection{Forward Model Emulator}
 \subsubsection{Log-Posterior Emulator}
@@ -1667,6 +1719,35 @@ that an MCMC algorithm would never reach such regions, as the design points in t
 would effectively create a ``moat'' of low probability.
 Moreover, if emulating the log-likelihood then one could also rely on the prior to drive the posterior 
 density emulator to zero.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.49\textwidth} % tauV
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/extrap_q95_lpostem_tauV.png}}
+         \caption{$\tauV$}
+         \label{fig:vsem-prior-check-lpostem-tauv}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.49\textwidth} % Cv
+         \centering
+         \includegraphics[width=\textwidth]{{vsem/extrap_q95_lpostem_Cv.png}}
+         \caption{$\stateV(0)$}
+         \label{fig:vsem-prior-check-lpostem-cv}
+     \end{subfigure}
+        \caption{The prior predictive check recommended in \Cref{rec:pred-check-tails} 
+        for the log-posterior emulator, focusing on the two parameters with unbounded support. 
+        The lines correspond to the $95^{\mathrm{th}}$ percentile of the log-posterior surrogate 
+        $\mathrm{Quantile}_{0.95}(\lpostEm[\Ndesign](\Par))$ as only one parameter in $\Par$ 
+        is varied. Different lines correspond to different fixed values of the remaining parameters,
+        which have been sampled from $\priorDens$. Dashed vertical lines indicate the extent of 
+        the design points in that dimension, with inputs outside of these bounds representing
+        pure extrapolation.}
+        \label{fig:vsem-prior-check-lpostem}
+\end{figure}
+
+
+
 
 
 \section{Related Work} \label{sec:related-work}
