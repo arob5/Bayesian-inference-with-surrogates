@@ -75,24 +75,24 @@ Such computer models often derive from systems of differential equations, with t
 unknown parameters characterizing the physical model.
 To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
 posterior distribution over model parameters while minimizing the number of required likelihood evaluations. 
-A popular class of methods involves replacing either the computer model or the log-likelihood function with a statistical 
-surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
+A popular class of methods involves replacing either the computer model, log-likelihood function, or
+log posterior density with a statistical surrogate (also called an emulator or meta-model), which induces a computationally cheap approximation of the likelihood.
 The surrogate can be trained offline \citep{modularization} using a small set of expensive model runs (often performed in 
 parallel), which then replaces the exact likelihood to facilitate the application of 
 standard inference schemes such as Markov chain Monte Carlo (MCMC).
 
-The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference.
-A probabilistic representation of a surrogate model acknowledges the additional uncertainty introduced by the likelihood 
-approximation. We focus on the questions of how to leverage this uncertainty in constructing posterior
+The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference,
+implying that the true posterior density is modeled as a realization of a random function.
+Such probabilistic surrogates acknowledge the additional uncertainty introduced by 
+the approximation. We focus on the questions of how to leverage this uncertainty in constructing posterior
 approximations and in designing goal-oriented sequential design (i.e., active learning) algorithms
-that iteratively refine the surrogate to yield maximal improvement in the induced posterior approximation. 
-Probabilistic emulators induce a stochastic representation of the posterior density, such that the true density is 
-modeled as a realization of a random function. Such surrogates commonly arise when an emulator
-model is fit using Bayesian methods, though non-Bayesian techniques such as conformal predictors (\todo: cite) and 
-deep ensembles (\todo: cite) are increasingly being considered [\todo: also mention polynomial chaos]. 
-Gaussian processes (GPs; \citet{gpML}) arguably represent the canonical model choice in this setting,
- and have been widely used as emulators in calibrating complex computer codes 
-\citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}. A growing body of research 
+to iteratively improve the surrogate-induced posterior.
+Probabilistic surrogates commonly arise when an emulator is fit using Bayesian methods, though 
+alternative approaches such as deep ensembles \citep{deepEnsembles} are increasingly being 
+considered. Gaussian processes (GPs; \citet{gpML}) arguably represent the canonical model choice 
+in this setting, and have been widely used as emulators in calibrating complex computer codes 
+\citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}. 
+A growing body of research 
 has begun to focus specifically on the use of GP emulators in solving Bayesian inverse problems
 \citep{KOH,StuartTeck1,StuartTeck2,VehtariParallelGP,gp_surrogates_random_exploration,quantileApprox,FerEmulation,
 KandasamyActiveLearning2015,CES,Kandasamy_2017,SinsbeckNowak,Surer2023sequential,llikRBF,
@@ -180,7 +180,7 @@ admits a density with corresponding log-likelihood
 such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
 on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
 calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
-are fixed. We discuss inference for such nuisance parameters in \Cref{section_lik_par}.
+are fixed. We discuss inference for such nuisance parameters in \todo.
 
 The Bayesian approach completes this specification with a prior distribution 
 on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
@@ -202,10 +202,10 @@ When relevant, we will make explicit the dependence on the forward
 model by writing $\llik(\Par; \fwd)$, $\lpost(\Par; \fwd)$, and $\postDens(\Par; \fwd)$. 
 
 In addition to considering 
-generic likelihoods, we will give special attention to the additive Gaussian noise model
+generic likelihoods, we give special attention to the additive Gaussian noise model
 \begin{align}
-\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber 
+&\obs = \fwd(\Par) + \noise,
+&&\noise \sim \Gaussian(0, \likPar) \label{inv_prob_Gaussian} 
 \end{align}
 with corresponding log-likelihood 
 \begin{align}
@@ -229,22 +229,23 @@ We refer to methods that explicitly model the former map as \textit{forward mode
 model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
 map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
 Throughout this review, we will typically view the functions
-$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
-such maps as \textit{simulators}, owing to the fact that in typical applications evaluating these maps requires
-running an expensive computer code. The following section provides a concrete example of such a simulation
+$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ as computationally expensive black-boxes. In applications,
+the forward model often takes the form of a costly computer simulation, so we will occasionally refer to 
+queries to these functions as simulator evaluations.
+The following section provides a concrete example of such a simulation
 model stemming from the numerical solution of differential equations. 
  
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
 We now demonstrate how the problem of estimating the parameters of differential equation models 
  can be cast within the Bayesian inverse problem framework. Our primary motivating applications 
  stem from the use of dynamical models in Earth system modeling  \citep{ESM_modeling_2pt0,paramLSM}.
-Consider an initial value problem 
+Consider a parameter-dependent initial value problem 
 \begin{align}
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
 \end{align}
 describing the time evolution of $\dimState$ state variables 
-$\state(\Time) \Def \left[\indexState[1]{\state}(\Time), \dots, \indexState[\dimState]{\state}(\Time)\right]^\top \in \mathbb{R}^{\dimState}$,
-with dynamics depending on parameters $\Par \in \parSpace$. As our focus will be on estimating these parameters 
+$\state(\Time, \Par) \Def \left[\indexState[1]{\state}(\Time, \Par), \dots, \indexState[\dimState]{\state}(\Time, \Par)\right]^\top \in \mathbb{R}^{\dimState}$,
+with dynamics depending on $\Par \in \parSpace$. As our focus will be on estimating these parameters 
 from observations, we consider the parameter-to-state map
 \begin{align}
 \Par &\mapsto \left\{\state(\Time, \Par) :  \Time \in [\timeStart, \timeEnd] \right\}.
@@ -268,9 +269,9 @@ $\dimObs$-dimensional observable quantity. We assume the observations are genera
 for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this falls within the generic 
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Generalizations can be considered to settings with non-additive or non-Gaussian noise, or the 
-presence of model discrepancy. In our numerical experiments we consider two problems of the 
-form \cref{ode_inv_prob} motivated by applications to near-term terrestrial carbon cycle forecasting and 
-long-term climate modeling. 
+presence of model discrepancy. \Cref{sec:case-study} presents a numerical case study using 
+a problem of this form, motivated by applications to near-term forecasting of the 
+terrestrial carbon cycle.
 
  \subsection{Gaussian Processes} \label{gp_review}
  In this section, we provide a brief review of Gaussian processes; for in-depth treatments, we refer 
@@ -297,8 +298,9 @@ the defining property of the GP can be written as
 \funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
 \end{align}
 For our purposes, the GP $\funcPrior$ will represent a prior distribution for a \textit{deterministic} function 
-$\func: \parSpace \to \R$. 
-However, the underlying ideas explored here can be extended to the setting where evaluations of $\func$ 
+$\func: \parSpace \to \R$, such that the randomness in $\funcPrior$ encodes our epistemic 
+uncertainty about $\func$ \citep{epistemicAleatoric}.
+The underlying ideas explored here can also be extended to the setting where evaluations of $\func$ 
 are corrupted by noise \citep{stochasticComputerModels,VehtariParallelGP,OakleyllikEm}. 
 If we observe noiseless function evaluations $\func(\designIn)$ at a set of inputs $\designIn$, then we can consider
 the conditional distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
@@ -323,8 +325,8 @@ this interpolation property is typically desirable. Nevertheless, a small, posit
 typically included for numerical stability. 
 
 Appropriate choices for the prior mean $\gpMeanPrior$ and covariance $\gpKerPrior$ depend on the 
-particular application, but we typically take the mean to be a constant or a linear model of the form 
-$\gpMeanPrior(\Par) = \beta^\top \phi(\Par)$, for some feature map $\phi$. A common default choice of 
+particular application, with common choice sfor the mean including a constant or a linear model of the form 
+$\gpMeanPrior(\Par) = \beta^\top \phi(\Par)$, for some feature map $\phi$. A typical default choice of 
 covariance function is the exponentiated quadratic (also called squared exponential, Gaussian, or radial basis function)
 kernel,
 \begin{align}
@@ -374,8 +376,7 @@ Bayesian inverse problems. We highlight commonly-used surrogates, emphasizing
 models that provide a probabilistic representation of emulator uncertainty in addition to 
 standard point predictions. We conclude the section with discussions of the tradeoffs
 between the forward and log-density emulation strategies. Our aim is not to investigate any specific 
-model in depth; see \cref{sec:existence} for broad practical recommendations for 
-constructing surrogate models for use in posterior approximation.
+model in depth; see \Cref{sec:recs,sec:case-study} for practical recommendations.
 
 \subsection{Initial Design}
 Before discussing specific emulators, we comment on the general process of surrogate fitting.
@@ -395,10 +396,10 @@ algorithms that seek to minimize a specific notion of discrepancy \citep{support
 As we will demonstrate in experiments, fitting emulators on prior designs may simultaneously produce 
 reasonable approximations in a prior-averaged sense, and poor approximations in a posterior-averaged
 sense. This is due to a common phenomenon in Bayesian inverse problems, whereby the posterior is highly 
-concentrated relative to the prior. Even in parameter spaces of moderate dimension, it is common that 
-the initial design may contain few or no points in the region of significant posterior mass. This is one of the
-central challenges of surrogate modeling in this setting, and motivates the use of sequential design algorithms
-to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq_design}).
+concentrated relative to the prior \citep{StuartTeck2,PCEBIP}. Even in parameter spaces of moderate dimension, 
+it is common that the initial design may contain few or no points in the region of high posterior mass. 
+This is one of the central challenges of surrogate modeling in this setting, and motivates the use of sequential 
+design algorithms to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq_design}).
 
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
@@ -1595,7 +1596,7 @@ posterior predictive distributions over LAI trajectories.
          \caption{$\KEXT$}
          \label{fig:vsem_prior_post_KEXT}
      \end{subfigure}
-        \caption{Marginal prior (black dashed) and posterior (red) distributions for the four
+        \caption{Marginal prior (black dashed) and exact posterior (red) distributions for the four
         calibration parameters.}
         \label{fig:vsem_prior_post}
 \end{figure}
@@ -1626,14 +1627,46 @@ posterior predictive distributions over LAI trajectories.
         \label{fig:vsem_pred_dists}
 \end{figure}
 
-
-
-
-
 \subsection{Initial Surrogate Fits}
+For this problem, we compare GP emulators for both the forward model and log-posterior.
+Let $\funcEm[\Ndesign]$ denote the underlying GP prediction of $\func$.
+To evaluate these emulators we consider both prior and posterior averaged continuous
+ranked probability score (CRPS; \citep{scoringRules})
+\begin{align}
+\mathrm{crps}(\funcEm[\Ndesign]) &\Def \int_{\parSpace} \mathrm{crps}(\funcEm[\Ndesign](\Par), \func(\Par)) \weightDens[](\Par) d\Par
+\end{align}
+and multivariate log-score (i.e., predictive deviance; \citep{scoringRules})
+\begin{align}
+\mathrm{logS}(\funcEm[\Ndesign]) 
+&\Def \log \Gaussian(\func(\parMat) \given \emMean[\Ndesign]{}(\parMat), \emKer[\Ndesign]{}(\parMat)),
+&&\parMat \overset{\mathrm{iid}}{\sim} \weightDens[].
+\end{align}
+
+The choice $\weightDens \in \{\priorDens, \postDens\}$ determines whether error is assessed with
+respect to the prior or true posterior; both scores are approximated by sampling $1000$ points 
+from the relevant distribution. We similarly compute 
+\begin{align}
+\mathrm{mae}(\postEm[\Ndesign]) &\Def 
+\int_{\parSpace} \abs{\postApproxMean[\Ndesign](\Par) - \postDens(\Par)} \weightDens[](\Par) d\Par,
+\end{align}
+to evaluate the quality of the plug-in mean posterior approximation.
 
 \subsubsection{Forward Model Emulator}
 \subsubsection{Log-Posterior Emulator}
+This inverse problem presents several challenges for log-density emulators: the dynamic 
+range of the log-likelihood over the prior support is quite large, the parameter space is 
+unbounded, and the likelihood remains relatively flat along certain directions in parameter
+space. One must therefore take care to control the tails of the emulator in order to produce well-defined
+posterior approximations. This situation is not uncommon in applications, as it may simply reflect the 
+fact that the simulator predictions asymptote in certain directions of parameter space. 
+In general, we find a stationary GP performs quite poorly in such contexts. One could argue that 
+the placement of design points in the tails of the prior distribution could alleviate this issue, 
+as it would force the GP predictions downward. Although the GP would revert to its prior
+as the distance from the design points increases, the hope is  
+that an MCMC algorithm would never reach such regions, as the design points in the tail
+would effectively create a ``moat'' of low probability.
+Moreover, if emulating the log-likelihood then one could also rely on the prior to drive the posterior 
+density emulator to zero.
 
 
 \section{Related Work} \label{sec:related-work}
@@ -1665,11 +1698,12 @@ the question of how to propagate the surrogate uncertainty in the calibration st
 of the central questions motivating this review.
 
 \subsection{Probabilistic Numerics} \label{sec:prob-numerics}
+See Sullivan, Hennig papers; and Teckentrup random forward models paper section 5
 
 \subsection{Approximate Bayesian Computation} \label{sec:abc}
 
 \subsection{Other}
-Multifidelity methods? Active subspaces?
+Multifidelity methods? Active subspaces? Data subsampling/randomized misfits?
 
 % Appendix 
 \section{Appendix}
