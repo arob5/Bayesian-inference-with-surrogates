@@ -400,7 +400,7 @@ sense. This is due to a common phenomenon in Bayesian inverse problems, whereby 
 concentrated relative to the prior \citep{StuartTeck2,PCEBIP}. Even in parameter spaces of moderate dimension, 
 it is common that the initial design may contain few or no points in the region of high posterior mass. 
 This is one of the central challenges of surrogate modeling in this setting, and motivates the use of sequential 
-design algorithms to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq_design}).
+design algorithms to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq-design}).
 
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
@@ -455,33 +455,18 @@ of a GP; \citet{PCEGPWind,PCEGP2,SinsbeckNowak}). PCE surrogates have been
 employed to accelerate Bayesian inversion in various applications 
 \citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
 
-\paragraph{Probabilistic Neural Networks.}
-In general, any parametric statistical model fit using Bayesian methods yields a probabilistic
-surrogate. This generic perspective is considered in \citep{BurknerSurrogate}, where the 
-authors assume only that samples can be drawn from the posterior distribution over 
-surrogate parameters. It should be noted, however, that this assumption does not naturally 
-encompass nonparametric emulator models. For example, drawing samples from GPs 
-generally requires sampling infinite-dimensional functions, and thus in practice requires 
-discretization or other approximations.
-\footnote{This computational challenge has been extensively studied in various fields, including
-Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
-and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}. 
-Common approaches utilize low-rank approximations, which approximate GPs using a 
-finite-dimensional parametric model.} In the nonparametric setting, a generic view of a 
-surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
-over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
-for the generic implementation of surrogate models in software packages such as 
-BoTorch \citep{botorch}, which provides support for both nonparametric and non-Gaussian surrogates. 
-
-There has also been growing interest in models with predictive distributions not necessarily 
-rooted in the Bayesian philosophy. This includes neural network based models such 
-as deep ensembles, which summarize uncertainty via an ensemble of neural network 
-models \citep{deepEnsembles}. Various other methods have also been proposed to 
-incorporate a notion of predictive uncertainty within neural networks \citep{epistemicNN}.
-Of particular note are conformal prediction methods, which allow for the construction of 
-pointwise prediction intervals for models that might otherwise only produce point 
-estimates \citep{conformalSurrogate,conformalGP,conformalTwoStageDesign,conformalEvidentialSurrogate,conformalBayesOpt}.
-[\todo{add a few sentences on conformal prediction}]
+\paragraph{Neural Networks.}
+There has been growing interest in the use of neural networks as surrogate models, 
+which are well-suited to the regime where both the input dimension $\dimPar$ 
+and computational budget $\Ndesign$ are large. Bayesian treatment of neural 
+network parameters provides probabilistic predictions, but in practice significant 
+approximations are required for inference \citep{BayesOptNN}. One popular simplification
+treats only the final neural network layer in a Bayesian fashion 
+\citep{BayesLastLayer,BayesOptBayesLastLayer}. Motivated by these difficulties,
+there has also been growing interest in surrogate models with predictive distributions 
+not necessarily rooted in the Bayesian philosophy. This includes deep ensembles, 
+which summarize uncertainty via an ensemble of neural network 
+models \citep{deepEnsembles}, and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
 
 \subsubsection{Parametric vs. Nonparametric Models}
 The distinction between parametric and nonparametric surrogate models will 
@@ -723,13 +708,15 @@ can be constructed via
 \begin{equation}
 \lpostEm[\Ndesign](\Par) \Def \llikEm[\Ndesign](\Par) + \log \priorDens(\Par),
 \end{equation}
-which simply adjusts the predictive mean. Despite the similarity, we see one potential benefit of emulating 
-the log-posterior from a modeling standpoint: the tails of the log-posterior must decay. This
-qualitative information can be leveraged in designing an appropriate surrogate model for
-$\lpost$. The tail behavior of $\llik$ is not always well-known, which can present more of a 
-modeling challenge. These considerations are explored in detail in 
-\Cref{sec:existence}, which discusses the design of surrogate models that induce well-defined 
-posterior approximations. 
+which simply adjusts the predictive mean. Despite the similarity, there are potential tradeoffs from 
+a modeling standpoint. One benefit of emulating the log-posterior is the qualitative knowledge 
+that the tails must decay, which can (and should) be leveraged in designing an appropriate 
+surrogate model. The tail behavior of $\llik$ is not always well-known a priori, which can 
+present more of a modeling challenge. On the other hand, the downside of emulating $\lpost$ is
+that the prior is being approximated, and therefore cannot be relied on to decay in the tails.
+These tradeoffs are related to questions of ensuring well-defined surrogate-induced 
+posterior approximations, a topic we discuss in \Cref{sec:existence}.
+Practical illustrations are explored in the case study in \Cref{sec:case-study}.
 
 \subsubsection{Gaussian Setting} \label{ldens_Gaussian}
 A Gaussian log-density emulator induces an approximation of the unnormalized posterior 
@@ -801,10 +788,10 @@ overconfidence when drawing scientific conclusions. In other settings, it may be
 via additional queries to the simulator. An approximate posterior constructed using the current 
 surrogate may serve as a guide to determine the new input parameters at which the simulator will be 
 evaluated. In this case, propagating surrogate uncertainty is key in weighing the exploration vs. exploitation 
-tradeoff to select new design points (see \cref{sec:seq_design}).
+tradeoff to select new design points (see \cref{sec:seq-design}).
 This uncertainty propagation viewpoint aligns closely with the perspective taken in \citep{BurknerSurrogate}, 
 who consider several MCMC-based methods for propagating surrogate uncertainty in a Bayesian framework. 
-Alternative lines of research (reviewed in \cref{sec:seq_design}) have instead emphasized iterative schemes 
+Alternative lines of research (reviewed in \cref{sec:seq-design}) have instead emphasized iterative schemes 
 designed to achieve asymptotic convergence to the exact posterior. The tradeoff is that such approaches 
 still typically require a large number of simulator evaluations--often performed serially-- and thus remain 
 impractical in settings with computationally-intensive simulators.
@@ -1238,7 +1225,7 @@ though the efficiency of MCwMH is generally less sensitive to the variance in th
 The MCwMH is typically referred to as inexact, in the sense that it does not admit 
 $\postApproxNormMarg[\Ndesign]$ as an invariant distribution. However, in the present setting
 $\postApproxNormMarg[\Ndesign]$ is itself an approximation of $\postDensNorm$ so we might
-view MCwMH as an alternative method for propagating surrogate uncertainty, 
+view MCwMH as an alternative method for propagating surrogate uncertainty
 on equal footing with $\postApproxNormMarg[\Ndesign]$. This perspective is taken in 
 \citet{surrogateNoisyMCMC}, while \citet{garegnani2021NoisyMCMC} studies MCwMH
 as an approximation to $\postApproxNormMarg[\Ndesign]$. A variant of MCwMH
@@ -1262,12 +1249,11 @@ approximation
 \Def \min\left\{1, \frac{\postEm[\Ndesign](\propPar)\propDens(\propPar, \Par)}{\postEm[\Ndesign](\Par) \propDens(\Par, \propPar)} \right\}
 \label{eq:MH-prob-surrogate}
 \end{equation}
-of the MH acceptance probability. The E-Acc algorithm is identical to the standard 
-MH scheme in \Cref{alg:MH} but with $\E_{\Ndesign}[\accProbMHEm[\Ndesign](\Par, \propPar)]$
-replacing $\accProbMH(\Par, \propPar)$. \Cref{tab:acc-prob-comparison} compares the E-Acc 
-approximation to the alternative approximations of $\accProbMH(\Par, \propPar)$ that are implicitly 
-induced by approximations of the unnormalized posterior density. 
-\citet{surrogateNoisyMCMC} propose the E-Acc algorithm, 
+of the MH acceptance probability. The E-Acc algorithm can thus be viewed as a modification of the
+MH scheme in \Cref{alg:MH} with $\E_{\Ndesign}[\accProbMHEm[\Ndesign](\Par, \propPar)]$
+replacing $\accProbMH(\Par, \propPar)$. Many of the other posteriors introduced above can also
+be viewed as invoking particular approximations of $\accProbMH(\Par, \propPar)$, as summarized
+in \Cref{tab:acc-prob-comparison}. \citet{surrogateNoisyMCMC} propose the E-Acc algorithm, 
 and explore connections to the expected posterior approximation.
 
 \begin{table}[h]
@@ -1327,7 +1313,7 @@ approximations; for example, in \cref{prop:llik-em-Gaussian} we observe the requ
 $\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
 decays sufficiently quickly as $\norm{\Par} \to \infty$. 
 
-\section{Sequential Design} \label{sec:seq_design}
+\section{Sequential Design} \label{sec:seq-design}
 Up until this point, we have considered a fixed surrogate model trained using a set of
 $\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
 updating the emulator using additional rounds of simulator runs. Given a limited 
@@ -1435,7 +1421,7 @@ of commonly-used integrated variance criteria \citep{ALC,Mercer_kernels_IVAR,Bin
 Acquisitions of this form arise from the following logic: we would like to select an input batch 
 $\parMat \in \parSpace^{\Nbatch}$ that induces an updated surrogate $\postEm[\Naugment]$ with the largest 
 possible reduction in uncertainty on average over $\parSpace$. In general, we cannot compute this uncertainty
-as we cannot construct $\postEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
+as we cannot construct $\funcEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
 instead consider the random element 
 $\funcEm[\Naugment]^{\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$, with 
 the unknown response $\func(\parMat)$ modeled by the random vector 
@@ -1446,6 +1432,8 @@ and $\gamma$. If we again choose variance as our measure of uncertainty, we have
 \int_{\parSpace} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
  \label{eq:acq-intvar}
 \end{equation}
+where the expectation is with respect to $\gamma$, and the variance with respect to $\funcEm[\Naugment]^{\gamma}$
+conditional on $\gamma$.
 
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
@@ -1470,14 +1458,38 @@ GP only for proposals, but running the exact simulation when computing the accep
 ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
 asymptotic consistency \citep{DelayedAcceptance}.
 These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
-maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq_design}.
-
+maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq-design}.
 
 \section{Practical Recommendations} \label{sec:recs}
 
 \begin{rec} \label{rec:multiscale}
 Treat density emulation as a multiscale problem.
 \end{rec}
+
+In many applications, it is common for log-likelihoods and log-posteriors to exhibit various
+properties that render log-density emulation a challenging task. They tend to have very 
+large dynamic ranges over the support of the prior distribution, even when their range 
+may be relatively small over the posterior support. In addition, their values may drop sharply 
+in certain directions while asymptoting in others. In general, we find that traditional stationary 
+surrogates perform quite poorly in approximating such response surfaces.
+
+
+This inverse problem presents several challenges for log-density emulators: the dynamic 
+range of the log-likelihood over the prior support is quite large, the parameter space is 
+unbounded, and the likelihood remains relatively flat along certain directions in parameter
+space. One must therefore take care to control the tails of the emulator in order to produce well-defined
+posterior approximations. This situation is not uncommon in applications, as it may simply reflect the 
+fact that the simulator predictions asymptote in certain directions of parameter space. 
+In general, we find a stationary GP performs quite poorly in such contexts. One could argue that 
+the placement of design points in the tails of the prior distribution could alleviate this issue, 
+as it would force the GP predictions downward. Although the GP would revert to its prior
+as the distance from the design points increases, the hope is  
+that an MCMC algorithm would never reach such regions, as the design points in the tail
+would effectively create a ``moat'' of low probability.
+Moreover, if emulating the log-likelihood then one could also rely on the prior to drive the posterior 
+density emulator to zero.
+
+
 We now provide some practical guidelines motivated by these integrability considerations.
 Intuitively, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
 is integrable (i.e., $\normCstEm$ exists almost surely). From a practical perspective, our general 
@@ -1486,10 +1498,7 @@ almost surely as $\norm{\Par} \to \infty$. As a prior predictive check, we propo
 assess the limiting behavior of the predictive distribution along different directions in parameter
 space. For example, this could take the form of a graphical check by plotting quantiles of 
 the predictive distribution at sequences of points spaced along the coordinate axes. 
-See table \todo for an example. Performing this simple check does not require any additional 
-evaluations of the expensive simulator, and can prevent wasting resources by uncovering 
-issues with the surrogate during approximate inference (for example, \citet{emPostDens}
-use divergent MCMC chains as a sort of surrogate diagnostic check).
+See table \todo for an example. 
 
 In order to achieve the requirement $\lpostEm[\Ndesign](\Par) \to -\infty$, it is 
 necessary to achieve a reasonable approximation of the global trend of the response 
@@ -1545,8 +1554,13 @@ vary well past the extent of the design points in order to assess the extrapolat
 of the surrogate. A high quantile (say, 95\% or 99\%) is chosen to assess whether 
 the distribution of $\lpostEm[\Ndesign](\Par)$ appears to be converging almost surely 
 to $-\infty$ in the limit. For multidimensional input spaces we suggest varying one 
-parameter at a time, projecting onto different fixed values of the other parameters. 
-See \Cref{fig:vsem-prior-check-lpostem} in the below case study for an example.
+parameter at a time, projecting onto different fixed values of the other parameters.
+Performing this simple check does not require any additional 
+evaluations of the expensive simulator, and can prevent wasting resources by having
+to wait to uncover issues with the surrogate during inference (for example, 
+\citet{emPostDens} use divergent MCMC chains as a sort of surrogate diagnostic check).
+ See \Cref{fig:vsem-prior-check-lpostem} in the below case study for an example
+ of this predictive check.
 
 \begin{rec} \label{rec:bound-constraints}
 Enforce bound constraints.
@@ -1555,6 +1569,23 @@ Enforce bound constraints.
 \begin{rec} \label{rec:multimodal-post-approx}
 Embrace multi-modal posterior approximations.
 \end{rec}
+
+In utilizing a flexible statistical model to approximate a complex response surface, one expects
+the approximation to feature local modes. Given that the surface corresponds to a
+log-posterior density in this setting, it is natural to anticipate that even a deterministic emulator
+may induce multimodal posterior approximations, even when the true posterior is unimodal. 
+Multimodality is even more common when propagating surrogate uncertainty, as the uncertainty 
+level will vary over the input space (e.g., consider the ``sausage-shaped'' confidence 
+bands in \Cref{fig:em_dist_1d}). For example, modes in the approximate posterior may reflect
+that the surrogate expects high posterior mass in a certain region, or that the surrogate is simply 
+uncertain in the region. This uncertainty quantification is essential for acknowledging surrogate 
+inadequacies and for guiding future improvements (\Cref{sec:seq-design}). However, it does
+present computational challenges in performing inference. While specialized algorithms 
+can be employed \citep{adaptiveMultimodal}, we typically prefer practical heuristic approaches
+in the spirit of \citep{multimodalYao}. In particular, we run multiple MCMC chains in parallel with 
+the aim of characterizing the dominant modes of the distribution. We perform within-chain 
+convergence diagnostics to validate that the chains are well-mixed locally, and then 
+utilize heuristics to assign weights to each chain.
 
 \section{Numerical Case Study} \label{sec:case-study}
 We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
