@@ -1330,8 +1330,8 @@ decays sufficiently quickly as $\norm{\Par} \to \infty$.
 \section{Sequential Design} \label{sec:seq_design}
 Up until this point, we have considered a fixed surrogate model trained using a set of
 $\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
-updating the emulator using additional rounds of simulator runs. Given limited 
-computational budgets, the new evaluation points should be carefully chosen with regard
+updating the emulator using additional rounds of simulator runs. Given a limited 
+computational budget, the new evaluation points should be carefully chosen with regard
 to the goal at hand. This cycle of iteratively selecting new design points and updating 
 the surrogate represents a particular instance of a \textit{sequential design},
 or \textit{active learning}, problem. We focus on active learning strategies
@@ -1383,9 +1383,10 @@ The model is first
 fit to an initial design $\{\designIn[\Ndesign], \func(\designIn[\Ndesign])\}$ and is then 
 updated at each iteration $\designIndex$ by augmenting the existing design with newly 
 acquired points $\{\designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)})\}$.
+\footnote{One could of course consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
+we keep $\Nbatch$ constant.}
 For GPs, these updates involve conditioning and potentially also re-fitting hyperparameters. 
-One could of course consider varying the batch size $\Nbatch$ across the $\Ndesign$ iterations but to simplify notation
-we keep $\Nbatch$ constant. The special case $\Nbatch = 1$ corresponds to the 
+The special case $\Nbatch = 1$ corresponds to the 
 pure sequential design setting in which the function $\func$ is evaluated at each acquired point before
 considering the subsequent acquisition. The more challenging batch sequential design setting
 $\Nbatch > 1$ requires selection of inputs without observing the responses for the other points
@@ -1400,8 +1401,8 @@ computational expense \citep{SURThesis, supermartingaleSUR}.
 We now make \Cref{alg:seq-des-loop} concrete by introducing several acquisition functions
 that explicitly target the goal of posterior approximation. We draw a distinction between 
 acquisition criteria restricted to the pure sequential ($\Nbatch = 1$) setting
-and those naturally defined in the batch setting. \Cref{sec:batch-heuristic} discusses 
-greedy methods to employ a single point criterion for batch optimization.
+and those naturally defined in the batch setting. Batch optimization is still possible 
+with a single point criterion, which we discuss in \Cref{sec:batch-heuristic}.
 
 \subsubsection{Single Point Criteria}
 If optimizing for a single design point, a natural strategy is to simply select the input
@@ -1412,9 +1413,8 @@ is used as the measure of uncertainty, this yields the \textit{maximum variance}
 \end{equation}
 which is negated to align with our convention of minimizing acquisition functions.
 This is a natural modification of standard active learning criteria that target inputs 
-where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal (\todo: cite); we instead 
-simply consider the variance of a function of $\funcEm[\Ndesign](\Par)$ to encode the 
-goal of approximating the posterior. The predictive variance of $\postEm[\Ndesign](\Par)$
+where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal (\todo: cite).
+The predictive variance of $\postEm[\Ndesign](\Par)$
 is given in closed-form in \Cref{prop:fwd-em-Gaussian, prop:llik-em-Gaussian} for 
 forward model and log-density emulators in the Gaussian settings. Re-stating the 
 log-posterior example
@@ -1429,16 +1429,28 @@ tradeoff.
 \todo: discuss alternative approach of adapting acq critera from BayesOpt, including the Sanz-Alonso paper.
 
 \subsubsection{Multipoint Criteria}
-
+We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
+we focus on \textit{integrated conditional uncertainty criteria (ICUC)}, which can be viewed as generalizations 
+of commonly-used integrated variance criteria \citep{ALC,Mercer_kernels_IVAR,Binois_2018,deepGPAL}. 
+Acquisitions of this form arise from the following logic: we would like to select an input batch 
+$\parMat \in \parSpace^{\Nbatch}$ that induces an updated surrogate $\postEm[\Naugment]$ with the largest 
+possible reduction in uncertainty on average over $\parSpace$. In general, we cannot compute this uncertainty
+as we cannot construct $\postEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
+instead consider the random element 
+$\funcEm[\Naugment]^{\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$, with 
+the unknown response $\func(\parMat)$ modeled by the random vector 
+$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. The ICUC will therefore average over both $\parSpace$
+and $\gamma$. If we again choose variance as our measure of uncertainty, we have
 \begin{equation}
 \acq[](\parMat) \Def 
-\int_{\parSpace} \E_{\Ndesign} \Var[\postDens(\Par; \funcEm[\Naugment]) \given \gamma] \ \weightDens(\Par) d\Par,
+\int_{\parSpace} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
  \label{eq:acq-intvar}
 \end{equation}
 
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
-Federov exchange, stochastic optimization, continuous optimization, SAA
+Federov exchange, stochastic optimization, continuous optimization, SAA,
+subsampling approach (or put this in its own section?)
 
 \subsubsection{Greedy Heuristic Methods} \label{sec:batch-heuristic}
 \subsubsection{Sampling-Based Design}
@@ -1535,7 +1547,6 @@ the distribution of $\lpostEm[\Ndesign](\Par)$ appears to be converging almost s
 to $-\infty$ in the limit. For multidimensional input spaces we suggest varying one 
 parameter at a time, projecting onto different fixed values of the other parameters. 
 See \Cref{fig:vsem-prior-check-lpostem} in the below case study for an example.
-
 
 \begin{rec} \label{rec:bound-constraints}
 Enforce bound constraints.
