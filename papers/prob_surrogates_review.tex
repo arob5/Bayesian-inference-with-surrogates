@@ -1462,6 +1462,29 @@ maintaining asymptotic exactness. We discuss sequential design strategies in \cr
 
 \section{Practical Recommendations} \label{sec:recs}
 
+\begin{rec} \label{rec:prop-uncertainty}
+The choice surrogate model and uncertainty propagation method should be conducted jointly.
+\end{rec}
+
+In general, we emphasize the importance of propagating surrogate uncertainty in 
+the posterior approximation. We are not convinced of a single ``correct'' uncertainty 
+propagation method. Instead we find a few different approaches to be reasonable, but
+emphasize that the empirical success of any particular method will be closely tied to the
+surrogate model itself. Given their generality and ease of implementation, we tend to prefer
+the noisy MCMC methods defined in \Cref{sec:MH-approx}; in particular, the expected acceptance
+probability and pseudo-marginal methods (recall the latter targets the expected likelihood posterior).
+However, in choosing these methods one needs to appreciate how the behavior of the posterior
+approximation will vary based on the properties of the surrogate predictive distribution.
+For example, in log-density emulation the expected likelihood approximation can concentrate in very 
+small regions of parameter space where the surrogate is uncertain, in which case a pseudo-marginal 
+MCMC run will almost certainly fail. However, in this case we have found that the simple adjustment 
+of incorporating a bound constraint in the emulator can solve this problem and produce reasonable 
+results. The expected acceptance probability tends to be more robust with respect to 
+heavy-tailed surrogate predictions, but requires stronger requirements to ensure 
+existence (\Cref{sec:existence}). We also note that conceptually we find the expected posterior 
+approximation to be an attractive choice, but it is often challenging to implement and computationally
+expensive. 
+
 \begin{rec} \label{rec:multiscale}
 Treat density emulation as a multiscale problem.
 \end{rec}
@@ -1540,7 +1563,7 @@ The notion of oversampling the tails has also been proposed to construct designs
 for numerical integration \citep{briol2017sampling}.
 
 \begin{rec} \label{rec:pred-check-tails}
-Check the surrogate tails.
+Check the tails of the induced posterior density surrogate.
 \end{rec}
 As discussed in \Cref{sec:existence}, one must take care in designing emulators that
 induce well-defined posterior approximations. In MCMC-based inference, this is crucial for
