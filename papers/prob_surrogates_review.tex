@@ -1461,6 +1461,9 @@ These algorithms all leverage a surrogate in various ways with the goal of reduc
 maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq-design}.
 
 \section{Practical Recommendations} \label{sec:recs}
+We now provide a set of practical recommendations for building surrogate models, constructing
+posterior approximations, and sequentially refining the surrogate. \Cref{sec:case-study}
+highlights these recommendations through a numerical case study.
 
 \begin{rec} \label{rec:prop-uncertainty}
 The choice surrogate model and uncertainty propagation method should be conducted jointly.
@@ -1495,7 +1498,6 @@ large dynamic ranges over the support of the prior distribution, even when their
 may be relatively small over the posterior support. In addition, their values may drop sharply 
 in certain directions while asymptoting in others. In general, we find that traditional stationary 
 surrogates perform quite poorly in approximating such response surfaces.
-
 
 This inverse problem presents several challenges for log-density emulators: the dynamic 
 range of the log-likelihood over the prior support is quite large, the parameter space is 
@@ -1609,6 +1611,10 @@ in the spirit of \citep{multimodalYao}. In particular, we run multiple MCMC chai
 the aim of characterizing the dominant modes of the distribution. We perform within-chain 
 convergence diagnostics to validate that the chains are well-mixed locally, and then 
 utilize heuristics to assign weights to each chain.
+
+\vspace
+
+\todo: Add active learning recommendation
 
 \section{Numerical Case Study} \label{sec:case-study}
 We present a numerical illustration of the surrogate-assisted Bayesian inference workflow, highlighting
