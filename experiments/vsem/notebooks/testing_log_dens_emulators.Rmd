@@ -8,16 +8,18 @@ set.seed(543653)
 
 library(data.table)
 library(ggplot2)
-library(patchwork)
+# library(patchwork)
 library(scales)
 library(grid)
 library(support)
 
 experiment_tag <- "vsem"
-write_plots <- TRUE
+write_plots <- FALSE
 
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
-code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
+code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
+# base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+# code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
@@ -35,9 +37,12 @@ source(file.path(src_dir, "gp_helper_functions.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "llikEmulator.r"))
+source(file.path(src_dir, "seq_design.r"))
+source(file.path(src_dir, "seq_design_gp.r"))
+source(file.path(src_dir, "seq_design_for_post_approx.r"))
 source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
-source(file.path(base_dir, "..", "sipnet_calibration", "src", "prob_dists.r"))
-source(file.path(base_dir, "..", "sipnet_calibration", "src", "eki_pecan.r"))
+source(file.path(base_dir, "..", "sipnet-calibration", "src", "prob_dists.r"))
+source(file.path(base_dir, "..", "sipnet-calibration", "src", "eki_pecan.r"))
 ```
 
 ```{r}
@@ -52,7 +57,10 @@ em_settings <- readRDS(file.path(alg_settings_dir, "em_settings.rds"))
 par_prior <- inv_prob$par_prior
 lprior <- get_lprior_dens(par_prior)
 llik_obj <- inv_prob$llik_obj
-lpost <- function(U) lprior(U) + llik_obj$assemble_llik(U)
+lpost <- function(U) {
+  if(is.null(dim(U))) U <- matrix(U, nrow=1L)
+  lprior(U) + llik_obj$assemble_llik(U)
+}
 ```
 
 
@@ -92,6 +100,7 @@ kde_plots <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior")
 
 for(plt in kde_plots) plot(plt)
 ```
+
 # Use GP to set "extrapolation/exploration" points in the tails of the EKI
 # posterior approximation.
 ```{r}
@@ -321,7 +330,7 @@ lpost_em <- llikEmulatorGP("em_lpost", gp_obj, default_conditional=FALSE,
                            lik_par=inv_prob$llik_obj$get_lik_par(), 
                            shift_func=lpost_eki, llik_bounds=lpost_bounds,
                            is_lpost_em=TRUE)
-
+saveRDS(lpost_em, file.path(out_dir, "..", "lpost_em.rds"))
 ```
 
 ```{r}
@@ -474,39 +483,193 @@ for(i in seq_along(kde_other_approx)) {
 }
 ```
 
+# Active Learning
 
 ```{r}
-lpost_test <- function(U, ...) lpost_eki(U) - lprior(U)
 
-test <- run_mcmc_pecan(lpost_test, prior_list, 20000L, n_chains=1L, prop_settings=NULL)
-test_samp <- eki_results$par_maps$inv(test$samp$par)
+grid_prior <- select_mcmc_samp_mat(samp_dt_prior)[1:100, inv_prob$par_names]
 
-samp_dt_test <- format_samples_mat(test_samp, param_type="par", test_label="test")
+acq_maxvar <- function(U) -acq_llik_neg_var_gp(input=U, llik_em=lpost_em, adjustment="rectified")
+acq_maxpostvar <- function(U) {
+  -acq_llik_neg_var_lik(input=U, llik_em=lpost_em, adjustment="rectified")
+}
 
-trace_plots_test <- get_trace_plots(samp_dt_test)
-for(plt in trace_plots_test) plot(plt)
+acq_ivar <- function(U) {
+  evaluate_acq_func_vectorized(acq_llik_IVAR_grid_gp, U, lpost_em, grid_points=grid_prior,
+                               adjustment="rectified")
+}
 
-samp_dt_test <- select_mcmc_itr(samp_dt_test, itr_start=10000)
+acq_ievar <- function(U) {
+    evaluate_acq_func_vectorized(acq_llik_IEVAR_grid, U, lpost_em, grid_points=grid_prior,
+                                 adjustment="rectified")
+}
+
+plts_maxvar <- plot_1d_proj(acq_maxvar, input_grids=input_grids)
+plts_maxpostvar <- plot_1d_proj(acq_maxpostvar, input_grids=input_grids)
+plts_ivar <- plot_1d_proj(acq_ivar, input_grids=input_grids)
+plts_ievar <- plot_1d_proj(acq_ievar, input_grids=input_grids)
+
+for(plt in plts_maxvar) plot(plt)
+for(plt in plts_maxpostvar) plot(plt)
+for(plt in plts_ivar) plot(plt)
+for(plt in plts_ievar) plot(plt)
+
+```
+```{r}
+# Candidate grids.
+n_grid <- 1000L
+
+# Prior grid.
+grid_prior <- sample_prior(par_prior, n=n_grid)
+
+# Post-approx grid.
+grid_mcwmh <- select_mcmc_samp_mat(samp_dt_comb[test_label=="E-acc"], 
+                                   param_type="par", thin=5L,
+                                   param_names=inv_prob$par_names)
+sp_bounds <- as.matrix(par_prior[inv_prob$par_names, c("bound_lower", "bound_upper")])
+grid_mcwmh <- support::sp(n=n_grid, p=ncol(grid_mcwmh), 
+                          dist.samp=grid_mcwmh, bd=sp_bounds)$sp
+colnames(grid_mcwmh) <- inv_prob$par_names
+
+# Prior-approx mix 1.
+idx <- sample(1:nrow(grid_mcwmh), size=n_grid/2)
+grid_mix_1 <- rbind(grid_prior[idx,], grid_mcwmh[idx,])
 ```
 
 ```{r}
-# Quantiles of samples.
-apply(test_samp, 2, function(x) quantile(x, .99))
-apply(test_samp, 2, function(x) quantile(x, .01))
+# Baseline for comparison.
+
+# Prior sample.
+n_batch <- 100L
+batch_prior <- sample_prior(par_prior, n=n_grid)
+
+# Sub-sample current posterior approximation.
+```
+
+
+```{r}
+# Preparing for sequential design runs.
+
+# Function used to update GP. Need to make sure to subtract off the mean. Should 
+# eventually have this automatically happen in the llikEmulator update function.
+true_func <- function(U) lpost(U) - lpost_eki(U)
+
+# Error metrics to compute during sequential design.
+n_eval <- 1000L
+tracking_settings <- list(interval=5L, func_list=list())
+prior_eval <- sample_prior(par_prior, n=n_eval)
+lpost_prior_eval <- lpost(prior_eval)
+resids_lpost_prior_eval <- lpost_prior_eval - lpost_eki(prior_eval)
+
+post_eval <- select_mcmc_samp_mat(samp_dt)
+post_eval <- post_eval[sample(1:nrow(post_eval), size=n_eval), inv_prob$par_names]
+lpost_post_eval <- lpost(post_eval)
+resids_lpost_post_eval <- lpost_post_eval - lpost_eki(post_eval)
+
+tracking_settings$func_list$mean_prior <- function(model, ...) {
+  dt <- model$calc_lik_approx_pw_err(lpost_prior_eval, approx_type="mean", err_type=c("mse", "mae"),  
+                                     input=prior_eval, return_type="data.table", adjustment="rectified")
+  dt[, mean(value), by=.(err_type, approx_type)]
+}
+
+tracking_settings$func_list$mean_post <- function(model, ...) {
+  dt <- model$calc_lik_approx_pw_err(lpost_post_eval, approx_type="mean", err_type=c("mse", "mae"),  
+                                     input=post_eval, return_type="data.table", adjustment="rectified")
+  dt[, mean(value), by=.(err_type, approx_type)]
+}
+
+tracking_settings$func_list$crps_prior <- function(model, ...) {
+  mat <- model$emulator_model$calc_pred_func("crps", type="pw", X_new=prior_eval, 
+                                             Y_new=matrix(resids_lpost_prior_eval, ncol=1L))
+  colMeans(mat)
+}
+
+tracking_settings$func_list$crps_post <- function(model, ...) {
+  mat <- model$emulator_model$calc_pred_func("crps", type="pw", X_new=post_eval, 
+                                             Y_new=matrix(resids_lpost_post_eval, ncol=1L))
+  colMeans(mat)
+}
+
 ```
 
 ```{r}
-samp_dt_comb <- combine_samp_dt(samp_dt_comb, samp_dt_test)
+al_results_maxvar <- run_seq_design(lpost_em, "llik_neg_var_gp", n_batch=n_batch, 
+                                    opt_method="grid", true_func=true_func, 
+                                    reoptimize_hyperpar=FALSE, 
+                                    tracking_settings=tracking_settings,
+                                    candidate_grid=grid_prior, adjustment="rectified")
+saveRDS(al_results_maxvar, file.path(out_dir, "al_results_maxvar.rds"))
+```
+
+```{r}
+al_results_maxvar_mix <- run_seq_design(lpost_em, "llik_neg_var_gp", n_batch=n_batch, 
+                                        opt_method="grid", true_func=true_func, 
+                                        reoptimize_hyperpar=FALSE, 
+                                        tracking_settings=tracking_settings,
+                                        candidate_grid=grid_mix_1, adjustment="rectified")
+saveRDS(al_results_maxvar_mix, file.path(out_dir, "al_results_maxvar_mix.rds"))
+```
+
+```{r}
+al_results_maxvarpost_mix <- run_seq_design(lpost_em, "llik_neg_var_lik", n_batch=n_batch, 
+                                            opt_method="grid", true_func=true_func, 
+                                            reoptimize_hyperpar=FALSE, 
+                                            tracking_settings=tracking_settings,
+                                            candidate_grid=grid_mix_1, adjustment="rectified")
+saveRDS(al_results_maxvarpost_mix, file.path(out_dir, "al_results_maxvarpost_mix.rds"))
 ```
 
 
 ```{r}
-kde_test <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior",
-                             test_labels=c("exact", "eki", "test"))
-
-for(plt in kde_test) plot(plt)
+process_output <- function(results) {
+  computed_quantities <- results$tracking_list$computed_quantities
+  itrs_str <- names(results$tracking_list$computed_quantities)
+  itrs <- sapply(strsplit(itrs_str, split="_", fixed=TRUE), function(x) as.integer(x[2]))
+  n_itr <- length(itrs)
+  dt <- data.table(itr=itrs,
+                   prior_mae = numeric(n_itr),
+                   prior_rmse = numeric(n_itr),
+                   post_mae = numeric(n_itr),
+                   post_rmse = numeric(n_itr),
+                   prior_crps = numeric(n_itr),
+                   post_crps = numeric(n_itr))
+  
+  for(i in seq_along(itrs)) {
+    itr_str <- itrs_str[i]
+    q_itr <- computed_quantities[[itr_str]]
+    dt[i, `:=`(prior_mae=q_itr$mean_prior[err_type=="mae", V1],
+               post_mae=q_itr$mean_post[err_type=="mae", V1],
+               prior_rmse=q_itr$mean_prior[err_type=="mse", sqrt(V1)],
+               post_rmse=q_itr$mean_post[err_type=="mse", sqrt(V1)],
+               prior_crps=q_itr$crps_prior,
+               post_crps=q_itr$crps_post)]
+  }
+  
+  dt <- data.table::melt.data.table(dt, id.vars="itr")
+  dt[, c("val_data", "metric") := tstrsplit(variable, "_", fixed=TRUE)]
+  
+  return(dt)
+}
 ```
 
+
+```{r}
+acq_results_maxvar <- process_output(al_results_maxvar)
+acq_results_maxvar[, label := "maxvar"]
+
+acq_results_maxvar_mix <- process_output(al_results_maxvar_mix)
+acq_results_maxvar_mix[, label := "maxvar_mix"]
+
+acq_results_maxvarpost_mix <- process_output(al_results_maxvarpost_mix)
+acq_results_maxvarpost_mix[, label := "maxvarpost_mix"]
+
+acq_results <- rbindlist(list(acq_results_maxvar, acq_results_maxvar_mix, acq_results_maxvarpost_mix))
+
+plt_maxvar_mae <- ggplot(acq_results[metric=="crps"], aes(x=itr)) + 
+                    geom_line(aes(y=value, color=label, linetype=val_data))
+
+plot(plt_maxvar_mae)
+```
 
 
 

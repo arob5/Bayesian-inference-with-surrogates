@@ -10,18 +10,15 @@
   year = {2000}
 }
 
-@article{Stuart_BIP, 
-title={Inverse problems: A Bayesian perspective}, 
-volume={19}, DOI={10.1017/S0962492910000061}, 
-journal={Acta Numerica}, author={Stuart, A. M.}, 
-year={2010}, pages={451–559}} 
-
-@article{paramLSM, 
-title={Parameter Estimation in Land Surface Models: Challenges and Opportunities with Data Assimilation and Machine Learning.}, 
-DOI={10.22541/essoar.172838640.01153603/v1}, 
-journal={ESS Open Archive}, 
-author={Nina Raoult, Natalie Douglas, Natasha MacBean, et al.}, 
-year={2024}} 
+@article{Stuart_BIP,
+  title={Inverse problems: A Bayesian perspective},
+  author={Stuart, A. M.},
+  journal={Acta Numerica},
+  volume={19},
+  year={2010},
+  pages={451-559},
+  doi={10.1017/S0962492910000061}
+}
 
 % Reinforcement learning
 @misc{BadiaRL,
@@ -82,7 +79,7 @@ pages = {550-591},
 year = {2018},
 doi = {10.1137/16M1082469},
 URL = { https://doi.org/10.1137/16M1082469},
-eprint = {https://doi.org/10.1137/16M1082469}
+eprint = {https://doi.org/10.1137/16M1082469}}
 
 % Proper scoring rules
 @article{scoringRules,
@@ -248,7 +245,7 @@ abstract = {Bayesian quadrature treats the problem of numerical integration as o
   doi={10.1561/2200000036}}
 
 % Stepwise uncertainty reduction 
-@article{SURThesis,
+@phdthesis{SURThesis,
 author = {Chevalier, Clément},
 year = {2013},
 month = {09},
@@ -430,7 +427,7 @@ abstract = {We present a reformulation of the Bayesian approach to inverse probl
   month = 	 {07--09 Jul},
   publisher =    {PMLR},
   pdf = 	 {http://proceedings.mlr.press/v37/snoek15.pdf},
-  url = 	 {https://proceedings.mlr.press/v37/snoek15.html}
+  url = 	 {https://proceedings.mlr.press/v37/snoek15.html}}
 
 @misc{BayesLastLayer,
       title={Bayesian Layers: A Module for Neural Network Uncertainty}, 
@@ -553,13 +550,14 @@ author = {Paul-Christian Bürkner and Ilja Kröker and Sergey Oladyshkin and Wol
 keywords = {Polynomial chaos expansion, Surrogate modeling, Bayesian inference, Uncertainty quantification, Shrinkage priors, Variable selection}
 }
 
-@unknown{PCEGP2,
-author = {Bradford, Eric and Imsland, Lars},
-year = {2021},
-month = {03},
-pages = {},
-title = {Combining Gaussian processes and polynomial chaos expansions for stochastic nonlinear model predictive control},
-doi = {10.48550/arXiv.2103.05441}
+@misc{PCEGP2,
+      title={Combining Gaussian processes and polynomial chaos expansions for stochastic nonlinear model predictive control}, 
+      author={Bradford, Eric and Imsland, Lars},
+      year={2021},
+      eprint={2103.05441},
+      archivePrefix={arXiv},
+      primaryClass={math.OC},
+      url={https://arxiv.org/abs/2103.05441}, 
 }
 
 
@@ -1686,6 +1684,46 @@ URL = {https://www.pnas.org/doi/abs/10.1073/pnas.1710231115},
 eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.1710231115}}
 
 
+% Parameter estimation for land surface models
+@unpublished{paramLSM,
+  title = {Parameter Estimation in Land Surface Models: Challenges and Opportunities with Data Assimilation and Machine Learning},
+  author = {
+    Raoult, Nina and
+    Douglas, Natalie and
+    MacBean, Natasha and
+    Kolassa, Jana and
+    Quaife, Tristan and
+    Roberts, Andrew G. and
+    Fisher, Rosie A. and
+    Fer, Istem and
+    Bacour, Cédric and
+    Dagon, Katherine and
+    Hawkins, Linnia and
+    Carvalhais, Nuno and
+    Cooper, Elizabeth and
+    Dietze, Michael and
+    Gentine, Pierre and
+    Kaminski, Thomas and
+    Kennedy, Daniel and
+    Liddy, Hannah M. and
+    Moore, David and
+    Peylin, Philippe and
+    Pinnington, Ewan and
+    Sanderson, Benjamin M. and
+    Scholze, Marko and
+    Seiler, Christian and
+    Smallman, Thomas Luke and
+    Vergopolan, Noemi and
+    Viskari, Toni and
+    Williams, Mathew and
+    Zobitz, John
+  },
+  note = {ESS Open Archive, October 08, 2024},
+  doi = {10.22541/essoar.172838640.01153603/v1},
+  year = {2024}
+}
+
+
 %  ---------------------------------------------------------------------------------------------------
 % Uncertainty Propagation for surrogates
 %  ---------------------------------------------------------------------------------------------------
@@ -1712,8 +1750,19 @@ doi = {10.1162/neco_a_01127}
   url={https://api.semanticscholar.org/CorpusID:266149965}
 }
 
+% BurknerTwoStep
+@misc{BurknerTwoStep,
+      title={Efficient Uncertainty Propagation in Bayesian Two-Step Procedures}, 
+      author={Svenja Jedhoff and Hadi Kutabi and Anne Meyer and Paul-Christian Bürkner},
+      year={2025},
+      eprint={2505.10510},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME},
+      url={https://arxiv.org/abs/2505.10510}, 
+}
+
 % Stand in for our noisy MCMC paper
-@article{surrogateNoisyMCMC,
+@unpublished{surrogateNoisyMCMC,
   title={Uncertainty Propagation and Active Learning for Bayesian Inference with Surrogate Models},
   author={Andrew G. Roberts and Jonathan Huggins and Michael Dietze},
   journal={ArXiv},
@@ -1723,7 +1772,7 @@ doi = {10.1162/neco_a_01127}
 }
 
 % Stand in for our review paper
-@article{reviewPaper,
+@unpublished{reviewPaper,
   title={Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Sequential Design},
   author={Andrew G. Roberts and Jonathan Huggins and Michael Dietze},
   journal={ArXiv},
