@@ -179,7 +179,7 @@ admits a density with corresponding log-likelihood
 such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
 on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
 calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
-are fixed. We discuss inference for such nuisance parameters in \todo.
+are fixed.
 
 The Bayesian approach completes this specification with a prior distribution 
 on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
@@ -243,7 +243,7 @@ Consider a parameter-dependent initial value problem
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
 \end{align}
 describing the time evolution of $\dimState$ state variables 
-$\state(\Time, \Par) \Def \left[\indexState[1]{\state}(\Time, \Par), \dots, \indexState[\dimState]{\state}(\Time, \Par)\right]^\top \in \mathbb{R}^{\dimState}$,
+$\state(\Time, \Par) \Def \left[\indexState{\state}(\Time, \Par)\right]_{\stateIndex=1}^{\dimState}$
 with dynamics depending on $\Par \in \parSpace$. As our focus will be on estimating these parameters 
 from observations, we consider the parameter-to-state map
 \begin{align}
@@ -324,7 +324,7 @@ this interpolation property is typically desirable. Nevertheless, a small, posit
 typically included for numerical stability. 
 
 Appropriate choices for the prior mean $\gpMeanPrior$ and covariance $\gpKerPrior$ depend on the 
-particular application, with common choice sfor the mean including a constant or a linear model of the form 
+particular application, with common choices for the mean including a constant or a linear model of the form 
 $\gpMeanPrior(\Par) = \beta^\top \phi(\Par)$, for some feature map $\phi$. A typical default choice of 
 covariance function is the exponentiated quadratic (also called squared exponential, Gaussian, or radial basis function)
 kernel,
@@ -389,7 +389,7 @@ Depending on which map is being emulated, the training data for the emulator wil
 $\{\designIn, \fwd(\designIn)\}$, $\{\designIn, \llik(\designIn)\}$, or $\{\designIn, \lpost(\designIn)\}$. 
 In the computer experiments literature, 
 the initial design is typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples 
-include latin hypercube designs and Sobol sequences (\todo: cite). In the present setting, a natural 
+include latin hypercube designs and Sobol sequences \citep{initDesignReview}. In the present setting, a natural 
 approach is to sample $\designIn$ from the prior $\priorDens$, either via simple Monte Carlo or using 
 algorithms that seek to minimize a specific notion of discrepancy \citep{supportPoints, SteinPoints}.
 As we will demonstrate in experiments, fitting emulators on prior designs may simultaneously produce 
@@ -413,13 +413,14 @@ development investigating such workflows may prove a fruitful avenue for future 
 \subsection{Probabilistic Surrogates}
 Our focus in this review is on probabilistic (i.e., random/stochastic) surrogates, which 
 are emulator models that provide a probabilistic description of approximation uncertainty.
-We review common models falling within this category, and highlight the distinction
-between parametric and nonparametric surrogates. 
+We review common models falling within this category, highlighting the distinction
+between parametric and nonparametric surrogates, and discuss surrogate strategies within
+the Bayesian inference context.
 
 \subsubsection{Common Models}
 
 \paragraph{Gaussian Processes.}
-Gaussian processes (GP) have emerged as a canonical surrogate model, and provide the 
+Gaussian processes (GPs) have emerged as a canonical surrogate model, and provide the 
 basis for examples given throughout this review (refer to \Cref{gp_review} for GP
 background and notation). GPs have been extensively applied in a wide variety of 
 surrogate modeling tasks, including as emulators for solving Bayesian inverse problems.
@@ -585,11 +586,9 @@ the notation $\postEm(\Par) = \postDens(\Par; \fwdEm[\Ndesign])$ and
 $\lpostEm(\Par) = \lpost(\Par; \fwdEm[\Ndesign])$ for the induced unnormalized 
 posterior density and log posterior density approximations. The induced distributions for 
 these quantities depend on the predictive distribution of the forward model emulator, as
-well as the structure of the likelihood function. The first row of \cref{fig:em_dist_1d} 
+well as the structure of the likelihood function and prior density. The first row of \cref{fig:em_dist_1d} 
 demonstrates how a GP forward model emulator induces predictive distributions 
-for the log-likelihood and likelihood. Gaussian processes and polynomial 
-chaos expansions have been extensively employed as forward model emulators in 
-practice (\todo: cite). The specific structure of the surrogate, which depends heavily on the 
+for the log-likelihood and likelihood. The specific structure of the surrogate, which depends heavily on the 
 characteristics of $\fwd$, is not the focus of this review. However, we do note that 
 a common challenge in emulating forward models stems from the fact that the observation 
 space (i.e., the output space of $\fwd(\Par)$) can be very high-dimensional. 
@@ -630,12 +629,9 @@ has mean and variance given by
 \end{align*}
 \end{prop}
 
-See \Cref{prop:Gaussian_marginal_moments} in the appendix for the derivation, which follows from basic facts about Gaussians.
 The canonical example of a Gaussian surrogate is a GP, which is defined by specifying a prior distribution  
-\begin{equation}
-\fwdPrior \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd}).
-\end{equation}
-for $\fwd$. Conditioning on the design yields the predictive distribution 
+$\fwdPrior \sim \GP(\emMeanPrior{\fwd}, \emKerPrior{\fwd})$ for $\fwd$. Conditioning on the design yields 
+the predictive distribution 
 $\fwdEm[\Ndesign]  \Def \fwdPrior|[\fwdPrior(\designIn) = \fwd(\designIn)] \sim \GP(\emMean[\Ndesign]{\fwd}, \emKer[\Ndesign]{\fwd})$, 
 which constitutes the forward model emulator.
 Unless otherwise indicated, we assume the mean and kernel hyperparameters are
