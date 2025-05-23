@@ -672,7 +672,7 @@ integration \citep{BayesQuadrature,BayesQuadRatios} and approximate Bayesian
 computation \citep{llikEmABC}.
 The closely-related unnormalized log-posterior density (i.e., joint parameter-data density) emulation
 strategy is used in \citet{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,landslideCalibration}.
-We colloquially refer to this latter approach as \textit{log-posterior emulation} for succinctness.
+We colloquially refer to this latter approach as \textit{log-posterior emulation} for brevity.
 A related method is used in \citep{wang2018adaptive,adaptiveMultimodal}, in which surrogates are constructed 
 to approximate a sequence of functions designed to be more regular than the log-likelihood.   
 In general, emulating densities on the log scale is typically preferred as a way to improve numerical stability,
@@ -685,23 +685,23 @@ exhibit large dynamic range, proving troublesome for surrogate models that assum
 A simple toy example is used in \citep{Surer2023sequential} to demonstrate such modeling challenges, and the 
 authors conclude that forward model emulation is preferred in their application of interest. A second potential weakness 
 stems from the fact that log-densities often have known bound constraints, which may be difficult to enforce 
-for certain surrogate models. The recent work \citet{quantileApprox} investigates the enforcement of 
+for certain surrogate models. \citet{quantileApprox} investigates the enforcement of 
 bound constraints in GP-based log-likelihood emulation. In our numerical experiments, we demonstrate that ignoring
-such constraints can yield very poor posterior approximations. A third challenge follows from the fact that, in many applications, 
-the likelihood parameters (e.g., $\likPar$ in \cref{inv_prob_Gaussian}) are typically not known and must also be 
+such constraints can yield very poor posterior approximations [\todo: maybe include a 1d example in the
+recommendations section?]. A third challenge follows from the fact that 
+the likelihood parameters (e.g., $\likPar$ in \Cref{inv_prob_Gaussian}) are typically not known and must also be 
 learned from data. An obvious solution is to extend the input space of the emulator to include the likelihood parameters
-\citep{llikRBF,emPostDens}, but the resulting response surface may prove more challenging to emulate. This approach also increases both the 
-input dimensionality of the emulator, as well as the number of design points required to achieve 
+\citep{llikRBF,emPostDens}, but the resulting response surface may prove more challenging to emulate. 
+This approach also increases both the input dimensionality of the emulator, as well as the number of design points required to achieve 
 a reasonable fit. Various approaches are explored in \citet{llikRBF} for dealing with nuisance likelihood parameters
 without requiring additional runs of the expensive simulator. Alternatively, specific likelihood 
 choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters. 
-\Cref{ldens_Gaussian} provides such an example for multiplicative Gaussian likelihoods, following the 
-approach of \citet{FerEmulation}.
+An example of this approach is given in the discussion of the Gaussian setting below.
 
 \paragraph{Log-Likelihood vs. Log-Posterior Emulation.} \label{sec:llik_vs_lpost}
 We take a moment to comment on the the distinction between emulating the log-likelihood versus
 the log-posterior. The literature summary above indicates that both approaches are commonly used;
-we are not aware of any cases in which the performance the two methods is compared. 
+we are not aware of any cases in which the performance of the two methods is compared. 
 Indeed, the choice appears inconsequential, as one emulator can easily be converted into the other 
 by adding or subtracting the log-prior density, which represents a deterministic shift to the predictive 
 distribution. For example, given a fit log-likelihood emulator $\llikEm[\Ndesign]$, a log-posterior emulator 
@@ -715,14 +715,13 @@ that the tails must decay, which can (and should) be leveraged in designing an a
 surrogate model. The tail behavior of $\llik$ is not always well-known a priori, which can 
 present more of a modeling challenge. On the other hand, the downside of emulating $\lpost$ is
 that the prior is being approximated, and therefore cannot be relied on to decay in the tails.
-These tradeoffs are related to questions of ensuring well-defined surrogate-induced 
-posterior approximations, a topic we discuss in \Cref{sec:existence}.
-Practical illustrations are explored in the case study in \Cref{sec:case-study}.
+These tradeoffs are related to the challenge of ensuring the emulator induces a well-defined
+posterior approximation, a topic we discuss in \Cref{sec:existence}. 
 
 \paragraph{Gaussian Setting.} \label{ldens_Gaussian}
-A Gaussian log-density emulator induces an approximation of the unnormalized posterior 
-density with a predictive distribution that can be characterized fully in closed-form. The following 
-result is the analog of \Cref{prop:fwd-em-Gaussian} in the forward model 
+The predictive distribution of $\postEm[\Ndesign]$ induced
+by a Gaussian log-density emulator is easily characterized in closed-form. 
+The following result is the analog of \Cref{prop:fwd-em-Gaussian} in the forward model 
 emulation setting.
 
 \begin{prop} \label{prop:llik-em-Gaussian}
@@ -741,22 +740,13 @@ which implies
 \end{prop}
 
 The assumptions in \cref{prop:llik-em-Gaussian} are satisfied when either the 
-log-likelihood or log-posterior are emulated by GPs. This follows from specifying either of the 
-prior distributions
-\begin{align}
-&\llikEm[0] \sim \GP(\emMean[0]{\llik}, \emKer[0]{\llik}),
-&&\lpostEm[0] \sim \GP(\emMean[0]{\lpost}, \emKer[0]{\lpost})
-\end{align}
-and then defining the surrogates as the conditional processes 
-\begin{equation}
-\llikEm[\Ndesign] \Def \llikPrior | [\llikPrior(\designIn) = \llik(\designIn)] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})
-\end{equation}
-or
-\begin{equation} 
-\lpostEm[\Ndesign] \Def \lpostEm[0]  | [\lpostEm[0](\designIn) = \lpost(\designIn)] \sim \GP(\emMean[\Ndesign]{\lpost}, \emKer[\Ndesign]{\lpost}),
-\end{equation}
-respectively. In these cases, the induced unnormalized log-posterior density approximation 
-$\postEm[\Ndesign]$ is the exponential of a Gaussian process, which we refer to as a 
+log-likelihood or log-posterior are emulated by GPs. In the former case,
+this follows from specifying a prior 
+$\llikEm[0] \sim \GP(\emMean[0]{\llik}, \emKer[0]{\llik})$ and then defining 
+the surrogate as the conditional process
+$\llikEm[\Ndesign] \Def \llikPrior | [\llikPrior(\designIn) = \llik(\designIn)] \sim \GP(\emMean[\Ndesign]{\llik}, \emKer[\Ndesign]{\llik})$.
+In these cases, the induced unnormalized log-posterior density approximation 
+$\postEm[\Ndesign]$ is the exponential of a GP, which we refer to as a 
 \textit{log-normal process}.
 
 Note that \cref{prop:llik-em-Gaussian} is agnostic to the specific form of the 
@@ -771,7 +761,7 @@ the log-likelihood
  \frac{1}{\sigma_j^2} \norm{\obs_j - \fwd_j(\Par)}_2^2 \right].
 \end{align}
 In this case, the maps $\Par \mapsto \norm{\obs_j - \fwd_j(\Par)}_2^2$ can be emulated 
-independently of the likelihood parameter $\likPar$, allowing for easier inference of the 
+independently of the likelihood parameter $\likPar$, enabling straightforward inference of the 
 likelihood parameters along with $\Par$.
 Approaches such as this can be considered a variation of log-density emulation, or an instance of 
 forward model emulation with a particular definition of $\fwd$.
