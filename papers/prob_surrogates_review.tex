@@ -54,6 +54,19 @@
 \newtheorem{corollary}{Corollary}
 \newtheorem{rec}{Recommendation}
 
+\crefname{prop}{Proposition}{Propositions}
+\Crefname{prop}{Proposition}{Propositions}
+\crefname{definition}{Definition}{Definitions}
+\Crefname{definition}{Definition}{Definitions}
+\crefname{lemma}{Lemma}{Lemmas}
+\Crefname{lemma}{Lemma}{Lemmas}
+\crefname{thm}{Theorem}{Theorems}
+\Crefname{thm}{Theorem}{Theorems}
+\crefname{corollary}{Corollary}{Corollaries}
+\Crefname{corollary}{Corollary}{Corollaries}
+\crefname{rec}{Recommendation}{Recommendations}
+\Crefname{rec}{Recommendation}{Recommendations}
+
 % Title and author
 \title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Sequential Design}
 \author{Andrew Roberts}
@@ -403,7 +416,7 @@ design algorithms to iteratively construct the design in order to target high-po
 Another approach to this problem is to first run an alternative algorithm (e.g., an approximate 
 sampler or optimizer) to produce design points in regions of high posterior mass, which can then 
 be used as part of an initial design to fit an emulator. This general strategy is exemplified by the 
-\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware,FATES_CES}, 
+\textit{calibrate, emulate, sample} workflow \citep{CES,idealizedGCM,CESSoftware,FATES_CES,adaptiveMultimodal}, 
 which uses Ensemble Kalman methods to produce the initial design. In similar spirit, the earlier work 
 \citet{emPostDens} utilizes a sequence of importance sampling steps to construct a Gaussian 
 approximation of the posterior, which is then sampled from to produce an initial surrogate design.
@@ -465,7 +478,8 @@ treats only the final neural network layer in a Bayesian fashion
 there has also been growing interest in surrogate models with predictive distributions 
 not necessarily rooted in the Bayesian philosophy. This includes deep ensembles, 
 which summarize uncertainty via an ensemble of neural network 
-models \citep{deepEnsembles}, and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
+models \citep{deepEnsembles,Lueckmann2018LikelihoodfreeIW},
+and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
 
 \subsubsection{Parametric vs. Nonparametric Models}
 The distinction between parametric and nonparametric surrogate models will 
@@ -739,7 +753,7 @@ which implies
 \end{align}
 \end{prop}
 
-The assumptions in \cref{prop:llik-em-Gaussian} are satisfied when either the 
+The assumptions in \Cref{prop:llik-em-Gaussian} are satisfied when either the 
 log-likelihood or log-posterior are emulated by GPs. In the former case,
 this follows from specifying a prior 
 $\llikEm[0] \sim \GP(\emMean[0]{\llik}, \emKer[0]{\llik})$ and then defining 
@@ -749,8 +763,8 @@ In these cases, the induced unnormalized log-posterior density approximation
 $\postEm[\Ndesign]$ is the exponential of a GP, which we refer to as a 
 \textit{log-normal process}.
 
-Note that \cref{prop:llik-em-Gaussian} is agnostic to the specific form of the 
-likelihood, unlike \cref{prop:fwd-em-Gaussian}. However, particular likelihood
+Note that \Cref{prop:llik-em-Gaussian} is agnostic to the specific form of the 
+likelihood, unlike \Cref{prop:fwd-em-Gaussian}. However, particular likelihood
 structures may be leveraged to enable improved emulation in certain settings. For example, 
 \citet{FerEmulation} consider a Gaussian likelihood with block-diagonal covariance structure, yielding
 the log-likelihood
@@ -838,14 +852,14 @@ $\postDensNorm$, which we refer to as the \textit{plug-in mean}, or simply \text
 In the forward model and log-likelihood emulation settings, this implies the unnormalized density approximations 
 \begin{align}
 &\postApproxMean[\Ndesign](\Par; \fwdEm[\Ndesign]) \Def \postDens(\Par; \emMean[\Ndesign]{\fwd}), \label{eq:mean-approx-fwd}
-&&\postApproxMean[\Ndesign](\Par; \llikEm[\Ndesign]) \Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}, \label{eq:mean-approx_llik}
+&&\postApproxMean[\Ndesign](\Par; \llikEm[\Ndesign]) \Def \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}, \label{eq:mean-approx-llik}
 \end{align}
 with the normalizing constants $\normCstEm(\emMean[\Ndesign]{\fwd})$ and 
 $\normCstEm(\emMean[\Ndesign]{\llik})$ defined by integrating the unnormalized densities over $\parSpace$
 (existence of these integrals is discussed in \cref{sec:existence}).
 The mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration} and analyzed
-theoretically 
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW} 
+and analyzed theoretically 
 \citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
 If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
 but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
@@ -889,7 +903,7 @@ be used to draw samples from $\llikEmSampDensNorm$.
     \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
         \For{$\sampleIndex \gets 1, \dots, \NSample$} 
         		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample posterior trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}}$ \Comment{Sample parameters}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}$ \Comment{Sample parameters}
 	\EndFor
 	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
 	\EndFunction
@@ -1080,7 +1094,7 @@ where $\GaussianCDF$ denotes the standard Gaussian distribution function. This e
 as the expected likelihood in \cref{eq:post-approx-llik-EL-Gaussian}, but the uncertainty inflation term 
 $\Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}}$ scales more slowly than 
 $\Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}$. The special case $\quantileProb = 1/2$ (i.e., the median) 
-reduces to the mean approximation in \cref{eq:mean-approx_llik}, while values $\quantileProb > 1/2$ imply 
+reduces to the mean approximation in \cref{eq:mean-approx-llik}, while values $\quantileProb > 1/2$ imply 
 the density will be inflated in regions of higher surrogate uncertainty. \citet{FATES_CES} also utilize the 
 approximation in \cref{eq:post-approx-quantile}, though they do not explicitly draw the connection to 
 the quantile estimator.
@@ -1158,7 +1172,7 @@ This procedure is summarized in \cref{alg:MH}.
     \EndFunction
     \end{algorithmic}
 \end{minipage}
-\caption{(Left) A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \codt)$.
+\caption{(Left) A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \cdot)$.
 (Right) A generic noisy Metropolis-Hastings algorithm. The choice of Markov kernel $\postSampleKernel$ 
 defines particular algorithms, as described in \Cref{sec:MH-approx}.}
 \end{figure}
@@ -1321,28 +1335,24 @@ In particular, we emphasize that traditional active learning criteria
 that target global improvements in the underlying emulators 
 (e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
 respect to the goal of improving the induced posterior surrogate $\postEm[\Ndesign]$.
+Effective sequential design strategies target regions where the current surrogate 
+expects high posterior mass, in addition to regions where the surrogate is uncertain.
+This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
+Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
+reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, 
+among others. For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
+proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
+VehtariParallelGP,VillaniAdaptiveGP}. We also highlight batch sequential approaches, 
+where multiple design points are acquired simultaneously. Batch sequential design becomes 
+increasingly essential as the cost of likelihood evaluations increases, as it allows for 
+parallel computations. 
+
 To remain agnostic to the quantity being emulated, we state algorithms with respect to
 a generic underlying emulator $\funcEm[\Ndesign]$, which approximates some function
 $\func$ (e.g., the forward model or log-likelihood). As in previous sections,
 we provide closed-from solutions in special cases involving forward model and
 log-density emulators.
-
-This leads to an instance of the ``exploration vs. exploitation'' balancing act,
-familiar to fields such as Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, reinforcement learning 
-\citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, among others.
-In the present setting, this 
-manifests as a tradeoff between placing new points in regions favored by the current posterior approximation
-and exploring other regions of parameter space. For GP surrogates, a variety of 
-design criteria (i.e., acquisition functions) have been proposed that seek to target high probability regions, 
-while also acknowledging uncertainty in the GP model 
-\citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,VehtariParallelGP,VillaniAdaptiveGP}.
-We review existing approaches to defining such goal-oriented design criteria, and provide useful intermediate results that 
-facilitate improved interpretability in settings where closed-form expressions are available.
-We also highlight batch sequential approaches, where multiple design points are acquired simultaneously. 
-Batch sequential design becomes increasingly essential as the cost of likelihood evaluations increases, as it allows for 
-parallel computations. 
-
 
 \subsection{Sequential Design Loop}
 Given a current surrogate fit to design inputs $\designIn[\Ndesign] \in \parSpace^{\Ndesign}$,
@@ -1400,7 +1410,7 @@ and those naturally defined in the batch setting. It is still possible to perfor
 batch acquisition with criteria of the former type, as discussed in \Cref{sec:batch-heuristic}.
 
 \subsubsection{Single Point Criteria}
-If optimizing for a single design point, a natural strategy is to simply select the input
+When optimizing for a single design point, a natural strategy is to simply select the input
 where the uncertainty in $\postEm[\Ndesign](\Par)$ is largest. If predictive variance
 is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
 \begin{equation}
@@ -1408,20 +1418,23 @@ is used as the measure of uncertainty, this yields the \textit{maximum variance}
 \end{equation}
 which is negated to align with our convention of minimizing acquisition functions.
 This is a natural modification of standard active learning criteria that target inputs 
-where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal (\todo: cite).
+where $\Var_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ is maximal \citep[Section 6.2.1]{gramacy2020surrogates}.
 The predictive variance of $\postEm[\Ndesign](\Par)$
-is given in closed-form in \Cref{prop:fwd-em-Gaussian, prop:llik-em-Gaussian} for 
-forward model and log-density emulators in the Gaussian settings. Re-stating the 
-log-posterior example
+is given in closed-form in \Cref{prop:fwd-em-Gaussian,prop:llik-em-Gaussian} for 
+forward model and log-density emulators in the Gaussian settings. For example, 
+when $\lpostEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par))$
+we have
 \begin{equation}
 \Var\left[\postEm[\Ndesign](\Par; \lpostEm[\Ndesign])\right] &= 
 \left[\Exp{\emKer[\Ndesign]{\lpost}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\lpost}(\Par) + \emKer[\Ndesign]{\lpost}(\Par)},
 \end{equation}
-we see that the criterion favors inputs where both the expected density $\emMean[\Ndesign]{\lpost}(\Par)$
-and epistemic uncertainty $\emKer[\Ndesign]{\lpost}$ are large, encoding an exploration-exploitation
-tradeoff.
-
-\todo: discuss alternative approach of adapting acq critera from BayesOpt, including the Sanz-Alonso paper.
+which demonstrates that the criterion favors inputs where both the expected log-posterior
+$\emMean[\Ndesign]{\lpost}(\Par)$ and epistemic uncertainty $\emKer[\Ndesign]{\lpost}(\Par)$ are large, encoding an exploration-exploitation
+tradeoff. The maximum variance criterion is utilized in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017}.
+A similar approach is taken in \citet{wang2018adaptive}, but entropy is utilized as the measure of uncertainty
+instead of variance. \citet{gp_surrogates_random_exploration} consider an alternative, where exploration and 
+exploitation are explicitly decoupled by selecting one point that maximizes $\E_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ 
+and randomly sampling a second point from $\priorDens$. 
 
 \subsubsection{Multipoint Criteria}
 We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
@@ -1451,6 +1464,9 @@ subsampling approach (or put this in its own section?)
 
 \subsubsection{Greedy Heuristic Methods} \label{sec:batch-heuristic}
 \subsubsection{Sampling-Based Design}
+\citet{FerEmulation,hydrologicalModel,quantileApprox}
+\citet{adaptiveMultimodal} interleaves ensemble Kalman updates within the adaptive algorithm.
+
 Connection to Thompson sampling
 
 \subsection{Other Approaches}
@@ -1893,7 +1909,9 @@ of the central questions motivating this review.
 \subsection{Probabilistic Numerics} \label{sec:prob-numerics}
 See Sullivan, Hennig papers; and Teckentrup random forward models paper section 5
 
-\subsection{Approximate Bayesian Computation} \label{sec:abc}
+\subsection{Approximate Bayesian Computation and Amortized Inference} \label{sec:abc}
+\citet{Lueckmann2018LikelihoodfreeIW,VehtariParallelGP,ABCApproxLik,
+BurknerAmortized,llikEmABC,ABCGP}
 
 \subsection{Other}
 Multifidelity methods? Active subspaces? Data subsampling/randomized misfits?

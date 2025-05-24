@@ -928,7 +928,7 @@ year = {2021}
 % Utilize a plug-in estimator for the likelihood which computes a quantile of the emulator distribution, the idea being that something like the 90th percentile represents 
 % a conservative estimate of the true likelihood. They also incorporate bound constraints to account for the fact that they are emulating a non-negative quantity (in their 
 % case, the unnormalized log Gaussian likelihood). 
-% Sequential design is based on optimizing a Cauchy-Schwarz divergence. 
+% Use a subsampling approach to sequential design similar to Istem's work. As a stopping criteria for the sequential design, they use a Cauchy-Schwarz divergence.
 @misc{quantileApprox,
       title={Solving Bayesian Inverse Problems With Expensive Likelihoods Using Constrained Gaussian Processes and Active Learning}, 
       author={Maximilian Dinkel and Carolin M. Geitner and Gil Robalo Rei and Jonas Nitzler and Wolfgang A. Wall},
@@ -1010,34 +1010,6 @@ DOI = {10.5194/bg-15-5801-2018}
       url={https://arxiv.org/abs/2411.13361}
 }
 
-% Application to ABC. Emulate log-likelihood with quadratic mean function.
-@InProceedings{llikEmABC,
-  title = 	 {{Accelerating ABC methods using Gaussian processes}},
-  author = 	 {Wilkinson, Richard},
-  booktitle = 	 {Proceedings of the Seventeenth International Conference on Artificial Intelligence and Statistics},
-  pages = 	 {1015--1023},
-  year = 	 {2014},
-  editor = 	 {Kaski, Samuel and Corander, Jukka},
-  volume = 	 {33},
-  series = 	 {Proceedings of Machine Learning Research},
-  address = 	 {Reykjavik, Iceland},
-  month = 	 {22--25 Apr},
-  publisher =    {PMLR},
-  pdf = 	 {http://proceedings.mlr.press/v33/wilkinson14.pdf},
-  url = 	 {https://proceedings.mlr.press/v33/wilkinson14.html}
-}
-
-% Use GP to emulate log-discrepancy function in ABC. Include quadratic trend.
-@article{ABCGP,
-  author  = {Michael U. Gutmann and Jukka Cor and er},
-  title   = {Bayesian Optimization for Likelihood-Free Inference of Simulator-Based Statistical Models},
-  journal = {Journal of Machine Learning Research},
-  year    = {2016},
-  volume  = {17},
-  number  = {125},
-  pages   = {1--47},
-  url     = {http://jmlr.org/papers/v17/15-017.html}
-}
 
 % Use GPs to accelerate pseudo-marginal MCMC. Fit GP with quadratic mean.
 @article{pseudoMarginalGP,
@@ -1059,7 +1031,7 @@ keywords = {Gaussian processes, Likelihood-free methods, Markov processes, Parti
 
 % First consider an approach from propagating uncertainty in GP hyperparameters. Consider adding GP cov to the observation cov. 
 % Then consider using a secondary GP fit to the residuals to correct the first one. 
-% They also use a sequential design scheme based on optimizing a Cauchy-Schwarz divergence. 
+% Sequential design consists of a sub-sampling approach similar to Istem's work. 
 @article{hydrologicalModel,
 author = {Zhang, Jiangjiang and Zheng, Qiang and Chen, Dingjiang and Wu, Laosheng and Zeng, Lingzao},
 title = {Surrogate-Based Bayesian Inverse Modeling of the Hydrological System: An Adaptive Approach Considering Surrogate Approximation Error},
@@ -1071,7 +1043,6 @@ doi = {https://doi.org/10.1029/2019WR025721},
 url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2019WR025721},
 eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2019WR025721},
 note = {e2019WR025721 2019WR025721},
-abstract = {Abstract Bayesian inverse modeling is important for a better understanding of hydrological processes. However, this approach can be computationally demanding, as it usually requires a large number of model evaluations. To address this issue, one can take advantage of surrogate modeling techniques. Nevertheless, when approximation error of the surrogate model is neglected, the inversion result will be biased. In this paper, we develop a surrogate-based Bayesian inversion framework that explicitly quantifies and gradually reduces the approximation error of the surrogate. Specifically, two strategies are proposed to quantify the surrogate error. The first strategy works by quantifying the surrogate prediction uncertainty with a Bayesian method, while the second strategy uses another surrogate to simulate and correct the approximation error of the primary surrogate. By adaptively refining the surrogate over the posterior distribution, we can gradually reduce the surrogate approximation error to a small level. Demonstrated with three case studies involving high dimensionality, multimodality, and a real-world application, it is found that both strategies can reduce the bias introduced by surrogate approximation error, while the second strategy that integrates two methods (i.e., polynomial chaos expansion and Gaussian process in this work) that complement each other shows the best performance.},
 year = {2020}
 }
 
@@ -1879,11 +1850,79 @@ eprint = {https://doi.org/10.1198/106186005X76983}
 }
 
 
+% ---------------------------------------------------------------------------------------------------
+% Approximate Bayesian Computation (ABC)
+% ---------------------------------------------------------------------------------------------------
+
+% An approximate likelihood perspective on ABC methods
+@article{ABCApproxLik,
+author = {George Karabatsos and Fabrizio Leisen},
+title = {{An approximate likelihood perspective on ABC methods}},
+volume = {12},
+journal = {Statistics Surveys},
+number = {none},
+publisher = {Amer. Statist. Assoc., the Bernoulli Soc., the Inst. Math. Statist., and the Statist. Soc. Canada},
+pages = {66 -- 104},
+keywords = {Approximate Bayesian Computation, approximate likelihood, Bootstrap likelihood, empirical likelihood},
+year = {2018},
+doi = {10.1214/18-SS120},
+URL = {https://doi.org/10.1214/18-SS120}
+}
+
+% Likelihood-free inference perspective. Emulate likelihood with neural network ensemble. Use MaxVar and mutual information acquisitions to acquire new points. 
+@article{Lueckmann2018LikelihoodfreeIW,
+  title={Likelihood-free inference with emulator networks},
+  author={Jan-Matthis Lueckmann and Giacomo Bassetto and Theofanis Karaletsos and Jakob H. Macke},
+  journal={ArXiv},
+  year={2018},
+  volume={abs/1805.09294},
+  url={https://api.semanticscholar.org/CorpusID:43920918}
+}
+
+% Uncertainty-aware amortized inference
+@misc{BurknerAmortized,
+      title={Uncertainty-Aware Surrogate-based Amortized Bayesian Inference for Computationally Expensive Models}, 
+      author={Stefania Scheurer and Philipp Reiser and Tim Brünnette and Wolfgang Nowak and Anneli Guthke and Paul-Christian Bürkner},
+      year={2025},
+      eprint={2505.08683},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/2505.08683}, 
+}
+
+% Application to ABC. Emulate log-likelihood with quadratic mean function.
+@InProceedings{llikEmABC,
+  title = 	 {{Accelerating ABC methods using Gaussian processes}},
+  author = 	 {Wilkinson, Richard},
+  booktitle = 	 {Proceedings of the Seventeenth International Conference on Artificial Intelligence and Statistics},
+  pages = 	 {1015--1023},
+  year = 	 {2014},
+  editor = 	 {Kaski, Samuel and Corander, Jukka},
+  volume = 	 {33},
+  series = 	 {Proceedings of Machine Learning Research},
+  address = 	 {Reykjavik, Iceland},
+  month = 	 {22--25 Apr},
+  publisher =    {PMLR},
+  pdf = 	 {http://proceedings.mlr.press/v33/wilkinson14.pdf},
+  url = 	 {https://proceedings.mlr.press/v33/wilkinson14.html}
+}
+
+% Use GP to emulate log-discrepancy function in ABC. Include quadratic trend.
+@article{ABCGP,
+  author  = {Michael U. Gutmann and Jukka Cor and er},
+  title   = {Bayesian Optimization for Likelihood-Free Inference of Simulator-Based Statistical Models},
+  journal = {Journal of Machine Learning Research},
+  year    = {2016},
+  volume  = {17},
+  number  = {125},
+  pages   = {1--47},
+  url     = {http://jmlr.org/papers/v17/15-017.html}
+}
+
 
 %
 %
 % TODO: not yet categorized
-%
 %
 %
 
@@ -2080,16 +2119,6 @@ keywords = {Computer experiment, Gaussian process, Random function, Latin hyperc
 abstract = {Computer models simulating a physical process are used in many areas of science. Due to the complex nature of these codes it is often necessary to approximate the code, which is typically done using a Gaussian process. In many situations the number of code runs available to build the Gaussian process approximation is limited. When the initial design is small or the underlying response surface is complicated this can lead to poor approximations of the code output. In order to improve the fit of the model, sequential design strategies must be employed. In this paper we introduce two simple distance based metrics that can be used to augment an initial design in a batch sequential manner. In addition we propose a sequential updating strategy to an orthogonal array based Latin hypercube sample. We show via various real and simulated examples that the distance metrics and the extension of the orthogonal array based Latin hypercubes work well in practice.}
 }
 
-
-% Likelihood-free inference perspective. Emulate likelihood with neural network ensemble. Use MaxVar and mutual information acquisitions to acquire new points. 
-@article{Lueckmann2018LikelihoodfreeIW,
-  title={Likelihood-free inference with emulator networks},
-  author={Jan-Matthis Lueckmann and Giacomo Bassetto and Theofanis Karaletsos and Jakob H. Macke},
-  journal={ArXiv},
-  year={2018},
-  volume={abs/1805.09294},
-  url={https://api.semanticscholar.org/CorpusID:43920918}
-}
 
 % TODO: need to read
 @article{PANDITA2021114007,
