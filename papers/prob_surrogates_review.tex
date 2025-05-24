@@ -1438,24 +1438,29 @@ and randomly sampling a second point from $\priorDens$.
 
 \subsubsection{Multipoint Criteria}
 We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
-we focus on \textit{integrated conditional uncertainty criteria (ICUC)}, which can be viewed as generalizations 
-of commonly-used integrated variance criteria \citep{ALC,Mercer_kernels_IVAR,Binois_2018,deepGPAL}. 
-Acquisitions of this form arise from the following logic: we would like to select an input batch 
+we focus on a class of acquisition functions that we call \textit{expected conditional uncertainty (ECU)} 
+criteria. Criteria falling within this general class have been explored in various contexts 
+\citep{ALC,Roy2001,Mercer_kernels_IVAR,Binois_2018,deepGPAL,ALExpErrReduction,parallelSURExcursionSet}
+\footnote{Many names have been used for such criteria, including expected error reduction, 
+active learning Cohn, integrated mean squared prediction error, and integrated variance.},
+but we focus on examples geared specifically towards surrogate-induced posterior approximation.
+
+ECU acquisitions arise from the following logic: we would like to select an input batch 
 $\parMat \in \parSpace^{\Nbatch}$ that induces an updated surrogate $\postEm[\Naugment]$ with the largest 
 possible reduction in uncertainty on average over $\parSpace$. In general, we cannot compute this uncertainty
-as we cannot construct $\funcEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
+since we cannot construct $\funcEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
 instead consider the random element 
 $\funcEm[\Naugment]^{\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$, with 
 the unknown response $\func(\parMat)$ modeled by the random vector 
-$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. The ICUC will therefore average over both $\parSpace$
-and $\gamma$. If we again choose variance as our measure of uncertainty, we have
+$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. The ECU therefore implies averaging over 
+both $\parSpace$ and $\gamma$. If we again choose variance as our measure of uncertainty, we have
 \begin{equation}
 \acq[](\parMat) \Def 
 \int_{\parSpace} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
  \label{eq:acq-intvar}
 \end{equation}
 where the expectation is with respect to $\gamma$, and the variance with respect to $\funcEm[\Naugment]^{\gamma}$
-conditional on $\gamma$.
+conditional on $\gamma$. Here, $\weightDens$ is a measure on $\Par$ that we are free to choose.
 
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
