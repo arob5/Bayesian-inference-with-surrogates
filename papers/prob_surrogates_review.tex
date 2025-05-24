@@ -780,7 +780,8 @@ via additional queries to the simulator. An approximate posterior constructed us
 surrogate may serve as a guide to determine the new input parameters at which the simulator will be 
 evaluated. In this case, propagating surrogate uncertainty is key in weighing the exploration vs. exploitation 
 tradeoff to select new design points (see \cref{sec:seq-design}).
-This uncertainty propagation viewpoint aligns closely with the perspective taken in \citep{BurknerSurrogate}, 
+This uncertainty propagation viewpoint aligns closely with the perspective taken in 
+\citep{BurknerSurrogate,BurknerTwoStep}, 
 who consider several MCMC-based methods for propagating surrogate uncertainty in a Bayesian framework. 
 Alternative lines of research (reviewed in \cref{sec:seq-design}) have instead emphasized iterative schemes 
 designed to achieve asymptotic convergence to the exact posterior. The tradeoff is that such approaches 
@@ -911,9 +912,11 @@ in general provide a poor representation of this random density.
 
 \Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
 of $\postEm[\Ndesign]$, which will generally be possible for finite-dimensional 
-parametric surrogate models. \citet{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate}
-both investigate \cref{alg:ep} in such settings. Under certain assumptions, the former paper 
+parametric surrogate models. \citet{garegnani2021NoisyMCMC,BurknerSurrogate}, and \citet{BurknerTwoStep}
+investigate \cref{alg:ep} in such settings. Under certain assumptions, \citet{garegnani2021NoisyMCMC} 
 bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
+\citet{BurknerTwoStep} proposes an importance sampling approximation to reduce the 
+required number of sampled trajectories.
 
 With a nonparametric emulator, the practical difficulty in 
 implementing \cref{alg:ep} is the requirement to sample an infinite-dimensional 
@@ -930,13 +933,13 @@ and random Fourier features could be leveraged for this purpose \citep{dimRedPol
 As with the \citet{trainDynamics} method, this approach is only an approximate implementation of \cref{alg:ep}.
 
 \subsection{Expected Likelihood}
-Given the challenge of implementing \cref{alg:ep} with a nonparametric emulator, the majority of 
+Given the challenge of implementing \Cref{alg:ep} with a nonparametric emulator, the majority of 
 previous literature instead proposes deterministic approximations of the unnormalized
 density. As opposed to the expected posterior method, these approximations are computed 
 pointwise in $\Par$. This is a potential downside of this approach, as it does not leverage 
 the full structure of the surrogate predictive distribution (e.g., the predictive covariance of a GP emulator).
 However, the focus on unnormalized density approximation has several practical benefits, 
-including that it does not require approximating surrogate trajectories, and is amenable to the application of 
+including that it does not require approximating surrogate trajectories and is amenable to the application of 
 standard Bayesian inference procedures using a single MCMC run.
 
 We start by considering the approximation derived by computing the pointwise expectation 
@@ -947,7 +950,8 @@ This yields the unnormalized density estimate
 \end{align}
 which we refer to as the \textit{expected likelihood (EL)}
 \footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
-$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation.}
+$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation and
+then multiplying by the prior density.}
 approximation, again borrowing terminology from
  \citet{BurknerSurrogate}. \citet{StuartTeck1} instead refer to this as the \textit{marginal} approximation, 
  and show the normalizing constant implied by \cref{eq:post-approx-EL} is given by
@@ -958,7 +962,7 @@ approximation, again borrowing terminology from
  \end{equation} 
 meaning the expected likelihood approximation is a ratio estimator of the form 
  $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
- Note the difference with respect to the expected posterior approximation 
+ Note the difference with respect to 
  $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
  which we highlight in \cref{tab:post-approx-comparison} in the forward model emulation setting.  
  The expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
@@ -976,12 +980,12 @@ In cases where this expectation is intractable, pseudo-marginal MCMC
 samples can be drawn from the surrogate predictive distribution $\postEm[\Ndesign](\Par)$
 at any input $\Par$. The pseudo-marginal approach is discussed in \Cref{sec:MH-approx}.
 \citet{BurknerSurrogate} alternatively propose to replace  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$
-with a Monte Carlo estimate derived from surrogate samples. Their method differs from the 
+with a fixed Monte Carlo estimate derived from surrogate samples (i.e., a sample average approximation). 
+Their method differs from the 
 pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
 and then fixed throughout the MCMC run. This allows for the application of standard 
-MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$.
-This approach is well-suited to finite-dimensional surrogate models, but is not directly 
-applicable in the nonparametric setting. 
+MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$
+and is only directly implementable in the parametric setting.
 In the nonparametric case, most previous literature 
 has focused on the Gaussian settings from \cref{prop:fwd-em-Gaussian} and \cref{prop:llik-em-Gaussian}
 due to their analytic tractability. We summarize these special cases below.
@@ -995,7 +999,7 @@ is given by
 \postApproxMarg[\Ndesign](\Par) 
 &= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right). \label{eq:post-approx-fwd-EL-Gaussian}
 \end{align}
-\Cref{eq:post-approx-fwd-EL-Gaussian} can be seen to be the unnormalized posterior corresponding to the modified
+Moreover, \Cref{eq:post-approx-fwd-EL-Gaussian} is the unnormalized posterior corresponding to the modified
 Bayesian inverse problem
 \begin{align}
 &\obs = \emMean[\Ndesign]{\fwd}(\Par) + \eta_{\Ndesign}(\Par) + \noise
@@ -1074,7 +1078,7 @@ the likelihood surrogate
 \end{equation}
 where $\GaussianCDF$ denotes the standard Gaussian distribution function. This expression is of the same form 
 as the expected likelihood in \cref{eq:post-approx-llik-EL-Gaussian}, but the uncertainty inflation term 
-$\Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}}$ scales much more slowly than 
+$\Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}}$ scales more slowly than 
 $\Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}$. The special case $\quantileProb = 1/2$ (i.e., the median) 
 reduces to the mean approximation in \cref{eq:mean-approx_llik}, while values $\quantileProb > 1/2$ imply 
 the density will be inflated in regions of higher surrogate uncertainty. \citet{FATES_CES} also utilize the 
@@ -1091,9 +1095,9 @@ In this section, we describe an alternative approach to surrogate-based inferenc
 that focuses on constructing approximations to MCMC algorithms as opposed to approximations
 of the unnormalized posterior density. Some of these methods provide algorithms for sampling 
 from approximate posteriors already defined above, while others represent new approaches to inference.
-The benefits of these approaches include ease of implementation, as well as the fact that
-they only require the ability to draw samples from finite-dimensional projections of 
-the surrogate predictive distribution. Therefore, these algorithms do not rely on distributional 
+The benefits of these approaches include ease of implementation and generality--they only require 
+the ability to draw samples from the predictive distribution at finite sets of inputs.
+Therefore, these algorithms do not rely on distributional 
 assumptions on the surrogate or likelihood, and can be used in the nonparametric surrogate setting.
 
 To start, we recall the standard Metropolis-Hastings (MH) algorithm, which is defined by a proposal 
@@ -1277,8 +1281,8 @@ are presented for the case of a symmetric proposal distribution.}
 \subsection{Existence and Integrability} \label{sec:existence}
 We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
 introduced above are well-defined. Consideration of this question points to important 
-practical issues in constructing emulators for use in posterior approximation; see
-\Cref{sec:recs}. The primary concern
+practical issues in constructing emulators for use in posterior approximation (see
+\Cref{sec:recs}). The primary concern
 is that the tail behavior of the surrogate may lead to approximations of $\postDens$ that 
 are not integrable. Such pathologies can easily arise if utilizing a stationary surrogate, where 
 the predictive mean and variance stabilize at constant values as distance from the design points 
@@ -1297,10 +1301,10 @@ Theoretical treatments have also explored conditions to ensure existence over ge
 domains \citep{random_fwd_models,garegnani2021NoisyMCMC}. We refer to 
 \citep{StuartTeck1,StuartTeck2} for a comprehensive theoretical treatment in the GP setting.
 Ideally, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
-is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \cref{alg:ep}, 
+is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \Cref{alg:ep}, 
 which assumes that each sampled trajectory of $\postEm[\Ndesign]$ induces a valid probability 
 distribution from which samples can be drawn. This requirement can be weakened for other 
-approximations; for example, in \cref{prop:llik-em-Gaussian} we observe the requirement is that
+approximations; for example, in \Cref{prop:llik-em-Gaussian} we observe the requirement is that
 $\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
 decays sufficiently quickly as $\norm{\Par} \to \infty$. 
 
