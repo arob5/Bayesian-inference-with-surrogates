@@ -1326,7 +1326,7 @@ decays sufficiently quickly as $\norm{\Par} \to \infty$.
 Up until this point, we have considered a fixed surrogate model trained using a set of
 $\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
 updating the emulator using additional rounds of simulator runs.
-Given computational costs, these new evaluation points should be carefully chosen in 
+Given a limited computational budget, these new evaluation points should be carefully chosen in 
 a goal-oriented fashion. The cycle of selecting design points, querying the simulator, 
 and updating the surrogate represents a particular \textit{sequential design},
 or \textit{active learning}, problem. We focus on active learning strategies
@@ -1336,29 +1336,29 @@ approximation does not require an accurate emulator over the entirety of $\parSp
 rather, the emulator should be accurate in the subset of $\parSpace$ where the 
 posterior is large, while also containing enough global information to know where
 the posterior is small. Various versions of this local-global tradeoff have been articulated
-in several studies \citep{StuartTeck2, gp_surrogates_random_exploration,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}. 
-We emphasize that traditional active learning algorithms targeting global improvements in the 
-underlying emulators (e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
+across several studies \citep{StuartTeck2, gp_surrogates_random_exploration,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}. 
+This research has demonstrated that traditional active learning algorithms targeting global improvements 
+in the underlying emulators (e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) are often sub-optimal with 
 respect to the goal of improving the induced posterior approximation.
 
-Effective sequential design strategies target regions where the current surrogate 
-expects high posterior mass, in addition to regions where the surrogate is uncertain.
+A second theme intertwined with the local-global tradeoff is the idea that effective 
+sequential design should target promising regions (according to the current surrogate)
+but also explore regions where the surrogate is uncertain. 
 This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
 Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
 \citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
 reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, 
 among others. For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
 proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
-VehtariParallelGP,VillaniAdaptiveGP}. We also highlight batch sequential approaches, 
-where multiple design points are acquired simultaneously. Batch sequential design becomes 
-increasingly essential as the cost of likelihood evaluations increases, as it allows for 
-parallel computations. 
+VehtariParallelGP,VillaniAdaptiveGP}. We review these criteria below, placing particular 
+emphasis on the batch sequential setting, where multiple design points are acquired simultaneously.
+Batch sequential design is essential when simulation costs are high, but runs can be performed in parallel.
+We conclude this section by reviewing methods that fall outside of the standard active learning 
+framework.
 
 To remain agnostic to the quantity being emulated, we state algorithms with respect to
 a generic underlying emulator $\funcEm[\Ndesign]$, which approximates some function
-$\func$ (e.g., the forward model or log-likelihood). As in previous sections,
-we provide closed-from solutions in special cases involving forward model and
-log-density emulators.
+$\func$ (e.g., the forward model or log-likelihood).
 
 \subsection{Sequential Design Loop}
 Given a current surrogate fit to design inputs $\designIn[\Ndesign] \in \parSpace^{\Ndesign}$,
@@ -1366,7 +1366,7 @@ our goal is to select a new batch of inputs $\designBatchIn \in \parSpace^{\Nbat
 to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$.
 After running the simulator at the new points $\designBatchIn$ and updating the emulator, we obtain
 an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select $\designBatchIn$
-to yield the best possible approximation $\postEm[\Naugment]$. The selection of design inputs is naturally
+to yield the best possible improvement in the approximate posterior. The selection of design inputs is naturally
 cast as an optimization problem 
 \begin{equation}
 \designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat)
@@ -1382,8 +1382,8 @@ rounds $\Nrounds$, yielding the sequential design loop summarized in \Cref{alg:s
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{SeqDesign}{$\func, \funcPrior, \designIn[\Ndesign], \Nrounds$}     
     	\State $\hat{\func} \gets \mathrm{fit}(\funcPrior \given \designIn[\Ndesign], \func(\designIn[\Ndesign]))$
-	\Comment{Initial Design}	
-        \For{$\designIndex \gets 1, \dots, \Nrounds$} \Comment{Sequential Design Loop}
+	\Comment{Fit to initial design}	
+        \For{$\designIndex \gets 1, \dots, \Nrounds$} \Comment{Sequential design loop}
         		\State $\designBatchIn^{(\designIndex)} \gets \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[]^{(\designIndex)}(\parMat)$ 
 		\State $\hat{f} \gets \mathrm{update}(\hat{f} \given \designBatchIn^{(\designIndex)}, \func(\designBatchIn^{(\designIndex)}))$
 	\EndFor
@@ -1436,11 +1436,14 @@ we have
 \end{equation}
 which demonstrates that the criterion favors inputs where both the expected log-posterior
 $\emMean[\Ndesign]{\lpost}(\Par)$ and epistemic uncertainty $\emKer[\Ndesign]{\lpost}(\Par)$ are large, encoding an exploration-exploitation
-tradeoff. The maximum variance criterion is utilized in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017}.
-A similar approach is taken in \citet{wang2018adaptive}, but entropy is utilized as the measure of uncertainty
-instead of variance. \citet{gp_surrogates_random_exploration} consider an alternative, where exploration and 
-exploitation are explicitly decoupled by selecting one point that maximizes $\E_{\Ndesign}[\funcEm[\Ndesign](\Par)]$ 
-and randomly sampling a second point from $\priorDens$. 
+tradeoff. The maximum variance criterion is utilized in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017}. In the GP log-density emulator setting (\Cref{prop:llik-em-Gaussian})
+$\postEm[\Ndesign](\Par)$ is log-normal. Given the heavy tails and asymmetry of a log-normal random variable, 
+\citep{VehtariParallelGP,wang2018adaptive} argue that the variance provides a misleading measure
+of uncertainty in this setting, instead favoring the entropy or interquartile range. 
+As an alternative to these maximum uncertainty criteria, \citet{gp_surrogates_random_exploration}
+suggest explicitly decoupling exploration and exploitation by selecting one point 
+that maximizes $\emMean[\Ndesign]{\lpost}(\Par)$ and randomly sampling a second point from 
+$\priorDens$. 
 
 \subsubsection{Multipoint Criteria}
 We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
@@ -1477,16 +1480,11 @@ and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR
  \label{eq:acq-intvar-saa}
 \end{align}
 The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
-\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function.
+\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. The expected variance 
+terms in the summands of \Cref{eq:acq-intvar-saa} admit closed forms in the Gaussian 
+settings of \Cref{prop:fwd-em-Gaussian,prop:llik-em-Gaussian}.
 
 
-intro
--seq design loop
--acq funcs
---pointwise
---integral
--batch design
--other approaches (MCMC-based, EKI)
 
 
 \subsection{Batch Design Strategies}
