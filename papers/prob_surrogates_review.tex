@@ -1325,16 +1325,22 @@ decays sufficiently quickly as $\norm{\Par} \to \infty$.
 \section{Sequential Design} \label{sec:seq-design}
 Up until this point, we have considered a fixed surrogate model trained using a set of
 $\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
-updating the emulator using additional rounds of simulator runs. Given a limited 
-computational budget, the new evaluation points should be carefully chosen with regard
-to the goal at hand. This cycle of iteratively selecting new design points and updating 
-the surrogate represents a particular instance of a \textit{sequential design},
+updating the emulator using additional rounds of simulator runs.
+Given computational costs, these new evaluation points should be carefully chosen in 
+a goal-oriented fashion. The cycle of selecting design points, querying the simulator, 
+and updating the surrogate represents a particular \textit{sequential design},
 or \textit{active learning}, problem. We focus on active learning strategies
-tailored to the goal of approximating the posterior distribution $\postDens$. 
-In particular, we emphasize that traditional active learning criteria
-that target global improvements in the underlying emulators 
-(e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
-respect to the goal of improving the induced posterior surrogate $\postEm[\Ndesign]$.
+tailored to the goal of approximating the posterior distribution $\postDens$. The key
+idea underlying such strategies is that achieving an accurate posterior 
+approximation does not require an accurate emulator over the entirety of $\parSpace$;
+rather, the emulator should be accurate in the subset of $\parSpace$ where the 
+posterior is large, while also containing enough global information to know where
+the posterior is small. Various versions of this local-global tradeoff have been articulated
+in several studies \citep{StuartTeck2, gp_surrogates_random_exploration,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}. 
+We emphasize that traditional active learning algorithms targeting global improvements in the 
+underlying emulators (e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) may be sub-optimal with 
+respect to the goal of improving the induced posterior approximation.
+
 Effective sequential design strategies target regions where the current surrogate 
 expects high posterior mass, in addition to regions where the surrogate is uncertain.
 This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
@@ -1452,15 +1458,36 @@ since we cannot construct $\funcEm[\Naugment]$ without observing the response $\
 instead consider the random element 
 $\funcEm[\Naugment]^{\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$, with 
 the unknown response $\func(\parMat)$ modeled by the random vector 
-$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. The ECU therefore implies averaging over 
+$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. Computing ECU therefore implies averaging over 
 both $\parSpace$ and $\gamma$. If we again choose variance as our measure of uncertainty, we have
 \begin{equation}
 \acq[](\parMat) \Def 
 \int_{\parSpace} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
  \label{eq:acq-intvar}
 \end{equation}
-where the expectation is with respect to $\gamma$, and the variance with respect to $\funcEm[\Naugment]^{\gamma}$
-conditional on $\gamma$. Here, $\weightDens$ is a measure on $\Par$ that we are free to choose.
+where the expectation is with respect to $\gamma$, and the variance is with respect to $\funcEm[\Naugment]^{\gamma}$
+conditional on $\gamma$. Here, $\weightDens$ is a measure on $\parSpace$ that we are free to choose.
+Outside of special cases the outer integral (over $\parSpace$) in ECU criteria is not 
+tractable \citep{Binois_2018,MakTargetedVar,Koermer2024}. This is especially the case in our present setting,
+and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR},
+\begin{align}
+&\acq[](\parMat) \Def 
+\sum_{j=1}^{J} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par_j; \funcEm[\Naugment]^{\gamma}) \given \gamma],
+&&\Par_j \overset{\mathrm{iid}}{\sim} \weightDens[\Ndesign].
+ \label{eq:acq-intvar-saa}
+\end{align}
+The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
+\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function.
+
+
+intro
+-seq design loop
+-acq funcs
+--pointwise
+--integral
+-batch design
+-other approaches (MCMC-based, EKI)
+
 
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
