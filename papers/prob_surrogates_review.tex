@@ -1484,6 +1484,71 @@ The $\Par_j$ are sampled at the beginning of the sequential design round and the
 terms in the summands of \Cref{eq:acq-intvar-saa} admit closed forms in the Gaussian 
 settings of \Cref{prop:fwd-em-Gaussian,prop:llik-em-Gaussian}.
 
+\paragraph{Gaussian setting: Log-Density Emulator.} 
+
+\citet{VehtariParallelGP} derive a closed form expression for the expected variance term under a Gaussian
+log-likelihood emulator. Owing to concerns regarding log-normal tails (noted above) they instead recommend
+a similar criterion using the interquartile range in place of the variance. We nonetheless present the variance 
+criterion below as it has an intuitive interpretation.
+
+\begin{prop} \label{prop:acq-intvar-ldens-Gaussian}
+Consider a Gaussian log-likelihood emulator 
+$\llikEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par))$
+as in \Cref{prop:llik-em-Gaussian}. Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
+\begin{equation}
+\acq[](\parMat) = 
+\sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation(\Par_j; \parMat)   
+\label{eq:acq-intvar-saa-ldens}
+\end{equation}
+where
+\begin{align*}
+\Var\left[\postEm(\Par) \given \lpostEm(\parMat) = \emMean[\Ndesign]{\lpost}(\parMat) \right]
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
+\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
+\varInflation(\Par_j; \parMat)
+&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}
+\end{align*}
+\end{prop}
+
+Notice that the first term in \Cref{eq:acq-intvar-saa-ldens} is the variance of $\postEm[\Ndesign]$ conditioned on
+$\{\parMat, \emMean[\Ndesign]{\llik}(\parMat)\}$; i.e., it treats the current GP prediction as if it is the true response.
+The second term accounts for the uncertainty in the true response; in particular, notice that 
+$\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)$ is large when the input batch $\parMat$ is highly 
+``influential.''
+
+\paragraph{Gaussian setting: Forward Model Emulator.}
+
+\citet{SinsbeckNowak} propose an ECU-variance criterion for a forward model emulator, and note that 
+the expected variance term is computable in closed-form when both the emulator and likelihood are Gaussian.
+\citet{Surer2023sequential} derive a similar result in the special case of the multi-output basis vector 
+model in \Cref{basis_func_model}.
+
+\begin{prop} \label{prop:acq-intvar-fwd-Gaussian}
+Consider a Gaussian forward model emulator 
+$\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
+as in \Cref{prop:fwd-em-Gaussian}, and moreover assume the likelihood is Gaussian.
+Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
+\begin{equation}
+\acq[](\parMat) = 
+\sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation(\Par_j; \parMat)   
+\label{eq:acq-intvar-saa-ldens}
+\end{equation}
+where
+\begin{align*}
+\Var\left[\postEm(\Par) \given \lpostEm(\parMat) = \emMean[\Ndesign]{\lpost}(\parMat) \right]
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
+\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
+\varInflation(\Par_j; \parMat)
+&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}
+\end{align*}
+\end{prop}
+
+
+
+
+
+
+
 
 
 
