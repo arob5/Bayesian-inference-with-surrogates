@@ -1374,7 +1374,7 @@ an optimization problem
 with respect to some objective function $\acq[]: \parSpace^{\Nbatch} \to \R$, typically
 called the \textit{acquisition function} or \textit{design criterion}.
 Depending on computational resources, this optimization can be repeated over a sequence of 
-rounds $\Nrounds$, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
+$\Nrounds$ rounds, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
 \begin{algorithm}
     \caption{Sequential Design Loop}
     \label{alg:seq-des-loop}
@@ -1449,8 +1449,9 @@ We next consider acquisition functions that can be evaluated at batches of multi
 we focus on a class of acquisition functions that we call \textit{expected conditional uncertainty (ECU)} 
 criteria. Criteria falling within this general class have been explored in various contexts 
 \citep{ALC,Roy2001,Mercer_kernels_IVAR,Binois_2018,deepGPAL,ALExpErrReduction,parallelSURExcursionSet}
-\footnote{Many names have been used for such criteria, including expected error reduction, 
-active learning Cohn, integrated mean squared prediction error, and integrated variance.},
+\footnote{Many names have been used for such criteria, including \textit{expected error reduction}, 
+\textit{active learning Cohn}, \textit{integrated mean squared prediction error}, \textit{integrated variance}, 
+and generically \textit{integral criteria}.},
 but we focus on examples geared specifically towards surrogate-induced posterior approximation.
 
 ECU acquisitions arise from the following logic: we would like to select an input batch 
@@ -1469,6 +1470,12 @@ both $\parSpace$ and $\gamma$. If we again choose variance as our measure of unc
 \end{equation}
 where the expectation is with respect to $\gamma$, and the variance is with respect to $\funcEm[\Naugment]^{\gamma}$
 conditional on $\gamma$. Here, $\weightDens$ is a measure on $\parSpace$ that we are free to choose.
+Notice that in contrast to the pointwise 
+criteria, the ECU acquisition functions are ``global'' in that they account for the effect of the 
+new batch $\parMat$ on the surrogate uncertainty over the entire space $\parSpace$. As with their 
+pointwise counterparts, we can also consider measures of uncertainty other than the 
+variance (e.g., entropy, interquartile range, etc.).
+
 Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
 in ECU criteria is not tractable. This is especially the case in our present setting,
 and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR},
@@ -1479,7 +1486,8 @@ and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR
  \label{eq:acq-intvar-saa}
 \end{align}
 The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
-\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. The expected variance 
+\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. 
+The expected variance 
 terms in the summands of \Cref{eq:acq-intvar-saa} admit closed forms in the Gaussian 
 settings of \Cref{prop:fwd-em-Gaussian,prop:llik-em-Gaussian}.
 
@@ -1504,7 +1512,7 @@ where
 \Var\left[\postEm(\Par) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right]
 &= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
 \left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
-\varInflation(\Par_j; \parMat)
+\varInflation(\Par; \parMat)
 &= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}
 \end{align*}
 \end{prop}
@@ -1545,11 +1553,25 @@ where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment
 \end{align}
 The summands target uncertainty in $\fwdEm[\Ndesign]$ rather than $\postEm[\Ndesign]$, while the weighting measure
 $\weightDens = \postApproxNormMarg$ is chosen to target the goal of posterior approximation. This has the 
-benefit of being much easier to compute, since the GP variance $\emKer[\Naugment]{\fwd}$ is independent of the 
+benefit of being much easier to compute, since the GP variance $\emKer[\Naugment]{\fwd}(\Par)$ is independent of the 
 unseen response $\fwd(\parMat)$. \citet{weightedIVAR} establish asymptotic convergence results for this criterion
 using the stepwise uncertainty reduction framework \citep{BectSUR}. 
 
 \subsection{Batch Design Strategies}
+When simulation cost is high but runs can be parallelized, batch acquisition is often essential. For example, in large-scale
+geoscience applications the batch size may be in the hundreds ($\Nbatch \approx 100$), with only a few rounds 
+of acquisition possible ($\Nrounds < 10$) \citep{FerEmulation}. This is in stark contrast to much of the sequential 
+design literature, which focuses on the behavior of single-point acquisition algorithms as $\Nbatch$ grows large.
+We start by highlighting batch methods borrowed from the broader active learning and Bayesian optimization 
+literature, and then discuss some promising approaches well-suited to the goal of posterior approximation.
+
+\subsubsection{Joint Optimization}
+\subsubsection{Greedy Optimization}
+\subsubsection{Sampling-Based Approaches}
+
+
+Continuous vs. discrete, greedy opt 
+
 \subsubsection{Multipoint Optimization}
 Federov exchange, stochastic optimization, continuous optimization, SAA,
 subsampling approach (or put this in its own section?)
