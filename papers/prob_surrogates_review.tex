@@ -1352,7 +1352,6 @@ among others. For GP surrogates, a variety of design criteria (i.e., acquisition
 proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
 VehtariParallelGP,VillaniAdaptiveGP}. We review these criteria below, placing particular 
 emphasis on the batch sequential setting, where multiple design points are acquired simultaneously.
-Batch sequential design is essential when simulation costs are high, but runs can be performed in parallel.
 We conclude this section by reviewing methods that fall outside of the standard active learning 
 framework.
 
@@ -1366,8 +1365,8 @@ our goal is to select a new batch of inputs $\designBatchIn \in \parSpace^{\Nbat
 to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup \designBatchIn$.
 After running the simulator at the new points $\designBatchIn$ and updating the emulator, we obtain
 an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select $\designBatchIn$
-to yield the best possible improvement in the approximate posterior. The selection of design inputs is naturally
-cast as an optimization problem 
+to yield the best possible improvement in the approximate posterior, which is naturally cast as 
+an optimization problem
 \begin{equation}
 \designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat)
 \label{eq:acq-opt}
@@ -1470,11 +1469,11 @@ both $\parSpace$ and $\gamma$. If we again choose variance as our measure of unc
 \end{equation}
 where the expectation is with respect to $\gamma$, and the variance is with respect to $\funcEm[\Naugment]^{\gamma}$
 conditional on $\gamma$. Here, $\weightDens$ is a measure on $\parSpace$ that we are free to choose.
-Outside of special cases the outer integral (over $\parSpace$) in ECU criteria is not 
-tractable \citep{Binois_2018,MakTargetedVar,Koermer2024}. This is especially the case in our present setting,
+Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
+in ECU criteria is not tractable. This is especially the case in our present setting,
 and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR},
 \begin{align}
-&\acq[](\parMat) \Def 
+&\acq[](\parMat) \Def \frac{1}{J}
 \sum_{j=1}^{J} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par_j; \funcEm[\Naugment]^{\gamma}) \given \gamma],
 &&\Par_j \overset{\mathrm{iid}}{\sim} \weightDens[\Ndesign].
  \label{eq:acq-intvar-saa}
@@ -1493,16 +1492,16 @@ criterion below as it has an intuitive interpretation.
 
 \begin{prop} \label{prop:acq-intvar-ldens-Gaussian}
 Consider a Gaussian log-likelihood emulator 
-$\llikEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par))$
+$\llikEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par))$
 as in \Cref{prop:llik-em-Gaussian}. Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
 \begin{equation}
-\acq[](\parMat) = 
+\acq[](\parMat) = \frac{1}{J}
 \sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation(\Par_j; \parMat)   
 \label{eq:acq-intvar-saa-ldens}
 \end{equation}
 where
 \begin{align*}
-\Var\left[\postEm(\Par) \given \lpostEm(\parMat) = \emMean[\Ndesign]{\lpost}(\parMat) \right]
+\Var\left[\postEm(\Par) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right]
 &= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
 \left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
 \varInflation(\Par_j; \parMat)
@@ -1510,9 +1509,9 @@ where
 \end{align*}
 \end{prop}
 
-Notice that the first term in \Cref{eq:acq-intvar-saa-ldens} is the variance of $\postEm[\Ndesign]$ conditioned on
-$\{\parMat, \emMean[\Ndesign]{\llik}(\parMat)\}$; i.e., it treats the current GP prediction as if it is the true response.
-The second term accounts for the uncertainty in the true response; in particular, notice that 
+Notice that the first term in \Cref{eq:acq-intvar-saa-ldens} is the variance of $\postEm[\Ndesign](\Par_j)$ conditioned on
+$\{\parMat, \emMean[\Ndesign]{\llik}(\parMat)\}$; i.e., the current GP prediction is treated as if it were the true response.
+The second term accounts for the uncertainty in the true response; in particular, the penalty
 $\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)$ is large when the input batch $\parMat$ is highly 
 ``influential.''
 
@@ -1528,29 +1527,27 @@ Consider a Gaussian forward model emulator
 $\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
 as in \Cref{prop:fwd-em-Gaussian}, and moreover assume the likelihood is Gaussian.
 Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
-\begin{equation}
-\acq[](\parMat) = 
-\sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation(\Par_j; \parMat)   
-\label{eq:acq-intvar-saa-ldens}
-\end{equation}
-where
 \begin{align*}
-\Var\left[\postEm(\Par) \given \lpostEm(\parMat) = \emMean[\Ndesign]{\lpost}(\parMat) \right]
-&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
-\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
-\varInflation(\Par_j; \parMat)
-&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}
+\acq[](\parMat) = \frac{1}{J}
+\sum_{j=1}^{J} \priorDens^2(\Par_j) \left[\frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\CovComb[\Naugment](\Par_j) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par_j))^{1/2}} \right],
 \end{align*}
+where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$.   
+\label{eq:acq-intvar-saa-fwd}
 \end{prop}
 
-
-
-
-
-
-
-
-
+\citet{weightedIVAR} consider an alternative ECU-variance criterion in the Gaussian forward model emulator setting:
+\begin{align}
+&\acq[](\parMat) \Def \frac{1}{J}
+\sum_{j=1}^{J} \emKer[\Naugment]{\fwd}(\Par_j),
+&&\Par_j \sim \postApproxNormMarg.
+ \label{eq:acq-intvar-lartaud}
+\end{align}
+The summands target uncertainty in $\fwdEm[\Ndesign]$ rather than $\postEm[\Ndesign]$, while the weighting measure
+$\weightDens = \postApproxNormMarg$ is chosen to target the goal of posterior approximation. This has the 
+benefit of being much easier to compute, since the GP variance $\emKer[\Naugment]{\fwd}$ is independent of the 
+unseen response $\fwd(\parMat)$. \citet{weightedIVAR} establish asymptotic convergence results for this criterion
+using the stepwise uncertainty reduction framework \citep{BectSUR}. 
 
 \subsection{Batch Design Strategies}
 \subsubsection{Multipoint Optimization}
