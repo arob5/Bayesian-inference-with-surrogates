@@ -1414,7 +1414,7 @@ acquisition criteria restricted to the pure sequential ($\Nbatch = 1$) setting
 and those naturally defined in the batch setting. It is still possible to perform 
 batch acquisition with criteria of the former type, as discussed in \Cref{sec:greedy-opt}.
 
-\subsubsection{Single Point Criteria}
+\subsubsection{Single Point Criteria} \label{sec:acq-single-point}
 When optimizing for a single design point, a natural strategy is to simply select the input
 where the uncertainty in $\postEm[\Ndesign](\Par)$ is largest. If predictive variance
 is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
@@ -1444,7 +1444,7 @@ suggest explicitly decoupling exploration and exploitation by selecting one poin
 that maximizes $\emMean[\Ndesign]{\lpost}(\Par)$ and randomly sampling a second point from 
 $\priorDens$. 
 
-\subsubsection{Multipoint Criteria}
+\subsubsection{Multipoint Criteria} \label{sec:acq-multipoint}
 We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
 we focus on a class of acquisition functions that we call \textit{expected conditional uncertainty (ECU)} 
 criteria. Criteria falling within this general class have been explored in various contexts 
@@ -1581,22 +1581,41 @@ algorithms (i.e., Federov exchange) to find a local minimum \citep{FederovExchan
 \footnote{Exchange algorithms can also be employed to optimize over continuous space and leverage gradient information.}.
 
 \subsubsection{Greedy Optimization} \label{sec:greedy-opt}
-Motivated by the difficulty of joint optimization, greedy approximations are common in practice.
+Motivated by the difficulty of joint optimization, greedy approximations are common in practice \citep{Ginsbourger2010}.
 These methods seek to approximate the joint optimum using a sequence of $\Nbatch$ simpler optimization 
 problems over $\parSpace$. Under this approach, at the beginning of round $\designIndex$ the first 
 point in the batch $\Par^{(\designIndex,1)}$ is selected by optimizing $\acq[]^{(\designIndex)}(\Par)$ as 
-in the pure sequential design setting. The remaining $\Nbatch - 1$ points are selected sequentially via
+in the pure sequential design setting. The remaining $\Nbatch - 1$ points are added sequentially via
 \begin{align}
-&\Par^{(\designIndex, b)} \Def \argmin_{\Par \in \parSpace} \acq[]^{(\designIndex)}(\parMat^{(\designIndex,1:b-1)} \cup \{\Par\}),
-&&b = 2, \dots, \Nbatch
+&\Par^{(\designIndex, b)} \Def \argmin_{\Par \in \parSpace} \acq[]^{(\designIndex,b)}(\parMat^{(\designIndex,1:b-1)} \cup \{\Par\}),
+&&b = 2, \dots, \Nbatch. 
+\label{eq:greedy-acq-opt}
 \end{align}
+In pure sequential design, the acquisition function changes every iteration owing to the addition of a new
+observation $(\Par, \func(\Par))$. Greedy batch design differs in that the criterion is updated to reflect
+the new input $\Par$ only, as we do not observe $\func(\Par)$ until the entire batch is acquired.
+The superscript in $\acq[]^{(\designIndex,b)}$ indicates that the objective is approximated to account for
+these unobserved responses. \citep{Ginsbourger2010} introduce several heuristics for this approximation.
+At each iteration, the \textit{Kriging believer} strategy updates the surrogate with a pseudo-observation;
+the current emulator predictive mean is used in place of the truth $\func(\Par^{(\designIndex, b)})$.
+Believing the surrogate prediction over a sequence of iterations can be problematic, so the popular 
+\textit{constant liar} alternative consists of fixing the pseudo-observation to a constant value throughout the 
+entire round. \citep{Ginsbourger2010} refer to this constant value as a ``lie'' and investigate the empirical 
+performance of different choices for the lie. A related alternative consists of using the predictive mean of 
+$\funcEm[\Ndesign]$ to generate the pseudo-observation over the course of the round, rather than using the 
+updated predictive mean function after each iteration as in the Kriging believer approach \citep{VehtariParallelGP}.
+Both \citep{VehtariParallelGP,Surer2023sequential} consider such greedy heuristics in the context of
+solving a Bayesian inverse problem.
 
-An unappealing aspect of the greedy approach is that we are effectively using the batch acquisition function
-as if it were a pointwise criterion. 
-
+An unappealing aspect of the greedy approach is that the potential for batch acquisitions to assess within-batch
+interactions is not fully leveraged. In order to make better use of a batch acquisition, one idea consists of generating
+multiple candidate batches of points and then using the batch criterion to select among the competitors. This is
+exemplified by the \textit{constant liar mix} strategy, where the candidate batches are generated using the constant
+liar heuristic with different choices of the lie \citep{Chevalier2013}.
+Finally, note that since the optimization in \Cref{eq:greedy-acq-opt} proceeds one point at a time then the single point criteria
+in \Cref{sec:acq-single-point} can be combined with greedy heuristics to enable batch optimization (e.g., \citet{VehtariParallelGP}).
 
 \subsubsection{Sampling-Based Approaches}
-
 
 Continuous vs. discrete, greedy opt 
 
