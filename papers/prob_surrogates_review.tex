@@ -1351,9 +1351,8 @@ reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{bandi
 among others. For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
 proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
 VehtariParallelGP,VillaniAdaptiveGP}. We review these criteria below, placing particular 
-emphasis on the batch sequential setting, where multiple design points are acquired simultaneously.
-We conclude this section by reviewing methods that fall outside of the standard active learning 
-framework.
+emphasis on the batch sequential setting where multiple design points are acquired simultaneously.
+We conclude this section by briefly noting connections to so-called ``exact-approximate'' MCMC algorithms.
 
 To remain agnostic to the quantity being emulated, we state algorithms with respect to
 a generic underlying emulator $\funcEm[\Ndesign]$, which approximates some function
@@ -1616,35 +1615,46 @@ Finally, note that since the optimization in \Cref{eq:greedy-acq-opt} proceeds o
 in \Cref{sec:acq-single-point} can be combined with greedy heuristics to enable batch optimization (e.g., \citet{VehtariParallelGP}).
 
 \subsubsection{Sampling-Based Approaches}
+The batch design methods discussed above are generic active learning techniques, not unique to our particular
+context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
+current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
+\citet{FerEmulation} instead sample from a mixture of the current approximate posterior and the prior, with the mixture weights 
+representing a user-defined tuning parameter. \citet{adaptiveMultimodal} samples from the current approximate posterior, and
+then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
+closely related to the \textit{calibrate, emulate, sample} workflow \citep{CES}.
 
-Continuous vs. discrete, greedy opt 
+These sampling-based approaches enjoy the practical benefits of being inherently parallel and not requiring the solution
+of a difficult optimization problem. In this sense, they are similar in spirit to Thompson sampling for
+batch Bayesian optimization \citep{parallelBOThompson}. We conjecture that such approaches may be superior to 
+alternatives in the large $\Nbatch$, small $\Nrounds$ setting. We expect the performance of this approach to be closely 
+tied to the choice of approximate posterior; e.g., samples from the plug-in mean posterior will likely under-explore the 
+parameter space. The \citet{FerEmulation} approach of sampling from a mixture of the prior and approximate posterior might
+be viewed as a more scalable analog of the method in \citet{gp_surrogates_random_exploration}, in the sense of 
+explicitly decoupling exploration and exploitation. We believe further work is warranted to better understand the 
+behavior of these methods, and their applicability to large-scale batch design.
 
-\subsubsection{Multipoint Optimization}
-Federov exchange, stochastic optimization, continuous optimization, SAA,
-subsampling approach (or put this in its own section?)
-
-\subsubsection{Greedy Heuristic Methods} \label{sec:batch-heuristic}
-\subsubsection{Sampling-Based Design}
-\citet{FerEmulation,hydrologicalModel,quantileApprox}
-\citet{adaptiveMultimodal} interleaves ensemble Kalman updates within the adaptive algorithm.
-
-Connection to Thompson sampling
-
-\subsection{Other Approaches}
-These methods effectively combine posterior
-inference and sequential design within a single algorithm.
-The papers \citet{Li_2014,ConradLocalExactMCMC} 
-adaptively construct local polynomial surrogates within an MCMC run, and are able to establish asymptotic 
-exactness by showing the polynomial 
-approximation error diminishes over time (\todo: verify this last point). The work \citep{ActiveLearningMCMC}
-also conducts sequential design within an MCMC algorithm, using emulator predictions at points where the 
+\subsection{Exact-Approximate MCMC}
+Throughout this section, we have framed the question of surrogate refinement through a standard active 
+learning lens, in which the selection of design points proceeds over a sequence of rounds. We briefly
+highlight related methods that stray from this framework; in particular, algorithms that 
+perform sequential design within a single MCMC run, often with the goal of converging 
+to the true target $\postDensNorm$. Such methods are sometimes referred to as \textit{exact-approximate}
+MCMC. The papers \citet{Li_2014,ConradLocalExactMCMC} 
+adaptively construct local polynomial surrogates within an MCMC algorithm, and are able to establish asymptotic 
+exactness by showing the polynomial approximation error diminishes over time.
+\citep{ActiveLearningMCMC}
+also conduct sequential design within a MCMC run, using emulator predictions at points where the 
 surrogate is confident, and running exact simulations at points that exceed a user-defined uncertainty tolerance.
-In \citet{MCMC_GP_proposal}, an algorithm is proposed to accelerate Hamiltonian Monte Carlo by using a 
-GP only for proposals, but running the exact simulation when computing the acceptance probability to 
-ensure consistency. The delayed acceptance mechanism provides another common method for ensuring
-asymptotic consistency \citep{DelayedAcceptance}.
+We note that it is possible to ensure convergence to $\postDensNorm$ even with a fixed surrogate
+by using the surrogate predictions to filter out poor proposals, avoiding the cost of unnecessary 
+expensive model runs. This idea dates back to the delayed acceptance mechanism of \citep{DelayedAcceptance}
+for Metropolis-Hastings algorithms.
+In \citet{MCMC_GP_proposal}, a similar approach is used to accelerate Hamiltonian Monte Carlo.
 These algorithms all leverage a surrogate in various ways with the goal of reducing the simulation load, while
-maintaining asymptotic exactness. We discuss sequential design strategies in \cref{sec:seq-design}.
+maintaining asymptotic exactness. The cost of exactness is the requirement of more simulator runs, often 
+performed serially. We therefore view such approaches as well-suited to inverse problems with moderately 
+expensive forward models. Convergence to $\postDensNorm$ will typically be impractical as the computational
+costs increase, especially in the large $\Nbatch$, small $\Nrounds$ setting.
 
 \section{Practical Recommendations} \label{sec:recs}
 We now provide a set of practical recommendations for building surrogate models, constructing
