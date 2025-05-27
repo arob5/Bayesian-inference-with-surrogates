@@ -2051,16 +2051,20 @@ Multifidelity methods? Active subspaces? Data subsampling/randomized misfits?
 % Appendix 
 \section{Appendix}
 
-\subsection{Marginal Approximation with Gaussian Likelihood: Forward Model Emulation}
-The closed-form computations related to the marginal approximation with a Gaussian 
-likelihood follow from standard results regarding the convolution of Gaussian densities.  
+\subsection{Surrogate-Induced Posterior Distributions}
+This section proves \Cref{prop:fwd-em-Gaussian,prop:llik-em-Gaussian}, which characterize the distribution 
+of $\postEm[\Ndesign]$ in the Gaussian forward model and log-density emulation settings, respectively.
+The latter result is immediate, but the former requires proving some preliminary Gaussian identities.
+
+\subsubsection{Forward Model Emulator}
+We start by deriving the convolution of two Gaussians.
 
 \begin{prop} \label{Gaussian_convolution}
 Let $\Gaussian(A \mu, \likPar)$ and $\Gaussian(m, C)$ be Gaussian distributions on $\R^{\dimObs}$ and $\R^{\dimPar}$, 
 respectively, with $A \in \R^{\dimObs \times \dimPar}$ and $\likPar, C$ symmetric, positive definite matrices. Then 
 \begin{align*}
-\int_{\R^{\dimPar}} \Gaussian(\obs | A \mu, \likPar) \Gaussian(\mu | m, C) d\mu
-&= \Gaussian(\obs | Am, \likPar + ACA^\top). 
+\int_{\R^{\dimPar}} \Gaussian(\obs \given A \mu, \likPar) \Gaussian(\mu \given m, C) d\mu
+&= \Gaussian(\obs \given Am, \likPar + ACA^\top). 
 \end{align*}
 \end{prop}
 
@@ -2068,58 +2072,74 @@ respectively, with $A \in \R^{\dimObs \times \dimPar}$ and $\likPar, C$ symmetri
 \todo
 \end{proof}
 
-We next prove a lemma that will be used in the proofs of \Cref{prop:Gaussian_marginal_moments} 
-and \Cref{lemma:fwd-Gaussian-density-dist} below. 
+We next prove a lemma that will be used in calculating $\Var[\postDens(\Par; \fwdEm[\Ndesign])]$.
 \begin{lemma} \label{lemma:squared_Gaussian_density}
 Let $\Gaussian(m, C)$ be a Gaussian distribution on $\R^{\dimObs}$ with $C$ a symmetric, positive-definite 
 matrix. Then, for $\obs \in \R^{\dimObs}$, 
 \begin{align*}
-\Gaussian(\obs | m, C)^2 
-&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+\Gaussian(\obs \given m, C)^2 
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs \given m, \frac{1}{2}C\right). 
 \end{align*}
 \end{lemma}
 
 \begin{proof}
 \begin{align*}
-\Gaussian(\obs | m, C)^2 
+\Gaussian(\obs \given m, C)^2 
 &= \det(2\pi C)^{-1} \Exp{-\frac{1}{2} (\obs - m)^\top \left[\frac{1}{2}C \right]^{-1}(\obs - m)} \\
-&= \det(2\pi C)^{-1} \det(2\pi (1/2)C)^{1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right) \\
-&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs | m, \frac{1}{2}C\right). 
+&= \det(2\pi C)^{-1} \det(2\pi (1/2)C)^{1/2} \Gaussian\left(\obs \given m, \frac{1}{2}C\right) \\
+&= 2^{-\dimObs/2} \det(2\pi C)^{-1/2} \Gaussian\left(\obs \given m, \frac{1}{2}C\right). 
 \end{align*}
 \end{proof}
 
+\Cref{prop:fwd-em-Gaussian} follows directly from the following result.
+
 \begin{prop} \label{prop:Gaussian_marginal_moments}
-Assume $\obs | \mu \sim \Gaussian(A \mu, \likPar)$ and $\mu \sim \Gaussian(m, C)$, where $\mu \in \R^{\dimPar}$, 
+Assume $\obs \given \mu \sim \Gaussian(A \mu, \likPar)$ and $\mu \sim \Gaussian(m, C)$, where $\mu \in \R^{\dimPar}$, 
 $A \in \R^{\dimObs \times \dimPar}$, and $\likPar$, $C$ are both symmetric, positive definite. Then 
-\begin{align}
-\E\left[\Gaussian(\obs | A \mu, \likPar) \right] &= \Gaussian(\obs | Am, \likPar + ACA^\top) \\
-\Var\left[\Gaussian(\obs | A \mu, \likPar) \right] 
-&= \frac{\Gaussian\left(\obs | Am, \frac{1}{2} \likPar + ACA^\top \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top] \right)}{2^{\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{1/2}}
-\end{align}
+\begin{align*}
+\E\left[\Gaussian(\obs \given A \mu, \likPar) \right] &= \Gaussian(\obs \given Am, \likPar + ACA^\top) \\
+\Var\left[\Gaussian(\obs \given A \mu, \likPar) \right] 
+&= \frac{\Gaussian\left(\obs \given Am, \frac{1}{2} \likPar + ACA^\top \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
+\frac{\Gaussian\left(\obs \given Am, \frac{1}{2}[\likPar + ACA^\top] \right)}{2^{\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{1/2}}
+\end{align*}
 \end{prop}
 
 \begin{proof} 
 The first result follows immediately from \Cref{Gaussian_convolution}. For the variance, we have 
 \begin{align}
-\Var\left[\Gaussian(\obs | A \mu, \likPar) \right] 
-&= \E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right] - \E\left[\Gaussian(\obs | A \mu, \likPar) \right]^2 \nonumber \\
-&= \E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right] - \Gaussian(\obs | Am, \likPar + ACA^\top)^2. \label{two_terms_variance}
+\Var\left[\Gaussian(\obs \given A \mu, \likPar) \right] 
+&= \E\left[\Gaussian(\obs \given A \mu, \likPar)^2 \right] - \E\left[\Gaussian(\obs \given A \mu, \likPar) \right]^2 \nonumber \\
+&= \E\left[\Gaussian(\obs \given A \mu, \likPar)^2 \right] - \Gaussian(\obs \given Am, \likPar + ACA^\top)^2. \label{two_terms_variance}
 \end{align}
 Starting with the first term, we apply \Cref{lemma:squared_Gaussian_density} and 
 \Cref{Gaussian_convolution}, respectively, to obtain 
 \begin{align*}
-\E\left[\Gaussian(\obs | A \mu, \likPar)^2 \right]
-&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \E\left[\Gaussian\left(\obs | A\mu, \frac{1}{2}\likPar \right)\right] \\
-&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \Gaussian\left(\obs | Am, \frac{1}{2}\likPar + ACA^\top \right).
+\E\left[\Gaussian(\obs \given A \mu, \likPar)^2 \right]
+&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \E\left[\Gaussian\left(\obs \given A\mu, \frac{1}{2}\likPar \right)\right] \\
+&= 2^{-\dimObs/2} \det(2\pi \likPar)^{-1/2} \Gaussian\left(\obs \given Am, \frac{1}{2}\likPar + ACA^\top \right).
 \end{align*}
 For the second term in \ref{two_terms_variance}, another application of \Cref{lemma:squared_Gaussian_density} gives
 \begin{align*}
-\Gaussian(\obs | Am, \likPar + ACA^\top)^2
-&= 2^{-\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{-1/2} \Gaussian\left(\obs | Am, \frac{1}{2}[\likPar + ACA^\top]\right).
+\Gaussian(\obs \given Am, \likPar + ACA^\top)^2
+&= 2^{-\dimObs/2} \det(2\pi[\likPar + ACA^\top])^{-1/2} \Gaussian\left(\obs \given Am, \frac{1}{2}[\likPar + ACA^\top]\right).
 \end{align*}
 Plugging these expressions back into \ref{two_terms_variance} completes the proof. 
 \end{proof}
+
+\subsubsection{Log-Density Emulator}
+
+
+
+
+\subsection{Marginal Approximation with Gaussian Likelihood: Forward Model Emulation}
+The closed-form computations related to the marginal approximation with a Gaussian 
+likelihood follow from standard results regarding the convolution of Gaussian densities.  
+
+
+
+
+
+
 
 
 \subsection{Marginal Acceptance Probability}
