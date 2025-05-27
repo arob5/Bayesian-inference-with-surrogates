@@ -1412,7 +1412,7 @@ We now make \Cref{alg:seq-des-loop} concrete by introducing several acquisition 
 that explicitly target the goal of posterior approximation. We draw a distinction between 
 acquisition criteria restricted to the pure sequential ($\Nbatch = 1$) setting
 and those naturally defined in the batch setting. It is still possible to perform 
-batch acquisition with criteria of the former type, as discussed in \Cref{sec:batch-heuristic}.
+batch acquisition with criteria of the former type, as discussed in \Cref{sec:greedy-opt}.
 
 \subsubsection{Single Point Criteria}
 When optimizing for a single design point, a natural strategy is to simply select the input
@@ -1478,7 +1478,7 @@ variance (e.g., entropy, interquartile range, etc.).
 
 Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
 in ECU criteria is not tractable. This is especially the case in our present setting,
-and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR},
+and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR,botorch},
 \begin{align}
 &\acq[](\parMat) \Def \frac{1}{J}
 \sum_{j=1}^{J} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par_j; \funcEm[\Naugment]^{\gamma}) \given \gamma],
@@ -1561,12 +1561,40 @@ using the stepwise uncertainty reduction framework \citep{BectSUR}.
 When simulation cost is high but runs can be parallelized, batch acquisition is often essential. For example, in large-scale
 geoscience applications the batch size may be in the hundreds ($\Nbatch \approx 100$), with only a few rounds 
 of acquisition possible ($\Nrounds < 10$) \citep{FerEmulation}. This is in stark contrast to much of the sequential 
-design literature, which focuses on the behavior of single-point acquisition algorithms as $\Nbatch$ grows large.
-We start by highlighting batch methods borrowed from the broader active learning and Bayesian optimization 
-literature, and then discuss some promising approaches well-suited to the goal of posterior approximation.
+design literature, which focuses on the behavior of single-point acquisition algorithms as $\Nrounds$ grows large.
+The challenge of batch acquisition has gained interest in the active learning and Bayesian 
+optimization literature \citep{Ginsbourger2010,LOEPPKY20101452,Chevalier2013,batchBOThesis}. We begin 
+by highlighting ideas from this broader literature, and then discuss some promising approaches
+well-suited to the particular goal of posterior approximation.
 
 \subsubsection{Joint Optimization}
-\subsubsection{Greedy Optimization}
+The task of minimizing $\acq[](\parMat)$ requires an optimization over $\dimPar\Nbatch$ variables, and is thus
+difficult to scale as the parameter dimension or batch size increases. \citet{Mercer_kernels_IVAR} investigate
+the performance of gradient-based continuous optimization over $\parSpace^\Nbatch$ for integrated variance
+criteria, demonstrating favorable performance for small values of $\dimPar$ and $\Nbatch$. 
+\citep{botorch} describes the gradient-based optimization framework using sample average approximations
+implemented in the BoTorch package. A large portion of the literature eschews continuous optimization in 
+favor of discrete methods. These algorithms take the form of a subset selection problem; the optimal batch
+is sought from within a finite set of candidate points $\parMatCand \subset \parSpace$. This presents a 
+challenging combinatorial optimization problem, commonly solved by employing stochastic exchange 
+algorithms (i.e., Federov exchange) to find a local minimum \citep{FederovExchange,WynnDiscreteExchange,LOEPPKY20101452}
+\footnote{Exchange algorithms can also be employed to optimize over continuous space and leverage gradient information.}.
+
+\subsubsection{Greedy Optimization} \label{sec:greedy-opt}
+Motivated by the difficulty of joint optimization, greedy approximations are common in practice.
+These methods seek to approximate the joint optimum using a sequence of $\Nbatch$ simpler optimization 
+problems over $\parSpace$. Under this approach, at the beginning of round $\designIndex$ the first 
+point in the batch $\Par^{(\designIndex,1)}$ is selected by optimizing $\acq[]^{(\designIndex)}(\Par)$ as 
+in the pure sequential design setting. The remaining $\Nbatch - 1$ points are selected sequentially via
+\begin{align}
+&\Par^{(\designIndex, b)} \Def \argmin_{\Par \in \parSpace} \acq[]^{(\designIndex)}(\parMat^{(\designIndex,1:b-1)} \cup \{\Par\}),
+&&b = 2, \dots, \Nbatch
+\end{align}
+
+An unappealing aspect of the greedy approach is that we are effectively using the batch acquisition function
+as if it were a pointwise criterion. 
+
+
 \subsubsection{Sampling-Based Approaches}
 
 
