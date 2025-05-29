@@ -989,17 +989,16 @@ and then fixed throughout the MCMC run. This allows for the application of stand
 MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$
 and is only directly implementable in the parametric setting.
 In the nonparametric case, most previous literature 
-has focused on the Gaussian settings from \cref{eq:fwd-em-Gaussian} and \cref{eq:llik-em-Gaussian}
+has focused on the Gaussian settings from \Cref{eq:fwd-em-Gaussian} and \Cref{eq:llik-em-Gaussian}
 due to their analytic tractability. We summarize these special cases below.
 
-\subsubsection{Gaussian Setting: Forward Model Emulator}
-\begin{prop} \label{prop:post-approx-fwd-EL-Gaussian}
-Consider the setting in \cref{eq:fwd-em-Gaussian}, where both the forward model emulator 
-and likelihood are Gaussian. Under these assumptions, the expected likelihood approximation
-is given by
+\begin{examplebox}[Gaussian Forward Model Emulation Setting]
+In the Gaussian forward model emulation setting from \Cref{eq:fwd-em-Gaussian}, the
+expected likelihood approximation is given by 
 \begin{align}
 \postApproxMarg[\Ndesign](\Par) 
-&= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right). \label{eq:post-approx-fwd-EL-Gaussian}
+&= \priorDens(\Par) \Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par) \right). 
+\label{eq:post-approx-fwd-EL-Gaussian}
 \end{align}
 Moreover, \Cref{eq:post-approx-fwd-EL-Gaussian} is the unnormalized posterior corresponding to the modified
 Bayesian inverse problem
@@ -1010,46 +1009,43 @@ Bayesian inverse problem
 &&\Par \sim \priorDens  \nonumber
 \end{align}
 where $\noise$, $\Par$, and $\eta_{\Ndesign}(\Par)$ are pairwise a priori independent for all $\Par$.
-\end{prop}
-
 The approximate likelihood retains a Gaussian form, where the surrogate predictive mean
 $\emMean[\Ndesign]{\fwd}$ has replaced the true forward model $\fwdEm[\Ndesign]$. The surrogate uncertainty
 is incorporated via the addition of $\emKer[\Ndesign]{\fwd}(\Par)$ to the noise covariance $\likPar$.
 We emphasize that even if the prior $\priorDens$ is Gaussian, the posterior approximation will typically be non-Gaussian
 due to the nonlinearity of $\emMean[\Ndesign]{\fwd}(\Par)$ and the fact that the likelihood covariance depends on 
 $\Par$ through $\emKer[\Ndesign]{\fwd}(\Par)$. The modified inverse problem viewpoint 
-in \cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
+in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
 this viewpoint extends beyond the Gaussian setting, even when analytical expressions for $\postApproxMarg[\Ndesign](\Par) $ 
 may not exist.
-The closed-form expression in \cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
+The closed-form expression in \Cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
 \citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
 \citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
 villani2024posteriorsamplingadaptivegaussian,hydrologicalModel}. 
+\end{examplebox}
 
-\subsubsection{Gaussian Setting: Log-Density Emulator}
-A closed form expression for $\postApproxMarg[\Ndesign](\Par)$ is available when using a log-likelihood
-or log-posterior emulator with a Gaussian predictive distribution. We present the result for a log-likelihood 
-emulator; in the log-posterior case the prior density term is removed.
-
-\begin{prop} \label{prop:post-approx-llik-EL-Gaussian}
-Consider the setting in \cref{eq:llik-em-Gaussian} with a Gaussian log-likelihood emulator. The 
-expected likelihood approximation is then given by the unnormalized density 
+\begin{examplebox}[Gaussian Log-Density Emulation Setting]
+Consider the Gaussian log-density emulation setting from \Cref{eq:fwd-em-Gaussian}
+with a log-likelihood emulator. With this setup, the expected likelihood approximation is given by 
 \begin{align}
 \postApproxMarg[\Ndesign](\Par) 
 &= \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)}
-= \postApproxMean(\Par) \Exp{\frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)}. \label{eq:post-approx-llik-EL-Gaussian}
+= \postApproxMean(\Par) \Exp{\frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)}. 
+\label{eq:post-approx-llik-EL-Gaussian}
 \end{align}
-\end{prop}
-
-The density in \cref{eq:post-approx-llik-EL-Gaussian} can be viewed as inflating the mean approximation 
-at points where the emulator is uncertain. 
-It is notable that the uncertainty inflation factor $\Exp{\frac{1}{2}\emKer[\Ndesign]{\lpost}(\Par)}$ scales 
-very quickly as the surrogate variance increases.
-In practice, this sensitivity to the predictive variance can lead $\postApproxNormMarg[\Ndesign]$ to be highly 
-multimodal, or heavily concentrated in small regions with high predictive variance. 
-This pathology is noted in \cite{VehtariParallelGP}, who recommend against the use of the expected
-likelihood approximation in their application of interest (log-likelihood emulation with noisy log-likelihood evaluations). 
-This posterior approximation is analyzed theoretically in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors,random_fwd_models,TeckHyperpar}.
+The log-posterior emulation case is very similar. From \Cref{eq:post-approx-llik-EL-Gaussian},
+we see that $\postApproxMarg[\Ndesign]$ inflates the mean approximation at points
+where the emulator is uncertain. It is notable that the uncertainty inflation factor 
+$\Exp{\frac{1}{2}\emKer[\Ndesign]{\lpost}(\Par)}$ scales very quickly as the surrogate variance 
+increases. \citet{VehtariParallelGP} note this fact, emphasizing that using the expectation can
+be a misleading summary of the log-normal random variable $\postEm[\Ndesign](\Par)$.
+In practice, we also find this to be the case; the heavy-tailed nature of log-normal distributions
+can lead $\postApproxNormMarg[\Ndesign]$ to be heavily concentrated in small regions with high 
+predictive variance. In \Cref{rec:bound-constraints} and \Cref{sec:case-study-lpost-em} we 
+describe how enforcing bound constraints can avoid these pathologies.
+The EL approximation in the Gaussian log-density emulation setting is analyzed theoretically
+in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors,random_fwd_models,TeckHyperpar}.
+\end{examplebox}
 
 \begin{table}[h]
 \centering
@@ -1959,7 +1955,7 @@ to evaluate the quality of the plug-in mean posterior approximation.
 \end{figure}
 
 \subsubsection{Forward Model Emulator}
-\subsubsection{Log-Posterior Emulator}
+\subsubsection{Log-Posterior Emulator} \label{sec:case-study-lpost-em}
 This inverse problem presents several challenges for log-density emulators: the dynamic 
 range of the log-likelihood over the prior support is quite large, the parameter space is 
 unbounded, and the likelihood remains relatively flat along certain directions in parameter
