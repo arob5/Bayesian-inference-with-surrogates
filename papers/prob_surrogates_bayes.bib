@@ -925,6 +925,39 @@ keywords = {Statistical inverse problem, Bayesian calibration, Surrogate model, 
 abstract = {This paper presents a Bayesian calibration method for a simulation-based model with stochastic functional input and output. The originality of the method lies in an adaptation involving the representation of the likelihood function by a Gaussian process surrogate model, to cope with the high computational cost of the simulation, while avoiding the surrogate modeling of the functional output. The adaptation focuses on taking into account the uncertainty introduced by the use of a surrogate model when estimating the parameters posterior probability distribution by MCMC. To this end, trajectories of the random surrogate model of the likelihood function are drawn and injected in the MCMC algorithm. An application on a train suspension monitoring case is presented.}
 }
 
+% Propose a method to approximately sample a prob distribution while also "spreading out" the points. Propose
+% a sequential scheme that learns the response surface/prob density via a surrogate as the algorithm proceeds.
+% In an example they fit the log-density with a GP.
+@article{JosephMinEnergy,
+author = {V. Roshan Joseph and Tirthankar Dasgupta and Rui Tuo and C. F. Jeff Wu and},
+title = {Sequential Exploration of Complex Surfaces Using Minimum Energy Designs},
+journal = {Technometrics},
+volume = {57},
+number = {1},
+pages = {64--74},
+year = {2015},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2014.881749},
+URL = { https://doi.org/10.1080/00401706.2014.881749},
+eprint = {https://doi.org/10.1080/00401706.2014.881749}
+}
+
+% One idea they propose here is to use their minimum energy design method as an initial design to fit
+% an emulator, similar to the calibrate, emulate, sample approach.
+@article{JosephMEDSampling,
+author = {V. Roshan Joseph and Dianpeng Wang and Li Gu and Shiji Lyu and Rui Tuo and},
+title = {Deterministic Sampling of Expensive Posteriors Using Minimum Energy Designs},
+journal = {Technometrics},
+volume = {61},
+number = {3},
+pages = {297--308},
+year = {2019},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2018.1552203},
+URL = { https://doi.org/10.1080/00401706.2018.1552203},
+eprint = {https://doi.org/10.1080/00401706.2018.1552203}
+}
+
 % Emulate unnormalized log posterior. Use delayed-acceptance HMC. GP only used for proposal, exact posterior used for acceptance ratio. Uses GP classifier
 % to find regions of parameter space where physical assumptions are violated. Adapt HMC parameters using BayesOpt. 
 @article{MCMC_GP_proposal,
@@ -1130,9 +1163,14 @@ abstract = {Abstract Parameters in climate models are usually calibrated manuall
 year = {2021}
 }
 
-@article{CESSoftware, doi = {10.21105/joss.06372}, url = {https://doi.org/10.21105/joss.06372}, 
-year = {2024}, publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372}, 
-author = {Oliver R. a. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification}, journal = {Journal of Open Source Software} }
+@article{CESSoftware, 
+doi = {10.21105/joss.06372}, 
+url = {https://doi.org/10.21105/joss.06372}, 
+year = {2024}, 
+publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372}, 
+author = {Oliver R.A. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, 
+title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification},
+ journal = {Journal of Open Source Software} }
 
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
@@ -1496,6 +1534,17 @@ URL = {https://arxiv.org/abs/2211.09283}
       eprint={2402.16520},
       archivePrefix={arXiv},
       primaryClass={stat.ME}
+}
+
+% Proposes integrated variance criterion for stochastic simulation models
+@misc{SurerStochasticIVAR,
+      title={Batch Sequential Experimental Design for Calibration of Stochastic Simulation Models}, 
+      author={Özge Sürer},
+      year={2025},
+      eprint={2505.03990},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME},
+      url={https://arxiv.org/abs/2505.03990}, 
 }
 
 % Log-likelihood emulation with IEVAR criterion. Marginal posterior approximation. 
