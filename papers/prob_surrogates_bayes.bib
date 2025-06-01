@@ -591,6 +591,53 @@ keywords = {Polynomial chaos expansion, Surrogate modeling, Bayesian inference, 
       url={https://arxiv.org/abs/2103.05441}, 
 }
 
+% ---------------------------------------------------------------------------------------------------
+% Applications with expensive computer models
+% ---------------------------------------------------------------------------------------------------
+
+@article{MakEddySims,
+author = {Simon Mak and Chih-Li Sung and Xingjian Wang and Shiang-Ting Yeh and Yu-Hung Chang and V. Roshan Joseph and Vigor Yang and C. F. Jeff Wu and},
+title = {An Efficient Surrogate Model for Emulation and Physics Extraction of Large Eddy Simulations},
+journal = {Journal of the American Statistical Association},
+volume = {113},
+number = {524},
+pages = {1443--1456},
+year = {2018},
+publisher = {ASA Website},
+doi = {10.1080/01621459.2017.1409123},
+URL = { https://doi.org/10.1080/01621459.2017.1409123},
+eprint = {https://doi.org/10.1080/01621459.2017.1409123}
+}
+
+@article{compBioAgentBased,
+  author       = {An, Gary and Fitzpatrick, Benjamin G. and Christley, Scott and Federico, Paolo and Kanarek, Adam and Neilan, Rachel M. and Oremland, Matthew and Salinas, Rebecca and Laubenbacher, Reinhard and Lenhart, Suzanne},
+  title        = {Optimization and Control of Agent-Based Models in Biology: A Perspective},
+  journal      = {Bulletin of Mathematical Biology},
+  year         = {2017},
+  volume       = {79},
+  number       = {1},
+  pages        = {63--87},
+  month        = jan,
+  doi          = {10.1007/s11538-016-0225-6},
+  pmid         = {27826879},
+  pmcid        = {PMC5209420},
+  note         = {Epub 2016 Nov 8}
+}
+
+@article{yeastMatingSurrogate,
+    doi = {10.1371/journal.pcbi.1006181},
+    author = {Renardy, Marissa and Yi, Tau-Mu AND Xiu, Dongbin and Chou, Ching-Shan},
+    journal = {PLOS Computational Biology},
+    publisher = {Public Library of Science},
+    title = {Parameter uncertainty quantification using surrogate models applied to a spatial model of yeast mating polarization},
+    year = {2018},
+    month = {05},
+    volume = {14},
+    url = {https://doi.org/10.1371/journal.pcbi.1006181},
+    pages = {1-26},
+    number = {5}
+}
+
 
 %  ---------------------------------------------------------------------------------------------------
 % MCMC
@@ -1882,6 +1929,21 @@ eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.1710231115}}
 %  ---------------------------------------------------------------------------------------------------
 % Other adaptive approaches
 %  ---------------------------------------------------------------------------------------------------
+
+% GP model for log-likelihood. Use maxvar targeting variance in unnormalized posterior
+% density for sequential design.
+@article{AlawiehIterativeGP,
+title = {Iterative construction of Gaussian process surrogate models for Bayesian inference},
+journal = {Journal of Statistical Planning and Inference},
+volume = {207},
+pages = {55-72},
+year = {2020},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/j.jspi.2019.11.002},
+url = {https://www.sciencedirect.com/science/article/pii/S037837581930103X},
+author = {Leen Alawieh and Jonathan Goodman and John B. Bell},
+keywords = {Gaussian process regression, Active learning, Surrogate models, Bayesian inference, MCMC}
+}
 
 % Local polynomial surrogates constructed within MCMC scheme
 @article{Li_2014,

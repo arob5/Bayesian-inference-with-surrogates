@@ -90,14 +90,11 @@
 
 % Introduction 
 \section{Introduction}
-In the modern era, data-driven and mechanistic modeling have become closely intertwined, with hybrid modeling strategies 
-increasingly used to understand and predict the behavior of complex systems. Statistical techniques have become 
-the standard for uncertainty quantification in such contexts, but challenges persist in adapting statistical inference procedures
-to handle the computational burden imposed by expensive computer simulations. 
-Within the Bayesian paradigm, there is thus growing interest in methods of Bayesian computation tailored to settings 
+Within the Bayesian paradigm, there is growing need for posterior approximation algorithms tailored to settings 
 where evaluation of the (unnormalized) posterior density incurs significant computational expense. 
-This situation commonly arises across various disciplines in the physical and engineering sciences, whereby evaluating 
-the likelihood implies performing a complex computer simulation; e.g., \citep{ESM_modeling_2pt0,FerEmulation}. 
+This situation commonly arises in the physical, biological, and engineering sciences, 
+where likelihood evaluations require running a complex computer simulation; 
+e.g., \citep{ESM_modeling_2pt0,yeastMatingSurrogate,FerEmulation,FATES_CES,CLMBayesianCalibration}.
 Such computer models often derive from systems of differential equations, with the goal being to estimate (i.e., calibrate) 
 unknown parameters characterizing the physical model.
 To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
@@ -110,6 +107,26 @@ parallel), and plugged in as an approximation to facilitate the application of
 standard inference schemes such as Markov chain Monte Carlo (MCMC) 
 \citep{modularization,BurknerSurrogate,BurknerTwoStep}.
 
+[paragraph on surrogagtes and how they are incorporated in Bayesian inference]
+A popular class of methods involves replacing either the computer model, log-likelihood function, or
+log-posterior density with a statistical surrogate (also called an emulator or meta-model), which induces a computationally 
+cheap approximation of the posterior density.
+
+While surrogates offer the potential for significant computational savings, they introduce a new source of 
+uncertainty within the Bayesian model. 
+To avoid incorrect or miscalibrated inference, it is necessary
+to both propagate and--within computational constraints--reduce this uncertainty.
+A growing body of work has addressed the latter by means of sequential design (i.e., active learning)
+algorithms, which refine the posterior approximation by iteratively constructing the set of simulator runs used for
+surrogate training \citep{SinsbeckNowak,Li_2014,VehtariParallelGP,Lueckmann2018LikelihoodfreeIW,Surer2023sequential,
+KandasamyActiveLearning2015,VillaniAdaptiveGP,weightedIVAR,Semler_2023,Semler2024GradientEnhanced,
+surrogateNoisyMCMC,AlawiehIterativeGP}.
+In many practical applications it is computationally infeasible to reduce the surrogate approximation error to 
+an arbitrarily small level. Hence, recent work has stressed the importance of inferential workflows that 
+propagate surrogate uncertainty, thus acknowledging the approximation 
+\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation}.
+
+ 
 The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference,
 implying that the true posterior density is modeled as a realization of a random function.
 Such probabilistic surrogates acknowledge the additional uncertainty introduced by 
@@ -690,7 +707,7 @@ The second row of \cref{fig:em_dist_1d} demonstrates how a GP log-likelihood emu
 distribution for the likelihood.
 The log-likelihood emulation approach is considered in 
 \citet{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,
-StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy}.
+StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP}.
 Log-likelihood emulation has also been utilized for Bayesian quadrature for numerical 
 integration \citep{BayesQuadrature,BayesQuadRatios} and approximate Bayesian 
 computation \citep{llikEmABC}.
@@ -1429,7 +1446,8 @@ we have
 \end{equation}
 which demonstrates that the criterion favors inputs where both the expected log-posterior
 $\emMean[\Ndesign]{\lpost}(\Par)$ and epistemic uncertainty $\emKer[\Ndesign]{\lpost}(\Par)$ are large, encoding an exploration-exploitation
-tradeoff. The maximum variance criterion is utilized in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017}. In the GP log-density emulator setting (\Cref{eq:llik-em-Gaussian})
+tradeoff. The maximum variance criterion is utilized in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017,AlawiehIterativeGP}. 
+In the GP log-density emulator setting (\Cref{eq:llik-em-Gaussian})
 $\postEm[\Ndesign](\Par)$ is log-normal. Given the heavy tails and asymmetry of a log-normal random variable, 
 \citep{VehtariParallelGP,wang2018adaptive} argue that the variance provides a misleading measure
 of uncertainty in this setting, instead favoring the entropy or interquartile range. 
