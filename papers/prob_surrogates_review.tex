@@ -1101,12 +1101,12 @@ the likelihood surrogate
 \label{eq:post-approx-quantile}
 \end{equation}
 where $\GaussianCDF$ denotes the standard Gaussian distribution function. This expression is of the same form 
-as the expected likelihood in \cref{eq:post-approx-llik-EL-Gaussian}, but the uncertainty inflation term 
+as the expected likelihood in \Cref{eq:post-approx-llik-EL-Gaussian}, but the uncertainty inflation term 
 $\Exp{\GaussianCDF^{-1}(\quantileProb) \sqrt{\emKer[\Ndesign]{\llik}(\Par)}}$ scales more slowly than 
 $\Exp{\frac{1}{2} \emKer[\Ndesign]{\llik}(\Par)}$. The special case $\quantileProb = 1/2$ (i.e., the median) 
-reduces to the mean approximation in \cref{eq:mean-approx-llik}, while values $\quantileProb > 1/2$ imply 
+reduces to the mean approximation in \Cref{eq:mean-approx-llik}, while values $\quantileProb > 1/2$ imply 
 the density will be inflated in regions of higher surrogate uncertainty. \citet{FATES_CES} also utilize the 
-approximation in \cref{eq:post-approx-quantile}, though they do not explicitly draw the connection to 
+approximation in \Cref{eq:post-approx-quantile}, though they do not explicitly draw the connection to 
 the quantile estimator.
 
 In the forward model emulation setting, \citet{BurknerSurrogate} also consider an \textit{expected log-likelihood}
@@ -1120,7 +1120,7 @@ that focuses on constructing approximations to MCMC algorithms as opposed to app
 of the unnormalized posterior density. Some of these methods provide algorithms for sampling 
 from approximate posteriors already defined above, while others represent new approaches to inference.
 The benefits of these approaches include ease of implementation and generality--they only require 
-the ability to draw samples from the predictive distribution at finite sets of inputs.
+the ability to draw samples from the emulator predictive distribution at finite sets of inputs.
 Therefore, these algorithms do not rely on distributional 
 assumptions on the surrogate or likelihood, and can be used in the nonparametric surrogate setting.
 
@@ -1134,7 +1134,7 @@ $\Par \in \parSpace$ then the next state is defined by sampling the proposal
 \label{MH_acc_prob_exact}
 \end{align}
 If accepted, the next state is defined to be $\propPar$, else it is set to the current state $\Par$. 
-This procedure is summarized in \cref{alg:MH}. 
+This procedure is summarized in \Cref{alg:MH}. 
 
 \begin{figure}[ht]
 \centering
@@ -1182,12 +1182,12 @@ This procedure is summarized in \cref{alg:MH}.
     \EndFunction
     \end{algorithmic}
 \end{minipage}
-\caption{(Left) A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \cdot)$.
-(Right) A generic noisy Metropolis-Hastings algorithm. The choice of Markov kernel $\postSampleKernel$ 
-defines particular algorithms, as described in \Cref{sec:MH-approx}.}
+\caption{\textbf{(Left)} A standard Metropolis-Hastings MCMC algorithm with proposal density $\propDens(\Par, \cdot)$.
+\textbf{(Right)} A generic noisy Metropolis-Hastings algorithm. The choice of Markov kernel $\postSampleKernel$ 
+defines particular algorithms.}
 \end{figure}
 
-We consider a family of algorithms that replace $\accProbMH(\Par, \propPar)$ by
+We consider a family of algorithms that change $\accProbMH(\Par, \propPar)$ by
 substituting the exact densities $\postDens(\Par)$  and $\postDens(\propPar)$ 
 with approximations sampled from a specified distribution. The particular choice of 
 this distribution yields different algorithms, all of which are ``noisy'' in the sense that 
@@ -1214,8 +1214,8 @@ targeting the stationary distribution $\postApproxNormMarg[\Ndesign]$ \citep{pse
 In principle, it provides an exact MCMC scheme to sample from the expected likelihood 
 approximation even when the expectation $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is intractable, 
 a fact noted in \citet{StuartTeck1}. The key property ensuring invariance with respect to 
-$\postApproxNormMarg[\Ndesign]$ is that the value $\hat{\postDens}_{\tilde{\Par}}$ sampled from 
-$\postSampleKernel$ is an unbiased estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$.
+$\postApproxNormMarg[\Ndesign]$ is that the value $\hat{\postDens}_{\propPar}$ sampled from 
+$\postSampleKernel$ is an unbiased estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\propPar)]$.
 Therefore, the method remains valid for estimators of the form 
 \begin{align}
 &\hat{\postDens}_{\tilde{\Par}}^{J} \Def \frac{1}{J} \sum_{j=1}^{J} \hat{\postDens}_{\tilde{\Par}}^{(j)},
@@ -1223,8 +1223,8 @@ Therefore, the method remains valid for estimators of the form
 \end{align}
 It is well-known that pseudo-marginal methods
 can suffer from slow mixing, but that efficiency can be improved by reducing the variance 
-in the estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$; e.g., by increasing $J$ in
-\cref{eq:pm-unbiased-est} \citep{pseudoMarginalMCMC,pseudoMarginalEfficiency}.
+in the estimate of $\E_{\Ndesign}[\postEm[\Ndesign](\propPar)]$; e.g., by increasing $J$ in
+\Cref{eq:pm-unbiased-est} \citep{pseudoMarginalMCMC,pseudoMarginalEfficiency}.
 The pseudo-marginal approach to sampling $\postApproxNormMarg[\Ndesign]$ is studied 
 in \citet{garegnani2021NoisyMCMC}.
 
@@ -1303,7 +1303,7 @@ are presented for the case of a symmetric proposal distribution.}
 \end{table}
 
 \subsection{Existence and Integrability} \label{sec:existence}
-We have henceforth implicitly assumed that the surrogate-induced posterior approximations 
+We have so far implicitly assumed that the surrogate-induced posterior approximations 
 introduced above are well-defined. Consideration of this question points to important 
 practical issues in constructing emulators for use in posterior approximation (see
 \Cref{sec:recs}). The primary concern
@@ -1312,7 +1312,7 @@ are not integrable. Such pathologies can easily arise if utilizing a stationary 
 the predictive mean and variance stabilize at constant values as distance from the design points 
 increases. This issue is especially a concern if emulating the log-posterior density, as the prior 
 density is being modeled and hence cannot be relied upon to ensure integrability \citep{emPostDens}.
-Table \todo illustrates simple examples where such pathologies can occur.
+Figure \todo illustrates simple examples where such pathologies can occur.
 In order to avoid issues related to
 tail behavior, previous work tends to restrict to the setting where $\parSpace$
 is a compact subset of $\R^{\dimPar}$ \citep{StuartTeck1, VehtariParallelGP}.
@@ -1327,19 +1327,48 @@ domains \citep{random_fwd_models,garegnani2021NoisyMCMC}. We refer to
 Ideally, the surrogate ought to be constructed such that every realization of $\postEm[\Ndesign]$
 is integrable (i.e., $\normCstEm$ exists almost surely). This assumption is implicit in \Cref{alg:ep}, 
 which assumes that each sampled trajectory of $\postEm[\Ndesign]$ induces a valid probability 
-distribution from which samples can be drawn. This requirement can be weakened for other 
+distribution from which samples can be drawn. This condition can be weakened for other 
 approximations; for example, in \Cref{eq:llik-em-Gaussian} we observe the requirement is that
 $\log\left[\priorDens(\Par)\right] + \emMean[\Ndesign]{\llik}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\llik}(\Par)$
 decays sufficiently quickly as $\norm{\Par} \to \infty$. 
 
 \section{Sequential Design} \label{sec:seq-design}
+Achieving a desired level of surrogate accuracy using a single round of simulator runs 
+is often not feasible, as it would require impractically large values of $\Ndesign$. This stems from the 
+fact that the posterior distribution can be highly concentrated relative to the prior support. Therefore, 
+initial designs sampled from the prior may completely miss the subset of $\parSpace$ where 
+the posterior is large. In such settings, it is necessary to adaptively refine the surrogate using 
+additional rounds of simulator runs. Given a limited computational budget, the new inputs at which
+the simulator is run should be carefully chosen with respect to the goal of improving the posterior approximation.
+The cycle of selecting design points, querying the simulator, and updating the surrogate represents a 
+particular \textit{sequential design}, or \textit{active learning}, problem. 
+
+Passively sampling new simulator evaluation points from the prior can suffer from the same issues
+as the initial design. By contrast, the current information in the surrogate can be leveraged to actively
+target promising regions of $\parSpace$. However, such model-based design strategies must 
+avoid placing too much trust in the (imperfect) surrogate. In other words, effective active 
+learning algorithms target promising regions (according to the current surrogate) but also explore
+regions where the surrogate is uncertain.
+This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
+Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
+\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
+reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, 
+among others. For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
+proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
+VehtariParallelGP,VillaniAdaptiveGP,AlawiehIterativeGP}.
+
+Various papers have claimed that to achieve an accurate posterior approximation, design points
+are only required in the region where the posterior is large \citep{AlawiehIterativeGP} [\todo add other citations]. 
+This statement should be qualified as follows: achieving an accurate posterior approximation
+requires an accurate emulator in the subset of $\parSpace$ where the posterior is large, while also
+containing enough global information to know where the posterior is small.
+
+
 Up until this point, we have considered a fixed surrogate model trained using a set of
 $\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
 updating the emulator using additional rounds of simulator runs.
 Given a limited computational budget, these new evaluation points should be carefully chosen in 
-a goal-oriented fashion. The cycle of selecting design points, querying the simulator, 
-and updating the surrogate represents a particular \textit{sequential design},
-or \textit{active learning}, problem. We focus on active learning strategies
+a goal-oriented fashion. We focus on active learning strategies
 tailored to the goal of approximating the posterior distribution $\postDens$. The key
 idea underlying such strategies is that achieving an accurate posterior 
 approximation does not require an accurate emulator over the entirety of $\parSpace$;
