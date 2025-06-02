@@ -120,11 +120,11 @@ A growing body of work has addressed the latter by means of sequential design (i
 algorithms, which refine the posterior approximation by iteratively constructing the set of simulator runs used for
 surrogate training \citep{SinsbeckNowak,Li_2014,VehtariParallelGP,Lueckmann2018LikelihoodfreeIW,Surer2023sequential,
 KandasamyActiveLearning2015,VillaniAdaptiveGP,weightedIVAR,Semler_2023,Semler2024GradientEnhanced,
-surrogateNoisyMCMC,AlawiehIterativeGP}.
+surrogateNoisyMCMC,hydrologicalModel,AlawiehIterativeGP}.
 In many practical applications it is computationally infeasible to reduce the surrogate approximation error to 
 an arbitrarily small level. Hence, recent work has stressed the importance of inferential workflows that 
 propagate surrogate uncertainty, thus acknowledging the approximation 
-\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation}.
+\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation,hydrologicalModel}.
 
  
 The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference,
@@ -437,8 +437,8 @@ $\{\designIn, \fwd(\designIn)\}$, $\{\designIn, \llik(\designIn)\}$, or $\{\desi
 In the computer experiments literature, 
 the initial design is typically selected to satisfy some sort of ``space-filling'' criterion; canonical examples 
 include latin hypercube designs and Sobol sequences \citep{initDesignReview}. In the Bayesian inference setting, 
-a natural approach is to sample $\designIn$ from the prior $\priorDens$, either via simple Monte Carlo or using 
-algorithms that seek to minimize a specific notion of discrepancy \citep{supportPoints, SteinPoints}.
+a natural approach is to sample $\designIn$ from the prior $\priorDens$, either via simple Monte Carlo or 
+deterministic alternatives \citep{supportPoints, SteinPoints}.
 As we will demonstrate in experiments, fitting emulators on prior designs may simultaneously produce 
 reasonable approximations in a prior-averaged sense but poor approximations in a posterior-averaged
 sense. This is due to a common phenomenon in Bayesian inverse problems, whereby the posterior is highly 
@@ -459,13 +459,14 @@ the initial design. While we do not focus on these methods further in this revie
 methodological development investigating such workflows may prove a fruitful avenue for future research. 
 
 \subsection{Probabilistic Surrogates}
-Our focus in this review is on probabilistic (i.e., random/stochastic) surrogates, which 
-are emulator models that provide a probabilistic description of approximation uncertainty.
-We review common models falling within this category, highlighting the distinction
-between parametric and nonparametric surrogates, and discuss surrogate strategies within
-the Bayesian inference context.
+While any regression model may be used as an emulator, those that produce only point 
+predictions do not provide a direct means of propagating surrogate uncertainty. We thus
+focus on probabilistic (i.e., random/stochastic) surrogates, which are emulators that 
+provide a probabilistic description of approximation uncertainty. 
 
 \subsubsection{Common Models}
+Though the notion of a probabilistic surrogate is quite broad, we highlight a few common
+model choices.
 
 \paragraph{Gaussian Processes.}
 Gaussian processes (GPs) have emerged as a canonical surrogate model, and provide the 
@@ -517,10 +518,21 @@ models \citep{deepEnsembles,Lueckmann2018LikelihoodfreeIW},
 and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
 
 \subsubsection{Parametric vs. Nonparametric Models}
-The distinction between parametric and nonparametric surrogate models will 
-prove significant at several points throughout this review. We illustrate this
-distinction for a generic random surrogate $\funcEm[\Ndesign]$ for some 
-function $\func$. 
+Much of the existing literature on surrogate-based Bayesian inference tends to 
+be geared towards a particular emulator model (e.g., GPs or PCEs). Posterior 
+approximation or active learning algorithms proposed in the context of one 
+model may not easily generalize to another. A key distinction affecting
+the generality of an algorithm is whether it can be implemented for 
+a nonparametric emulator (e.g., a GP), or if it confined to the parametric 
+setting (e.g., PCEs and neural networks). For example, the papers 
+\citep{BurknerSurrogate,garegnani2021NoisyMCMC} suggest algorithms
+that were deemed impractical in \citep{VehtariParallelGP,StuartTeck1}, owing 
+to the fact that the latter authors are working with GPs, while the former
+implicitly assume parametric models (see \Cref{sec:post-approx} for details).
+We define our use of the terms
+\textit{parametric} and \textit{nonparametric} for the purpose of this article 
+below. Let $\funcEm[\Ndesign]$ denote a generic probabilistic surrogate 
+model for some function $\func$.
 
 \paragraph{Parametric Model.}
 We refer to $\funcEm[\Ndesign]$ as parametric 
