@@ -1335,8 +1335,8 @@ decays sufficiently quickly as $\norm{\Par} \to \infty$.
 \section{Sequential Design} \label{sec:seq-design}
 Achieving a desired level of surrogate accuracy using a single round of simulator runs 
 is often not feasible, as it would require impractically large values of $\Ndesign$. This stems from the 
-fact that the posterior distribution can be highly concentrated relative to the prior support. Therefore, 
-initial designs sampled from the prior may completely miss the subset of $\parSpace$ where 
+fact that the posterior distribution can be highly concentrated relative to the prior support.
+Initial designs sampled from the prior may completely miss the subset of $\parSpace$ where 
 the posterior is large. In such settings, it is necessary to adaptively refine the surrogate using 
 additional rounds of simulator runs. Given a limited computational budget, the new inputs at which
 the simulator is run should be carefully chosen with respect to the goal of improving the posterior approximation.
@@ -1348,7 +1348,7 @@ as the initial design. By contrast, the current information in the surrogate can
 target promising regions of $\parSpace$. However, such model-based design strategies must 
 avoid placing too much trust in the (imperfect) surrogate. In other words, effective active 
 learning algorithms target promising regions (according to the current surrogate) but also explore
-regions where the surrogate is uncertain.
+areas where the surrogate is uncertain.
 This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
 Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
 \citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
@@ -1357,40 +1357,35 @@ among others. For GP surrogates, a variety of design criteria (i.e., acquisition
 proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
 VehtariParallelGP,VillaniAdaptiveGP,AlawiehIterativeGP}.
 
-Various papers have claimed that to achieve an accurate posterior approximation, design points
-are only required in the region where the posterior is large \citep{AlawiehIterativeGP} [\todo add other citations]. 
-This statement should be qualified as follows: achieving an accurate posterior approximation
+The exploration-exploitation question is one of decision making under uncertainty.   
+Even if one had perfect knowledge about the true posterior, there remains the question concerning the optimal
+placement of design points for surrogate-based posterior approximation. Insights into this question can guide
+the development of improved design algorithms.
+Various papers remark that accurate approximation requires design points only in the region where the 
+posterior is large \citep{AlawiehIterativeGP} [\todo add other citations].
+This statement is somewhat misleading, and should be amended as follows:
+achieving an accurate posterior approximation
 requires an accurate emulator in the subset of $\parSpace$ where the posterior is large, while also
-containing enough global information to know where the posterior is small.
+containing enough global information to know where the posterior is small. This informal statement is 
+put on rigorous footing in \citet{StuartTeck2}, with theoretical results suggesting designs based on 
+an over-dispersed version of $\postDensNorm$.
+The notion of oversampling the tails has also been proposed to construct designs
+for numerical integration \citep{briol2017sampling}. These results are consistent with the notion of 
+constraining the global surrogate behavior, while also fine-tuning the local fit in high-probability regions.
+Therefore, in addition to balancing exploration and 
+exploitation when selecting design points, one must also consider this local-global tradeoff.
+Various versions of this tradeoff have been articulated
+across several studies 
+\citep{StuartTeck2, gp_surrogates_random_exploration,emPostDens,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}.
 
+The success of a sequential design strategy is also dictated by the posterior geometry and the emulator
+being used. For example, \citet{adaptiveMultimodal} propose an active learning algorithm targeting multimodal 
+posteriors. Another promising line of research consists of adapting local approximations, avoiding the challenging
+task of fitting a global surrogate \citep{Li_2014,ConradLocalExactMCMC}. 
 
-Up until this point, we have considered a fixed surrogate model trained using a set of
-$\Ndesign$ simulator evaluations. We now discuss algorithms for iteratively 
-updating the emulator using additional rounds of simulator runs.
-Given a limited computational budget, these new evaluation points should be carefully chosen in 
-a goal-oriented fashion. We focus on active learning strategies
-tailored to the goal of approximating the posterior distribution $\postDens$. The key
-idea underlying such strategies is that achieving an accurate posterior 
-approximation does not require an accurate emulator over the entirety of $\parSpace$;
-rather, the emulator should be accurate in the subset of $\parSpace$ where the 
-posterior is large, while also containing enough global information to know where
-the posterior is small. Various versions of this local-global tradeoff have been articulated
-across several studies \citep{StuartTeck2, gp_surrogates_random_exploration,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}. 
-This research has demonstrated that traditional active learning algorithms targeting global improvements 
-in the underlying emulators (e.g., $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$) are often sub-optimal with 
-respect to the goal of improving the induced posterior approximation.
-
-A second theme intertwined with the local-global tradeoff is the idea that effective 
-sequential design should target promising regions (according to the current surrogate)
-but also explore regions where the surrogate is uncertain. 
-This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
-Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
-reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}, 
-among others. For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
-proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
-VehtariParallelGP,VillaniAdaptiveGP}. We review these criteria below, placing particular 
-emphasis on the batch sequential setting where multiple design points are acquired simultaneously.
+In the following, we outline the general structure of an active learning algorithm and review design strategies 
+that have been proposed for surrogate-based Bayesian inference. We place particular emphasis on 
+the batch sequential design setting, where multiple design points are acquired simultaneously.
 We conclude this section by briefly noting connections to so-called ``exact-approximate'' MCMC algorithms.
 
 To remain agnostic to the quantity being emulated, we state algorithms with respect to
@@ -1404,13 +1399,12 @@ to form the augmented design $\designIn[\Naugment] \Def \designIn[\Ndesign] \cup
 After running the simulator at the new points $\designBatchIn$ and updating the emulator, we obtain
 an updated posterior surrogate $\postEm[\Naugment]$. We therefore seek to select $\designBatchIn$
 to yield the best possible improvement in the approximate posterior, which is naturally cast as 
-an optimization problem
+an optimization problem with respect to some objective function $\acq[]: \parSpace^{\Nbatch} \to \R$, typically
+called the \textit{acquisition function} or \textit{design criterion}:
 \begin{equation}
-\designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat)
+\designBatchIn \in \argmin_{\parMat \in \parSpace^{\Nbatch}} \acq[](\parMat).
 \label{eq:acq-opt}
 \end{equation}
-with respect to some objective function $\acq[]: \parSpace^{\Nbatch} \to \R$, typically
-called the \textit{acquisition function} or \textit{design criterion}.
 Depending on computational resources, this optimization can be repeated over a sequence of 
 $\Nrounds$ rounds, yielding the sequential design loop summarized in \Cref{alg:seq-des-loop}.
 \begin{algorithm}
@@ -1460,11 +1454,16 @@ is used as the measure of uncertainty, this yields the \textit{maximum variance}
 \acq[](\Par) \Def -\Var_{\Ndesign}[\postEm[\Ndesign](\Par)], \label{eq:acq-maxvar}
 \end{equation}
 which is negated to align with our convention of minimizing acquisition functions.
-Alternative ``maximum uncertainty'' criteria can be defined by varying the measure
-of uncertainty (variance, entropy, interquartile range, etc.) and the target quantity
-($\postEm[\Ndesign]$, $\funcEm[\Ndesign]$, etc.). For example, targeting the 
+Alternative ``maximum uncertainty'' criteria can be defined by changing the measure
+of uncertainty (e.g., variance, entropy, interquartile range) and the target quantity
+(e.g., $\postEm[\Ndesign]$, $\funcEm[\Ndesign]$). For example, targeting the 
 maximum variance of $\funcEm[\Ndesign](\Par)$ yields a classical criterion 
 for exploring the parameter space \citep[Section 6.2.1]{gramacy2020surrogates}.
+However, this criterion tends not to perform well in the Bayesian inference setting
+since it does not take into account the magnitude of the posterior density. 
+
+The unnormalized density value $\postEm[\Ndesign](\Par)$ may have wide prediction 
+intervals, but 
 
 The predictive variance of $\postEm[\Ndesign](\Par)$
 is given in closed-form in \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian} for 
