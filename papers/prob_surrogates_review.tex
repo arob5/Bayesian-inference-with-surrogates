@@ -1461,9 +1461,8 @@ maximum variance of $\funcEm[\Ndesign](\Par)$ yields a classical criterion
 for exploring the parameter space \citep[Section 6.2.1]{gramacy2020surrogates}.
 However, this criterion tends not to perform well in the Bayesian inference setting
 since it does not take into account the magnitude of the posterior density. 
-
-The unnormalized density value $\postEm[\Ndesign](\Par)$ may have wide prediction 
-intervals, but 
+It may be that $\funcEm[\Ndesign](\Par)$ is highly uncertain, but 
+$\postEm(\Par; \funcEm[\Ndesign])$ concentrates on a very small value.  
 
 The predictive variance of $\postEm[\Ndesign](\Par)$
 is given in closed-form in \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian} for 

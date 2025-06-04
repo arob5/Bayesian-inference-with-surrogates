@@ -33,8 +33,8 @@ library(scales)
 library(grid)
 library(support)
 
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
-code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
+code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
 src_dir <- file.path(code_dir, "src")
 
 # Source required files.
@@ -49,193 +49,307 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
 ```
 
-# Target log density
+
+# Bayesian inverse problem setup.
 ```{r}
-ldens <- function(x) dnorm(x, mean=0, sd=1, log=TRUE)
+# Forward model.
+fwd <- function(U) {
+  if(is.null(dim(U))) U <- matrix(U, ncol=1L)
+  colnames(U) <- "u"
+  return(U)
+}
+
+# Prior.
+sig2_prior <- 1
+par_prior <- data.frame(dist="Gaussian", param1=0, param2=sig2_prior, lower=-Inf, upper=-Inf)
+rownames(par_prior) <- "u"
+lprior <- function(U) drop(dnorm(U, mean=0, sd=sqrt(sig2_prior), log=TRUE))
+
+# Ground truth.
+u_true <- 0.3
+fwd_true <- fwd(u_true)
+
+# Observed data.
+n_obs <- 100L
+sig2 <- 1
+y <- rnorm(n=n_obs, fwd_true, sqrt(sig2))
+
+# Log-likelihood and posterior.
+llik <- function(U) {
+  if(is.null(dim(U))) U <- matrix(U, ncol=1L)
+  f <- function(u) sum(dnorm(y, fwd(u), sqrt(sig2), log=TRUE))
+  apply(U, 1, f)
+}
+
+lpost <- function(U) llik(U) + lprior(U)
 ```
+
+
+# Helper functions.
+
+```{r}
+get_design <- function(U) {
+  design <- list(input = U)
+  design$llik <- llik(design$input)
+  design$lprior <- lprior(design$input)
+  design$lpost <- lpost(design$input)
+  design <- as.data.table(design)
+  
+  return(design)
+}
+
+plot_lpost_em <- function(lpost_em, grid_info, design_info) {
+    # Log-posterior surrogate predictions.
+  U <- matrix(grid_info$input, ncol=1L)
+  pred <- lpost_em$predict(U)
+  q_lower <- lpost_em$calc_quantiles(U, p=0.01)
+  q_upper <- lpost_em$calc_quantiles(U, p=0.99)
+
+  dt_pred <- data.table(input = grid_info$input,
+                        mean = pred$mean,
+                        lower = q_lower,
+                        upper = q_upper,
+                        true = grid_info$lpost)
+
+  # Design used to fit emulator.
+  dt_design <- as.data.table(design_info)
+
+
+  plt <- ggplot(dt_pred, aes(x=input)) +
+            geom_line(aes(y=mean), color="blue") +
+            geom_ribbon(aes(ymin=lower, ymax=upper), 
+                        fill="skyblue", alpha=0.4) +
+            geom_line(aes(y=true), color="black") +
+            geom_point(aes(x=input, y=lpost), dt_design, 
+                       color="red", inherit.aes=FALSE) +
+            labs(xlab="u", ylab="log-posterior")
+}
+
+
+plot_post_em <- function(lpost_em, grid_info, design_info) {
+  # Log-posterior surrogate predictions.
+  U <- matrix(grid_info$input, ncol=1L)
+  pred <- lpost_em$predict_lik(U, log_scale=TRUE)
+  q_lower <- lpost_em$calc_lik_quantiles(U, p=0.01, log_scale=TRUE)
+  q_upper <- lpost_em$calc_lik_quantiles(U, p=0.99, log_scale=TRUE)
+
+  dt_pred <- data.table(input = grid_info$input,
+                        mean = pred$log_mean,
+                        lower = q_lower,
+                        upper = q_upper,
+                        true = grid_info$lpost)
+
+  # Design used to fit emulator.
+  dt_design <- as.data.table(design_info)
+
+
+  plt <- ggplot(dt_pred, aes(x=input)) +
+            geom_line(aes(y=mean), color="blue") +
+            geom_ribbon(aes(ymin=lower, ymax=upper), 
+                        fill="skyblue", alpha=0.4) +
+            geom_line(aes(y=true), color="black") +
+            geom_point(aes(x=input, y=lpost), dt_design, 
+                       color="red", inherit.aes=FALSE) +
+            labs(xlab="u", ylab="log-posterior")
+}
+
+
+scale_lpost_var <- function(lpost_em, scale=1.0) {
+  # Scales the marginal variance by multiplying by `scale`. The default of
+  # 1.0 keeps the variance the same. Creates a deep copy of the emulator.
+  lpost_em <- lpost_em$copy()
+  new_var <- scale * lpost_em$emulator_model$gp_model$y1$nu_hat
+  lpost_em$emulator_model$gp_model$y1$nu_hat <- new_var
+  
+  return(lpost_em)
+}
+
+```
+
+
+```{r}
+# Functions to compute normalized posterior density and normalized
+# approximations of the posterior density. Assumes uniformly spaced
+# grid.
+
+normalize_density <- function(ldens_vals, du, log_scale=FALSE) {
+  # Given unnormalized log-density values, returns the normalized
+  # density, computed using LogSumExp. If `ldens_vals` is a matrix,
+  # then each row is normalized. The normalizing constant is approximated
+  # by the trapezoidal rule, and assumes an equally-spaced grid with 
+  # spacing `du`.
+  
+  if(is.null(dim(ldens_vals))) ldens_vals <- matrix(ldens_vals, nrow=1L) 
+  
+  # Final column needs to be modified for the trapezoidal rule.
+  ldens_vals_mod <- ldens_vals
+  ldens_vals_mod[,ncol(ldens_vals_mod)] <- ldens_vals_mod[,ncol(ldens_vals_mod)] - log(2)
+  log_sums <- matrixStats::rowLogSumExps(ldens_vals_mod)
+  
+  # Log of normalized density values.
+  ldens_norm <- add_vec_to_mat_cols(-log_sums, ldens_vals) - log(du)
+  
+  if(log_scale) return(ldens_norm)
+  return(exp(ldens_norm))
+}
+
+get_EP_dens_grid_1d <- function(lpost_em, input_grid, n_mc, log_scale=FALSE, ...) {
+  
+    assert_that(lpost_em$dim_input==1L)
+    if(is.null(dim(input_grid))) input_grid <- matrix(input_grid, ncol=1L)
+    n_grid <- nrow(input_grid)
+    du <- abs(input_grid[2,] - input_grid[1,])
+    
+    # Simulate log-likelihood values. Return shape is (n_grid, n_mc) before
+    # transposing.
+    lpost_samp <- t(lpost_em$sample(input_grid, N_samp=n_mc, ...))
+  
+    # Normalize each trajectory.
+    lpost_samp_norm <- normalize_density(lpost_samp, du, log_scale=TRUE)
+    
+    # Average density over trajectories.
+    lpost_ep_norm <- matrixStats::colLogSumExps(lpost_samp_norm) - log(n_mc)
+    
+    if(log_scale) return(lpost_ep_norm)
+    return(exp(lpost_ep_norm))
+}
+
+
+# Exact posterior density.
+get_post_exact <- function(grid_info, log_scale=FALSE) {
+  U <- drop(grid_info$input)
+  du <- abs(U[2] - U[1])
+  
+  drop(normalize_density(grid_info$lpost, du, log_scale=log_scale))
+}
+
+# Expected likelihood approximation.
+get_post_EL <- function(grid_info, lpost_em, log_scale=FALSE) {
+  U <- matrix(grid_info$input, ncol=1L)
+  pred <- lpost_em$predict_lik(U, return_var=FALSE, log_scale=TRUE)
+  
+  # Normalize density.
+  U <- drop(U)
+  du <- abs(U[2] - U[1])
+  drop(normalize_density(pred$log_mean, du, log_scale=log_scale))
+}
+
+
+plot_post_comparison <- function(grid_info, design_info, lpost_em, 
+                                 n_mc_EP=1e5, log_scale=FALSE, ...) {
+  
+  dt <- data.table(input = drop(grid_info$input),
+                   exact = get_post_exact(grid_info, log_scale=log_scale),
+                   EL = get_post_EL(grid_info, lpost_em, log_scale=log_scale),
+                   EP = get_EP_dens_grid_1d(lpost_em, grid_info$input, n_mc=n_mc_EP, 
+                                            log_scale=log_scale, ...))
+  
+  plt <- ggplot(dt, aes(x=input)) +
+          geom_line(aes(y=exact), color="black") +
+          geom_line(aes(y=EL), color="orange") +
+          geom_line(aes(y=EP), color="green") +
+          geom_vline(xintercept=design_info$input, color="red", 
+                     linetype="dashed") +
+          labs(x="u", y="posterior")
+}
+
+```
+
+
+
+
+
+
 
 # Grid for plotting.
 ```{r}
 n_grid <- 100L
-grid_min <- -8
-grid_max <- 8
+p_grid <- .99
+grid_min <- -3
+grid_max <- 3
 
-grid_info <- list(input = seq(grid_min, grid_max, length.out=n_grid))
-grid_info$ldens <- ldens(grid_info$input)
+grid_info <- get_design(seq(grid_min, grid_max, length.out=n_grid))
 grid_info_dt <- as.data.table(grid_info)
+input_grid <- matrix(grid_info$input, ncol=1L)
 ```
 
 ```{r}
-plt_ldens <- ggplot() +
-              geom_line(aes(x=input, y=ldens), grid_info_dt, color="black")
+# Plot exact quantities.
+plt_exact <- ggplot(grid_info_dt, aes(x=input)) +
+              geom_line(aes(y=llik), color="blue") +
+              geom_line(aes(y=lprior), color="red") +
+              geom_line(aes(y=lpost), color="black")
 
-plt_dens <- ggplot() +
-              geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
-
-plot(plt_ldens)
-plot(plt_dens)
+plot(plt_exact)
 ```
 
-# Designs
+# Log-likelihood emulation. 
 ```{r}
-n_vals <- c(1, 2, 3, 4, 5)
+# Function to fit llik emulator.
 
-# First design list is contained within [-2,2]. "Wide" design list is 
-# contained within [-4,4].
-design_list <- list()
-design_list_wide <- list()
-
-for(i in seq_along(n_vals)) {
-  n <- n_vals[i]
-  
-  u <- c(-7, 7, seq(-2, 2, length.out=n))
-  l <- ldens(u)
-  design_list[[i]] <- list(input=u, ldens=l)
-  
-  u_wide <- c(-7, 7, seq(-4, 4, length.out=n))
-  l_wide <- ldens(u_wide)
-  design_list_wide[[i]] <- list(input=u_wide, ldens=l_wide)
-}
-
-design_list <- c(design_list, design_list_wide)
-```
-
-
-# Fit log-density emulator.
-```{r}
-em_list <- list()
-
-for(i in seq_along(design_list)) {
-  design <- design_list[[i]]
-  
+fit_llik_em <- function(design) {
   # Fit GP.
   gp <- gpWrapperHet(matrix(design$input, ncol=1L), 
-                     matrix(design$ldens, ncol=1L),
+                     matrix(design$llik, ncol=1L),
                      scale_input=TRUE, normalize_output=TRUE)
   gp$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
   gp$fit()
   
-  # Create llikEmulator object.
-  em_list[[i]] <- llikEmulatorGP("em_ldens", gp, default_conditional=FALSE, 
-                                 default_normalize=TRUE)
-}
-```
-
-
-# Predict at grid points with log-density emulator.
-```{r}
-pred_list <- list()
-U <- matrix(grid_info$input, ncol=1L)
-
-for(i in seq_along(em_list)) {
-  ldens_em <- em_list[[i]]
-  ldens_pred <- ldens_em$predict(U)
-  pred_list[[i]] <- list(ldens = em$predict(U, em_pred_list=ldens_pred),
-                         dens = em$predict_lik(U, llik_pred_list=ldens_pred, log_scale=TRUE))
-}
-```
-
-
-```{r}
-# Plot ldens predictions.
-
-idx <- 6L
-
-CI_prob <- 0.9
-q_lower <- 0.5 * (1-CI_prob)
-alpha <- qnorm(q_lower)  
-pred_dt <- as.data.table(pred_list[[idx]]$ldens)
-pred_dt[, input := grid_info$input]
-pred_dt[, upper := pred_dt$mean + alpha * sqrt(pred_dt$var)]
-pred_dt[, lower := pred_dt$mean - alpha * sqrt(pred_dt$var)]
-
-plt_ldens + 
-  geom_point(aes(x=input, y=ldens), as.data.table(design_list[[idx]]), color="red") +
-  geom_line(aes(x=input, y=mean), pred_dt, color="blue") +
-  geom_ribbon(aes(x=input, ymin=lower, ymax=upper), pred_dt, fill="skyblue", alpha=0.4)
-
-```
-
-```{r}
-# Plot dens predictions.
-pred_dt <- cbind(pred_dt, as.data.table(pred_list[[idx]]$dens))
-pred_dt[, upper_ln := qlnorm(1-q_lower, meanlog=mean, sdlog=sqrt(var))]
-pred_dt[, lower_ln := qlnorm(q_lower, meanlog=mean, sdlog=sqrt(var))]
-
-plt_dens + 
-  geom_point(aes(x=input, y=exp(ldens)), as.data.table(design_list[[idx]]), color="red") +
-  geom_line(aes(x=input, y=exp(log_mean)), pred_dt, color="blue") +
-  geom_ribbon(aes(x=input, ymin=lower_ln, ymax=upper_ln), pred_dt, fill="skyblue", alpha=0.4) +
-  theme_minimal()
-
-```
-
-# MCMC
-
-```{r}
-# MCMC Settings.
-
-n_chain <- 4L
-common_settings <- list(n_itr=10000L, try_parallel=TRUE, n_chain=n_chain,
-                        itr_start=5000L, adapt_cov_prop=FALSE, 
-                        adapt_scale_prop=FALSE, cov_prop=matrix(1),
-                        log_scale_prop=0, 
-                        par_init=matrix(seq(-2, 2, length.out=n_chain), ncol=1L))
-
-mcmc_settings <- list(
-  c(list(test_label="mean", approx_type="mean", adjustment="none",
-         mcmc_func_name="mcmc_gp_unn_post_dens_approx"), common_settings),
-  c(list(test_label="marginal", approx_type="marginal", adjustment="none",
-         mcmc_func_name="mcmc_gp_unn_post_dens_approx"), common_settings),
-  c(list(test_label="mcwmh-joint", mode="mcwmh", use_joint=TRUE, adjustment="none",
-         mcmc_func_name="mcmc_noisy_llik"), common_settings),
-  c(list(test_label="mcwmh-ind", mode="mcwmh", use_joint=FALSE, adjustment="none",
-         mcmc_func_name="mcmc_noisy_llik"), common_settings),
-  c(list(test_label="pm", mode="pseudo-marginal", use_joint=FALSE, adjustment="none",
-         mcmc_func_name="mcmc_noisy_llik"), common_settings)
-)
-
-names(mcmc_settings) <- sapply(mcmc_settings, function(x) x$test_label)
-```
-
-
-```{r}
-# Run MCMC.
-mcmc_list <- list()
-par_prior <- "flat"
-
-for(i in seq_along(em_list)) {
-  print(paste0("Emulator ", i))
-  mcmc_list[[i]] <- run_mcmc_comparison(em_list[[i]], par_prior, 
-                                        mcmc_settings, return=TRUE)
+  # Create llikEmulator object. Shifting the mean so that the predictions
+  # are for the log-posterior.
+  lpost_em <- llikEmulatorGP("em_llik", gp, default_conditional=FALSE, 
+                             default_normalize=TRUE, shift_func=lprior)
 }
 
+```
 
-saveRDS(mcmc_list, "/projectnb/dietzelab/arober/bip-surrogates-paper/scripts/notebooks/mcmc_list_new.rds")
+
+```{r}
+# Design.
+
+design_info <- get_design(qnorm(c(.1, .5, .9), sd=sqrt(sig2_prior)))
+
+lpost_em <- fit_llik_em(design_info)
+lpost_em2 <- scale_lpost_var(lpost_em, scale=2.0)
 ```
 
 ```{r}
-plts <- get_trace_plots(mcmc_list[[6]]$marginal$samp)
-for(plt in plts) plot(plt)
+# lpost em. 
+
+plt <- plot_lpost_em(lpost_em, grid_info, design_info)
+
+plot(plt)
+```
+
+
+```{r}
+# Unnormalize posterior emulator (on log scale).
+
+test <- lpost_em$predict(input_grid)
+m <- test$mean + 0.5 * test$var
+q99 <- test$mean + qnorm(.9999) * sqrt(test$var)
+
+
+plt <- plot_post_em(lpost_em, grid_info, design_info)
+plot(plt)
+```
+
+
+```{r}
+plt <- plot_post_comparison(grid_info, design_info, lpost_em)
+plt2 <- plot_post_comparison(grid_info, design_info, lpost_em2)
+
+plot(plt)
+plot(plt2)
 ```
 
 ```{r}
-samp_temp <- mcmc_list[[6]]$`mcwmh-joint`$samp
-kde_plt <- get_1d_kde_plots(samp_temp)
+test <- get_post_EL(grid_info, lpost_em, log_scale=TRUE)
 
-plot(kde_plt[[1]]) + geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
+plot(drop(input_grid), test, type="l")
+
+plot(drop(input_grid), exp(test), type="l")
 ```
-
-```{r}
-samp_temp <- mcmc_list[[6]]$`mcwmh-joint`$samp
-kde_plt <- get_1d_kde_plots(samp_temp)
-
-plot(kde_plt[[1]]) + geom_line(aes(x=input, y=exp(ldens)), grid_info_dt, color="black")
-```
-
-
-
-
 
 
 
