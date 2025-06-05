@@ -526,8 +526,8 @@ the generality of an algorithm is whether it can be implemented for
 a nonparametric emulator (e.g., a GP), or if it confined to the parametric 
 setting (e.g., PCEs and neural networks). For example, the papers 
 \citep{BurknerSurrogate,garegnani2021NoisyMCMC} suggest algorithms
-that were deemed impractical in \citep{VehtariParallelGP,StuartTeck1}, owing 
-to the fact that the latter authors are working with GPs, while the former
+that were deemed impractical in \citep{VehtariParallelGP,StuartTeck1}, which can
+be explained by the fact that the latter authors are working with GPs, while the former
 implicitly assume parametric emulators (see \Cref{sec:post-approx} for details).
 We define our use of the terms
 \textit{parametric} and \textit{nonparametric} for the purpose of this article 
@@ -751,7 +751,7 @@ learned from data. An obvious solution is to extend the input space of the emula
 This approach also increases both the input dimensionality of the emulator, as well as the number of design points required to achieve 
 a reasonable fit. Various approaches are explored in \citet{llikRBF} for dealing with nuisance likelihood parameters
 without requiring additional runs of the expensive simulator. Alternatively, specific likelihood 
-choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters \Cref{FerEmulation}. 
+choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters \citep{FerEmulation}. 
 
 \begin{examplebox}[Gaussian Log-Density Emulation Setting]
 Consider the special case where either the log-likelihood or log-posterior emulator is Gaussian.
@@ -804,15 +804,15 @@ inference is how to utilize the emulator in approximating $\postDensNorm$ \citep
 Error in the emulator approximation will induce error in the posterior approximation, yielding 
 biased posterior estimates. In the ideal setting, this bias can be eliminated by iteratively refining the 
 surrogate (\Cref{sec:seq-design}), but computational constraints often place practical limits on such procedures.
-Therefore, in constructing surrogate-induced posterior approximations it is crucial to acknowledge 
-the surrogate bias in order to properly calibrate the uncertainty in the posterior 
+It is thus crucial to acknowledge the surrogate surrogate uncertainty within the posterior approximation
+in order to properly calibrate uncertainty estimates
 \citep{BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. However, there is no single 
 objectively correct method for propagating the uncertainty captured by the surrogate predictive 
 distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
-own assumptions and practical considerations. It is important for practitioners to understand these 
-differences in order to determine the best approach for a particular application. In this section, we survey 
-the various posterior approximations that have been proposed. For practical recommendations in choosing 
-a particular method, see \Cref{sec:recs}. 
+own assumptions and practical limitations. It is important for practitioners to understand these 
+considerations in order to determine the best approach for a particular application. In this section, we survey 
+the various posterior approximations that have been proposed. See \Cref{sec:recs} for recommendations
+in choosing a particular method.
 
 \begin{figure}
      \centering
@@ -843,7 +843,7 @@ a particular method, see \Cref{sec:recs}.
          \caption{$\postDensNorm$ approx}
          \label{fig:post_norm_approx_llikem}
      \end{subfigure}
-        \caption{A continuation of the example in \cref{fig:em_dist_1d}. The top and bottom rows correspond
+        \caption{A continuation of the example in \Cref{fig:em_dist_1d}. The top and bottom rows correspond
         to the forward model and log-likelihood emulation settings, respectively. The first column summarizes
         the distributions of the log-posterior approximations induced by the underlying emulators, with 
         the predictive mean in blue and the shaded region containing 90\% of the mass. The second column 
@@ -1009,7 +1009,7 @@ meaning the expected likelihood approximation is a ratio estimator of the form
  Note the difference with respect to 
  $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
  which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting.  
- The expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
+ The unnormalized expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
  decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
  confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
  see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. To our knowledge,
@@ -1028,7 +1028,7 @@ with a fixed Monte Carlo estimate derived from surrogate samples (i.e., a sample
 Their method differs from the 
 pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
 and then fixed throughout the MCMC run. This allows for the application of standard 
-MCMC methods, but only targets an approximation to $\postApproxNormMarg[\Ndesign]$
+MCMC methods, but targets an approximation to $\postApproxNormMarg[\Ndesign]$
 and is only directly implementable in the parametric setting.
 In the nonparametric case, most previous literature 
 has focused on the Gaussian settings from \Cref{eq:fwd-em-Gaussian-post,eq:fwd-em-Gaussian-em} 
@@ -1290,8 +1290,6 @@ Plug-In Mean &
 \(\displaystyle \min\left\{1, \frac{\Exp{\E[\lpostEm[\Ndesign](\propPar)]}}{\Exp{\E[\lpostEm[\Ndesign](\Par)]}} \right\}\) \\ 
 Expected Likelihood & 
 \(\displaystyle \min\left\{1, \frac{\E \left[\Exp{\lpostEm[\Ndesign](\propPar)}\right]}{\E\left[\Exp{\lpostEm[\Ndesign](\Par)}\right]} \right\}\) \\
-Expected Likelihood Ratio & 
-\(\displaystyle \min\left\{1, \E\left[\frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}}\right] \right\}\) \\
 Expected Acc. Prob. & 
 \(\displaystyle \E\left[\min\left\{1, \frac{\Exp{\lpostEm[\Ndesign](\propPar)}}{\Exp{\lpostEm[\Ndesign](\Par)}} \right\}\right]\) \\
 \bottomrule
@@ -1334,7 +1332,7 @@ decays sufficiently quickly as $\norm{\Par} \to \infty$.
 
 \section{Sequential Design} \label{sec:seq-design}
 Achieving a desired level of surrogate accuracy using a single round of simulator runs 
-is often not feasible, as it would require impractically large values of $\Ndesign$. This stems from the 
+typically requires an impractically large number of design points. This stems from the 
 fact that the posterior distribution can be highly concentrated relative to the prior support.
 Initial designs sampled from the prior may completely miss the subset of $\parSpace$ where 
 the posterior is large. In such settings, it is necessary to adaptively refine the surrogate using 
@@ -1347,7 +1345,7 @@ Passively sampling new simulator evaluation points from the prior can suffer fro
 as the initial design. By contrast, the current information in the surrogate can be leveraged to actively
 target promising regions of $\parSpace$. However, such model-based design strategies must 
 avoid placing too much trust in the (imperfect) surrogate. In other words, effective active 
-learning algorithms target promising regions (according to the current surrogate) but also explore
+learning algorithms must target promising regions (according to the current surrogate) but also explore
 areas where the surrogate is uncertain.
 This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
 Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
@@ -1361,7 +1359,7 @@ The exploration-exploitation question is one of decision making under uncertaint
 Even if one had perfect knowledge about the true posterior, there remains the question concerning the optimal
 placement of design points for surrogate-based posterior approximation. Insights into this question can guide
 the development of improved design algorithms.
-Various papers remark that accurate approximation requires design points only in the region where the 
+Various papers informally remark that accurate approximation requires design points only in the region where the 
 posterior is large \citep{AlawiehIterativeGP} [\todo add other citations].
 This statement is somewhat misleading, and should be amended as follows:
 achieving an accurate posterior approximation
@@ -1373,19 +1371,16 @@ The notion of oversampling the tails has also been proposed to construct designs
 for numerical integration \citep{briol2017sampling}. These results are consistent with the notion of 
 constraining the global surrogate behavior, while also fine-tuning the local fit in high-probability regions.
 Therefore, in addition to balancing exploration and 
-exploitation when selecting design points, one must also consider this local-global tradeoff.
-Various versions of this tradeoff have been articulated
-across several studies 
+exploitation when selecting design points, one must also consider this local-global tradeoff
 \citep{StuartTeck2, gp_surrogates_random_exploration,emPostDens,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}.
-
-The success of a sequential design strategy is also dictated by the posterior geometry and the emulator
-being used. For example, \citet{adaptiveMultimodal} propose an active learning algorithm targeting multimodal 
-posteriors. Another promising line of research consists of adapting local approximations, avoiding the challenging
-task of fitting a global surrogate \citep{Li_2014,ConradLocalExactMCMC}. 
+The manner in which this tradeoff is navigated depends on the particular problem setup and 
+the surrogate model itself. For example, \citet{adaptiveMultimodal} propose an active learning strategy 
+targeting multimodal posteriors. Another promising line of research consists of adapting local approximations, 
+avoiding the challenging task of fitting a single global surrogate \citep{Li_2014,ConradLocalExactMCMC}. 
 
 In the following, we outline the general structure of an active learning algorithm and review design strategies 
 that have been proposed for surrogate-based Bayesian inference. We place particular emphasis on 
-the batch sequential design setting, where multiple design points are acquired simultaneously.
+the batch sequential design setting, where multiple design points are acquired simultaneously [\todo: use problem-solution here].
 We conclude this section by briefly noting connections to so-called ``exact-approximate'' MCMC algorithms.
 
 To remain agnostic to the quantity being emulated, we state algorithms with respect to
@@ -1498,26 +1493,25 @@ but we focus on examples geared specifically towards surrogate-induced posterior
 
 ECU acquisitions arise from the following logic: we would like to select an input batch 
 $\parMat \in \parSpace^{\Nbatch}$ that induces an updated surrogate $\postEm[\Naugment]$ with the largest 
-possible reduction in uncertainty on average over $\parSpace$. In general, we cannot compute this uncertainty
-since we cannot construct $\funcEm[\Naugment]$ without observing the response $\func(\parMat)$. We therefore
-instead consider the random element 
-$\funcEm[\Naugment]^{\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$, with 
-the unknown response $\func(\parMat)$ modeled by the random vector 
-$\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. Computing ECU therefore implies averaging over 
-both $\parSpace$ and $\gamma$. If we again choose variance as our measure of uncertainty, we have
+possible reduction in uncertainty on average over $\parSpace$. This uncertainty reduction is not, in general,
+computable without observing the response $\func(\parMat)$. However, it can be approximated by modeling
+$\func(\parMat)$ as a random vector $\gamma \sim \mathrm{law}(\funcEm[\Ndesign](\parMat))$. Let
+$\funcEm[\Naugment]^{\parMat,\gamma} \Def \funcEm[\Ndesign] \given [\funcEm[\Ndesign](\parMat) = \gamma]$
+denote $\funcEm[\Ndesign]$ conditioned on new data $\{\parMat, \gamma\}$. In computing ECU, we marginalize
+over $\gamma$ in addition to averaging over $\parSpace$. If we again choose variance as our measure of 
+uncertainty, we have
 \begin{equation}
 \acq[](\parMat) \Def 
-\int_{\parSpace} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
+\int_{\parSpace} \E_{\gamma} \Var_{\Naugment}[\postDens(\Par; \funcEm[\Naugment]^{\parMat,\gamma}) \given \gamma] \ \weightDens(\Par) d\Par,
  \label{eq:acq-intvar}
 \end{equation}
-where the expectation is with respect to $\gamma$, and the variance is with respect to $\funcEm[\Naugment]^{\gamma}$
-conditional on $\gamma$. Here, $\weightDens$ is a measure on $\parSpace$ that we are free to choose.
+where $\weightDens$ is a measure on $\parSpace$ that we are free to choose.
 Notice that in contrast to the pointwise 
-criteria, the ECU acquisition functions are ``global'' in that they account for the effect of the 
+criteria, ECU acquisition functions are ``global'' in that they account for the effect of the 
 new batch $\parMat$ on the surrogate uncertainty over the entire space $\parSpace$. Variations of 
-ECU criteria can be created by changing the measure of uncertainty (e.g., variance, interquartile range, etc.),
-the target quantity ($\postEm$, $\funcEm$, etc.), and the weighting measure $\weightDens$.
-For example, choosing to assess the variance of $\funcEm$ with uniform weights yields the
+ECU criteria can be created by changing the measure of uncertainty (e.g., variance, entropy, interquartile range),
+the target quantity (e.g., $\postEm$, $\lpostEm$, $\funcEm$), and the weighting measure $\weightDens$.
+For example, targeting the variance of $\funcEm$ with uniform weighting measure yields the
 classical integrated mean squared prediction error \citep{Mercer_kernels_IVAR}.
 
 Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
@@ -1525,68 +1519,40 @@ in ECU criteria is not tractable. This is especially the case in our present set
 and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR,botorch},
 \begin{align}
 &\acq[](\parMat) \Def \frac{1}{J}
-\sum_{j=1}^{J} \E_{\Ndesign} \Var_{\Naugment}[\postDens(\Par_j; \funcEm[\Naugment]^{\gamma}) \given \gamma],
+\sum_{j=1}^{J} \E_{\gamma} \Var_{\Naugment}[\postDens(\Par_j; \funcEm[\Naugment]^{\parMat,\gamma}) \given \gamma],
 &&\Par_j \overset{\mathrm{iid}}{\sim} \weightDens[\Ndesign].
  \label{eq:acq-intvar-saa}
 \end{align}
 The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
 \Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. 
-The expected variance 
-terms in the summands of \Cref{eq:acq-intvar-saa} admit closed forms in the Gaussian 
-settings of \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian}.
+The expected variance terms in the summands admit closed forms in the Gaussian 
+settings of \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian}, as shown below. As an alternative to 
+\Cref{eq:acq-intvar-saa}, we can consider an ECU criterion that targets uncertainty in the underlying
+emulator $\funcEm[\Ndesign]$, but acknowledges the goal of posterior approximation through the choice
+of $\weightDens[\Ndesign]$; i.e., 
+\begin{align}
+&\acq[](\parMat) \Def \frac{1}{J}
+\sum_{j=1}^{J} \Var_{\Naugment}[\funcEm[\Naugment](\Par_j)],
+&&\Par_j \overset{\mathrm{iid}}{\sim} \postNormEm[\Ndesign]^{\mathrm{approx}},
+ \label{eq:acq-intvar-lartaud-saa}
+\end{align}
+where $\postNormEm^{\mathrm{approx}}$ is any of the approximate posteriors from \Cref{sec:post-approx}.
+An acquisition function of this form is proposed in \citet{weightedIVAR}, and compares 
+favorably against \Cref{eq:acq-intvar-saa}.
 
-\paragraph{Gaussian setting: Log-Density Emulator.} 
-
-\citet{VehtariParallelGP} derive a closed form expression for the expected variance term under a Gaussian
-log-likelihood emulator. Owing to concerns regarding log-normal tails (noted above) they instead recommend
-a similar criterion using the interquartile range in place of the variance. We nonetheless present the variance 
-criterion below as it has an intuitive interpretation.
-
-\begin{prop} \label{prop:acq-intvar-ldens-Gaussian}
-Consider a Gaussian log-likelihood emulator 
-$\llikEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\llik}(\Par), \emKer[\Ndesign]{\llik}(\Par))$
-as in \Cref{eq:llik-em-Gaussian}. Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
-\begin{equation}
-\acq[](\parMat) = \frac{1}{J}
-\sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation(\Par_j; \parMat)   
-\label{eq:acq-intvar-saa-ldens}
-\end{equation}
-where
-\begin{align*}
-\Var\left[\postEm(\Par) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right]
-&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} 
-\left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
-\varInflation(\Par; \parMat)
-&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}
-\end{align*}
-\end{prop}
-
-Notice that the first term in \Cref{eq:acq-intvar-saa-ldens} is the variance of $\postEm[\Ndesign](\Par_j)$ conditioned on
-$\{\parMat, \emMean[\Ndesign]{\llik}(\parMat)\}$; i.e., the current GP prediction is treated as if it were the true response.
-The second term accounts for the uncertainty in the true response; in particular, the penalty
-$\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)$ is large when the input batch $\parMat$ is highly 
-``influential.''
-
-\paragraph{Gaussian setting: Forward Model Emulator.}
-
-\citet{SinsbeckNowak} propose an ECU-variance criterion for a forward model emulator, and note that 
-the expected variance term is computable in closed-form when both the emulator and likelihood are Gaussian.
-\citet{Surer2023sequential} derive a similar result in the special case of the multi-output basis vector 
-model in \Cref{basis_func_model}.
-
-\begin{prop} \label{prop:acq-intvar-fwd-Gaussian}
-Consider a Gaussian forward model emulator 
-$\fwdEm[\Ndesign](\Par) \sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))$
-as in \Cref{eq:fwd-em-Gaussian}, and moreover assume the likelihood is Gaussian.
-Then the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
-\begin{align*}
-\acq[](\parMat) = \frac{1}{J}
-\sum_{j=1}^{J} \priorDens^2(\Par_j) \left[\frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - 
-\frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\CovComb[\Naugment](\Par_j) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par_j))^{1/2}} \right],
-\end{align*}
-where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$.   
-\label{eq:acq-intvar-saa-fwd}
-\end{prop}
+\begin{examplebox}[Gaussian Forward Model Emulation Setting]
+In the Gaussian forward model emulation setting from \Cref{eq:fwd-em-Gaussian-post,eq:fwd-em-Gaussian-em}, 
+the the ECU-variance criterion in \Cref{eq:acq-intvar-saa} reduces to
+\begin{align}
+\acq[](\parMat) &= \frac{1}{J}
+\sum_{j=1}^{J} \priorDens^2(\Par_j) \bigg[\frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - \label{eq:acq-intvar-saa-fwd} \\
+&\qquad\qquad \frac{\Gaussian\left(\obs \given \emMean{\fwd}(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\CovComb[\Naugment](\Par_j) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par_j))^{1/2}} \bigg], \nonumber
+\end{align}
+where $\CovComb(\Par) \Def \likPar + \emKer{\fwd}(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment]{\fwd}(\Par)$.  
+\citet{SinsbeckNowak} are the first to propose an ECU-variance criterion in the forward model emulation setting,
+and briefly note the above closed-form expression in the Gaussian special case.
+\citet{Surer2023sequential} also derive this expression, but in the particular case of the multi-output basis vector model
+in \Cref{basis_func_model}.
 
 \citet{weightedIVAR} consider an alternative ECU-variance criterion in the Gaussian forward model emulator setting:
 \begin{align}
@@ -1600,6 +1566,37 @@ $\weightDens = \postApproxNormMarg$ is chosen to target the goal of posterior ap
 benefit of being much easier to compute, since the GP variance $\emKer[\Naugment]{\fwd}(\Par)$ is independent of the 
 unseen response $\fwd(\parMat)$. \citet{weightedIVAR} establish asymptotic convergence results for this criterion
 using the stepwise uncertainty reduction framework \citep{BectSUR}. 
+\end{examplebox}
+
+\begin{examplebox}[Gaussian Log-Density Emulation Setting]
+Consider the Gaussian log-density emulation setting from \Cref{eq:llik-em-Gaussian}
+with a log-likelihood emulator. With this setup, the ECU-variance criterion in 
+\Cref{eq:acq-intvar-saa} reduces to
+\begin{equation}
+\acq[](\parMat) = \frac{1}{J}
+\sum_{j=1}^{J} \Var\left[\postEm(\Par_j) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right] \varInflation_{\Ndesign}(\Par_j; \parMat)   
+\label{eq:acq-intvar-saa-ldens}
+\end{equation}
+where
+\begin{align*}
+\Var\left[\postEm(\Par) \given \llikEm(\parMat) = \emMean[\Ndesign]{\llik}(\parMat) \right]
+&= \priorDens(\Par)^2 \Exp{2\emMean[\Ndesign]{\llik}\left(\Par\right) + \emKer[\Naugment]{\llik}(\Par)} \cdot \\
+&\qquad\qquad\qquad \left[\Exp{\emKer[\Naugment]{\llik}(\Par)} - 1 \right] \\
+\varInflation_{\Ndesign}(\Par; \parMat)
+&= \Exp{2\left(\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)\right)}.
+\end{align*}
+
+Notice that the first term in \Cref{eq:acq-intvar-saa-ldens} is the variance of $\postEm[\Ndesign](\Par_j)$ conditioned on
+$\{\parMat, \emMean[\Ndesign]{\llik}(\parMat)\}$; i.e., the current GP prediction is treated as if it were the true response.
+The second term accounts for the uncertainty in the true response; in particular, the penalty
+$\emKer[\Ndesign]{\llik}(\Par) - \emKer[\Naugment]{\llik}(\Par)$ is large when the input batch $\parMat$ is highly 
+``influential.''
+
+\Cref{eq:acq-intvar-saa-ldens} is derived in \citet{VehtariParallelGP}, but the authors ultimately recommend
+an alternative criterion that uses the interquartile range in place of the variance. The interquartile range
+is more robust to the heavy tails of the log-normal predictive distribution, a benefit that translates to 
+improved empirical performance in their experiments.
+\end{examplebox}
 
 \subsection{Batch Design Strategies}
 When simulation cost is high but runs can be parallelized, batch acquisition is often essential. For example, in large-scale
@@ -1824,7 +1821,7 @@ Our illustrative example is motivated by the problem of producing near-term fore
 terrestrial carbon cycle \citep{nearTermForecasts,FerEmulation}. In this setting, both model parameters 
 and initial conditions are typically unknown and must be learned from observational data. Performing 
 such parameter estimation runs into computational challenges for large-scale land surface models, 
-underscoring the potential for surrogates in this domain \citep{paramLSM}.  
+underscoring the potential for surrogates in this domain \citep{paramLSM}. 
 
 \subsection{Model Setup}
 We start by introducing the mechanistic simulator model, and then define a Bayesian inverse 
@@ -2051,6 +2048,14 @@ density emulator to zero.
         pure extrapolation.}
         \label{fig:vsem-prior-check-lpostem}
 \end{figure}
+
+\subsection{Active Learning}
+\todo: note that different active learning algorithms can be combined with different acquisition 
+functions to define many algorithms. Mention this is too many combs to test, so we instead
+first run active learning algorithms, then focus on the best performing algorithm to compare
+the posterior approximation.
+
+
 
 \section{Related Work and Extensions} \label{sec:related-work}
 
