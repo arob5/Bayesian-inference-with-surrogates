@@ -1393,6 +1393,44 @@ eprint = {
 }
 }
 
+@article{RougierHighDim,
+author = {Jonathan Rougier},
+title = {Efficient Emulators for Multivariate Deterministic Functions},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {17},
+number = {4},
+pages = {827--843},
+year = {2008},
+publisher = {ASA Website},
+doi = {10.1198/106186008X384032},
+URL = {https://doi.org/10.1198/106186008X384032},
+eprint = {https://doi.org/10.1198/106186008X384032}}
+
+% High dimensional input and output
+@misc{RemoteSensingEmulator,
+      title={Computer Model Emulation with High-Dimensional Functional Output in Large-Scale Observing System Uncertainty Experiments}, 
+      author={Pulong Ma and Anirban Mondal and Bledar Konomi and Jonathan Hobbs and Joon Song and Emily Kang},
+      year={2020},
+      eprint={1911.09274},
+      archivePrefix={arXiv},
+      primaryClass={stat.AP},
+      url={https://arxiv.org/abs/1911.09274}, 
+}
+
+% High dimensional input
+@article{ZhouHighDimInput,
+title = {Surrogate modeling of high-dimensional problems via data-driven polynomial chaos expansions and sparse partial least square},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {364},
+pages = {112906},
+year = {2020},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2020.112906},
+url = {https://www.sciencedirect.com/science/article/pii/S004578252030089X},
+author = {Yicheng Zhou and Zhenzhou Lu and Jinghan Hu and Yingshi Hu},
+keywords = {Polynomial chaos expansion, Dimensionality reduction, Stochastic partial differential equations, Data driven}
+}
+
 % Wavelet basis. 
 @article{emulate_functional_output,
 author = {M. J. Bayarri and D. Walsh and J. O. Berger and J. Cafeo and G. Garcia-Donato and F. Liu and J. Palomo and R. J. Parthasarathy and R. Paulo and J. Sacks},
@@ -2148,23 +2186,6 @@ keywords = {Dynamic model, Emulator, Optimization, Sensitivity analysis, Statist
 abstract = {Many model-based investigation techniques, such as sensitivity analysis, optimization, and statistical inference, require a large number of model evaluations to be performed at different input and/or parameter values. This limits the application of these techniques to models that can be implemented in computationally efficient computer codes. Emulators, by providing efficient interpolation between outputs of deterministic simulation models, can considerably extend the field of applicability of such computationally demanding techniques. So far, the dominant techniques for developing emulators have been priors in the form of Gaussian stochastic processes (GASP) that were conditioned with a design data set of inputs and corresponding model outputs. In the context of dynamic models, this approach has two essential disadvantages: (i) these emulators do not consider our knowledge of the structure of the model, and (ii) they run into numerical difficulties if there are a large number of closely spaced input points as is often the case in the time dimension of dynamic models. To address both of these problems, a new concept of developing emulators for dynamic models is proposed. This concept is based on a prior that combines a simplified linear state space model of the temporal evolution of the dynamic model with Gaussian stochastic processes for the innovation terms as functions of model parameters and/or inputs. These innovation terms are intended to correct the error of the linear model at each output step. Conditioning this prior to the design data set is done by Kalman smoothing. This leads to an efficient emulator that, due to the consideration of our knowledge about dominant mechanisms built into the simulation model, can be expected to outperform purely statistical emulators at least in cases in which the design data set is small. The feasibility and potential difficulties of the proposed approach are demonstrated by the application to a simple hydrological model.}
 }
 
-@article{doi:10.1198/106186008X384032,
-author = {Jonathan Rougier},
-title = {Efficient Emulators for Multivariate Deterministic Functions},
-journal = {Journal of Computational and Graphical Statistics},
-volume = {17},
-number = {4},
-pages = {827-843},
-year  = {2008},
-publisher = {Taylor & Francis},
-doi = {10.1198/106186008X384032},
-URL = { 
-        https://doi.org/10.1198/106186008X384032
-},
-eprint = {     
-        https://doi.org/10.1198/106186008X384032
-}
-}
 
 @article{doi:10.1137/120900915,
 author = {Williamson, Daniel and Blaker, Adam T.},

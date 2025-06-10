@@ -100,20 +100,48 @@ unknown parameters characterizing the physical model.
 To address this computational bottleneck, a wide body of research has emerged that seeks to characterize the Bayesian 
 posterior distribution over model parameters while minimizing the number of required posterior density evaluations. 
 A popular class of methods involves replacing either the computer model, log-likelihood function, or
-log-posterior density with a statistical surrogate (also called an emulator or meta-model), which induces a computationally 
-cheap approximation of the posterior density.
+log-posterior density with a statistical surrogate (also called an emulator or meta-model), 
+which induces a computationally cheap approximation of the posterior density.
 The surrogate can be trained offline using a small set of expensive model runs (often performed in 
 parallel), and plugged in as an approximation to facilitate the application of 
 standard inference schemes such as Markov chain Monte Carlo (MCMC) 
 \citep{modularization,BurknerSurrogate,BurknerTwoStep}.
 
-[paragraph on surrogagtes and how they are incorporated in Bayesian inference]
-A popular class of methods involves replacing either the computer model, log-likelihood function, or
-log-posterior density with a statistical surrogate (also called an emulator or meta-model), which induces a computationally 
-cheap approximation of the posterior density.
+This generic surrogate-based Bayesian workflow can be instantiated in a variety of ways.
+A key modeling decision is the choice of input-output map that will generate training data for
+fitting the emulator; i.e., the quantity actually being emulated. A wide body of work seeks to
+emulate the underlying computer model, thus targeting the source of the computational 
+bottleneck. Surrogates have been devised for a wide variety of computer models, including
+those with high-dimensional outputs \citep{HigdonBasis,RougierHighDim}, 
+high-dimensional inputs \citep{RemoteSensingEmulator,ZhouHighDimInput}, 
+dynamical structure \citep{GP_dynamic_emulation,Bayesian_emulation_dynamic}, and
+inherent stochasticity \citep{stochasticComputerModels,VehtariParallelGP,FadikarAgentBased}. 
+Alternatively, in the context of Bayesian inference, 
+it has been noted that ultimately only an approximation of the posterior density is required to 
+accelerate posterior estimation \citep{StuartTeck1,GP_PDE_priors}. Therefore, an alternative surrogate 
+strategy consists of directly emulating the log-likelihood 
+(e.g., \citet{VehtariParallelGP,FerEmulation,trainDynamics}) or 
+(unnormalized) log-posterior density (e.g., \citet{emPostDens,gp_surrogates_random_exploration,Kandasamy_2017}). 
+In this work, we adopt a generic viewpoint that encompasses both of 
+these strategies, which we respectively refer to as \textit{forward model emulation}
+and \textit{log-density emulation}. The two approaches each have various strengths
+and drawbacks, and one may be favored over the other depending on the context.
 
-While surrogates offer the potential for significant computational savings, they introduce a new source of 
-uncertainty within the Bayesian model. 
+In addition to choosing the target map for emulation, another key decision is the 
+choice of surrogate model. Gaussian processes \citep{KOH,HigdonBasis,StuartTeck1,VehtariParallelGP}, 
+polynomial chaos expansions
+\citep{dimRedPolyChaos,PCEBIP,BurknerSurrogate}, and 
+neural networks \citep{Lueckmann2018LikelihoodfreeIW,DagonCLM} have 
+been extensively applied for this purpose. While many previous studies
+on surrogate-based Bayesian inference tend to focus on a specific model 
+(e.g., \citet{StuartTeck1,VehtariParallelGP}), recent work has emphasized generic 
+probabilistic workflows \citep{BurknerSurrogate,garegnani2021NoisyMCMC,BurknerTwoStep}.
+We adopt the latter perspective in this review, remaining agnostic to the particular
+surrogate model while highlighting Gaussian processes as a special case in order to 
+aid intuition.
+
+While surrogates offer the potential for significant computational savings, 
+they introduce a new source of uncertainty within the Bayesian model. 
 To avoid incorrect or miscalibrated inference, it is necessary
 to both propagate and--within computational constraints--reduce this uncertainty.
 A growing body of work has addressed the latter by means of sequential design (i.e., active learning)
@@ -123,35 +151,14 @@ KandasamyActiveLearning2015,VillaniAdaptiveGP,weightedIVAR,Semler_2023,Semler202
 surrogateNoisyMCMC,hydrologicalModel,AlawiehIterativeGP}.
 In many practical applications it is computationally infeasible to reduce the surrogate approximation error to 
 an arbitrarily small level. Hence, recent work has stressed the importance of inferential workflows that 
-propagate surrogate uncertainty, thus acknowledging the approximation 
+propagate surrogate uncertainty so that downstream uncertainty estimates acknowledge the 
+surrogate approximation
 \citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation,hydrologicalModel}.
-
- 
-The present work is focused on the use of \textit{stochastic} emulators in accelerating Bayesian inference,
-implying that the true posterior density is modeled as a realization of a random function.
-Such probabilistic surrogates acknowledge the additional uncertainty introduced by 
-the approximation. We focus on the questions of how to leverage this uncertainty in constructing posterior
-approximations and in designing goal-oriented sequential design (i.e., active learning) algorithms
-to iteratively improve the surrogate-induced posterior.
-The canonical example of a probabilistic surrogate is a Gaussian process \citet{gpML}, though 
-standard Bayesian parametric models \citep{BurknerSurrogate} and neural network-based
-approaches \citep{deepEnsembles,epistemicNN} are common alternatives.
-Gaussian processes (GPs) have been widely used as emulators in calibrating complex
-computer codes \citep{design_analysis_computer_experiments,SanterCompExp,gramacy2020surrogates}
-and are increasingly being used to accelerate Bayesian inference
-\citep{KOH,StuartTeck1,StuartTeck2,VehtariParallelGP,gp_surrogates_random_exploration,
-quantileApprox,FerEmulation,KandasamyActiveLearning2015,CES,Kandasamy_2017,
-SinsbeckNowak,Surer2023sequential,llikRBF,ranjan2016inverse,weightedIVAR,hydrologicalModel,
-VillaniAdaptiveGP,GP_PDE_priors,random_fwd_models,ActiveLearningMCMC,
-MCMC_GP_proposal,trainDynamics}.
-This focus on GPs facilitates convenient analytical computations for both posterior density approximation and 
-active learning, and allows for improved interpretability. On the other hand, the desire for analytical tractability 
-limits modeling flexibility. Many existing methodologies are limited to the Gaussian setting: requiring emulators with 
-Gaussian predictive distributions, or imposing a Gaussian assumption on the likelihood being approximated
-\citep{StuartTeck1,Surer2023sequential,weightedIVAR,hydrologicalModel}.
-Small deviations from these assumptions commonly break the closed-form computations enjoyed in this limited regime.
-Therefore, in addition to providing a comprehensive review of the Gaussian setting, we emphasize recent work on 
-developing general-purpose probabilistic workflows that relax the Gaussian requirements.
+In order to propagate surrogate uncertainty, the emulator must include uncertainty
+estimates in addition to point predictions. We therefore focus on \textit{probabilistic emulators}, 
+which provide predictions in the form of a probability distribution. Gaussian processes naturally 
+fall within this category, while other models can be converted into probabilistic emulators
+via Bayesian treatments \citep{BayesianPCE1,BayesianPCE2} or ensemble methods \citep{deepEnsembles}. 
 
 % Goals
 \subsection{Goals}
@@ -442,7 +449,7 @@ deterministic alternatives \citep{supportPoints, SteinPoints}.
 As we will demonstrate in experiments, fitting emulators on prior designs may simultaneously produce 
 reasonable approximations in a prior-averaged sense but poor approximations in a posterior-averaged
 sense. This is due to a common phenomenon in Bayesian inverse problems, whereby the posterior is highly 
-concentrated relative to the prior \citep{StuartTeck2,PCEBIP}. Even in parameter spaces of moderate dimension, 
+concentrated relative to the prior \citep{StuartTeck2,Li_2014,PCEBIP}. Even in parameter spaces of moderate dimension, 
 it is common that the initial design may contain few or no points in the region of high posterior mass. 
 This is one of the central challenges of surrogate modeling in this setting, and motivates the use of sequential 
 design algorithms to iteratively construct the design in order to target high-posterior regions (see \Cref{sec:seq-design}).
@@ -483,7 +490,7 @@ typically yield predictions in the form of (infinite) mixtures of Gaussians.
 \paragraph{Polynomials.}
 Surrogates that consist of linear combinations of polynomial basis functions are 
 commonly used in the engineering and applied math communities. Polynomial 
-chaos expansions (PCE) are a particular example whereby a polynomial 
+chaos expansions (PCE; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby a polynomial 
 basis is used to approximate a random variable $\func(\Par)$ as a function of
 a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
 \begin{equation}
@@ -1373,6 +1380,10 @@ constraining the global surrogate behavior, while also fine-tuning the local fit
 Therefore, in addition to balancing exploration and 
 exploitation when selecting design points, one must also consider this local-global tradeoff
 \citep{StuartTeck2, gp_surrogates_random_exploration,emPostDens,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}.
+The choice of design algorithm to navigate this tradeoff is problem-specific. For example, 
+\citet{adaptiveMultimodal} propose an active learning strategy that specifically targets multimodal posteriors.
+The choice will also be determined by the particular surrogate model being used.
+
 The manner in which this tradeoff is navigated depends on the particular problem setup and 
 the surrogate model itself. For example, \citet{adaptiveMultimodal} propose an active learning strategy 
 targeting multimodal posteriors. Another promising line of research consists of adapting local approximations, 
