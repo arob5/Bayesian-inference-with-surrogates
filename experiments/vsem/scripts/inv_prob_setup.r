@@ -17,7 +17,7 @@ get_inv_prob <- function() {
   
   # Helper function sets up the inverse problem.
   inv_prob <- get_vsem_test_paper(default_conditional=FALSE, 
-                                    default_normalize=TRUE)
+                                  default_normalize=TRUE)
   
   return(inv_prob)
 }

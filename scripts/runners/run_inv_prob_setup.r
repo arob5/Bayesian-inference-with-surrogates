@@ -57,13 +57,11 @@ design_method_test <- "LHS"
 n_samp_prior <- 50000L
 
 # Specifications for exact MCMC.
-mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_bt_wrapper", 
-                      sampler="DEzs", n_itr=100000L, try_parallel=TRUE,  
-                      n_chain=4L, defer_ic=TRUE)
+mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_noisy_llik",
+                      n_itr=100000L, try_parallel=TRUE, n_chain=4L)
 
 # Starting iteration defining the end of the burn-in/warm-up for exact MCMC.
 burn_in_start <- 75000L
-
 
 # ------------------------------------------------------------------------------
 # Setup 
