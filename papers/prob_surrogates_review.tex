@@ -108,23 +108,24 @@ standard inference schemes such as Markov chain Monte Carlo (MCMC)
 \citep{modularization,BurknerSurrogate,BurknerTwoStep}.
 
 This generic surrogate-based Bayesian workflow can be instantiated in a variety of ways.
-A key modeling decision is the choice of input-output map that will generate training data for
-fitting the emulator; i.e., the quantity actually being emulated. A wide body of work seeks to
-emulate the underlying computer model, thus targeting the source of the computational 
-bottleneck. Surrogates have been devised for a wide variety of computer models, including
-those with high-dimensional outputs \citep{HigdonBasis,RougierHighDim}, 
+A key modeling decision is the choice of input-output map used to generate training data for
+fitting the emulator; i.e., the choice of which quantity to emulate. One option is to 
+target the computational bottleneck at its source by emulating the underlying computer model.
+This strategy, which we term \textit{forward model emulation}, has been applied extensively
+in the computer experiments literature; surrogates have been devised for a wide variety of 
+computer models, including those with high-dimensional outputs \citep{HigdonBasis,RougierHighDim}, 
 high-dimensional inputs \citep{RemoteSensingEmulator,ZhouHighDimInput}, 
 dynamical structure \citep{GP_dynamic_emulation,Bayesian_emulation_dynamic}, and
 inherent stochasticity \citep{stochasticComputerModels,VehtariParallelGP,FadikarAgentBased}. 
 Alternatively, in the context of Bayesian inference, 
-it has been noted that ultimately only an approximation of the posterior density is required to 
+it has been noted that only an approximation of the posterior density is required to 
 accelerate posterior estimation \citep{StuartTeck1,GP_PDE_priors}. Therefore, an alternative surrogate 
 strategy consists of directly emulating the log-likelihood 
 (e.g., \citet{VehtariParallelGP,FerEmulation,trainDynamics}) or 
 (unnormalized) log-posterior density (e.g., \citet{emPostDens,gp_surrogates_random_exploration,Kandasamy_2017}). 
-In this work, we adopt a generic viewpoint that encompasses both of 
-these strategies, which we respectively refer to as \textit{forward model emulation}
-and \textit{log-density emulation}. The two approaches each have various strengths
+We collectively refer to such approaches as \textit{log-density emulation}.
+In this work, we adopt a generic viewpoint that encompasses both forward model and log-likelihood
+emulation. The two approaches each have various strengths
 and drawbacks, and one may be favored over the other depending on the context.
 
 In addition to choosing the target map for emulation, another key decision is the 
@@ -137,8 +138,8 @@ on surrogate-based Bayesian inference tend to focus on a specific model
 (e.g., \citet{StuartTeck1,VehtariParallelGP}), recent work has emphasized generic 
 probabilistic workflows \citep{BurknerSurrogate,garegnani2021NoisyMCMC,BurknerTwoStep}.
 We adopt the latter perspective in this review, remaining agnostic to the particular
-surrogate model while highlighting Gaussian processes as a special case in order to 
-aid intuition.
+surrogate model, while also highlighting Gaussian processes as a special case in order
+to aid intuition.
 
 While surrogates offer the potential for significant computational savings, 
 they introduce a new source of uncertainty within the Bayesian model. 
@@ -162,36 +163,18 @@ via Bayesian treatments \citep{BayesianPCE1,BayesianPCE2} or ensemble methods \c
 
 % Goals
 \subsection{Goals}
-This review is motivated by a rapidly increasing body of literature using probabilistic surrogate models
-to accelerate Bayesian inference. Similar methodological work has been pursued across various disciplines, 
-including Bayesian statistics, computational science and engineering, and applied mathematics, in 
-addition to applied work spanning a range of scientific applications. Much of this research appears to 
-be siloed within its respective discipline; one of our aims is to synthesize this related work in an effort to break down
-these barriers. Our review centers on two common problems problems faced in most applications: (i.) how to
-use a stochastic surrogate to approximate the Bayesian posterior, and (ii.) how to efficiently refine 
-an existing surrogate.
-
-Our second goal is to highlight different approaches to incorporating surrogate models within a Bayesian
-workflow. We draw a distinction between two general strategies common in the literature:
-\textit{forward model emulation}, whereby (some function of) the expensive computer model is approximated 
-by an emulator, and \textit{log-density emulation}, 
-where a surrogate approximates either the log-likelihood or unnormalized log-posterior density directly. 
-The latter approach is a special case of the former, and both strategies ultimately induce an 
-approximation of the posterior density. However, there are significant practical differences to consider
-when deciding which method to use for a particular application.  
-We discuss the relative merits and downsides of each approach, as well as typical use cases.
-
-A third goal is both to synthesize the large subset of literature focusing on the use of GP emulators, 
-while also highlighting generic workflows that do not require particular distributional assumptions.
-Our general viewpoint allows surrogates to have generic predictive distributions, which may only
-be accessible through samples. We treat the GP setting as a special case, and provide streamlined 
-derivations and interpretations of quantities that are available in closed-form in this setting.
+Or contributions? Need to think about what we want in this section. Generally speaking, it seems that 
+our main contribution is a broad synthesis of a collection of related methods for surrogate-based 
+Bayesian inference. We review the varied literature on two related goals: uncertainty propagation 
+(posterior approximation) and uncertainty reduction (sequential design/active learning). We provide
+detailed derivations of common results used in the Gaussian settings, while also highlighting 
+generic probabilistic workflows that do not rely on distributional assumptions.
 
 % Paper Organization
 \subsection{Paper Organization}
 \Cref{sec:background} begins with background on Bayesian inverse problems and Gaussian processes.
 \Cref{sec:surrogate-models} provides an overview of probabilistic surrogates, highlighting distinctions
-between parametric and nonparametric emulators and describing the techniques of forward model 
+between finite and infinite-dimensional emulators and describing the techniques of forward model 
 emulation and log-density emulation. \Cref{sec:post-approx} addresses the question of how to 
 use a probabilistic surrogate to approximate the posterior distribution, with an emphasis on correctly
 propagating surrogate uncertainty. \Cref{sec:seq-design} reviews active learning strategies for 
@@ -288,7 +271,8 @@ model stemming from the numerical solution of a system of differential equations
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
 The problem of estimating the parameters of differential equation models 
  can be cast within the Bayesian inverse problem framework. Our primary motivating applications 
- stem from the use of dynamical models in Earth system modeling  \citep{ESM_modeling_2pt0,paramLSM}.
+ stem from the use of dynamical models in Earth system modeling  
+ \citep{ESM_modeling_2pt0,paramLSM,idealizedGCM,FATES_CES,CLMBayesianCalibration,FerEmulation}.
 Consider a parameter-dependent initial value problem 
 \begin{align}
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
@@ -490,7 +474,7 @@ typically yield predictions in the form of (infinite) mixtures of Gaussians.
 \paragraph{Polynomials.}
 Surrogates that consist of linear combinations of polynomial basis functions are 
 commonly used in the engineering and applied math communities. Polynomial 
-chaos expansions (PCE; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby a polynomial 
+chaos expansions (PCEs; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby a polynomial 
 basis is used to approximate a random variable $\func(\Par)$ as a function of
 a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
 \begin{equation}
@@ -524,26 +508,26 @@ which summarize uncertainty via an ensemble of neural network
 models \citep{deepEnsembles,Lueckmann2018LikelihoodfreeIW},
 and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
 
-\subsubsection{Parametric vs. Nonparametric Models}
-Much of the existing literature on surrogate-based Bayesian inference tends to 
+\subsubsection{Finite-Dimensional vs. Infinite-Dimensional Models}
+Much of the literature on surrogate-based Bayesian inference tends to 
 be geared towards a particular emulator model (e.g., GPs or PCEs). Posterior 
 approximation or active learning algorithms proposed in the context of one 
-model may not easily generalize to another. A key distinction affecting
-the generality of an algorithm is whether it can be implemented for 
-a nonparametric emulator (e.g., a GP), or if it confined to the parametric 
-setting (e.g., PCEs and neural networks). For example, the papers 
+model may not easily generalize to another. A particularly important distinction
+in this context is whether or not an algorithm requires sampling entire trajectories 
+from the surrogate. Some previous literature assumes this ability, which poses 
+no problems for finite-dimensional models (e.g., PCEs and neural networks) but
+leads to additional challenges for GPs. For example, the papers 
 \citep{BurknerSurrogate,garegnani2021NoisyMCMC} suggest algorithms
 that were deemed impractical in \citep{VehtariParallelGP,StuartTeck1}, which can
 be explained by the fact that the latter authors are working with GPs, while the former
-implicitly assume parametric emulators (see \Cref{sec:post-approx} for details).
-We define our use of the terms
-\textit{parametric} and \textit{nonparametric} for the purpose of this article 
-below. Let $\funcEm[\Ndesign]$ denote a generic probabilistic surrogate 
-model for some function $\func$.
+implicitly assume finite-dimensional emulators (see \Cref{sec:post-approx} for details).
+We define our use of the terms \textit{finite-dimensional} and 
+\textit{infinite-dimensional} below. Let $\funcEm[\Ndesign]$ denote a generic 
+probabilistic surrogate model for some function $\func$.
 
-\paragraph{Parametric Model.}
-We refer to $\funcEm[\Ndesign]$ as \textit{parametric}
-or \textit{finite-dimensional} if the randomness in $\funcEm[\Ndesign]$ stems from 
+\paragraph{Finite-Dimensional Model.}
+We refer to $\funcEm[\Ndesign]$ as \textit{finite-dimensional} if the randomness in 
+$\funcEm[\Ndesign]$ stems from 
 a finite-dimensional parameter $\theta_{\Ndesign}$; i.e., 
 $\funcEm[\Ndesign](\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
 random vector $\theta_{\Ndesign}$ and non-random function $g$.
@@ -562,8 +546,8 @@ regression model of the form
 \end{align}
 for some fixed basis vectors $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$.
  
-\paragraph{Nonparametric Model.} For a nonparametric model, no such finite-dimensional 
-parameter $\theta_{\Ndesign}$ exists. In this setting, a generic view of a 
+\paragraph{Infinite-Dimensional Model.} For an infinite-dimensional model, no such 
+finite-dimensional parameter $\theta_{\Ndesign}$ exists. In this setting, a generic view of a 
 surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
 over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
 for the generic implementation of surrogate models in software packages such as 
@@ -811,8 +795,8 @@ inference is how to utilize the emulator in approximating $\postDensNorm$ \citep
 Error in the emulator approximation will induce error in the posterior approximation, yielding 
 biased posterior estimates. In the ideal setting, this bias can be eliminated by iteratively refining the 
 surrogate (\Cref{sec:seq-design}), but computational constraints often place practical limits on such procedures.
-It is thus crucial to acknowledge the surrogate surrogate uncertainty within the posterior approximation
-in order to properly calibrate uncertainty estimates
+It is thus crucial to acknowledge the surrogate uncertainty within the posterior approximation
+in order to properly calibrate posterior uncertainty estimates
 \citep{BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. However, there is no single 
 objectively correct method for propagating the uncertainty captured by the surrogate predictive 
 distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
@@ -912,7 +896,7 @@ To construct a deterministic approximation to $\postDens$, we can consider the e
 \postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
 \end{equation}
 which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
-Under a nonparametric surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
+Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
 Assuming the expectation exists, \Cref{alg:ep} could in principle 
 be used to draw samples from $\llikEmSampDensNorm$. 
@@ -947,18 +931,18 @@ in general provide a poor representation of this random density.
 
 \Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
 of $\postEm[\Ndesign]$, which will generally be possible for
-parametric surrogate models. \citet{garegnani2021NoisyMCMC,BurknerSurrogate}, and \citet{BurknerTwoStep}
+finite-dimensional surrogate models. \citet{garegnani2021NoisyMCMC,BurknerSurrogate}, and \citet{BurknerTwoStep}
 investigate \Cref{alg:ep} in such settings. Under certain assumptions, \citet{garegnani2021NoisyMCMC} 
 bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
 \citet{BurknerTwoStep} proposes an importance sampling approximation to reduce the 
 required number of sampled trajectories.
 
-With a nonparametric emulator, the practical difficulty in 
+With an infinite-dimensional emulator, the practical difficulty in 
 implementing \Cref{alg:ep} is the requirement to sample an infinite-dimensional 
 trajectory from the surrogate model.
 These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
 approaches. As far as we are aware, \citet{trainDynamics} is the only work to attempt an 
-implementation of \Cref{alg:ep} in the nonparametric context. Their method consists of approximating GP 
+implementation of \Cref{alg:ep} in the infinite-dimensional context. Their method consists of approximating GP 
 trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
 the trajectory as the GP mean, conditional on the sampled values at these points.
 We note that an alternative approach could involve constructing a finite-dimensional approximation 
@@ -984,7 +968,7 @@ and expected posterior approximations in the forward model emulation setting.}
 \end{table}
 
 \subsection{Expected Likelihood}
-Given the challenge of implementing \Cref{alg:ep} with a nonparametric emulator, the majority of 
+Given the challenge of implementing \Cref{alg:ep} with an infinite-dimensional emulator, the majority of 
 previous literature instead proposes deterministic approximations of the unnormalized
 density. As opposed to the expected posterior method, these approximations are computed 
 pointwise in $\Par$. This is a potential downside of this approach, as it does not leverage 
@@ -1036,8 +1020,8 @@ Their method differs from the
 pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
 and then fixed throughout the MCMC run. This allows for the application of standard 
 MCMC methods, but targets an approximation to $\postApproxNormMarg[\Ndesign]$
-and is only directly implementable in the parametric setting.
-In the nonparametric case, most previous literature 
+and is only directly implementable in the finite-dimensional setting.
+In the infinite-dimensional case, most previous literature 
 has focused on the Gaussian settings from \Cref{eq:fwd-em-Gaussian-post,eq:fwd-em-Gaussian-em} 
 and \Cref{eq:llik-em-Gaussian} due to their analytic tractability. We summarize these special cases below.
 
@@ -1122,14 +1106,18 @@ a connection with power-scaled likelihoods. However, the authors ultimately reco
 posterior and expected likelihood as preferred alternatives to this method.
 
 \subsection{Noisy MCMC Approximations} \label{sec:MH-approx}
-In this section, we describe an alternative approach to surrogate-based inference
-that focuses on constructing approximations to MCMC algorithms as opposed to approximations
-of the unnormalized posterior density. Some of these methods provide algorithms for sampling 
-from approximate posteriors already defined above, while others represent new approaches to inference.
-The benefits of these approaches include ease of implementation and generality--they only require 
-the ability to draw samples from the emulator predictive distribution at finite sets of inputs.
-Therefore, these algorithms do not rely on distributional 
-assumptions on the surrogate or likelihood, and can be used in the nonparametric surrogate setting.
+Outside of special cases, many of the above approximate posteriors can pose computational
+challenges for inference (e.g., requiring closed-form density
+approximations or sampling trajectories). It is thus desirable to consider general-purpose 
+algorithms that can be easily
+implemented for any surrogate. We thus consider a class of MCMC algorithms 
+that only require the ability to draw samples from the emulator predictive distribution at finite 
+sets of inputs. Such algorithms are therefore agnostic to the predictive distribution
+or the particular likelihood, and are also applicable to infinite-dimensional emulators.
+These approaches focus on constructing approximations to MCMC algorithms, as opposed to 
+approximations of the unnormalized posterior density.
+Some of these methods provide algorithms for sampling from approximate posteriors already 
+defined above, while others represent new approaches to inference.
 
 To start, we recall the standard Metropolis-Hastings (MH) algorithm, which is defined by a proposal 
 kernel with density $\propDens(\Par, \cdot)$. If the Markov chain is in the current state 
@@ -1382,7 +1370,7 @@ exploitation when selecting design points, one must also consider this local-glo
 \citep{StuartTeck2, gp_surrogates_random_exploration,emPostDens,SinsbeckNowak,Surer2023sequential,adaptiveMultimodal}.
 The choice of design algorithm to navigate this tradeoff is problem-specific. For example, 
 \citet{adaptiveMultimodal} propose an active learning strategy that specifically targets multimodal posteriors.
-The choice will also be determined by the particular surrogate model being used.
+The choice will also be determined by the particular surrogate model being used. [\todo: didn't finish edits here]
 
 The manner in which this tradeoff is navigated depends on the particular problem setup and 
 the surrogate model itself. For example, \citet{adaptiveMultimodal} propose an active learning strategy 
