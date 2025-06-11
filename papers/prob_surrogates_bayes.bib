@@ -591,6 +591,53 @@ keywords = {Polynomial chaos expansion, Surrogate modeling, Bayesian inference, 
       url={https://arxiv.org/abs/2103.05441}, 
 }
 
+% ---------------------------------------------------------------------------------------------------
+% Applications with expensive computer models
+% ---------------------------------------------------------------------------------------------------
+
+@article{MakEddySims,
+author = {Simon Mak and Chih-Li Sung and Xingjian Wang and Shiang-Ting Yeh and Yu-Hung Chang and V. Roshan Joseph and Vigor Yang and C. F. Jeff Wu and},
+title = {An Efficient Surrogate Model for Emulation and Physics Extraction of Large Eddy Simulations},
+journal = {Journal of the American Statistical Association},
+volume = {113},
+number = {524},
+pages = {1443--1456},
+year = {2018},
+publisher = {ASA Website},
+doi = {10.1080/01621459.2017.1409123},
+URL = { https://doi.org/10.1080/01621459.2017.1409123},
+eprint = {https://doi.org/10.1080/01621459.2017.1409123}
+}
+
+@article{compBioAgentBased,
+  author       = {An, Gary and Fitzpatrick, Benjamin G. and Christley, Scott and Federico, Paolo and Kanarek, Adam and Neilan, Rachel M. and Oremland, Matthew and Salinas, Rebecca and Laubenbacher, Reinhard and Lenhart, Suzanne},
+  title        = {Optimization and Control of Agent-Based Models in Biology: A Perspective},
+  journal      = {Bulletin of Mathematical Biology},
+  year         = {2017},
+  volume       = {79},
+  number       = {1},
+  pages        = {63--87},
+  month        = jan,
+  doi          = {10.1007/s11538-016-0225-6},
+  pmid         = {27826879},
+  pmcid        = {PMC5209420},
+  note         = {Epub 2016 Nov 8}
+}
+
+@article{yeastMatingSurrogate,
+    doi = {10.1371/journal.pcbi.1006181},
+    author = {Renardy, Marissa and Yi, Tau-Mu AND Xiu, Dongbin and Chou, Ching-Shan},
+    journal = {PLOS Computational Biology},
+    publisher = {Public Library of Science},
+    title = {Parameter uncertainty quantification using surrogate models applied to a spatial model of yeast mating polarization},
+    year = {2018},
+    month = {05},
+    volume = {14},
+    url = {https://doi.org/10.1371/journal.pcbi.1006181},
+    pages = {1-26},
+    number = {5}
+}
+
 
 %  ---------------------------------------------------------------------------------------------------
 % MCMC
@@ -925,6 +972,39 @@ keywords = {Statistical inverse problem, Bayesian calibration, Surrogate model, 
 abstract = {This paper presents a Bayesian calibration method for a simulation-based model with stochastic functional input and output. The originality of the method lies in an adaptation involving the representation of the likelihood function by a Gaussian process surrogate model, to cope with the high computational cost of the simulation, while avoiding the surrogate modeling of the functional output. The adaptation focuses on taking into account the uncertainty introduced by the use of a surrogate model when estimating the parameters posterior probability distribution by MCMC. To this end, trajectories of the random surrogate model of the likelihood function are drawn and injected in the MCMC algorithm. An application on a train suspension monitoring case is presented.}
 }
 
+% Propose a method to approximately sample a prob distribution while also "spreading out" the points. Propose
+% a sequential scheme that learns the response surface/prob density via a surrogate as the algorithm proceeds.
+% In an example they fit the log-density with a GP.
+@article{JosephMinEnergy,
+author = {V. Roshan Joseph and Tirthankar Dasgupta and Rui Tuo and C. F. Jeff Wu and},
+title = {Sequential Exploration of Complex Surfaces Using Minimum Energy Designs},
+journal = {Technometrics},
+volume = {57},
+number = {1},
+pages = {64--74},
+year = {2015},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2014.881749},
+URL = { https://doi.org/10.1080/00401706.2014.881749},
+eprint = {https://doi.org/10.1080/00401706.2014.881749}
+}
+
+% One idea they propose here is to use their minimum energy design method as an initial design to fit
+% an emulator, similar to the calibrate, emulate, sample approach.
+@article{JosephMEDSampling,
+author = {V. Roshan Joseph and Dianpeng Wang and Li Gu and Shiji Lyu and Rui Tuo and},
+title = {Deterministic Sampling of Expensive Posteriors Using Minimum Energy Designs},
+journal = {Technometrics},
+volume = {61},
+number = {3},
+pages = {297--308},
+year = {2019},
+publisher = {ASA Website},
+doi = {10.1080/00401706.2018.1552203},
+URL = { https://doi.org/10.1080/00401706.2018.1552203},
+eprint = {https://doi.org/10.1080/00401706.2018.1552203}
+}
+
 % Emulate unnormalized log posterior. Use delayed-acceptance HMC. GP only used for proposal, exact posterior used for acceptance ratio. Uses GP classifier
 % to find regions of parameter space where physical assumptions are violated. Adapt HMC parameters using BayesOpt. 
 @article{MCMC_GP_proposal,
@@ -1002,7 +1082,7 @@ eprint = { https://doi.org/10.1198/106186008X320681}
 }
 
 
-% Istem paper using noisy Monte Carlo approach. 
+% Istem paper using noisy MCMC approach. 
 @Article{FerEmulation,
 AUTHOR = {Fer, I. and Kelly, R. and Moorcroft, P. R. and Richardson, A. D. and Cowdery, E. M. and Dietze, M. C.},
 TITLE = {Linking big models to big data: efficient ecosystem model calibration through Bayesian model emulation},
@@ -1130,9 +1210,14 @@ abstract = {Abstract Parameters in climate models are usually calibrated manuall
 year = {2021}
 }
 
-@article{CESSoftware, doi = {10.21105/joss.06372}, url = {https://doi.org/10.21105/joss.06372}, 
-year = {2024}, publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372}, 
-author = {Oliver R. a. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification}, journal = {Journal of Open Source Software} }
+@article{CESSoftware, 
+doi = {10.21105/joss.06372}, 
+url = {https://doi.org/10.21105/joss.06372}, 
+year = {2024}, 
+publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372}, 
+author = {Oliver R.A. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, 
+title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification},
+ journal = {Journal of Open Source Software} }
 
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
@@ -1306,6 +1391,44 @@ URL = {
 eprint = { 
         https://doi.org/10.1198/016214507000000888
 }
+}
+
+@article{RougierHighDim,
+author = {Jonathan Rougier},
+title = {Efficient Emulators for Multivariate Deterministic Functions},
+journal = {Journal of Computational and Graphical Statistics},
+volume = {17},
+number = {4},
+pages = {827--843},
+year = {2008},
+publisher = {ASA Website},
+doi = {10.1198/106186008X384032},
+URL = {https://doi.org/10.1198/106186008X384032},
+eprint = {https://doi.org/10.1198/106186008X384032}}
+
+% High dimensional input and output
+@misc{RemoteSensingEmulator,
+      title={Computer Model Emulation with High-Dimensional Functional Output in Large-Scale Observing System Uncertainty Experiments}, 
+      author={Pulong Ma and Anirban Mondal and Bledar Konomi and Jonathan Hobbs and Joon Song and Emily Kang},
+      year={2020},
+      eprint={1911.09274},
+      archivePrefix={arXiv},
+      primaryClass={stat.AP},
+      url={https://arxiv.org/abs/1911.09274}, 
+}
+
+% High dimensional input
+@article{ZhouHighDimInput,
+title = {Surrogate modeling of high-dimensional problems via data-driven polynomial chaos expansions and sparse partial least square},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {364},
+pages = {112906},
+year = {2020},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2020.112906},
+url = {https://www.sciencedirect.com/science/article/pii/S004578252030089X},
+author = {Yicheng Zhou and Zhenzhou Lu and Jinghan Hu and Yingshi Hu},
+keywords = {Polynomial chaos expansion, Dimensionality reduction, Stochastic partial differential equations, Data driven}
 }
 
 % Wavelet basis. 
@@ -1496,6 +1619,17 @@ URL = {https://arxiv.org/abs/2211.09283}
       eprint={2402.16520},
       archivePrefix={arXiv},
       primaryClass={stat.ME}
+}
+
+% Proposes integrated variance criterion for stochastic simulation models
+@misc{SurerStochasticIVAR,
+      title={Batch Sequential Experimental Design for Calibration of Stochastic Simulation Models}, 
+      author={Özge Sürer},
+      year={2025},
+      eprint={2505.03990},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME},
+      url={https://arxiv.org/abs/2505.03990}, 
 }
 
 % Log-likelihood emulation with IEVAR criterion. Marginal posterior approximation. 
@@ -1834,6 +1968,21 @@ eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.1710231115}}
 % Other adaptive approaches
 %  ---------------------------------------------------------------------------------------------------
 
+% GP model for log-likelihood. Use maxvar targeting variance in unnormalized posterior
+% density for sequential design.
+@article{AlawiehIterativeGP,
+title = {Iterative construction of Gaussian process surrogate models for Bayesian inference},
+journal = {Journal of Statistical Planning and Inference},
+volume = {207},
+pages = {55-72},
+year = {2020},
+issn = {0378-3758},
+doi = {https://doi.org/10.1016/j.jspi.2019.11.002},
+url = {https://www.sciencedirect.com/science/article/pii/S037837581930103X},
+author = {Leen Alawieh and Jonathan Goodman and John B. Bell},
+keywords = {Gaussian process regression, Active learning, Surrogate models, Bayesian inference, MCMC}
+}
+
 % Local polynomial surrogates constructed within MCMC scheme
 @article{Li_2014,
    title={Adaptive Construction of Surrogates for the Bayesian Solution of Inverse Problems},
@@ -2037,23 +2186,6 @@ keywords = {Dynamic model, Emulator, Optimization, Sensitivity analysis, Statist
 abstract = {Many model-based investigation techniques, such as sensitivity analysis, optimization, and statistical inference, require a large number of model evaluations to be performed at different input and/or parameter values. This limits the application of these techniques to models that can be implemented in computationally efficient computer codes. Emulators, by providing efficient interpolation between outputs of deterministic simulation models, can considerably extend the field of applicability of such computationally demanding techniques. So far, the dominant techniques for developing emulators have been priors in the form of Gaussian stochastic processes (GASP) that were conditioned with a design data set of inputs and corresponding model outputs. In the context of dynamic models, this approach has two essential disadvantages: (i) these emulators do not consider our knowledge of the structure of the model, and (ii) they run into numerical difficulties if there are a large number of closely spaced input points as is often the case in the time dimension of dynamic models. To address both of these problems, a new concept of developing emulators for dynamic models is proposed. This concept is based on a prior that combines a simplified linear state space model of the temporal evolution of the dynamic model with Gaussian stochastic processes for the innovation terms as functions of model parameters and/or inputs. These innovation terms are intended to correct the error of the linear model at each output step. Conditioning this prior to the design data set is done by Kalman smoothing. This leads to an efficient emulator that, due to the consideration of our knowledge about dominant mechanisms built into the simulation model, can be expected to outperform purely statistical emulators at least in cases in which the design data set is small. The feasibility and potential difficulties of the proposed approach are demonstrated by the application to a simple hydrological model.}
 }
 
-@article{doi:10.1198/106186008X384032,
-author = {Jonathan Rougier},
-title = {Efficient Emulators for Multivariate Deterministic Functions},
-journal = {Journal of Computational and Graphical Statistics},
-volume = {17},
-number = {4},
-pages = {827-843},
-year  = {2008},
-publisher = {Taylor & Francis},
-doi = {10.1198/106186008X384032},
-URL = { 
-        https://doi.org/10.1198/106186008X384032
-},
-eprint = {     
-        https://doi.org/10.1198/106186008X384032
-}
-}
 
 @article{doi:10.1137/120900915,
 author = {Williamson, Daniel and Blaker, Adam T.},
