@@ -1143,6 +1143,20 @@ note = {e2019WR025721 2019WR025721},
 year = {2020}
 }
 
+@article{hydrologicalModel2,
+author = {Zhang, Jiangjiang and Li, Weixuan and Zeng, Lingzao and Wu, Laosheng},
+title = {An adaptive Gaussian process-based method for efficient Bayesian experimental design in groundwater contaminant source identification problems},
+journal = {Water Resources Research},
+volume = {52},
+number = {8},
+pages = {5971-5984},
+keywords = {Bayesian experimental design, MCMC, source identification, Gaussian process, contaminant transport},
+doi = {https://doi.org/10.1002/2016WR018598},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1002/2016WR018598},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2016WR018598},
+year = {2016}
+}
+
 
 % Consider multiple posterior approximations and provide error bounds. 
 @misc{StuartTeck1,
@@ -1923,6 +1937,15 @@ eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.1710231115}}
 % Uncertainty Propagation for surrogates
 %  ---------------------------------------------------------------------------------------------------
 
+@article{BilionisBayesSurrogates,
+  title={Solution of inverse problems with limited forward solver evaluations: a Bayesian perspective},
+  author={Ilias Bilionis and Nicholas Zabaras},
+  journal={Inverse Problems},
+  year={2013},
+  volume={30 015004},
+  doi = {10.1088/0266-5611/30/1/015004}
+}
+
 @article{BurknerSurrogate,
   title={Uncertainty Quantification and Propagation in Surrogate-based Bayesian Inference},
   author={Philipp Reiser and Javier Enrique Aguilar and Anneli Guthke and Paul-Christian Burkner},
@@ -2010,6 +2033,29 @@ publisher = {ASA Website},
 doi = {10.1080/01621459.2015.1096787},
 URL = { https://doi.org/10.1080/01621459.2015.1096787},
 eprint = {https://doi.org/10.1080/01621459.2015.1096787}
+}
+
+% Run MCMC with plug-in mean, and then use LHS design wrt a prior-approx posterior 
+% mixture to determine the new design.
+@article{turbulenceModelAdaptiveLHS,
+author = {Zeng, Fanzhi and Zhang, Wei and Li, Jinping and Zhang, Tianxin and Yan, Chao},
+year = {2022},
+month = {03},
+pages = {3502-3516},
+title = {Adaptive Model Refinement Approach for Bayesian Uncertainty Quantification in Turbulence Model},
+volume = {60},
+journal = {AIAA Journal},
+doi = {10.2514/1.J060889}
+}
+
+% EL Gaussian setting with fully Bayesian GP
+@article{Takhtaganov2018AdaptiveBayesianGP,
+  title={Adaptive Gaussian process surrogates for Bayesian inference},
+  author={Timur Takhtaganov and Juliane M{\"u}ller},
+  journal={ArXiv},
+  year={2018},
+  volume={abs/1809.10784},
+  url={https://api.semanticscholar.org/CorpusID:52895082}
 }
 
 % Take into account simulator error due to discretization via simple Gaussian error model

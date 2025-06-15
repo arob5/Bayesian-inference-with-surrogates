@@ -98,12 +98,12 @@ get_design <- function(U) {
   return(design)
 }
 
-plot_lpost_em <- function(lpost_em, grid_info, design_info) {
-    # Log-posterior surrogate predictions.
+plot_lpost_em <- function(lpost_em, grid_info, design_info, ...) {
+  # Log-posterior surrogate predictions.
   U <- matrix(grid_info$input, ncol=1L)
   pred <- lpost_em$predict(U)
-  q_lower <- lpost_em$calc_quantiles(U, p=0.01)
-  q_upper <- lpost_em$calc_quantiles(U, p=0.99)
+  q_lower <- lpost_em$calc_quantiles(U, p=0.01, ...)
+  q_upper <- lpost_em$calc_quantiles(U, p=0.99, ...)
 
   dt_pred <- data.table(input = grid_info$input,
                         mean = pred$mean,
@@ -126,12 +126,12 @@ plot_lpost_em <- function(lpost_em, grid_info, design_info) {
 }
 
 
-plot_post_em <- function(lpost_em, grid_info, design_info) {
+plot_post_em <- function(lpost_em, grid_info, design_info, ...) {
   # Log-posterior surrogate predictions.
   U <- matrix(grid_info$input, ncol=1L)
-  pred <- lpost_em$predict_lik(U, log_scale=TRUE)
-  q_lower <- lpost_em$calc_lik_quantiles(U, p=0.01, log_scale=TRUE)
-  q_upper <- lpost_em$calc_lik_quantiles(U, p=0.99, log_scale=TRUE)
+  pred <- lpost_em$predict_lik(U, log_scale=TRUE, ...)
+  q_lower <- lpost_em$calc_lik_quantiles(U, p=0.01, log_scale=TRUE, ...)
+  q_upper <- lpost_em$calc_lik_quantiles(U, p=0.99, log_scale=TRUE, ...)
 
   dt_pred <- data.table(input = grid_info$input,
                         mean = pred$log_mean,
@@ -224,9 +224,9 @@ get_post_exact <- function(grid_info, log_scale=FALSE) {
 }
 
 # Expected likelihood approximation.
-get_post_EL <- function(grid_info, lpost_em, log_scale=FALSE) {
+get_post_EL <- function(grid_info, lpost_em, log_scale=FALSE, ...) {
   U <- matrix(grid_info$input, ncol=1L)
-  pred <- lpost_em$predict_lik(U, return_var=FALSE, log_scale=TRUE)
+  pred <- lpost_em$predict_lik(U, return_var=FALSE, log_scale=TRUE, ...)
   
   # Normalize density.
   U <- drop(U)
@@ -240,7 +240,7 @@ plot_post_comparison <- function(grid_info, design_info, lpost_em,
   
   dt <- data.table(input = drop(grid_info$input),
                    exact = get_post_exact(grid_info, log_scale=log_scale),
-                   EL = get_post_EL(grid_info, lpost_em, log_scale=log_scale),
+                   EL = get_post_EL(grid_info, lpost_em, log_scale=log_scale, ...),
                    EP = get_EP_dens_grid_1d(lpost_em, grid_info$input, n_mc=n_mc_EP, 
                                             log_scale=log_scale, ...))
   
@@ -256,11 +256,6 @@ plot_post_comparison <- function(grid_info, design_info, lpost_em,
 ```
 
 
-
-
-
-
-
 # Grid for plotting.
 ```{r}
 n_grid <- 100L
@@ -268,7 +263,9 @@ p_grid <- .99
 grid_min <- -3
 grid_max <- 3
 
-grid_info <- get_design(seq(grid_min, grid_max, length.out=n_grid))
+# Include design points in grid.
+grid_inputs <- c(design_info$input, seq(grid_min, grid_max, length.out=n_grid))
+grid_info <- get_design(grid_inputs)
 grid_info_dt <- as.data.table(grid_info)
 input_grid <- matrix(grid_info$input, ncol=1L)
 ```
@@ -306,41 +303,57 @@ fit_llik_em <- function(design) {
 
 ```{r}
 # Design.
-
 design_info <- get_design(qnorm(c(.1, .5, .9), sd=sqrt(sig2_prior)))
 
+# Fit log-likelihood emulator (no bound constraint enforced).
 lpost_em <- fit_llik_em(design_info)
-lpost_em2 <- scale_lpost_var(lpost_em, scale=2.0)
+
+# Second emulator that enforced bound constraint. Gaussian log-likelihood is 
+# bounded above by the log-determinant term.
+lpost_em_bounded <- lpost_em$copy()
+lpost_em_bounded$llik_bounds <- function(U, ...) {
+  list(lower = -Inf,
+       upper = lprior(U) - 0.5 * n_obs * log(2*pi*sig2))
+}
 ```
 
 ```{r}
 # lpost em. 
+plt_lpost <- plot_lpost_em(lpost_em, grid_info, design_info)
+plt_lpost_bounded <- plot_lpost_em(lpost_em_bounded, grid_info, design_info, adjustment="rectified")
 
-plt <- plot_lpost_em(lpost_em, grid_info, design_info)
-
-plot(plt)
+plot(plt_lpost)
+plot(plt_lpost_bounded)
 ```
 
 
 ```{r}
-# Unnormalize posterior emulator (on log scale).
+# Unnormalized posterior emulator (on log scale).
+plt_post <- plot_post_em(lpost_em, grid_info, design_info)
+plt_post_bounded <- plot_post_em(lpost_em_bounded, grid_info, design_info, adjustment="rectified")
+plot(plt_post)
+plot(plt_post_bounded)
 
-test <- lpost_em$predict(input_grid)
-m <- test$mean + 0.5 * test$var
-q99 <- test$mean + qnorm(.9999) * sqrt(test$var)
-
-
-plt <- plot_post_em(lpost_em, grid_info, design_info)
-plot(plt)
+plot(grid_info$input, test$log_mean, type="l")
 ```
 
 
 ```{r}
-plt <- plot_post_comparison(grid_info, design_info, lpost_em)
-plt2 <- plot_post_comparison(grid_info, design_info, lpost_em2)
+# Observations: the EP approx is not very sensitive to whether or not the predictive 
+# distribution is bounded, while the EL approx is very sensitive. When bounded, the EL
+# approx closely resembles the EP approx. The rectified EL approx looks reasonable, but
+# is actually basically just constant zero, so the plot is just reflecting the prior.
+# TODO: need to check that the rectified mean is being computed correctly.
 
-plot(plt)
-plot(plt2)
+plt_post_comparison <- plot_post_comparison(grid_info, design_info, lpost_em)
+plt_post_comparison_trunc <- plot_post_comparison(grid_info, design_info, 
+                                                  lpost_em_bounded, adjustment="truncated")
+plt_post_comparison_rect <- plot_post_comparison(grid_info, design_info, 
+                                                 lpost_em_bounded, adjustment="rectified")
+
+plot(plt_post_comparison)
+plot(plt_post_comparison_trunc)
+plot(plt_post_comparison_rect)
 ```
 
 ```{r}
