@@ -8,7 +8,7 @@ set.seed(543653)
 
 library(data.table)
 library(ggplot2)
-# library(patchwork)
+library(patchwork)
 library(scales)
 library(grid)
 library(support)
@@ -16,10 +16,10 @@ library(support)
 experiment_tag <- "vsem"
 write_plots <- FALSE
 
-base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
-code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
-# base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
-# code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+# base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
+# code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
+base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
@@ -41,8 +41,8 @@ source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design_for_post_approx.r"))
 source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
-source(file.path(base_dir, "..", "sipnet-calibration", "src", "prob_dists.r"))
-source(file.path(base_dir, "..", "sipnet-calibration", "src", "eki_pecan.r"))
+source(file.path(base_dir, "..", "sipnet_calibration", "src", "prob_dists.r"))
+source(file.path(base_dir, "..", "sipnet_calibration", "src", "eki_pecan.r"))
 ```
 
 ```{r}
@@ -56,12 +56,93 @@ em_settings <- readRDS(file.path(alg_settings_dir, "em_settings.rds"))
 
 par_prior <- inv_prob$par_prior
 lprior <- get_lprior_dens(par_prior)
+prior_list <- convert_par_info_to_list(par_prior)
+par_maps <- get_par_map_funcs(prior_list)
 llik_obj <- inv_prob$llik_obj
+llik <- function(U) llik_obj$assemble_llik(U)
+
 lpost <- function(U) {
   if(is.null(dim(U))) U <- matrix(U, nrow=1L)
-  lprior(U) + llik_obj$assemble_llik(U)
+  lprior(U) + llik(U)
 }
 ```
+
+```{r}
+# log prior, likelihood and posterior as function of transformed/unconstrained variables.
+lprior_phi <- function(phi) {
+  par <- par_maps$inv(phi)
+  log_det_J <- attr(par, "log_det_J")
+  
+  lprior(par) + log_det_J
+}
+
+# Adjust llik to account for parameter transformation.
+llik_phi <- function(phi, ...) {
+  llik(par_maps$inv(phi), ...)
+}
+
+# Log-unnormalized posterior density as function of transformed parameter.
+lpost_phi <- function(phi) lprior_phi(phi) + llik_phi(phi)
+```
+
+
+# Investigate structure of the true log-likelihood/log-posterior.
+```{r}
+# Prepare points for plotting projections.
+prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.000001)
+fixed_vals <- sample_prior(par_prior, n=10L)
+input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
+                                            X_fixed=fixed_vals,
+                                            X_bounds=prior_bounds, 
+                                            n_points_default=300L)
+
+# In transformed space.
+input_grids_phi <- list()
+for(i in seq_along(input_grids)) {
+  par_name <- names(input_grids)[i]
+  input_grids_phi[[par_name]] <- list()
+  
+  for(j in seq_along(input_grids[[i]])) {
+    input_grids_phi[[par_name]][[j]] <- par_maps$fwd(input_grids[[par_name]][[j]])
+  }
+}
+
+names(input_grids_phi) <- colnames(input_grids_phi[[1]][[1]])
+```
+
+```{r}
+# 1d projections in original space.
+proj_llik_plots <- plot_1d_proj(llik, input_grids=input_grids)
+proj_lpost_plots <- plot_1d_proj(lpost, input_grids=input_grids)
+
+# 1d projections in transformed/unconstrained space.
+proj_llik_plots_phi <- plot_1d_proj(llik_phi, input_grids=input_grids_phi)
+proj_lpost_plots_phi <- plot_1d_proj(lpost_phi, input_grids=input_grids_phi)
+```
+
+```{r}
+for(plt in proj_llik_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_llik_plots_phi) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_plots_phi) plot(plt)
+```
+
+
+
+
+
+
+
+
 
 
 # Investigate use of EKI to define mean function for emulator
@@ -80,8 +161,6 @@ design <- get_init_design_list(inv_prob, "LHS", 50, inputs=design_inputs)
 # Inputs to EKI algorithm.
 Sig <- diag(llik_obj$lik_par, nrow=inv_prob$dim_obs, ncol=inv_prob$dim_obs)
 fwd_eki <- function(U, ...) inv_prob$par_to_obs_op(U)
-prior_list <- convert_par_info_to_list(par_prior)
-par_maps <- get_par_map_funcs(prior_list)
 
 # Run EKI.
 eki_results <- run_eki_pecan(drop(inv_prob$y), fwd_eki, Sig, 
@@ -192,22 +271,6 @@ lpost_phi_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
                                            transform=FALSE, normalize=FALSE)
 lpost_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
                                        transform=TRUE, normalize=FALSE)
-
-# Construct density of transformed (unconstrained) variables.
-lprior_phi <- function(phi) {
-  par <- par_maps$inv(phi)
-  log_det_J <- attr(par, "log_det_J")
-  
-  lprior(par) + log_det_J
-}
-
-# Adjust llik to account for parameter transformation.
-llik_phi <- function(phi, ...) {
-  llik_obj$assemble_llik(par_maps$inv(phi), ...)
-}
-
-# Log-unnormalized posterior density as function of transformed parameter.
-lpost_phi <- function(phi) lprior_phi(phi) + llik_phi(phi)
 ```
 
 
