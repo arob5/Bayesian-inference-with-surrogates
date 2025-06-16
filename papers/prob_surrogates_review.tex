@@ -863,12 +863,12 @@ with normalizing constants
 \end{align}
 Existence of these integrals is discussed in \Cref{sec:existence}.
 The mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW} 
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
 and analyzed theoretically 
 \citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
 If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
 but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
-both inaccurate and overly confident \citep{BurknerSurrogate}. 
+both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}. 
 
 \subsection{Expected Posterior}
 We now consider posterior approximations that incorporate the surrogate uncertainty.
@@ -896,6 +896,9 @@ To construct a deterministic approximation to $\postDens$, we can consider the e
 \postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
 \end{equation}
 which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+In the forward model emulation setting, \Cref{eq:ep-approx} can also be motivated as the $\Par$-marginal 
+under the joint posterior $p(\Par, \fwdEm[\Ndesign] \given \obs)$.
+
 Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
 Assuming the expectation exists, \Cref{alg:ep} could in principle 
@@ -999,17 +1002,26 @@ meaning the expected likelihood approximation is a ratio estimator of the form
  $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
  Note the difference with respect to 
  $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
- which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting.  
- The unnormalized expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
- decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
+ which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting. 
+ The \textit{unnormalized} expected likelihood approximation $\postApproxMarg[\Ndesign]$ 
+ may be justified from a Bayesian decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
  confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
  see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. 
- To our knowledge, \citet{BilionisBayesSurrogates} are the first to propose the expected 
- likelihood approximation to propagate surrogate uncertainty. They explore several variants
- of the approximation, which differ based on the treatment of surrogate hyperparameters.
- \citet{SinsbeckNowak,StuartTeck1} follow shortly thereafter, providing a Bayesian decision
- theoretic perspective and lending theoretical support.
- 
+ Alternatively, under a forward model emulator, $\postApproxNormMarg[\Ndesign]$ can be viewed as
+ the $\Par$-marginal of the joint posterior $p(\Par, \fwdEm[\Ndesign](\Par) \given \obs)$; by contrast, recall
+ the interpretation of $\postApproxEP[\Ndesign]$ as the marginal of $p(\Par, \fwdEm[\Ndesign] \given \obs)$.
+ This extended parameter space viewpoint is adopted in \citet{BilionisBayesSurrogates}, who 
+ to our knowledge are the first to propose the expected likelihood approximation to propagate 
+ surrogate uncertainty.
+ \footnote{\citet{BilionisBayesSurrogates} only consider the forward model emulation setting, 
+ and call $\postApproxNormMarg[\Ndesign]$ the 
+ $\mathcal{D}$-restricted posterior, in reference to the finite computational budget
+ $\mathcal{D} = \{\designIn, \fwd(\designIn)\}$.} 
+They explore several variants of the approximation, which differ based on the treatment of surrogate 
+hyperparameters. The works by \citet{SinsbeckNowak,StuartTeck1} follow shortly thereafter, 
+providing a Bayesian decision theoretic perspective and lending theoretical support to the expected
+likelihood approximation.
+
  If the pointwise expectation 
  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is computable in closed-form, then 
 the expected likelihood approximation can be sampled using standard MCMC software.
@@ -1053,9 +1065,8 @@ is incorporated via the addition of $\emKer[\Ndesign]{\fwd}(\Par)$ to the noise 
 We emphasize that even if the prior $\priorDens$ is Gaussian, the posterior approximation will typically be non-Gaussian
 due to the nonlinearity of $\emMean[\Ndesign]{\fwd}(\Par)$ and the fact that the likelihood covariance depends on 
 $\Par$ through $\emKer[\Ndesign]{\fwd}(\Par)$. The modified inverse problem viewpoint 
-in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
-this viewpoint extends beyond the Gaussian setting, even when analytical expressions for $\postApproxMarg[\Ndesign](\Par) $ 
-may not exist.
+in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1},
+representing a special case of the extended parameter space perspective taken in \citet{BilionisBayesSurrogates}.
 The closed-form expression in \Cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
 \citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
 \citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
