@@ -154,7 +154,7 @@ In many practical applications it is computationally infeasible to reduce the su
 an arbitrarily small level. Hence, recent work has stressed the importance of inferential workflows that 
 propagate surrogate uncertainty so that downstream uncertainty estimates acknowledge the 
 surrogate approximation
-\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation,hydrologicalModel}.
+\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation,hydrologicalModel,hydrologicalModel2}.
 In order to propagate surrogate uncertainty, the emulator must include uncertainty
 estimates in addition to point predictions. We therefore focus on \textit{probabilistic emulators}, 
 which provide predictions in the form of a probability distribution. Gaussian processes naturally 
@@ -691,7 +691,7 @@ In the typical case that the observation space has dimension $\dimObs > 1$, then
 $\emMeanPrior{\fwd}, \emKerPrior{\fwd}$ as multi-output mean and covariance functions, respectively
 (see \Cref{basis_func_model,basis_func_GPs,basis_func_noise}).
 This Gaussian setting has been considered frequently in the literature
-\citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,Surer2023sequential,
+\citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,Surer2023sequential,
 VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
 \end{examplebox}
 
@@ -797,7 +797,7 @@ biased posterior estimates. In the ideal setting, this bias can be eliminated by
 surrogate (\Cref{sec:seq-design}), but computational constraints often place practical limits on such procedures.
 It is thus crucial to acknowledge the surrogate uncertainty within the posterior approximation
 in order to properly calibrate posterior uncertainty estimates
-\citep{BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. However, there is no single 
+\citep{BilionisBayesSurrogates,BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. However, there is no single 
 objectively correct method for propagating the uncertainty captured by the surrogate predictive 
 distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
 own assumptions and practical limitations. It is important for practitioners to understand these 
@@ -863,12 +863,12 @@ with normalizing constants
 \end{align}
 Existence of these integrals is discussed in \Cref{sec:existence}.
 The mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW} 
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
 and analyzed theoretically 
 \citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
 If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
 but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
-both inaccurate and overly confident \citep{BurknerSurrogate}. 
+both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}. 
 
 \subsection{Expected Posterior}
 We now consider posterior approximations that incorporate the surrogate uncertainty.
@@ -896,6 +896,9 @@ To construct a deterministic approximation to $\postDens$, we can consider the e
 \postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
 \end{equation}
 which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+In the forward model emulation setting, \Cref{eq:ep-approx} can also be motivated as the $\Par$-marginal 
+under the joint posterior $p(\Par, \fwdEm[\Ndesign] \given \obs)$.
+
 Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
 respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
 Assuming the expectation exists, \Cref{alg:ep} could in principle 
@@ -999,14 +1002,26 @@ meaning the expected likelihood approximation is a ratio estimator of the form
  $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
  Note the difference with respect to 
  $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
- which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting.  
- The unnormalized expected likelihood approximation $\postApproxMarg[\Ndesign]$ may be justified from a Bayesian
- decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
+ which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting. 
+ The \textit{unnormalized} expected likelihood approximation $\postApproxMarg[\Ndesign]$ 
+ may be justified from a Bayesian decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
  confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
- see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. To our knowledge,
- \citep{SinsbeckNowak,StuartTeck1} are the first to consider the expected likelihood approximation
- to propagate surrogate uncertainty.
- 
+ see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. 
+ Alternatively, under a forward model emulator, $\postApproxNormMarg[\Ndesign]$ can be viewed as
+ the $\Par$-marginal of the joint posterior $p(\Par, \fwdEm[\Ndesign](\Par) \given \obs)$; by contrast, recall
+ the interpretation of $\postApproxEP[\Ndesign]$ as the marginal of $p(\Par, \fwdEm[\Ndesign] \given \obs)$.
+ This extended parameter space viewpoint is adopted in \citet{BilionisBayesSurrogates}, who 
+ to our knowledge are the first to propose the expected likelihood approximation to propagate 
+ surrogate uncertainty.
+ \footnote{\citet{BilionisBayesSurrogates} only consider the forward model emulation setting, 
+ and call $\postApproxNormMarg[\Ndesign]$ the 
+ $\mathcal{D}$-restricted posterior, in reference to the finite computational budget
+ $\mathcal{D} = \{\designIn, \fwd(\designIn)\}$.} 
+They explore several variants of the approximation, which differ based on the treatment of surrogate 
+hyperparameters. The works by \citet{SinsbeckNowak,StuartTeck1} follow shortly thereafter, 
+providing a Bayesian decision theoretic perspective and lending theoretical support to the expected
+likelihood approximation.
+
  If the pointwise expectation 
  $\E_{\Ndesign}[\postEm[\Ndesign](\Par)]$ is computable in closed-form, then 
 the expected likelihood approximation can be sampled using standard MCMC software.
@@ -1018,7 +1033,9 @@ at any input $\Par$. The pseudo-marginal approach is discussed in \Cref{sec:MH-a
 with a fixed Monte Carlo estimate derived from surrogate samples (i.e., a sample average approximation). 
 Their method differs from the 
 pseudo-marginal algorithm in that the Monte Carlo samples are simulated once 
-and then fixed throughout the MCMC run. This allows for the application of standard 
+and then fixed throughout the MCMC run; this is similar to the particle approximation 
+previously proposed in \citet{BilionisBayesSurrogates}.
+This approach allows for the application of standard 
 MCMC methods, but targets an approximation to $\postApproxNormMarg[\Ndesign]$
 and is only directly implementable in the finite-dimensional setting.
 In the infinite-dimensional case, most previous literature 
@@ -1048,13 +1065,16 @@ is incorporated via the addition of $\emKer[\Ndesign]{\fwd}(\Par)$ to the noise 
 We emphasize that even if the prior $\priorDens$ is Gaussian, the posterior approximation will typically be non-Gaussian
 due to the nonlinearity of $\emMean[\Ndesign]{\fwd}(\Par)$ and the fact that the likelihood covariance depends on 
 $\Par$ through $\emKer[\Ndesign]{\fwd}(\Par)$. The modified inverse problem viewpoint 
-in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1}; the former shows that
-this viewpoint extends beyond the Gaussian setting, even when analytical expressions for $\postApproxMarg[\Ndesign](\Par) $ 
-may not exist.
+in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \citet{StuartTeck1},
+representing a special case of the extended parameter space perspective taken in \citet{BilionisBayesSurrogates}.
 The closed-form expression in \Cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
 \citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
 \citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
-villani2024posteriorsamplingadaptivegaussian,hydrologicalModel}. 
+villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}. 
+\citet{Surer2023sequential} derive the special case of \Cref{eq:post-approx-fwd-EL-Gaussian}
+under the multi-output basis vector model in \Cref{basis_func_GPs,basis_func_noise}, while 
+\citet{Takhtaganov2018AdaptiveBayesianGP} give the analogous formula when the 
+predictive distribution is a finite Gaussian mixture.
 \end{examplebox}
 
 \begin{examplebox}[Gaussian Log-Density Emulation Setting]
@@ -1477,7 +1497,8 @@ of uncertainty in this setting, instead favoring the entropy or interquartile ra
 As an alternative to these maximum uncertainty criteria, \citet{gp_surrogates_random_exploration}
 suggest explicitly decoupling exploration and exploitation by selecting one point 
 that maximizes $\emMean[\Ndesign]{\lpost}(\Par)$ and randomly sampling a second point from 
-$\priorDens$. 
+$\priorDens$. \citet{Takhtaganov2018AdaptiveBayesianGP} employs the expected improvement
+criterion from Bayesian optimization to target the placement of new design points in high-posterior regions.
 
 \subsubsection{Multipoint Criteria} \label{sec:acq-multipoint}
 We next consider acquisition functions that can be evaluated at batches of multiple inputs. In particular,
@@ -1660,9 +1681,14 @@ The batch design methods discussed above are generic active learning techniques,
 context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
 current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
 \citet{FerEmulation} instead sample from a mixture of the current approximate posterior and the prior, with the mixture weights 
-representing a user-defined tuning parameter. \citet{adaptiveMultimodal} samples from the current approximate posterior, and
+representing a user-defined tuning parameter. \citet{turbulenceModelAdaptiveLHS} considers a 
+similar prior-posterior mixture, with a latin hypercube adjustment to encourage the new design 
+points to be spread out. 
+\citet{adaptiveMultimodal} samples from the current approximate posterior, and
 then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
 closely related to the \textit{calibrate, emulate, sample} workflow \citep{CES}.
+\citet{hydrologicalModel2} consider a similar strategy, using parameters sampled from an MCMC
+proposal as additional design points.
 
 These sampling-based approaches enjoy the practical benefits of being inherently parallel and not requiring the solution
 of a difficult optimization problem. In this sense, they are similar in spirit to Thompson sampling for
@@ -1673,6 +1699,11 @@ parameter space. The \citet{FerEmulation} approach of sampling from a mixture of
 be viewed as a more scalable analog of the method in \citet{gp_surrogates_random_exploration}, in the sense of 
 explicitly decoupling exploration and exploitation. We believe further work is warranted to better understand the 
 behavior of these methods, and their applicability to large-scale batch design.
+
+\subsection{Adaptive Local Surrogates}
+Local in the sense of only using design points in region of high posterior: \citep{hydrologicalModel2}
+Tempering approaches: \citep{JosephMEDSampling,Li_2014}
+
 
 \subsection{Exact-Approximate MCMC}
 Throughout this section, we have framed the question of surrogate refinement through a standard active 
@@ -1696,6 +1727,10 @@ maintaining asymptotic exactness. The cost of exactness is the requirement of mo
 performed serially. We therefore view such approaches as well-suited to inverse problems with moderately 
 expensive forward models. Convergence to $\postDensNorm$ will typically be impractical as the computational
 costs increase, especially in the large $\Nbatch$, small $\Nrounds$ setting.
+
+\todo: add references;
+Design within MCMC but not asymptotically exact: \citep{hydrologicalModel2}
+
 
 \section{Practical Recommendations} \label{sec:recs}
 We now provide a set of practical recommendations for building surrogate models, constructing
