@@ -33,11 +33,11 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Experiment
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 
 # Determine emulators and designs to use.
-em_tags <- c("em_llik", "em_fwd")
-design_tags <- c("lhs_extrap_7")
+em_tags <- c("em_lpost_twostage")
+design_tags <- c("lhs_extrap_240")
 
 
 # ------------------------------------------------------------------------------
@@ -50,6 +50,8 @@ src_dir <- file.path(code_dir, "src")
 design_dir <- file.path(experiment_dir, "output", "round1", "design")
 em_dir <- file.path(experiment_dir, "output", "round1", "em")
 bash_path <- file.path(base_dir, "scripts", "bash", "init_emulator.sh")
+
+dir.create(em_dir, recursive=TRUE)
 
 # Required input files.
 em_settings_path <- file.path(experiment_dir, "output", "alg_settings", "em_settings.rds")

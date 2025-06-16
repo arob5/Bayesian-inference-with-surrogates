@@ -43,12 +43,12 @@ library(assertthat)
 design_seed <- 236432
 set.seed(design_seed)
 
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Design methods settings.
-n_design <- 7L
+n_design <- 240L
 design_method <- "lhs_extrap" 
 
 # Initial design tag.
@@ -164,6 +164,7 @@ fwrite(id_map, id_map_path)
 
 # Generate replicate designs.
 for(i in seq_along(seeds)) {
+  print(i)
   seed <- seeds[i]
   save_init_design(seed, i)
 }

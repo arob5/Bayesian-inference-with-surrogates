@@ -51,7 +51,7 @@ n_test_prior <- 1000L
 n_test_post <- 1000L
 
 # Sampling method to use in constructing the prior validation set.
-design_method_test <- "LHS"
+design_method_test <- "simple"
 
 # Number of prior samples to save.
 n_samp_prior <- 50000L
@@ -70,6 +70,7 @@ burn_in_start <- 75000L
 # Filepath definitions.
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+pecan_dir <- file.path(base_dir, "..", "sipnet_calibration", "src")
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
@@ -85,6 +86,7 @@ source(file.path(src_dir, "gpWrapper.r"))
 source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
+source(file.path(pecan_dir, "prob_dists.r"))
 
 # Create experiment output directory.
 dir.create(out_dir, recursive=TRUE)
@@ -104,7 +106,27 @@ saveRDS(setup_settings, file=file.path(out_dir, "setup_settings.rds"))
 # Inverse problem setup 
 # ------------------------------------------------------------------------------
 
+# In the process of changing the representation of prior distribution information.
+# Need to convert to new representation in order to fetch functions for 
+# transforming parameters to unbounded space.
 inv_prob <- get_inv_prob()
+prior_list <- convert_par_info_to_list(inv_prob$par_prior)
+par_maps <- get_par_map_funcs(prior_list)
+inv_prob$prior_list <- prior_list
+inv_prob$par_maps <- par_maps
+
+# Truncating prior to achieve compact support, but capture almost all 
+# prior mass. This just trims off the tail of Cv and tauV. The truncated prior
+# is used when sampling from surrogate-induced posterior approximations.
+prob_prior <- .99
+q_tail <- sqrt(prob_prior)
+prior_bounds <- get_prior_bounds(inv_prob$par_prior, tail_prob_excluded=1-q_tail, 
+                                 set_hard_bounds=TRUE)
+par_prior_trunc <- inv_prob$par_prior
+par_prior_trunc$bound_lower <- prior_bounds[1,]
+par_prior_trunc$bound_upper <- prior_bounds[2,]
+inv_prob$par_prior_trunc <- par_prior_trunc
+
 saveRDS(inv_prob, file=file.path(out_dir, "inv_prob_list.rds"))
 
 # ------------------------------------------------------------------------------
@@ -138,14 +160,18 @@ fwrite(prior_samp_dt, file=file.path(out_dir, "prior_samp.csv"))
 # ------------------------------------------------------------------------------
 
 # Validation inputs sampled from prior.
-test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_prior)
+test_inputs_prior <- sample_prior(inv_prob$par_prior_trunc, n=n_test_prior)
+test_info_prior <- get_init_design_list(inv_prob, design_method_test, n_test_prior,
+                                        inputs=test_inputs_prior)
 saveRDS(test_info_prior, file=file.path(out_dir, "test_info_prior.rds"))
 
 # Validation inputs sub-sampled from true posterior.
-samp_post_mat <- select_mcmc_samp_mat(samp_dt, param_type="par")
+samp_post_mat <- select_mcmc_samp_mat(samp_dt, param_type="par", param_names=inv_prob$par_names)
+within_support <- !par_violates_bounds(samp_post_mat, inv_prob$par_prior_trunc)
+
 test_info_post <- get_init_design_list(inv_prob, "subsample",
                                        N_design=n_test_post, 
-                                       design_candidates=samp_post_mat)
+                                       design_candidates=samp_post_mat[within_support,,drop=FALSE])
 saveRDS(test_info_post, file=file.path(out_dir, "test_info_post.rds"))
 
 

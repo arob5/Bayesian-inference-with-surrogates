@@ -69,6 +69,7 @@ em_id_name <- paste0("em_", em_id)
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(code_dir, "src")
+pecan_dir <- file.path(base_dir, "..", "sipnet_calibration", "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
 mcmc_dir <- file.path(experiment_dir, "output", round_name, "mcmc")
@@ -88,6 +89,7 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 source(file.path(src_dir, "basis_function_emulation.r"))
+source(file.path(pecan_dir, "prob_dists.r"))
 
 # Load inverse problem setup information.
 inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))
@@ -128,6 +130,10 @@ em_path <- file.path(experiment_dir, "output", round_name, "em", em_tag,
 print(paste0("Reading emulator from: ", em_path))
 llik_em <- readRDS(em_path)
 
+# TODO: TEMP
+llik_em$is_lpost_em <- TRUE
+message("Manually setting is_lpost_em to TRUE. This is a hack that should be removed.")
+
 # ------------------------------------------------------------------------------
 # Read MCMC ID map and select specified MCMC tags.
 # ------------------------------------------------------------------------------
@@ -164,11 +170,11 @@ print(paste0("Preparing to run ", nrow(mcmc_ids), " MCMC algorithms."))
 print("-------------------- Running MCMC --------------------")
 
 # Prior distribution.
-par_prior <- inv_prob$par_prior
+par_prior <- inv_prob$par_prior_trunc
 
 # Setting initial proposal covariance based on prior.
 print("-----> Setting initial proposal covariance:")
-cov_prop_init <- cov(llik_em$get_design_inputs())
+cov_prop_init <- cov(sample_prior(inv_prob$par_prior_trunc, n=1e5))
 print("Initial proposal covariance:")
 print(cov_prop_init)
 

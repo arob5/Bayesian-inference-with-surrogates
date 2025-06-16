@@ -26,15 +26,16 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Experiment and round.
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 round <- 1L
 
 # Determine emulators and designs to use. This is a list, where each name 
 # is a em_tag, and each value is a list of mcmc_tags to run for that em_tag.
 # Setting a value to NULL will run all MCMC tags.
 run_list <- list(
-  em_fwd = c("mean", "marginal", "mcwmh-joint", "mcwmh-ind", "pm-joint", "pm-ind"),
-  em_llik = NULL
+  em_lpost_twostage = c("mean-rect", "marginal", "marginal-rect", "mcwmh-joint", 
+                        "mcwmh-ind", "pm-ind-rect", "mcwmh-joint-rect", 
+                        "mcwmh-ind-rect")
 )
 
 # If TRUE, will overwrite existing MCMC sample `.rds` files. Otherwise, 
