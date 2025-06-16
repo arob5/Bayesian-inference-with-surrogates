@@ -68,6 +68,7 @@ print(paste0("Design tag: ", design_tag))
 # Filepath definitions.
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+pecan_dir <- file.path(base_dir, "..", "sipnet_calibration", "src")
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 setup_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
@@ -97,6 +98,7 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "mcmc_helper_functions.r"))
 source(file.path(src_dir, "gp_mcmc_functions.r"))
 source(file.path(src_dir, "basis_function_emulation.r"))
+source(file.path(pecan_dir, "prob_dists.r"))
 
 # Load inverse problem setup information.
 inv_prob <- readRDS(file.path(setup_dir, "inv_prob_list.rds"))

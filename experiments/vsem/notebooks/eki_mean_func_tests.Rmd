@@ -53,9 +53,8 @@ inv_prob <- readRDS(file.path(out_dir, "inv_prob_list.rds"))
 test_info_prior <- readRDS(file.path(out_dir, "test_info_prior.rds"))
 test_info_post <- readRDS(file.path(out_dir, "test_info_post.rds"))
 em_settings <- readRDS(file.path(alg_settings_dir, "em_settings.rds"))
-design_settings <- readRDS(file.path(alg_settings_dir, "init_design_settings.rds"))
 
-par_prior <- inv_prob$par_prior_trunc
+par_prior <- inv_prob$par_prior
 lprior <- get_lprior_dens(par_prior)
 prior_list <- convert_par_info_to_list(par_prior)
 par_maps <- get_par_map_funcs(prior_list)
@@ -90,11 +89,7 @@ lpost_phi <- function(phi) lprior_phi(phi) + llik_phi(phi)
 # Investigate structure of the true log-likelihood/log-posterior.
 ```{r}
 # Prepare points for plotting projections.
-pad_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.000001)
-prior_bounds <- get_prior_bounds(par_prior, set_hard_bounds=TRUE)
-prior_bounds[,1:2] <- pad_bounds[,1:2]
-prior_bounds[1,3:4] <- pad_bounds[1,3:4]
-
+prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.000001)
 fixed_vals <- sample_prior(par_prior, n=10L)
 input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
                                             X_fixed=fixed_vals,
@@ -125,7 +120,6 @@ proj_llik_plots_phi <- plot_1d_proj(llik_phi, input_grids=input_grids_phi)
 proj_lpost_plots_phi <- plot_1d_proj(lpost_phi, input_grids=input_grids_phi)
 ```
 
-
 ```{r}
 for(plt in proj_llik_plots) plot(plt)
 ```
@@ -142,10 +136,257 @@ for(plt in proj_llik_plots_phi) plot(plt)
 for(plt in proj_lpost_plots_phi) plot(plt)
 ```
 
-# Initial design and emulator fit.
+
+# Investigate use of EKI to define mean function for emulator
+
 ```{r}
-design <- design_settings$lhs_extrap(inv_prob, n=500L)
-lpost_em <- em_settings$em_lpost_twostage$fit_em(design, inv_prob)
+# Initial design: sampling majority of points from the prior, which will be 
+# used for constructing the GP trend.
+design_inputs <- get_batch_design("LHS", N_batch=50L, 
+                                  prior_params=par_prior)
+design <- get_init_design_list(inv_prob, "LHS", 50, inputs=design_inputs)
+```
+
+```{r}
+# Run single-step EKI.
+
+# Inputs to EKI algorithm.
+Sig <- diag(llik_obj$lik_par, nrow=inv_prob$dim_obs, ncol=inv_prob$dim_obs)
+fwd_eki <- function(U, ...) inv_prob$par_to_obs_op(U)
+
+# Run EKI.
+eki_results <- run_eki_pecan(drop(inv_prob$y), fwd_eki, Sig, 
+                             prior_list, n_itr=1L, U0=design$input)
+
+# Combine EKI samples with posterior and prior samples.
+samp_dt_comb <- combine_samp_dt(samp_dt, samp_dt_prior)
+samp_dt_comb <- append_samples_mat(samp_dt_comb, eki_results$U, param_type="par",
+                                   test_label="eki")
+```
+
+
+```{r}
+# Plot prior, posterior, and EKI marginals.
+kde_plots <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior")
+
+for(plt in kde_plots) plot(plt)
+```
+
+# Use GP to set "extrapolation/exploration" points in the tails of the EKI
+# posterior approximation.
+```{r}
+# Compute marginal quantiles of EKI approximation of u|[y=y_obs].
+eki_moments <- get_Gaussian_cond_moments(eki_results, drop(inv_prob$y))
+eki_quantiles <- rep(NA, inv_prob$dim_par)
+for(i in seq_len(inv_prob$dim_par)) {
+  eki_quantiles[i] <- qnorm(.9999, mean=drop(eki_moments$mean)[i], 
+                            sd=sqrt(eki_moments$cov[i,i]))
+}
+
+# Transform back to original space (note that this relies on the assumption
+# that the component-wise parameter transformations are monotonic increasing).
+eki_quantiles <- matrix(eki_quantiles, nrow=1L, dimnames=list(NULL, rownames(eki_moments$mean))) 
+eki_quantiles <- par_maps$inv(eki_quantiles)
+
+print("EKI quantiles:")
+print(eki_quantiles)
+
+print("Existing design point bounds:")
+print(get_bounds(design$input))
+```
+
+```{r}
+# Include design points at the EKI quantiles. Sampling the bounded parameters
+# from the prior and only including points at the quantiles of the unbounded
+# parameters (tauV and Cv). For tauV, there is a gap between the existing
+# design bound and the EKI quantile, so we aim to populate this in-between 
+# area, rather than just placing points at the quantile.
+extrap_inputs <- get_batch_design("LHS", N_batch=10L, prior_params=par_prior)
+tauV_only_idx <- 1:3
+Cv_only_idx <- 4:6
+tauV_Cv_idx <- 7:10
+n_tauv <- length(c(tauV_only_idx, tauV_Cv_idx))
+tauv_new <- seq(get_bounds(design$input)[2,"tauV"], eki_quantiles[,"tauV"], length.out=n_tauv)
+
+extrap_inputs[c(tauV_only_idx, tauV_Cv_idx),"tauV"] <- tauv_new
+extrap_inputs[c(Cv_only_idx, tauV_Cv_idx),"Cv"] <- eki_quantiles[,"Cv"] 
+
+print(extrap_inputs)
+```
+
+```{r}
+# Add new points to design.
+design_comb <- get_init_design_list(inv_prob, "LHS", 60, inputs=rbind(design_inputs, extrap_inputs))
+
+# Create truncated prior based on EKI quantiles.
+par_prior_trunc <- par_prior
+par_prior_trunc["tauV", "bound_upper"] <- eki_quantiles[,"tauV"]
+par_prior_trunc["Cv", "bound_upper"] <- eki_quantiles[,"Cv"]
+```
+
+
+```{r}
+# Old method of adding extrapolation points.
+# unbounded_pars <- c("tauV", "Cv")
+# lprior_unbounded <- calc_lprior_dens(design_inputs[,unbounded_pars], 
+#                                      par_prior=par_prior[unbounded_pars,])
+# extrap_candidates <- get_batch_design("LHS", N_batch=1e5, prior_params=par_prior)
+# lprior_unbounded_cand <- calc_lprior_dens(extrap_candidates[,unbounded_pars], 
+#                                           par_prior=par_prior[unbounded_pars,])
+# tail_pts_idx <- which(lprior_unbounded_cand < min(lprior_unbounded))
+# extrap_idx <- sample(tail_pts_idx, size=10L, replace=FALSE)
+# extrap_inputs <- extrap_candidates[extrap_idx,]
+# 
+# design_comb <- get_init_design_list(inv_prob, "LHS", 80, inputs=rbind(design_inputs, extrap_inputs))
+```
+
+
+```{r}
+# Bivariate marginals.
+dens_2d_plots <- get_2d_density_plots(samp_dt_comb)
+```
+
+```{r}
+# Exact MCMC
+for(plt in dens_2d_plots$exact) plot(plt)
+```
+
+```{r}
+# EKI
+for(plt in dens_2d_plots$eki) plot(plt)
+```
+
+## Using EKI Gaussian ansatz as mean function
+
+```{r}
+# EKI density approximation in transformed phi-space and original space.
+lpost_phi_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
+                                           transform=FALSE, normalize=FALSE)
+lpost_eki <- get_Gaussian_ldens_approx(eki_results, drop(inv_prob$y),
+                                       transform=TRUE, normalize=FALSE)
+```
+
+
+```{r}
+# Prepare points for plotting projections.
+par_maps <- eki_results$par_maps
+prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=0.000001)
+fixed_vals <- sample_prior(par_prior, n=5L)
+input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
+                                            X_fixed=fixed_vals,
+                                            X_bounds=prior_bounds, 
+                                            n_points_default=300L)
+
+# In transformed space.
+input_grids_phi <- list()
+for(i in seq_along(input_grids)) {
+  par_name <- names(input_grids)[i]
+  input_grids_phi[[par_name]] <- list()
+  
+  for(j in seq_along(input_grids[[i]])) {
+    input_grids_phi[[par_name]][[j]] <- par_maps$fwd(input_grids[[par_name]][[j]])
+  }
+}
+
+names(input_grids_phi) <- colnames(input_grids_phi[[1]][[1]])
+```
+
+```{r}
+# Exact Log posterior.
+proj_lpost_plots <- plot_1d_proj(lpost, input_grids=input_grids)
+
+# EKI approximation.
+proj_lpost_plots_eki <- plot_1d_proj(lpost_eki, input_grids=input_grids)
+```
+
+```{r}
+for(plt in proj_lpost_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_plots_eki) plot(plt)
+```
+
+```{r}
+# Exact Log posterior as function of transformed parameter.
+proj_lpost_phi_plots <- plot_1d_proj(lpost_phi, input_grids=input_grids_phi)
+
+# EKI approximation as function of untransformed parameter.
+proj_lpost_phi_plots_eki <- plot_1d_proj(lpost_phi_eki, input_grids=input_grids_phi)
+```
+
+```{r}
+for(plt in proj_lpost_phi_plots) plot(plt)
+```
+
+```{r}
+for(plt in proj_lpost_phi_plots_eki) plot(plt)
+```
+
+
+# Comparing EKI density to true density.
+
+```{r}
+# Comparing at points sampled from the prior.
+lpost_eki_prior_pred <- lpost_eki(test_info_prior$input)
+lpost_eki_post_pred <- lpost_eki(test_info_post$input)
+```
+
+```{r}
+# Plot predictions at prior points.
+dt_plt_eki_trend_prior <- data.table(test_info_prior$input,
+                                     true=test_info_prior$lpost,
+                                     eki=lpost_eki_prior_pred)
+
+plt_eki_prior_pred <- ggplot(dt_plt_eki_trend_prior) +
+                        geom_point(aes(x=true, y=eki)) +
+                        geom_abline(slope=1, intercept=0, color="red")
+
+plot(plt_eki_prior_pred)
+```
+
+```{r}
+# Plot predictions at posterior points.
+dt_plt_eki_trend_post <- data.table(test_info_post$input,
+                                    true=test_info_post$lpost,
+                                    eki=lpost_eki_post_pred)
+
+plt_eki_post_pred <- ggplot(dt_plt_eki_trend_post) +
+                        geom_point(aes(x=true, y=eki)) +
+                        geom_abline(slope=1, intercept=0, color="red")
+
+plot(plt_eki_post_pred)
+```
+
+# Fit log-posterior emulator
+
+```{r}
+resids <- design_comb$lpost - lpost_eki(design_comb$input)
+print(quantile(resids, seq(.1, 1, .1)))
+
+# Fit GP.
+gp_obj <- gpWrapperHet(design_comb$input, matrix(resids, ncol=1L),
+                       scale_input=TRUE, normalize_output=TRUE)
+gp_obj$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+gp_obj$fit()
+
+marg_sd <- sqrt(gp_obj$gp_model$y1$nu_hat) * gp_obj$Y_std
+print(paste0("GP marginal sd: ", marg_sd))
+
+# Create llikEmulator object. Note that this actually constitutes a log-posterior
+# emulator. The shift accounts for the mean function.
+lpost_bounds <- function(U) {
+  llik_bounds <- llik_obj$get_llik_bounds()
+  lprior_vals <- lprior(U)
+  list(lower=llik_bounds[1]+lprior_vals, upper=llik_bounds[2]+lprior_vals)
+}
+
+lpost_em <- llikEmulatorGP("em_lpost", gp_obj, default_conditional=FALSE, 
+                           default_normalize=TRUE, 
+                           lik_par=inv_prob$llik_obj$get_lik_par(), 
+                           shift_func=lpost_eki, llik_bounds=lpost_bounds,
+                           is_lpost_em=TRUE)
+saveRDS(lpost_em, file.path(out_dir, "..", "lpost_em.rds"))
 ```
 
 ```{r}
@@ -176,46 +417,20 @@ if(write_plots) {
 #             hjust=0, vjust=1, label.size=0.3, label.r=unit(0.2, "lines"),
 #             size=8)
 ```
-```{r}
-bounds <- inv_prob$llik_obj$get_llik_bounds()[2] + test_info_post$lprior
-samp <- lpost_em$sample(test_info_post$input, N_samp=10000, adjustment="none")
-for(i in 1:10000) {
-  samp[,i] <- pmin(samp[,i], bounds)
-}
-
-preds <- matrixStats::rowLogSumExps(samp) - log(ncol(samp))
-
-plot(test_info_post$lpost, preds)
-abline(a=0, b=1, col="red")
-```
-
-
-
-
-
-
 
 ```{r}
 # Looking out farther in the tails.
-# TODO: need to make sure `fixed_vals` satisfies prior bounds.
-
-# Values exactly at the bound currently results in NAs due to parameter
-# transformations.
-prior_bounds_eps <- prior_bounds
-prior_bounds_eps[1,] <- prior_bounds_eps[1,] + 1e-8 
-prior_bounds_eps[2,] <- prior_bounds_eps[2,] - 1e-8
-
-input_grids <- get_input_grid_1d_projection(inv_prob$par_names, 
-                                            X_fixed=fixed_vals,
-                                            X_bounds=prior_bounds_eps, 
-                                            n_points_default=300L)
+prior_bounds2 <- prior_bounds
+prior_bounds2[2,"tauV"] <- 10000
+prior_bounds2[2, "Cv"] <- 30
+input_grids2 <- get_input_grid_1d_projection(inv_prob$par_names, 
+                                             X_fixed=fixed_vals,
+                                             X_bounds=prior_bounds2, 
+                                             n_points_default=300L)
 
 # Plot one-dimensional projections of log-posterior density emulator (on log scale).
-lpost_em_quantile <- function(U) {
-  llik_em$calc_quantiles(U, p=0.95, adjustment="rectified") + lprior(U)
-}
-
-lpost_em_extrap_plots <- plot_1d_proj(lpost_em_quantile, input_grids=input_grids)
+lpost_em_quantile <- function(U) lpost_em$calc_quantiles(U, p=0.95, adjustment="rectified")
+lpost_em_extrap_plots <- plot_1d_proj(lpost_em_quantile, input_grids=input_grids2)
 
 # Plot one-dimensional projections of posterior density emulator (on log scale).
 # TODO: what is going on with Cv-fixed2 around Cv in [10,15]. Quantile is flat.
@@ -224,7 +439,8 @@ lpost_em_extrap_plots <- plot_1d_proj(lpost_em_quantile, input_grids=input_grids
 #                                                          alpha=0.9, 
 #                                                          adjustment="rectified")
 
-design_bounds <- get_bounds(llik_em$get_design_inputs())
+design_bounds <- get_bounds(lpost_em$get_design_inputs())
+design_bounds[2,] <- drop(eki_quantiles)
 
 for(i in seq_along(lpost_em_extrap_plots)) {
   par_name <- names(lpost_em_extrap_plots)[i]
@@ -240,7 +456,6 @@ for(i in seq_along(lpost_em_extrap_plots)) {
     ggsave(file.path(plt_dir, paste0("extrap_q95_lpostem_", par_name, ".png")), plt)
   }
 }
-
 ```
 
 # Posterior Approximation
@@ -356,7 +571,6 @@ for(plt in plts_ivar) plot(plt)
 for(plt in plts_ievar) plot(plt)
 
 ```
-
 ```{r}
 # Candidate grids.
 n_grid <- 1000L
@@ -394,21 +608,18 @@ batch_prior <- sample_prior(par_prior, n=n_grid)
 
 # Function used to update GP. Need to make sure to subtract off the mean. Should 
 # eventually have this automatically happen in the llikEmulator update function.
-true_func <- function(U) {
-  if(is.null(dim(U))) U <- matrix(U, nrow=1L, dimnames=list(NULL, inv_prob$par_names))
-  llik(U) - mean_func(U)
-}
+true_func <- function(U) lpost(U) - lpost_eki(U)
 
 # Error metrics to compute during sequential design.
 n_eval <- 1000L
 tracking_settings <- list(interval=5L, func_list=list())
 prior_eval <- sample_prior(par_prior, n=n_eval)
-lpost_prior_eval <- llik(prior_eval) # TODO: temp, using llik for now.
-resids_lpost_prior_eval <- lpost_prior_eval - mean_func(prior_eval)
+lpost_prior_eval <- lpost(prior_eval)
+resids_lpost_prior_eval <- lpost_prior_eval - lpost_eki(prior_eval)
 
 post_eval <- select_mcmc_samp_mat(samp_dt)
 post_eval <- post_eval[sample(1:nrow(post_eval), size=n_eval), inv_prob$par_names]
-lpost_post_eval <- llik(post_eval) # TODO: same here
+lpost_post_eval <- lpost(post_eval)
 resids_lpost_post_eval <- lpost_post_eval - lpost_eki(post_eval)
 
 tracking_settings$func_list$mean_prior <- function(model, ...) {
@@ -438,7 +649,7 @@ tracking_settings$func_list$crps_post <- function(model, ...) {
 ```
 
 ```{r}
-al_results_maxvar <- run_seq_design(llik_em, "llik_neg_var_gp", n_batch=n_batch, 
+al_results_maxvar <- run_seq_design(lpost_em, "llik_neg_var_gp", n_batch=n_batch, 
                                     opt_method="grid", true_func=true_func, 
                                     reoptimize_hyperpar=FALSE, 
                                     tracking_settings=tracking_settings,
@@ -460,7 +671,7 @@ al_results_maxvarpost_mix <- run_seq_design(lpost_em, "llik_neg_var_lik", n_batc
                                             opt_method="grid", true_func=true_func, 
                                             reoptimize_hyperpar=FALSE, 
                                             tracking_settings=tracking_settings,
-                                            candidate_grid=grid_prior, adjustment="rectified")
+                                            candidate_grid=grid_mix_1, adjustment="rectified")
 saveRDS(al_results_maxvarpost_mix, file.path(out_dir, "al_results_maxvarpost_mix.rds"))
 ```
 
@@ -475,9 +686,9 @@ process_output <- function(results) {
                    prior_mae = numeric(n_itr),
                    prior_rmse = numeric(n_itr),
                    post_mae = numeric(n_itr),
-                   post_rmse = numeric(n_itr))
-                   # prior_crps = numeric(n_itr),
-                   # post_crps = numeric(n_itr))
+                   post_rmse = numeric(n_itr),
+                   prior_crps = numeric(n_itr),
+                   post_crps = numeric(n_itr))
   
   for(i in seq_along(itrs)) {
     itr_str <- itrs_str[i]
@@ -485,9 +696,9 @@ process_output <- function(results) {
     dt[i, `:=`(prior_mae=q_itr$mean_prior[err_type=="mae", V1],
                post_mae=q_itr$mean_post[err_type=="mae", V1],
                prior_rmse=q_itr$mean_prior[err_type=="mse", sqrt(V1)],
-               post_rmse=q_itr$mean_post[err_type=="mse", sqrt(V1)])]
-               # prior_crps=q_itr$crps_prior,
-               # post_crps=q_itr$crps_post)]
+               post_rmse=q_itr$mean_post[err_type=="mse", sqrt(V1)],
+               prior_crps=q_itr$crps_prior,
+               post_crps=q_itr$crps_post)]
   }
   
   dt <- data.table::melt.data.table(dt, id.vars="itr")
@@ -510,12 +721,10 @@ acq_results_maxvarpost_mix[, label := "maxvarpost_mix"]
 
 acq_results <- rbindlist(list(acq_results_maxvar, acq_results_maxvar_mix, acq_results_maxvarpost_mix))
 
-plt_maxvar_mae <- ggplot(acq_results[metric=="rmse"], aes(x=itr)) + 
+plt_maxvar_mae <- ggplot(acq_results[metric=="crps"], aes(x=itr)) + 
                     geom_line(aes(y=value, color=label, linetype=val_data))
 
 plot(plt_maxvar_mae)
-
-plot(1:150, lpost(al_results_maxvar$inputs))
 ```
 
 

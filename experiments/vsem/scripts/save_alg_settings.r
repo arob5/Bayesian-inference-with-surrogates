@@ -15,47 +15,73 @@ get_init_design_settings <- function() {
   
   l <- list()
   
-  l$simple <- function(inv_prob, n) {
+  l$simple <- function(inv_prob, n, ...) {
     get_init_design_list(inv_prob, design_method="simple", N_design=n)
   }
   
-  l$lhs <- function(inv_prob, n) {
+  l$lhs <- function(inv_prob, n, ...) {
     get_init_design_list(inv_prob, design_method="LHS", N_design=n)
   }
   
-  l$lhs_extrap <- function(inv_prob, n) {
+  l$lhs_extrap <- function(inv_prob, n, frac_tail=0.2, q=0.9) {
     # Combine LHS prior-based points with fixed "extrapolation points" geared
-    # towards capturing the global trend.
-    if(n < 4L) {
-      stop("`lhs_extrap()` design requires at least 4 points, since 4 ",
-           " 'extrapolation points' are fixed automatically.")
+    # towards capturing the global trend. `1-frac_tail` fraction of the points
+    # will be sampled from the prior, and the remainder will explicitly target
+    # the tails. The quantile `q` defines what is meant by the tails, is a 
+    # marginal parameter-by-parameter sense.
+
+    n_tails <- round(frac_tail * n)
+    n_prior <- n - n_tails
+    llik <- function(U) inv_prob$llik_obj$assemble_llik(U)
+    
+    # Inputs sampled from prior. Enforcing bound constraints here since not all
+    # algorithms supported by `get_batch_design()` currently support bound constraints.
+    prior_inputs <- get_batch_design("LHS", N_batch=n_prior, prior_params=inv_prob$par_prior)
+    sel_violations <- par_violates_bounds(prior_inputs, inv_prob$par_prior_trunc)
+    n_violations <- sum(sel_violations)
+    if(n_violations > 0L) {
+      prior_inputs_new <- sample_prior(inv_prob$par_prior_trunc, n=n_violations)
+      prior_inputs <- rbind(prior_inputs[!sel_violations,,drop=FALSE], prior_inputs_new)
     }
     
-    # Extrapolation points: put far in the tails of the prior along each
-    # coordinate axis. Note that the prior for each parameter is iid N(0,1).
-    extrap_scale <- 1.8
-    q <- qnorm(c(.001, .999))
-    extrap_inputs <- rbind(c(0, extrap_scale * q[2]),
-                           c(extrap_scale * q[2], 0),
-                           c(0, extrap_scale * q[1]),
-                           c(extrap_scale * q[1], 0))
-    colnames(extrap_inputs) <- inv_prob$par_names
-    design_extrap <- get_init_design_list(inv_prob, "manual", 4L, 
-                                          inputs=extrap_inputs)
+    assert_that(sum(par_violates_bounds(prior_inputs, inv_prob$par_prior_trunc)) == 0L)
     
-    # Prior-based LHS design points.
-    n_lhs <- n - 4L
-    if(n_lhs <= 0L) return(design_extrap)
+    # Sample the rest in the tails. Simply uniformly sampling in the tails, 
+    # using latin hypercube.
+    tail_bounds <- get_prior_bounds(inv_prob$par_prior_trunc, set_hard_bounds=TRUE)
+    q_tails <- get_prior_bounds(inv_prob$par_prior, tail_prob_excluded=1-q,
+                                set_hard_bounds=FALSE)
+    tail_bounds_tauV <- tail_bounds
+    tail_bounds_Cv <- tail_bounds
+    tail_bounds_tauV[1, "tauV"] <- q_tails[2, "tauV"]
+    tail_bounds_Cv[1, "Cv"] <- q_tails[2, "Cv"]
     
-    design_lhs <- get_init_design_list(inv_prob, design_method="LHS", 
-                                       N_design=n_lhs)
+    n_tauV <- floor(n_tails/2)
+    n_Cv <- n_tails - n_tauV
+    inputs_tauV <- get_LHS_sample(n_tauV, bounds=tail_bounds_tauV)
+    inputs_Cv <- get_LHS_sample(n_Cv, bounds=tail_bounds_Cv)
     
-    # Combine into one design.
-    design_info <- list(input = rbind(design_lhs$input, design_extrap$input),
-                        fwd = rbind(design_lhs$fwd, design_extrap$fwd),
-                        llik = c(design_lhs$llik, design_extrap$llik),
-                        lprior = c(design_lhs$lprior, design_extrap$lprior),
-                        lpost = c(design_lhs$lpost, design_extrap$lpost))
+    # Sometimes numerical stability in the underlying ODE solver causes NA values,
+    # so we also filter out inputs resulting in NAs as well.
+    inputs <- rbind(prior_inputs, inputs_tauV, inputs_Cv)
+    na_sel <- is.na(llik(inputs))
+    n_na <- sum(na_sel)
+    max_itr <- 1e3
+    itr <- 1L
+    
+    while(n_na > 0) {
+      prior_inputs_new <- sample_prior(inv_prob$par_prior_trunc, n=n_na)
+      inputs[na_sel,] <- prior_inputs_new
+      na_sel <- is.na(llik(inputs))
+      n_na <- sum(na_sel)
+      
+      itr <- itr + 1
+      if(itr == max_itr) stop("lhs_extrap design failed due to NAs.")
+    }
+    
+    # Construct full design.
+    design_info <- get_init_design_list(inv_prob, "LHS_extrap", n, inputs=inputs)
+
     return(design_info)
   }
   
@@ -94,6 +120,50 @@ get_emulator_settings <- function() {
     
     return(llik_em)
   }
+  
+  # Unnormalized log-posterior density emulator. Two step approach: fit 
+  # quadratic mean function with constrained optimization, then fit stationary
+  # GP with Gaussian kernel to residuals. 
+  em_list$em_lpost_twostage$em_label <- "em_lpost_twostage"
+  em_list$em_lpost_twostage$is_fwd_em <- FALSE
+  em_list$em_lpost_twostage$fit_em <- function(design_info, inv_prob) {
+    
+    # Stage one: quadratic regression to use as mean function.
+    fit <- fit_constr_quad_reg(design_info, inv_prob)
+    mean_func <- function(U) {
+      Phi <- inv_prob$par_maps$fwd(U)
+      drop(quad_basis(Phi) %*% fit$par)
+    }
+    
+    # Fit stationary GP to residuals.
+    resids <- design_info$llik - mean_func(design_info$input)
+    gp_obj <- gpWrapperHet(design_info$input, matrix(resids, ncol=1L),
+                           scale_input=TRUE, normalize_output=TRUE)
+    gp_obj$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+    gp_obj$fit()
+    
+    # Construct llikEmulator object. Shifting so that predictions correspond
+    # to log-posterior predictions. Also need to be careful when specifying
+    # the bounds, since the emulator is fit to residuals, not the raw 
+    # log-likelihood values.
+    shift_func <- function(U, ...) mean_func(U) + calc_lprior_dens(U, inv_prob$par_prior_trunc)
+    lpost_bounds <- function(U, ...) {
+      llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
+      resid_bounds <- function(U) llik_bounds[2] - mean_func(U)
+      
+      list(lower = -Inf,
+           upper = resid_bounds(U) + shift_func(U))
+    }
+    
+    lpost_em <- llikEmulatorGP("em_lpost_twostage", gp_obj, 
+                               default_conditional=FALSE, 
+                               default_normalize=TRUE,
+                               shift_func=shift_func, 
+                               llik_bounds=lpost_bounds,
+                               is_lpost_em=TRUE)
+    return(lpost_em)
+  }
+  
   
   # # Unnormalized Log-posterior density emulator. Gaussian kernel, constant mean.
   # em_list$em_lpost$em_label <- "em_lpost"

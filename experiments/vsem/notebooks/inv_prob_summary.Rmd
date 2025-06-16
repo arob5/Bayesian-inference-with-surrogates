@@ -14,7 +14,7 @@ library(grid)
 library(support)
 
 experiment_tag <- "vsem"
-write_plots <- FALSE
+write_plots <- TRUE
 
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
@@ -85,11 +85,18 @@ design_post$output_state <- design_post$states[,,inv_prob$output_idx]
 # Prior/posterior distributions
 ```{r}
 samp_dt_comb <- combine_samp_dt(samp_dt, samp_dt_prior)
-prior_post_plots <- get_1d_kde_plots(samp_dt_comb, test_label_baseline="prior",
-                                     bandwidth_mult=1.5, line_thickness=2.0)
+samp_dt_comb[test_label=="exact", test_label := "posterior"]
+prior_post_plots <- get_1d_kde_plots(samp_dt_comb, bandwidth_mult=1.5, line_thickness=2.0)
 
 for(i in seq_along(prior_post_plots)) {
-  plt <- ggformat_journal(prior_post_plots[[i]], remove_title=TRUE) + labs(y="density")
+  plt <- ggformat_journal(prior_post_plots[[i]], remove_title=TRUE, 
+                          legend_position="none") + labs(y="density")
+  
+  if(i == length(prior_post_plots)) {
+    plt <- plt + theme(legend.position=c(1, 1),
+                       legend.justification=c(1, 1))
+  }
+
   plt_name <- names(prior_post_plots)[i]
   plot(plt)
   
@@ -98,10 +105,6 @@ for(i in seq_along(prior_post_plots)) {
   }
 }
 ```
-
-
-
-
 
 # Prior/posterior predictive distributions
 
