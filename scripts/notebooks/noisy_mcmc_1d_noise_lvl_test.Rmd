@@ -83,6 +83,7 @@ lpost <- function(U) llik(U) + lprior(U)
 ```{r}
 get_design <- function(U) {
   design <- list(input = U)
+  design$fwd <- fwd(design$input)
   design$llik <- llik(design$input)
   design$lprior <- lprior(design$input)
   design$lpost <- lpost(design$input)
@@ -107,6 +108,47 @@ add_trajectories <- function(plt, samp, input) {
   
   return(plt)
 }
+
+plot_fwd_em <- function(lpost_em, grid_info, design_info, n_traj=5L, ...) {
+  # Assumes Gaussian emulator predictive distribution.
+
+  # Emulator predictions.
+  U <- matrix(grid_info$input, ncol=1L)
+  pred <- lpost_em$predict_emulator(U)
+  q_lower <- qnorm(0.01, pred$mean, sqrt(pred$var))
+  q_upper <- qnorm(0.99, pred$mean, sqrt(pred$var))
+    
+  dt_pred <- data.table(input = grid_info$input,
+                        mean = drop(pred$mean),
+                        lower = drop(q_lower),
+                        upper = drop(q_upper),
+                        true = drop(grid_info$fwd))
+  
+  # Design used to fit emulator.
+  dt_design <- as.data.table(design_info)
+
+  plt <- ggplot(dt_pred, aes(x=input)) +
+          geom_ribbon(aes(ymin=lower, ymax=upper), 
+                      fill="skyblue", alpha=0.4) + 
+          labs(xlab="u", ylab="log-posterior")
+
+  # Add sample trajectories.
+  if(n_traj > 0) {
+    samp <- lpost_em$sample_emulator(U, N_samp=n_traj, use_cov=TRUE, ...)[,,1]
+    plt <- add_trajectories(plt, samp, U)
+  }
+  
+  # mean, ground truth, and design points.
+  plt <- plt +
+          geom_line(aes(y=mean), color="blue") +
+          geom_line(aes(y=true), color="black") +
+          geom_point(aes(x=input, y=fwd), dt_design, 
+                     color="red", inherit.aes=FALSE)
+
+  
+  return(plt)
+}
+
 
 plot_lpost_em <- function(lpost_em, grid_info, design_info, n_traj=5L, ...) {
   # Log-posterior surrogate predictions.
@@ -354,7 +396,6 @@ plt_exact <- ggplot(grid_info_dt, aes(x=input)) +
 plot(plt_exact)
 ```
 
-# Log-likelihood emulation. 
 ```{r}
 # Function to fit llik emulator.
 
@@ -373,6 +414,23 @@ fit_llik_em <- function(design) {
                              is_lpost_em=TRUE)
 }
 
+# Function to fit forward model emulator.
+fit_fwd_em <- function(design) {
+  # Fit GP to forward model.
+  gp <- gpWrapperHet(matrix(design$input, ncol=1L), 
+                     matrix(design$fwd, ncol=1L),
+                     scale_input=TRUE, normalize_output=TRUE)
+  gp$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+  gp$fit()
+  
+  # Create llikEmulator object.
+  llikEmulatorGPFwdGaussDiag("fwd", gp, y_obs=matrix(y), sig2=sig2, 
+                             default_conditional=FALSE,
+                             default_normalize=TRUE,
+                             shift_func=lprior)
+}
+
+
 ```
 
 
@@ -380,7 +438,10 @@ fit_llik_em <- function(design) {
 # Fit log-likelihood emulator (no bound constraint enforced).
 lpost_em <- fit_llik_em(design_info)
 
-# Second emulator that enforces bound constraint. Gaussian log-likelihood is 
+# Forward model emulator.
+lpost_em_fwd <- fit_fwd_em(design_info)
+
+# Second llik emulator that enforces bound constraint. Gaussian log-likelihood is 
 # bounded above by the log-determinant term.
 lpost_bound <- function(U) lprior(U) - 0.5 * n_obs * log(2*pi*sig2)
 dt_bound <- data.table(input=grid_info$input, bound=lpost_bound(input_grid))
@@ -393,11 +454,15 @@ lpost_em_bounded$llik_bounds <- function(U, ...) {
 ```{r}
 # TODO: compare to a version where the design points are moved farther out.
 
-# lpost em. 
+# lpost em [llik]
 plt_lpost <- plot_lpost_em(lpost_em, grid_info, design_info)
 plt_lpost_rect <- plot_lpost_em(lpost_em_bounded, grid_info, design_info, adjustment="rectified")
 
-# Format
+# lpost em [fwd]
+plt_em_fwd <- plot_fwd_em(lpost_em_fwd, grid_info, design_info)
+plt_lpost_fwd <- plot_lpost_em(lpost_em_fwd, grid_info, design_info, n_mc=1e4)
+
+# Format.
 plt_lpost <- plt_lpost + 
               geom_line(aes(x=input, y=bound), dt_bound, color="green", linetype="dashed") +
               labs(x="u", y="log-post")
@@ -408,14 +473,27 @@ plt_lpost_rect <- plt_lpost_rect +
                   labs(x="u", y="log-post")
 plt_lpost_rect <- ggformat_journal(plt_lpost_rect, remove_title=TRUE) 
 
+plt_em_fwd <- plt_em_fwd + labs(x="u", y="G(u)")
+plt_em_fwd <- ggformat_journal(plt_em_fwd, remove_title=TRUE)
+
+plt_lpost_fwd <- plt_lpost_fwd + 
+                  geom_line(aes(x=input, y=bound), dt_bound, color="green", linetype="dashed") +
+                  labs(x="u", y="log-post")
+plt_lpost_fwd <- ggformat_journal(plt_lpost_fwd, remove_title=TRUE)
+
 plot(plt_lpost)
 plot(plt_lpost_rect)
+plot(plt_em_fwd)
+plot(plt_lpost_fwd)
 
 # Save plots.
 if(save_output) {
   ggsave(file.path(output_dir, "lpost_em_dist.png"), plt_lpost)
   ggsave(file.path(output_dir, "lpost_em_rect_dist.png"), plt_lpost_rect)
+  ggsave(file.path(output_dir, "fwd_em_dist.png"), plt_em_fwd)
+  ggsave(file.path(output_dir, "lpost_dist_fwd.png"), plt_lpost_fwd)
 }
+
 ```
 
 
@@ -423,6 +501,7 @@ if(save_output) {
 # Unnormalized posterior emulator (on log scale).
 plt_post <- plot_post_em(lpost_em, grid_info, design_info)
 plt_post_rect <- plot_post_em(lpost_em_bounded, grid_info, design_info, adjustment="rectified")
+plt_post_fwd <- plot_post_em(lpost_em_fwd, grid_info, design_info, n_mc=1e4)
 
 # Format
 plt_post <- plt_post + 
@@ -435,13 +514,20 @@ plt_post_rect <- plt_post_rect +
                   labs(x="u", y="log-post")
 plt_post_rect <- ggformat_journal(plt_post_rect, remove_title=TRUE) 
 
+plt_post_fwd <- plt_post_fwd + 
+                geom_line(aes(x=input, y=bound), dt_bound, color="green", linetype="dashed") +
+                labs(x="u", y="log-post")
+plt_post_fwd <- ggformat_journal(plt_post_fwd, remove_title=TRUE)
+
 plot(plt_post)
 plot(plt_post_rect)
+plot(plt_post_fwd)
 
 # Save plots.
 if(save_output) {
   ggsave(file.path(output_dir, "post_em_dist.png"), plt_post)
   ggsave(file.path(output_dir, "post_em_rect_dist.png"), plt_post_rect)
+  ggsave(file.path(output_dir, "post_em_dist_fwd.png"), plt_post_fwd)
 }
 ```
 
@@ -465,24 +551,37 @@ mcwmh_results <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh",
 mcwmh_results_rect <- get_post_noisy(grid_info, lpost_em_bounded, par_prior, 
                                      mode="mcwmh", use_joint=FALSE, lbl="mcwmh")
 
+# Forward model emulator.
+Eacc_results_fwd <- get_post_noisy(grid_info, lpost_em_fwd, par_prior, mode="mcwmh", 
+                                   use_joint=TRUE, lbl="E-acc", n_chains=3, n_itr=20000,
+                                   itr_start=10000)
+mcwmh_results_fwd <- get_post_noisy(grid_info, lpost_em_fwd, par_prior, mode="mcwmh",
+                                    use_joint=FALSE, lbl="mcwmh", n_chains=3,
+                                    n_itr=20000, itr_start=10000)
+
 # Combine samples.
 noisy_mcmc_dt <- combine_samp_dt(Eacc_results$samp, mcwmh_results$samp)
 noisy_mcmc_dt_rect <- combine_samp_dt(Eacc_results_rect$samp, mcwmh_results_rect$samp)
+noisy_mcmc_dt_fwd <- combine_samp_dt(Eacc_results_fwd$samp, mcwmh_results_fwd$samp)
 
 # KDE plot. 
 kde_plt <- get_1d_kde_plots(noisy_mcmc_dt, line_thickness=line_thickness)[[1]]
 kde_plt_rect <- get_1d_kde_plots(noisy_mcmc_dt_rect, line_thickness=line_thickness)[[1]]
+kde_plt_fwd <- get_1d_kde_plots(noisy_mcmc_dt_fwd, line_thickness=line_thickness)[[1]]
 
 plot(kde_plt)
 plot(kde_plt_rect)
+plot(kde_plt_fwd)
 ```
 
 ```{r}
 # MCMC diagnostics.
 trace_plots <- get_trace_plots(noisy_mcmc_dt)
 hist_plots <- get_hist_plots(noisy_mcmc_dt)
+trace_plots_fwd <- get_trace_plots(noisy_mcmc_dt_fwd)
 
 for(plt in trace_plots) plot(plt)
+for(plt in trace_plots_fwd) plot(plt)
 for(plt in hist_plots) plot(plt)
 ```
 
@@ -497,6 +596,8 @@ plt_post_comparison_trunc <- plot_post_comparison(grid_info, design_info,
                                                   lpost_em_bounded, adjustment="truncated")
 plt_post_comparison_rect <- plot_post_comparison(grid_info, design_info, lpost_em_bounded,
                                                  adjustment="rectified", plt=kde_plt_rect)
+plt_post_comparison_fwd <- plot_post_comparison(grid_info, design_info, lpost_em_fwd, 
+                                                plt=kde_plt_fwd)
 
 # Format.
 plt_post_comparison <- ggformat_journal(plt_post_comparison,
@@ -511,21 +612,33 @@ plt_post_comparison_rect <- ggformat_journal(plt_post_comparison_rect,
                                              legend.justification=c("right", "top"),
                                              legend.direction="vertical",
                                              legend_size=27)
+plt_post_comparison_fwd <- ggformat_journal(plt_post_comparison_fwd,
+                                            remove_title=TRUE,
+                                            legend_position=c(0.98, 0.98),
+                                            legend.justification=c("right", "top"),
+                                            legend.direction="vertical",
+                                            legend_size=27)
 
 
 plot(plt_post_comparison)
 plot(plt_post_comparison_rect)
 plot(plt_post_comparison_trunc)
+plot(plt_post_comparison_fwd)
 
 # Save plots.
 if(save_output) {
   ggsave(file.path(output_dir, "post_comparison.png"), plt_post_comparison)
   ggsave(file.path(output_dir, "post_comparison_rect.png"), plt_post_comparison_rect)
+  ggsave(file.path(output_dir, "post_comparison_fwd.png"), plt_post_comparison_fwd)
 }
 ```
 
 
-
+```{r}
+test <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh",
+                                    use_joint=FALSE, lbl="mcwmh", n_chains=3,
+                                    n_itr=20000, itr_start=10000)
+```
 
 
 
