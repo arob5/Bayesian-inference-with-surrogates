@@ -36,7 +36,7 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Experiment and round.
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 round <- 1L
 
 # Threshold for minimum number of replicate designs required to produce a 
@@ -266,8 +266,8 @@ ggsave(file.path(plt_dir, "coverage_plots_for_imsi_poster.png"), plt_grid_mean,
 
 # Comparing mean-rect, marginal-rect, and mcwmh-ind-rect.
 tags_rect <- c("marginal-rect", "mcwmh-ind-rect")
-plt_grid_rect <- plot_grid(coverage_plt_list, tags_rect, par_names,
-                           interval_probs)
+plt_grid_rect <- plot_grid(coverage_plt_list, tags_rect, "em_lpost_twostage", 
+                           inv_prob$par_names, interval_probs)
 plot(plt_grid_rect)
 ggsave(file.path(plt_dir, "marg_vs_ind_noisy_rect.png"), plt_grid_rect,
        width=7, height=7)

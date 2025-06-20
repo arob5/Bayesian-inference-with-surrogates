@@ -27,7 +27,7 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Experiment and round.
-experiment_tag <- "banana"
+experiment_tag <- "vsem"
 round <- 1L
 
 # Settings for defining what constitutes a valid MCMC run. The R-hat threshold

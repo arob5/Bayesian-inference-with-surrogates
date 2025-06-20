@@ -155,6 +155,7 @@ if(file.exists(mcmc_id_map_path)) {
 } else {
   print(paste0("Creating new MCMC ID map: ", mcmc_id_map_path))
   mcmc_id_map[, mcmc_id := 1:.N, by="mcmc_tag"]
+  fwrite(mcmc_id_map, mcmc_id_map_path)
 }
 
 
