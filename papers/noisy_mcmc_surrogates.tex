@@ -57,84 +57,83 @@
 \newtheorem{corollary}{Corollary}
 
 % Title and author
-\title{Uncertainty Propagation and Active Learning for Bayesian Inference with Surrogate Models}
+\title{Uncertainty Propagation and Active Learning for Surrogate-Based Bayesian Inference}
 \author{Andrew Roberts}
 
 \begin{document}
 
 \maketitle
 
-Simulation-based computer models have emerged as a key tool for studying complex systems 
+Computer models have emerged as a key tool for studying complex systems 
 within the physical, biological, and engineering sciences. Such models often have uncertain 
 parameters that must be estimated from data. Bayesian methods are commonly employed
 to quantify parameter uncertainty in these calibration tasks.
 However, standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
 are often hindered by the computational cost of the simulation model.
-An increasingly popular approach to deal with this issue is to train a surrogate model 
+A popular approach to deal with this issue is to train a surrogate model 
 (i.e., emulator) as a computationally thrifty approximation of the expensive computer code. 
-While the use of surrogates offers the potential for significant computational savings, 
-they introduce a new source of uncertainty within the Bayesian model. Recent work 
-has emphasized the importance of propagating this uncertainty in surrogate-based 
-Bayesian workflows \citep{reviewPaper,BurknerSurrogate,CES,FerEmulation}.
 
-Common surrogate models such as Gaussian processes 
-\citep{gpML,gramacy2020surrogates} and probabilistic 
-neural networks \citep{deepEnsembles,BayesOptNN} produce predictions in the form 
-of a probability distribution, thus quantifying the uncertainty in the surrogate. 
-These models may be built to approximate various target maps, including the 
-simulator itself, low-dimensional summaries of the simulator output \citep{CES}, or 
-the log-likelihood defining the statistical model 
-\citep{FerEmulation,VehtariParallelGP,OakleyllikEm}. In all of these cases, the 
-probabilistic surrogate ultimately induces a stochastic approximation of the 
-unnormalized posterior density, which is the key input to standard inference
-algorithms. A variety of methods have proposed to construct a deterministic 
-posterior approximation using the resulting random density
-\citep{StuartTeck1,SinsbeckNowak,VehtariParallelGP,BurknerSurrogate,
-BurknerTwoStep,garegnani2021NoisyMCMC,FerEmulation}. 
+While the use of surrogates offers the potential for significant computational savings,
+emulator error induces biases in posterior inference. In order to avoid miscalibrated
+posterior uncertainty estimates, it is crucial to acknowledge the surrogate uncertainty within
+the posterior approximation. Probabilistic surrogates such as Gaussian processes \citep{gpML,gramacy2020surrogates} 
+and probabilistic neural networks \citep{deepEnsembles,BayesOptNN} provide a notion of predictive uncertainty 
+that can be propagated in downstream inference
+ \citep{reviewPaper,BilionisBayesSurrogates,BurknerSurrogate,CES,FerEmulation}. 
+ However, no single method has emerged as the objectively correct approach to propagate 
+ surrogate uncertainty within a posterior approximation. 
+ Various approximations and inference algorithms have been proposed, each of which propagate
+ surrogate uncertainty in distinct ways 
+ \citep{reviewPaper,BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,BurknerSurrogate,
+ BurknerTwoStep,FerEmulation,garegnani2021NoisyMCMC}.
 
-In practice, surrogate models are typically constructed sequentially by running 
-batches of simulator evaluations at different inputs over a sequence of 
-rounds. The task of choosing the new points at which to run the simulator 
-presents an active learning (i.e., sequential design) problem. Recent work 
-has emphasized that the new inputs should be selected with respect to 
-the target goal of posterior approximation, which requires more 
-simulation effort in regions of high posterior mass 
-\citep{StuartTeck2,SinsbeckNowak,VehtariParallelGP,Surer2023sequential,
-gp_surrogates_random_exploration,weightedIVAR,adaptiveMultimodal}. 
-A variety of objective functions have been proposed to guide the selection
-of inputs in this context \citep{SinsbeckNowak,VehtariParallelGP,
+In the ideal setting, information from additional runs of the computer model can be leveraged to iteratively
+refine the surrogate in order to eliminate the posterior bias. In practice, limited computational 
+budgets render this infeasible, but targeted simulator runs can be used to reduce the error as much
+as possible. Since the cost of running the computer model is the primary computational bottleneck,
+the new parameter values at which to run the model should be carefully selected.
+The surrogate predictive uncertainty can be used to guide this decision, targeting parameters with the potential 
+for maximal improvement in the posterior approximation. 
+Various active learning (i.e., sequential design) algorithms have been proposed for this 
+purpose \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP,
 Surer2023sequential, gp_surrogates_random_exploration,weightedIVAR}.
 
-[\todo: add short paragraph on batch design]
+Many of the proposed uncertainty propagation and active learning algorithms can be categorized based on the
+target quantity that is emulated. Two broad strategies have emerged in surrogate-based Bayesian inference:
+(i.) forward model emulation, in which an emulator approximates the underlying computer model, and 
+(ii) log-density emulation, in which an emulator directly approximates the log-likelihood or unnormalized
+log-posterior density. These strategies are compared in \citep{StuartTeck1,GP_PDE_priors,reviewPaper}.
+In either case, the underlying probabilistic emulator induces a random approximation of the posterior density.
+Owing to the difficulty of working with the normalizing constant of this random posterior, the majority of previous 
+work derives posterior approximations and active learning criteria based on the induced approximation to the
+\textit{unnormalized} posterior density \citep{SinsbeckNowak,VehtariParallelGP,StuartTeck1}. 
+This choice is primarily motivated by computational convenience, and has been shown to facilitate closed-form
+computations in special cases involving Gaussian processes and Gaussian likelihoods 
+\citep{reviewPaper,StuartTeck1,StuartTeck2,GP_PDE_priors,VehtariParallelGP,Surer2023sequential}.
 
-\paragraph{Contributions}
-The main contribution of this paper is a probabilistic pipeline for surrogate-based Bayesian 
-inference, including (i.) algorithms for constructing posterior approximations that propagate 
-the surrogate uncertainty, and (ii.) active learning algorithms for refining the surrogate model
-with regard to the goal of improving the posterior approximation.
-To address the former, we start by studying the strengths and limitations of
-various posterior approximations proposed in the literature. Guided by this
-investigation, we propose a new approach to surrogate-based approximate inference 
-rooted in noisy approximations to MCMC algorithms \citep{noisyMCMC}.
-We next address the batch sequential design question 
+\paragraph{Contributions.}
+As summarized above, a wide variety of methods have been proposed for posterior approximation
+and sequential design in surrogate-based Bayesian inference. 
+In this paper, we provide new insights into when and why the performance of different methods can
+deviate. In particular, we investigate the implications of basing algorithms on the unnormalized 
+posterior density approximation induced by an underlying probabilistic emulator. We show that 
+the effect of ignoring the normalizing constant depends on the particular emulator target, and is 
+typically more significant in the log-density emulation setting.
 
-Unlike many existing methods, we develop a framework that is agnostic to both the predictive
-distribution of the surrogate and the particular form of the Bayesian statistical model. In particular, 
-we assume only that samples can be drawn from the surrogate predictive distribution. 
-We also propose workflows applicable to large-scale applications, where
-computational costs allow for only a few batches of model runs.  
+Based on these insights, we propose posterior approximation and active learning algorithms 
+that take into account the ratio between random density values at different parameter values.
+Rather than deriving an estimate of the unnormalized posterior density, our posterior approximation
+method centers on the idea of approximating the acceptance probability of a Metropolis-Hastings
+MCMC scheme. This perspective leads to a class of noisy MCMC algorithms \citep{noisyMCMC}
+that are empirically shown to be more robust than alternatives based on unnormalized density
+estimates. These algorithms require only
+slight adjustments to standard MCMC implementations, and are generally applicable to any 
+surrogate with a predictive distribution from which samples can be drawn.
 
-
-including algorithms for propagating surrogate uncertainty and sequentially
-refining the surrogate model. 
-
-The main contribution of this paper is introduce a new framework for conducting surrogate-based
-posterior inference based around approximating the acceptance probability of Metropolis-Hastings
-algorithms. In particular, we develop practical noisy MCMC algorithms that require only the ability
-to sample from the predictive distribution of the surrogate model. We also propose several (batch) 
-sequential design algorithms that target improvement in the posterior approximation. 
-Finally, we provide practical recommendations on emulating unnormalized posterior densities, 
-including prior predictive checks for avoiding common pathologies. 
+We then propose several new active learning criteria that sequentially select new emulator training
+points by targeting regions in parameter space in which the surrogate-approximated Metropolis-Hastings
+acceptance probability exhibits high uncertainty. 
+\todo: finish this
 
 % Surrogates for Bayesian Inverse Problems
 \section{Surrogates for Bayesian Inverse Problems}
