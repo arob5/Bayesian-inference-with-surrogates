@@ -33,11 +33,12 @@ base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Experiment
-experiment_tag <- "vsem"
+experiment_tag <- "banana"
 
 # Determine emulators and designs to use.
 em_tags <- c("em_lpost_twostage")
-design_tags <- c("lhs_extrap_240")
+design_tags <- c("lhs_extrap_6", "lhs_extrap_12", "lhs_extrap_24", 
+                 "lhs_extrap_48", "lhs_extrap_96")
 
 
 # ------------------------------------------------------------------------------

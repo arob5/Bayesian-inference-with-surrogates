@@ -19,6 +19,18 @@ get_inv_prob <- function() {
   inv_prob <- get_vsem_test_paper(default_conditional=FALSE, 
                                   default_normalize=TRUE)
   
+  # Truncating prior to achieve compact support, but capture almost all 
+  # prior mass. This just trims off the tail of Cv and tauV. The truncated prior
+  # is used when sampling from surrogate-induced posterior approximations.
+  prob_prior <- .99
+  q_tail <- sqrt(prob_prior)
+  prior_bounds <- get_prior_bounds(inv_prob$par_prior, tail_prob_excluded=1-q_tail, 
+                                   set_hard_bounds=TRUE)
+  par_prior_trunc <- inv_prob$par_prior
+  par_prior_trunc$bound_lower <- prior_bounds[1,]
+  par_prior_trunc$bound_upper <- prior_bounds[2,]
+  inv_prob$par_prior_trunc <- par_prior_trunc
+  
   return(inv_prob)
 }
 

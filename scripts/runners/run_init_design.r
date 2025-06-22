@@ -40,15 +40,15 @@ library(assertthat)
 # Settings 
 # ------------------------------------------------------------------------------
 
-design_seed <- 236432
+design_seed <- 645324
 set.seed(design_seed)
 
-experiment_tag <- "vsem"
+experiment_tag <- "banana"
 base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
 code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 
 # Design methods settings.
-n_design <- 240L
+n_design <- 96
 design_method <- "lhs_extrap" 
 
 # Initial design tag.

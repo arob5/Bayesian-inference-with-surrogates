@@ -38,7 +38,19 @@ get_inv_prob <- function() {
                           param1 = c(0, 0),
                           param2 = c(1, 1))
   rownames(par_prior) <- par_names
+  par_prior$par_name <- par_names
+  par_prior$bound_lower <- -Inf
+  par_prior$bound_upper <- Inf
   
+  # Truncating prior to achieve compact support, but capture almost all 
+  # prior mass. The truncated prior is used when sampling from surrogate-induced 
+  # posterior approximations.
+  prob_prior <- .99
+  q_tail <- sqrt(prob_prior)
+  prior_bounds <- get_prior_bounds(par_prior, tail_prob_excluded=1-q_tail, 
+                                   set_hard_bounds=TRUE)
+  par_prior_trunc <- truncate_prior(par_prior, prior_bounds)
+
   # ------------------------------------------------------------------------------
   # Forward model.
   # ------------------------------------------------------------------------------
@@ -81,14 +93,13 @@ get_inv_prob <- function() {
                                            default_conditional = FALSE, 
                                            default_normalize = TRUE)
   
-  
   # ------------------------------------------------------------------------------
   # Create object (list) encoding inverse problem.
   # ------------------------------------------------------------------------------
   
   inv_prob <- list(par_names=par_names, output_names="y", par_true=par_true, 
                    par_prior=par_prior, dim_par=2L, dim_obs=1L, n_obs=n_obs,
-                   llik_obj=llik_exact)
+                   llik_obj=llik_exact, par_prior_trunc=par_prior_trunc)
   
   return(inv_prob)
 }

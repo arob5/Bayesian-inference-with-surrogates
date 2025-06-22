@@ -37,29 +37,29 @@ get_init_design_settings <- function() {
     
     # Extrapolation points: put far in the tails of the prior along each
     # coordinate axis. Note that the prior for each parameter is iid N(0,1).
-    extrap_scale <- 1.8
-    q <- qnorm(c(.001, .999))
-    extrap_inputs <- rbind(c(0, extrap_scale * q[2]),
-                           c(extrap_scale * q[2], 0),
-                           c(0, extrap_scale * q[1]),
-                           c(extrap_scale * q[1], 0))
+    extrap_bounds <- get_prior_bounds(inv_prob$par_prior_trunc, tail_prob_excluded=0.02,
+                                      set_hard_bounds=FALSE)
+    extrap_inputs <- rbind(c(0, extrap_bounds[2,2]),
+                           c(extrap_bounds[1,1], 0),
+                           c(0, extrap_bounds[1,2]),
+                           c(extrap_bounds[2,1], 0))
     colnames(extrap_inputs) <- inv_prob$par_names
     design_extrap <- get_init_design_list(inv_prob, "manual", 4L, 
                                           inputs=extrap_inputs)
     
-    # Prior-based LHS design points.
+    # Prior-based LHS design points. Ensure these do not fall outside bounds
+    # by sampling wrt the truncated prior.
     n_lhs <- n - 4L
-    if(n_lhs <= 0L) return(design_extrap)
+    if(n_lhs > 0) {
+      lhs_inputs <- get_batch_design("LHS", n_lhs, inv_prob$par_prior_trunc)
+      inputs <- rbind(lhs_inputs, extrap_inputs)
+    } else {
+      inputs <- extrap_inputs
+    }
     
-    design_lhs <- get_init_design_list(inv_prob, design_method="LHS", 
-                                       N_design=n_lhs)
-    
-    # Combine into one design.
-    design_info <- list(input = rbind(design_lhs$input, design_extrap$input),
-                        fwd = rbind(design_lhs$fwd, design_extrap$fwd),
-                        llik = c(design_lhs$llik, design_extrap$llik),
-                        lprior = c(design_lhs$lprior, design_extrap$lprior),
-                        lpost = c(design_lhs$lpost, design_extrap$lpost))
+    # Assemble design outputs.
+    design_info <- get_init_design_list(inv_prob, design_method="LHS_extrap", 
+                                        N_design=n, inputs=inputs)
     return(design_info)
   }
   
@@ -140,6 +140,49 @@ get_emulator_settings <- function() {
     return(llik_em)
   }
   
+  # Unnormalized log-posterior density emulator. Two step approach: fit 
+  # quadratic mean function with constrained optimization, then fit stationary
+  # GP with Gaussian kernel to residuals. 
+  em_list$em_lpost_twostage$em_label <- "em_lpost_twostage"
+  em_list$em_lpost_twostage$is_fwd_em <- FALSE
+  em_list$em_lpost_twostage$fit_em <- function(design_info, inv_prob) {
+    
+    # Stage one: quadratic regression to use as mean function.
+    fit <- fit_constr_quad_reg(design_info, inv_prob)
+    mean_func <- function(U) {
+      Phi <- inv_prob$par_maps$fwd(U)
+      drop(quad_basis(Phi) %*% fit$par)
+    }
+    
+    # Fit stationary GP to residuals.
+    resids <- design_info$llik - mean_func(design_info$input)
+    gp_obj <- gpWrapperHet(design_info$input, matrix(resids, ncol=1L),
+                           scale_input=TRUE, normalize_output=TRUE)
+    gp_obj$set_gp_prior("Gaussian", "constant", include_noise=FALSE)
+    gp_obj$fit()
+    
+    # Construct llikEmulator object. Shifting so that predictions correspond
+    # to log-posterior predictions. Also need to be careful when specifying
+    # the bounds, since the emulator is fit to residuals, not the raw 
+    # log-likelihood values.
+    shift_func <- function(U, ...) mean_func(U) + calc_lprior_dens(U, inv_prob$par_prior_trunc)
+    lpost_bounds <- function(U, ...) {
+      llik_bounds <- inv_prob$llik_obj$get_llik_bounds()
+      resid_bounds <- function(U) llik_bounds[2] - mean_func(U)
+      
+      list(lower = -Inf,
+           upper = resid_bounds(U) + shift_func(U))
+    }
+    
+    lpost_em <- llikEmulatorGP("em_lpost_twostage", gp_obj, 
+                               default_conditional=FALSE, 
+                               default_normalize=TRUE,
+                               shift_func=shift_func, 
+                               llik_bounds=lpost_bounds,
+                               is_lpost_em=TRUE)
+    return(lpost_em)
+  }
+  
   # Set list names to the labels for convenience.
   names(em_list) <- sapply(em_list, function(x) x$em_label)
   
@@ -154,8 +197,8 @@ get_mcmc_settings <- function() {
   # the unique identifier for the algorithm.
   
   # Common settings that will be applied to all MCMC algorithms.
-  common_settings <- list(n_itr=150000L, try_parallel=TRUE, n_chain=4L,
-                          itr_start=100000L)
+  common_settings <- list(n_itr=100000L, try_parallel=TRUE, n_chain=4L,
+                          itr_start=75000L)
   
   # Common settings that will be applied to all algorithms using the BayesianTools
   # wrapper function.

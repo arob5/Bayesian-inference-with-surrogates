@@ -44,11 +44,11 @@ seed <- 865754
 set.seed(seed)
 
 # The experiment base directory.
-experiment_tag <- "vsem"
+experiment_tag <- "banana"
 
 # Number of points in each of the two validation sets.
-n_test_prior <- 1000L
-n_test_post <- 1000L
+n_test_prior <- 500L
+n_test_post <- 500L
 
 # Sampling method to use in constructing the prior validation set.
 design_method_test <- "simple"
@@ -58,10 +58,10 @@ n_samp_prior <- 50000L
 
 # Specifications for exact MCMC.
 mcmc_settings <- list(test_label="exact", mcmc_func_name="mcmc_noisy_llik",
-                      n_itr=100000L, try_parallel=TRUE, n_chain=4L)
+                      n_itr=50000L, try_parallel=TRUE, n_chain=4L)
 
 # Starting iteration defining the end of the burn-in/warm-up for exact MCMC.
-burn_in_start <- 75000L
+burn_in_start <- 40000L
 
 # ------------------------------------------------------------------------------
 # Setup 
@@ -114,18 +114,6 @@ prior_list <- convert_par_info_to_list(inv_prob$par_prior)
 par_maps <- get_par_map_funcs(prior_list)
 inv_prob$prior_list <- prior_list
 inv_prob$par_maps <- par_maps
-
-# Truncating prior to achieve compact support, but capture almost all 
-# prior mass. This just trims off the tail of Cv and tauV. The truncated prior
-# is used when sampling from surrogate-induced posterior approximations.
-prob_prior <- .99
-q_tail <- sqrt(prob_prior)
-prior_bounds <- get_prior_bounds(inv_prob$par_prior, tail_prob_excluded=1-q_tail, 
-                                 set_hard_bounds=TRUE)
-par_prior_trunc <- inv_prob$par_prior
-par_prior_trunc$bound_lower <- prior_bounds[1,]
-par_prior_trunc$bound_upper <- prior_bounds[2,]
-inv_prob$par_prior_trunc <- par_prior_trunc
 
 saveRDS(inv_prob, file=file.path(out_dir, "inv_prob_list.rds"))
 
