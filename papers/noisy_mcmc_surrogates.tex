@@ -229,8 +229,67 @@ The log-posterior case is quite similar, except that the effect of the prior is 
 approximated by the emulator, so the induced posterior surrogate simply takes 
 the form $\postEm(\Par) = \Exp{\funcEm(\Par)}$.
 
-% Comparing Common Posterior Approximations
-\section{Comparing Common Posterior Approximations}
+% Comparing Uncertainty Propagation Methods
+\section{Comparing Uncertainty Propagation Methods}
+The second stage in the modular surrogate workflow consists of using the 
+trained emulator $\funcEm$ to approximate the posterior $\postDensNorm$.
+To avoid overconfident posterior inference, the uncertainty in $\funcEm$
+should be propagated within this posterior approximation. Given the lack of
+a unifying probabilistic model across the two stages, proper uncertainty 
+quantification is not automatically given by standard Bayesian conditioning.
+Consequently, many different uncertainty propagation methods have been 
+proposed [\todo: cite]. This problem shares a close resemblance with other 
+instances of modular inference, including data imputation [\todo: cite],
+cut distributions [\todo: cite], and dimension reduction via active subspaces [\todo: cite].
+
+Irrespective of the underlying target quantity $\func$, the probabilistic emulator $\funcEm$ 
+induces a random approximation of the posterior density
+\begin{align}
+\postNormEm(\Par) &\Def \frac{1}{\normCstEm} \postEm(\Par),
+&&\normCstEm \Def \int_{\parSpace} \postEm(\Par) d\Par, \label{eq:random-post}
+\end{align}
+which is referred to as the ``sample'' approximation in \citet{StuartTeck1}. We can thus
+view the challenge of uncertainty propagation as that of constructing a deterministic 
+posterior approximation that summarizes the uncertainty encoded in $\postNormEm$.
+Below we introduce two methods that have been proposed for this purpose, and then
+analyze when the behavior of these methods deviate. 
+
+\subsubsection{Expected Posterior}
+A deterministic summary of $\postNormEm$ can be constructed via the expectation 
+\begin{equation}
+\postApproxEP(\Par) \Def \E_{\Ndesign}\left[\postNormEm(\Par) \right], \label{eq:ep-approx}
+\end{equation}
+with $\E_{\Ndesign}$ denoting the expectation with respect to the underlying emulator $\funcEm$.
+We follow the terminology in \citet{BurknerSurrogate} and call $\postApproxEP$ the 
+\textit{expected posterior (EP)}. The EP can be understood via the generative procedure
+\begin{align}
+&\postDensNorm^\prime \sim \mathrm{law}(\postNormEm) 
+&&\Par^\prime \sim \postDensNorm^\prime, \label{eq:ep-direct-sample}
+\end{align}
+implying that $\postApproxEP$ represents the aggregation of samples from an ensemble of 
+posterior approximations, each corresponding to a single trajectory of $\funcEm$.
+Note that the quantity $\postNormEm(\Par)$ depends on the entire random function $\funcEm$ 
+through its dependence on $\normCstEm$, as opposed to only depending on the prediction 
+$\funcEm(\Par)$ at the single input $\Par$. Therefore, care must be taken in ensuring the 
+expectation in \Cref{eq:ep-approx} is well-defined in the case that $\funcEm$ is an infinite-dimensional
+random element (e.g., a GP). We assume throughout that $\funcEm$ is constructed such that 
+trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
+in \Cref{eq:ep-direct-sample} is well-defined. See 
+\citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
+technical details. The EP corresponds to the cut posterior in modular Bayesian inference
+\citep{PlummerCut}, and the sampling procedure in \Cref{eq:ep-direct-sample} is closely 
+related to multiple imputation algorithms used to handle missing data [\todo: cite]. The 
+potentially infinite-dimensional nature of $\funcEm$ presents additional practical difficulties
+not typically present in these other settings, the consequences of which are 
+discussed in \Cref{sec:computation}.
+
+\subsubsection{Expected Likelihood}
+Note that the random posterior $\postNormEm(\Par)$ depends on the entire 
+emulator $\funcEm$ due to its dependence on $\normCstEm$, while the unnormalized 
+density surrogate $\postEm(\Par)$ depends only on $\funcEm(\Par)$, the prediction at $\Par$.
+
+
+
 Early work in surrogate-based Bayesian inference focused on jointly learning
 the parameters of both the computer model and emulator within a unified Bayesian model 
 (e.g., \citet{KOH}). In this case, surrogate uncertainty is automatically quantified via the 
@@ -242,14 +301,12 @@ surrogate workflow commonly used today \citep{modularization,BurknerTwoStep,Burk
 This can also be seen as a particular inference of cut Bayesian inference \citep{PlummerCut}. 
 
 
-\subsection{Expected Likelihood}
-\subsection{Expected Posterior}
 \subsection{Comparison}
 \subsubsection{Gaussian Log-Density Emulation Setting}
 \subsubsection{Gaussian Forward Model Emulation Setting}
 
 % Computation for the Posterior Approximations
-\section{Computation for the Posterior Approximations}
+\section{Computation for the Posterior Approximations} \label{sec:computation}
 \subsection{Expected Likelihood}
 \subsection{Expected Posterior}
 \subsubsection{Direct Sampling}
