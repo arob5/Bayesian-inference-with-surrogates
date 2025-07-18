@@ -16,10 +16,10 @@ library(support)
 experiment_tag <- "banana"
 write_plots <- FALSE
 
-# base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
-# code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
-base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
-code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
+base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
+code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
+# base_dir <- file.path("/projectnb", "dietzelab", "arober", "bip-surrogates-paper")
+# code_dir <- file.path("/projectnb", "dietzelab", "arober", "gp-calibration")
 src_dir <- file.path(code_dir, "src")
 experiment_dir <- file.path(base_dir, "experiments", experiment_tag)
 out_dir <- file.path(experiment_dir, "output", "inv_prob_setup")
@@ -40,9 +40,10 @@ source(file.path(src_dir, "llikEmulator.r"))
 source(file.path(src_dir, "seq_design.r"))
 source(file.path(src_dir, "seq_design_gp.r"))
 source(file.path(src_dir, "seq_design_for_post_approx.r"))
+source(file.path(src_dir, "post_approx_grid.r"))
 source(file.path(base_dir, "scripts", "helper", "sim_study_functions.r"))
-source(file.path(base_dir, "..", "sipnet_calibration", "src", "prob_dists.r"))
-source(file.path(base_dir, "..", "sipnet_calibration", "src", "eki_pecan.r"))
+source(file.path(base_dir, "..", "sipnet-calibration", "src", "prob_dists.r"))
+source(file.path(base_dir, "..", "sipnet-calibration", "src", "eki_pecan.r"))
 ```
 
 ```{r}
@@ -139,14 +140,13 @@ plt_pred <- plt_lpost_em(input_grid, lpost_em)
 plot(plt_pred$mean)
 plot(plt_pred$sd)
 ```
+# Approximate Posteriors
 
 ```{r}
-gp_prior_mean <- function(U) lpost_em$shift_func(U) - calc_lprior_dens(U, inv_prob$par_prior_trunc)
+post_mean <- get_post_mean(grid_info, lpost_em)
 
-
-test <- lpost_em$predict_emulator(input_grid)
-plot_2d_grid(input_grid, test$var, input_design)
-plot_2d_grid(input_grid, gp_prior_mean(input_grid), input_design)
+plt_lpost <- plot_2d_grid(input_grid, grid_info$lpost, input_design)
+plot(plt_lpost)
 ```
 
 

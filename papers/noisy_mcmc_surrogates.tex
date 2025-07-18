@@ -64,82 +64,85 @@
 
 \maketitle
 
-Computer models have emerged as a key tool for studying complex systems 
-within the physical, biological, and engineering sciences. Such models often have uncertain 
-parameters that must be estimated from data. Bayesian methods are commonly employed
-to quantify parameter uncertainty in these calibration tasks.
+Simulation-based computer models are key tools for studying complex systems within 
+the physical, biological, and engineering sciences. 
+Such models often have uncertain parameters that must be estimated from data. 
+Bayesian methods are commonly employed
+to quantify uncertainty in these parameter calibration tasks.
 However, standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
-are often hindered by the computational cost of the simulation model.
+are hindered by the computational cost of the simulation model.
 A popular approach to deal with this issue is to train a surrogate model 
-(i.e., emulator) as a computationally thrifty approximation of the expensive computer code. 
+(i.e., emulator) as a computationally thrifty approximation of the expensive computer code.
+Surrogates have seen widespread use in Bayesian inference pipelines across a variety 
+of applications [\todo: cite]. 
 
-While the use of surrogates offers the potential for significant computational savings,
-emulator error induces biases in posterior inference. In order to avoid miscalibrated
-posterior uncertainty estimates, it is crucial to acknowledge the surrogate uncertainty within
-the posterior approximation. Probabilistic surrogates such as Gaussian processes \citep{gpML,gramacy2020surrogates} 
-and probabilistic neural networks \citep{deepEnsembles,BayesOptNN} provide a notion of predictive uncertainty 
-that can be propagated in downstream inference
- \citep{reviewPaper,BilionisBayesSurrogates,BurknerSurrogate,CES,FerEmulation}. 
- However, no single method has emerged as the objectively correct approach to propagate 
- surrogate uncertainty within a posterior approximation. 
- Various approximations and inference algorithms have been proposed, each of which propagate
- surrogate uncertainty in distinct ways 
- \citep{reviewPaper,BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,BurknerSurrogate,
- BurknerTwoStep,FerEmulation,garegnani2021NoisyMCMC}.
+Despite significant advances in surrogate modeling, fitting a 
+highly accurate emulator under a limited computational budget remains a challenging task.
+In computationally-intensive applications, the surrogate error can be non-negligible. 
+This error is propagated when the emulator is used to infer the values of the calibration 
+parameters, potentially leading to overconfident results with miscalibrated uncertainty 
+estimates in downstream applications \citep{BurknerSurrogate}.
+It is thus crucial to acknowledge and propagate this 
+additional source of uncertainty in surrogate-based Bayesian workflows.
+Probabilistic surrogates such as Gaussian processes \citep{gpML,gramacy2020surrogates} 
+and probabilistic neural networks \citep{deepEnsembles,BayesOptNN} provide a notion of 
+predictive uncertainty that can utilized to this end
+ \citep{reviewPaper,BilionisBayesSurrogates,BurknerSurrogate,CES,FerEmulation}.
+ 
+Typical surrogate-modeling workflows employ a two-step procedure
+in which an emulator is fit to data generated from a computer model in the first stage, 
+and then deployed in a second stage to accelerate inference for the computer 
+model parameters \citep{modularization,BurknerTwoStep,BurknerSurrogate}. 
+In the first step, emulators are trained to approximate a particular quantity of interest.
+The targeted quantity is often the computer 
+model outputs themselves [\todo: cite], but can also be the log-likelihood function [\todo: cite]
+or unnormalized log-posterior density [\todo: cite]. In the second step, the emulator 
+is inserted in place of the target quantity to enable the application of Bayesian inference  
+algorithms without requiring further queries to the expensive simulator.
 
-In the ideal setting, information from additional runs of the computer model can be leveraged to iteratively
-refine the surrogate in order to eliminate the posterior bias. In practice, limited computational 
-budgets render this infeasible, but targeted simulator runs can be used to reduce the error as much
-as possible. Since the cost of running the computer model is the primary computational bottleneck,
-the new parameter values at which to run the model should be carefully selected.
-The surrogate predictive uncertainty can be used to guide this decision, targeting parameters with the potential 
-for maximal improvement in the posterior approximation. 
-Various active learning (i.e., sequential design) algorithms have been proposed for this 
-purpose \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP,
-Surer2023sequential, gp_surrogates_random_exploration,weightedIVAR}.
-
-Many of the proposed uncertainty propagation and active learning algorithms can be categorized based on the
-target quantity that is emulated. Two broad strategies have emerged in surrogate-based Bayesian inference:
-(i.) forward model emulation, in which an emulator approximates the underlying computer model, and 
-(ii) log-density emulation, in which an emulator directly approximates the log-likelihood or unnormalized
-log-posterior density. These strategies are compared in \citep{StuartTeck1,GP_PDE_priors,reviewPaper}.
-In either case, the underlying probabilistic emulator induces a random approximation of the posterior density.
-Owing to the difficulty of working with the normalizing constant of this random posterior, the majority of previous 
-work derives posterior approximations and active learning criteria based on the induced approximation to the
-\textit{unnormalized} posterior density \citep{SinsbeckNowak,VehtariParallelGP,StuartTeck1}. 
-This choice is primarily motivated by computational convenience, and has been shown to facilitate closed-form
-computations in special cases involving Gaussian processes and Gaussian likelihoods 
-\citep{reviewPaper,StuartTeck1,StuartTeck2,GP_PDE_priors,VehtariParallelGP,Surer2023sequential}.
+This modular framework 
+has several practical benefits \citep{modularization,PlummerCut}, but leaves open the 
+question as to the ``correct'' approach for propagating surrogate uncertainty within the 
+posterior approximation in the second stage. A variety of uncertainty-aware posterior 
+approximations have been proposed, but little guidance exists on choosing a particular 
+method \citep{reviewPaper,BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,
+BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, many previous studies 
+tend to focus on a particular surrogate model (e.g., Gaussian process) and target 
+(e.g., the log-likelihood), limiting the ability to understand how a particular 
+uncertainty propagation method may perform under different modeling setups. 
+ 
+In order to develop generic workflows for modular surrogate-based Bayesian inference, 
+a conceptual understanding of different uncertainty propagation methods must 
+be complemented by practical, general-purpose computational algorithms.
+A wide body of work has focused on tractable Gaussian settings that allow the derivation 
+of a closed-form likelihood approximation, in which case standard MCMC algorithms 
+may be applied [\todo: cite]. Recent work has highlighted 
+generally-applicable algorithms within a probabilistic programming workflow
+\citep{BurknerSurrogate}, and the potential for so-called ``noisy'' MCMC algorithms 
+to circumvent the requirement for closed-form computations \citep{garegnani2021NoisyMCMC}. 
+[\todo: need to motivate our work here; these two papers don't directly apply to the GP setting]
 
 \paragraph{Contributions.}
-As summarized above, a wide variety of methods have been proposed for posterior approximation
-and sequential design in surrogate-based Bayesian inference. 
-In this paper, we provide new insights into when and why the performance of different methods can
-deviate. In particular, we investigate the implications of basing algorithms on the unnormalized 
-posterior density approximation induced by an underlying probabilistic emulator. We show that 
-the effect of ignoring the normalizing constant depends on the particular emulator target, and is 
-typically more significant in the log-density emulation setting.
+As summarized above, a wide variety of methods have been proposed for 
+uncertainty-aware posterior approximation in surrogate-based Bayesian inference. 
+In this paper, we provide new insights into when and why the performance of different 
+methods can deviate. In particular, we investigate the implications of propagating
+uncertainty through the derivation of a pointwise likelihood approximation, as compared 
+to aggregating samples from an ensemble of posterior approximations. We demonstrate 
+that the extent to which these two methods agree depends crucially on the emulator 
+target and on the tails of the emulator predictive distribution. 
 
-Based on these insights, we propose posterior approximation and active learning algorithms 
-that take into account the ratio between random density values at different parameter values.
-Rather than deriving an estimate of the unnormalized posterior density, our posterior approximation
-method centers on the idea of approximating the acceptance probability of a Metropolis-Hastings
-MCMC scheme. This perspective leads to a class of noisy MCMC algorithms \citep{noisyMCMC}
-that are empirically shown to be more robust than alternatives based on unnormalized density
-estimates. These algorithms require only
+[\todo: paragraph on MCMC] [\todo: paragraph on practical considerations/model checking]
+
+These algorithms require only
 slight adjustments to standard MCMC implementations, and are generally applicable to any 
 surrogate with a predictive distribution from which samples can be drawn.
-
-We then propose several new active learning criteria that sequentially select new emulator training
-points by targeting regions in parameter space in which the surrogate-approximated Metropolis-Hastings
-acceptance probability exhibits high uncertainty. 
-\todo: finish this
 
 % Surrogates for Bayesian Inverse Problems
 \section{Surrogates for Bayesian Inverse Problems}
 
 \subsection{Bayesian Inference Setting}
-Our general goal is to estimate parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$ given 
+We consider the general goal of estimating parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$ given 
 observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ within a Bayesian framework.
 Assuming a prior density $\priorDens(\Par)$ and likelihood $p(\obs \given \Par)$, 
 we seek to characterize the posterior distribution 
@@ -153,11 +156,6 @@ density, which plays a central role in our development.
 We assume that pointwise evaluations of  $\postDens(\Par)$ can be computed, but at significant 
 computational expense. This renders standard iterative optimization and sampling algorithms 
 (e.g., MCMC) infeasible, as each iteration requires a new density evaluation $\postDens(\Par)$.
-To address this computational bottleneck, typical surrogate workflows ultimately induce 
-a (random) approximation to $\postDens(\Par)$.
-In the following, we motivate this setup by introducing common surrogate modeling strategies used 
-in solving Bayesian inverse problems, and describe how each approach results in a 
-stochastic approximation to $\postDens(\Par)$.
 
 \subsection{Bayesian Inverse Problems}
 The challenge posed by computationally expensive density evaluations $\postDens(\Par)$ commonly 
@@ -168,31 +166,235 @@ parameters in a system of ordinary differential equations (ODEs)
 \begin{align}
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
 \end{align}
-where the dynamics depend on parameters $\Par$. Each value for $\Par$ implies a different state trajectory
+where the dynamics depend on parameters $\Par$. Each value for $\Par$ implies a different solution trajectory
 $[\state(\Time, \Par)]_{\timeStart \leq \Time \leq \timeEnd}$, which we encode by the
 map $\solutionOp: \Par \mapsto [\state(\Time, \Par)]_{\timeStart \leq \Time \leq \timeEnd.}$. The goal is then 
-to identify the parameters that yield state trajectories that are in agreement with observed data 
+to identify the parameters that yield trajectories in agreement with observed data 
 $\obs$, which is assumed to be some noise-corrupted function $\obsOp$ of the true trajectory. Thus, the 
 likelihood is of the form 
 \begin{align}
-&\obs = \fwd(\Par) + \noise, &&\fwd \Def \obsOp \circ \solutionOp.
+&\obs = \fwd(\Par) + \noise, &&\fwd \Def \obsOp \circ \solutionOp. \label{eq:additive-noise}
 \end{align}
 In practice, the ODE is solved numerically so $\solutionOp$ represents the map induced by a numerical 
 solver. Therefore, in this setting the computational cost of computing $\postDens(\Par)$ stems from the 
 dependence of the likelihood on $\fwd(\Par)$, and in particular on the solver $\solutionOp(\Par)$.
 
-\subsection{Common Surrogate Strategies} \label{sec:surrogate-examples}
-Given the cost of computing $\postDens(\Par)$, we seek to approximate the posterior
-using minimal queries to the posterior density. In addition, in many practical
-settings it is necessary that these density evaluations be computed in parallel. 
-A popular approach satisfying these criteria involves generating an 
-\textit{initial design} $\{(\Par_{\idxDesign}, \postDens(\Par_{\idxDesign}))\}_{\idxDesign=1}^{\Ndesign}$ 
-(in parallel), fitting a regression model $\postEm[\Ndesign](\Par)$ to approximate 
-the map $\Par \mapsto \postDens(\Par)$, and then using the approximation $\postEm[\Ndesign](\Par)$
-in place of the exact density. We refer to $\postEm[\Ndesign](\Par)$ as the 
-\textit{surrogate density}, with the subscript indicating the number of design points
-used for training. Typically, the 
+\subsection{Surrogates Targets for Bayesian Inference} \label{sec:surrogates-Bayes}
+Given the cost of computing $\postDens(\Par)$, we seek to approximate
+the posterior using a small set of queries to the posterior density.
+In many practical settings it is necessary to compute these density 
+evaluations in parallel. A common approach satisfying these criteria is 
+to replace the expensive model with a computationally cheap approximation, 
+which we synonymously refer to as a \textit{surrogate} or \textit{emulator}.
+The simulator is run at a small set of design points 
+$\designIn \Def \{\Par_1, \dots, \Par_{\Ndesign}\}$ and the resulting input-output
+pairs are used to fit a regression or interpolation model, which is then used to 
+approximate the density at new parameter values. Different target maps 
+$\Par \mapsto \func(\Par)$ may be emulated in order to accelerate Bayesian 
+inference, so long as $\func(\Par)$ is sufficient to compute $\postDens(\Par)$
+without requiring additional simulator runs. Let $\funcEm$ denote the 
+emulator for $\func$, which has been trained using the $\Ndesign$
+design points. We generically use the notation $\postEm$ to denote 
+the approximation to $\postDens$ induced by replacing $\func$
+with $\funcEm$. We highlight two general 
+choices of $\func$ common in the literature. This categorization has also 
+been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}. See
+\citet{reviewPaper} for a discussion of practical considerations in choosing 
+the emulator target. 
 
+\subsubsection{Forward Model Emulation}
+One natural approach is to target the underlying forward model 
+$\Par \mapsto \fwd(\Par)$, a strategy we refer to as \textit{forward model emulation}.
+This method consists of fitting a surrogate $\funcEm$ to the design 
+$\{(\Par_n, \fwd(\Par_n))\}_{n=1}^{\Ndesign}$ and then using $\funcEm$
+in place of $\fwd$. Much previous work has considered this strategy 
+in the context of the additive noise model in \Cref{eq:additive-noise},
+under the assumption of Gaussian noise $\noise \sim \Gaussian(0, \likPar)$ [\todo: cite].
+In this special case, the induced posterior density surrogate takes the form
+\begin{align}
+\postEm(\Par) &= \priorDens(\Par) \Gaussian(\obs \given \funcEm(\Par), \likPar). \label{eq:post-em-fwd-Gaussian}
+\end{align}
+
+\subsubsection{Log-Density Emulation}
+Other lines of research have instead targeted the log-likelihood [\todo: cite]
+$\Par \mapsto \log p(\obs \given \Par)$ or the log-posterior 
+$\Par \mapsto \log \left\{\priorDens(\Par)p(\obs \given \Par)\right\}$ [\todo: cite].
+We collectively refer to these strategies as \textit{log-density emulation}. A log-likelihood
+emulator $\funcEm$ is fit to a design $\{(\Par_n, \log p(\obs \given \Par_n))\}_{n=1}^{\Ndesign}$
+and induces a posterior density surrogate 
+\begin{align}
+\postEm(\Par) &= \priorDens(\Par) \Exp{\funcEm(\Par)}. \label{eq:post-em-llik}
+\end{align}
+The log-posterior case is quite similar, except that the effect of the prior is also 
+approximated by the emulator, so the induced posterior surrogate simply takes 
+the form $\postEm(\Par) = \Exp{\funcEm(\Par)}$.
+
+% Comparing Common Posterior Approximations
+\section{Comparing Common Posterior Approximations}
+Early work in surrogate-based Bayesian inference focused on jointly learning
+the parameters of both the computer model and emulator within a unified Bayesian model 
+(e.g., \citet{KOH}). In this case, surrogate uncertainty is automatically quantified via the 
+Bayesian posterior. However, subsequent work highlighted common deficiencies of this
+approach \citep{modularization}. In particular, allowing observational data to inform 
+emulator parameters can produce counterintuitive posterior inferences when the computer
+model is misspecified. This line of research inspired the two-step (i.e., modular)
+surrogate workflow commonly used today \citep{modularization,BurknerTwoStep,BurknerSurrogate}.
+This can also be seen as a particular inference of cut Bayesian inference \citep{PlummerCut}. 
+
+
+\subsection{Expected Likelihood}
+\subsection{Expected Posterior}
+\subsection{Comparison}
+\subsubsection{Gaussian Log-Density Emulation Setting}
+\subsubsection{Gaussian Forward Model Emulation Setting}
+
+% Computation for the Posterior Approximations
+\section{Computation for the Posterior Approximations}
+\subsection{Expected Likelihood}
+\subsection{Expected Posterior}
+\subsubsection{Direct Sampling}
+Direct sampling, MCMC within Monte Carlo, Just-in-time sampling
+\subsubsection{Metropolis-Hastings Algorithm}
+\subsubsection{Noisy MCMC Algorithms}
+Connection to BUGS naive cut algorithm
+
+
+
+\section{Temporary}
+\subsection{Expected Likelihood}
+The expected likelihood approximation may also be motivated via the definition of a modified 
+inverse problem with an extended parameter space. To this end, we introduce a random variable
+$\gamma$ such that $\funcEm[\Ndesign](\Par) \overset{\mathrm{d}}{=} \gamma \given \Par$.
+Consider the joint probability model 
+\begin{align}
+p(\Par, \obs, \gamma) \Def 
+p(\obs \given \gamma) p(\gamma \given \Par) \priorDens(\Par). \label{eq:EL-prob-model}
+\end{align}
+For a forward model emulator $p(\obs \given \gamma)$ is the likelihood evaluated at
+the forward model output $\gamma$. For a log-likelihood emulator, 
+$p(\obs \given \gamma) = \Exp{\gamma}$. The expected likelihood approximation 
+corresponds to the conditional marginal 
+\begin{align}
+p(\Par \given \obs) \propto \priorDens(\Par) \int p(\obs \given \gamma) p(\gamma \given \Par) d\gamma
+\label{eq:EL-marginal}
+\end{align}
+This extended parameter space formulation is adopted in \citet{BilionisBayesSurrogates}, noted in
+\citet{SinsbeckNowak}, and a special case is given as an example in \citet{StuartTeck2}.
+
+When the integral in \Cref{eq:EL-marginal} can be computed analytically, then $p(\Par \given \obs)$ can 
+be targeted by any standard MCMC sampler. If samples can be drawn from $p(\gamma \given \Par)$ then
+it can still be targeted exactly via pseudo-marginal methods. A third option is to update the marginal conditionals
+\begin{align}
+p(\Par \given \gamma, \obs) &\propto p(\gamma \given \Par) \priorDens(\Par) \label{eq:EL-conditionals} \\
+p(\gamma \given \Par, \obs) &\propto p(\obs \given \gamma) p(\gamma \given \Par)
+\end{align}
+in turn, which can be done via Metropolis-Hastings steps, slice sampling, or other means. This algorithm
+requires the ability to evaluate the predictive density of the emulator.
+
+\subsection{Expected Posterior}
+The probability model in \Cref{eq:EL-prob-model} does not encode the dependence structure of the 
+surrogate predictive distribution across different values of $\Par$; the conditionals $\gamma \given \Par$
+only capture the pointwise predictions. In this section, we consider formulating a probability model that 
+reflects the full distribution of the random function $\funcEm$. Formally, consider
+\begin{align}
+p(\Par, \obs, \funcEm) &\Def
+p(\Par \given \obs, \funcEm) p(\funcEm) p(\obs) \\
+&= \priorDens(\Par) p(\obs \given \funcEm(\Par))p(\funcEm) \frac{p(\obs)}{p(\obs \given \funcEm)}, \label{eq:EP-prob-model}
+\end{align}
+where $p(\Par \given \obs, \funcEm)$ is the posterior over $\Par$ obtained using a particular 
+trajectory of the emulator, with associated normalizing constant $p(\obs \given \funcEm)$.
+The quantity $p(\funcEm)$ is purely formal at the moment, as no Lebesgue 
+density exists for the random element $\funcEm$. This could be given meaning in \Cref{eq:EP-prob-model}
+by replacing $\funcEm$ with a random vector representing a discretization of $\funcEm$. The expected 
+posterior corresponds to the conditional marginal
+\begin{align}
+p(\Par \given \obs) \propto \int p(\Par \given \obs, \funcEm) p(\funcEm) d\funcEm.
+\label{eq:EP-marginal}
+\end{align}
+A sample can be directly drawn from this distribution by first sampling a trajectory $\func \sim \mathrm{law}(\funcEm)$
+and then drawing a sample from $p(\Par \given \obs, \func)$. Assuming the first step can be completed, 
+then the second step will still typically require an MCMC run. This approach is thus parallelizable, but 
+may require many MCMC runs to adequately characterize the expected posterior. The larger problem is 
+that the first step is often intractable without resorting to discretization of $\funcEm$. An alternative to direct
+sampling is to target the joint posterior over $(\Par, \funcEm)$ within a single MCMC run. We might try to 
+do this analogously to \Cref{eq:EL-conditionals} by updating the marginal conditionals 
+\begin{align}
+p(\Par \given \funcEm, \obs) \propto \priorDens(\Par) p(\obs \given \funcEm(\Par)) \label{eq:EP-conditionals} \\
+p(\funcEm \given \Par, \obs) \propto p(\obs \given \funcEm(\Par)) \frac{p(\funcEm)}{p(\obs \given \funcEm)}
+\end{align}
+in turn, which is most simply done via Metropolis-Hastings updates.
+The $\Par$ update should only require a standard Metropolis-Hastings step. We focus on the
+$\func$ update.
+
+ Assuming a proposal 
+$\tilde{\func} \sim q_{\func}(\func, \cdot)$, the ratio appearing in the MH acceptance
+probability for the $\funcEm$ update takes the form 
+\begin{align}
+\frac{p(\obs \given \tilde{\func}(\Par))}{p(\obs \given \func(\Par))} \frac{p(\tilde{\func})}{p(\func)} 
+\frac{q_{\func}(\tilde{\func}, \func)}{q_{\func}(\func, \tilde{\func})} \frac{p(\obs \given \func)}{p(\obs \given \tilde{\func})}.
+\end{align}
+There are two issues to deal with here. The first is the proposal and the infinite dimensional nature of $\funcEm$.
+However, if we choose $q_\func$ to be $\mathrm{law}(\funcEm)$-invariant then the ratio should simplify to
+\begin{align}
+\frac{p(\obs \given \tilde{\func}(\Par))}{p(\obs \given \func(\Par))} \frac{p(\obs \given \func)}{p(\obs \given \tilde{\func})}.
+\label{eq:MH-ratio-prior-invariant}
+\end{align}
+The simplest option is to set $q_\func(\func, \cdot) \Def \mathrm{law}(\funcEm)$, which yields an MH independence
+sampler update. If the emulator $\funcEm$ depends on a transformation of a latent Gaussian, then 
+specialized alternatives such as the preconditioned Crank-Nicolson proposal, or an elliptical slice
+sampling update, may be considered. We emphasize that the simplification in 
+\Cref{eq:MH-ratio-prior-invariant} means that this ratio only depends on the emulator trajectories at the current 
+value of $\Par$. Thus, there is no requirement to sample full trajectories. See \Cref{alg:mwg-ep}.
+
+The second issue is the dependence on the intractable normalizing constants 
+$p(\obs \given \func)$ and $p(\obs \given \tilde{\func})$. 
+If the proposed value $\tilde{\func}$ is not too far from $\func$ then it may be reasonable to invoke the 
+approximation $p(\obs \given \func) / p(\obs \given \tilde{\func}) \approx 1$.
+\Cref{alg:mwg-ep} uses this approximation, along with the independence MH proposal.
+
+\begin{algorithm}
+    \caption{Metropolis-within-Gibbs Approximation to $\llikEmSampDensNorm$}
+    \label{alg:mwg-ep}
+    \begin{algorithmic}[1] 
+    \State \textbf{Input:} Current state $(\Par, \func_\Par)$
+    \State \textbf{Output:} Updated state $(\Par^\prime, \func^\prime_{\Par^\prime})$
+     \State Propose $\tilde{\Par} \sim q(\Par, \cdot)$
+     \State Propose $(\tilde{\func}_\Par, \tilde{\func}_{\propPar}) \sim \mathrm{law}(\funcEm(\Par), \funcEm(\propPar))$ \Comment{Begin $\func$ update}
+     \State $\alpha_{\func} \gets \min\left\{1, p(\obs \given \tilde{\func}_\Par) / p(\obs \given \func_\Par) \right\}$
+      	\If{$\mathrm{Unif}(0,1) < \alpha_{\func}$}
+                \State $(\func^\prime_\Par, \func^\prime_{\propPar}) \gets (\tilde{\func}_\Par, \tilde{\func}_{\propPar})$ 
+            \Else
+                \State $\func^\prime_{\Par} \gets \func_{\Par}$
+                \State $\func^\prime_{\propPar} \gets \mathrm{law}(\funcEm(\propPar) \given \funcEm(\Par) = \func_\Par)$
+            \EndIf
+      \State $\alpha_{\Par} \gets \min\left\{1, \priorDens(\propPar )p(\obs \given \func^\prime_{\propPar}) / \priorDens(\Par) p(\obs \given \func^\prime_{\Par}) \right\}$ \Comment{Begin $\Par$ update}
+             \If{$\mathrm{Unif}(0,1) < \alpha_{\Par}$}
+                \State $\Par^\prime \gets \propPar$
+                \State $\func^\prime_{\Par^\prime} \gets \func^\prime_{\propPar}$ 
+            \Else
+            	\State $\Par^\prime \gets \Par$
+		\State $\func^\prime_{\Par^\prime} \gets \func^\prime_{\Par}$
+            \EndIf
+    \end{algorithmic}
+\end{algorithm}
+
+A second option is to consider an $\func$ update based on algorithms designed 
+for doubly intractable target distributions. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\subsection{Noisy Algorithm}
 
 A common solution to this computational bottleneck is to learn a statistical approximation of the map 
 $\Par \mapsto \postDens(\Par)$, which we refer to synonymously as a \textit{surrogate} or \textit{emulator}

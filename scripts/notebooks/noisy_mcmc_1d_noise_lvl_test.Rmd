@@ -15,6 +15,9 @@ library(support)
 
 base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
 code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
+
+# base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
+# code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
 src_dir <- file.path(code_dir, "src")
 
 # Source required files.
@@ -247,99 +250,6 @@ scale_lpost_var <- function(lpost_em, scale=1.0) {
 # approximations of the posterior density. Assumes uniformly spaced
 # grid.
 
-normalize_density <- function(ldens_vals, grid, log_scale=FALSE) {
-  # Given unnormalized log-density values, returns the normalized
-  # density, computed using LogSumExp. If `ldens_vals` is a matrix,
-  # then each row is normalized. The normalizing constant is approximated
-  # by the trapezoidal rule, and assumes that `grid` is ordered in ascending
-  # order (it need not be equally spaced).
-  
-  if(is.null(dim(ldens_vals))) ldens_vals <- matrix(ldens_vals, nrow=1L) 
-  n_grid <- ncol(ldens_vals)
-  
-  if(n_grid != length(drop(grid))) {
-    stop("`ldens_vals` and `grid` dimension mismatch.")
-  }
-  
-  l_du <- log(diff(drop(grid)))
-  log_summands_1 <- add_vec_to_mat_rows(l_du, ldens_vals[, 1:(n_grid-1), drop=FALSE])
-  log_summands_2 <- add_vec_to_mat_rows(l_du, ldens_vals[, 2:n_grid, drop=FALSE])
-  
-  log_term_1 <- matrixStats::rowLogSumExps(log_summands_1) - log(2)
-  log_term_2 <- matrixStats::rowLogSumExps(log_summands_2) - log(2)
-  log_norm_csts <- matrixStats::rowLogSumExps(cbind(log_term_1, log_term_2))
-  ldens_norm <- add_vec_to_mat_cols(-log_norm_csts, ldens_vals)
-  
-  if(log_scale) return(ldens_norm)
-  return(exp(ldens_norm))
-}
-
-get_EP_dens_grid_1d <- function(lpost_em, input_grid, n_mc, log_scale=FALSE, ...) {
-  
-    assert_that(lpost_em$dim_input==1L)
-    if(is.null(dim(input_grid))) input_grid <- matrix(input_grid, ncol=1L)
-    n_grid <- nrow(input_grid)
-    
-    # Simulate log-likelihood values. Return shape is (n_grid, n_mc) before
-    # transposing.
-    lpost_samp <- t(lpost_em$sample(input_grid, N_samp=n_mc, ...))
-  
-    # Normalize each trajectory.
-    lpost_samp_norm <- normalize_density(lpost_samp, drop(input_grid), log_scale=TRUE)
-    
-    # Average density over trajectories.
-    lpost_ep_norm <- matrixStats::colLogSumExps(lpost_samp_norm) - log(n_mc)
-    
-    if(log_scale) return(lpost_ep_norm)
-    return(exp(lpost_ep_norm))
-}
-
-
-# Exact posterior density.
-get_post_exact <- function(grid_info, log_scale=FALSE) {
-  drop(normalize_density(grid_info$lpost, grid_info$input, log_scale=log_scale))
-}
-
-# Plug-In mean approximation.
-get_post_mean <- function(grid_info, lpost_em, log_scale=FALSE, ...) {
-  U <- matrix(grid_info$input, ncol=1L)
-  pred <- lpost_em$predict(U, return_var=FALSE, ...)
-  
-  # Normalize density.
-  drop(normalize_density(pred$mean, U, log_scale=log_scale))
-}
-
-# Expected likelihood approximation.
-get_post_EL <- function(grid_info, lpost_em, log_scale=FALSE, ...) {
-  U <- matrix(grid_info$input, ncol=1L)
-  pred <- lpost_em$predict_lik(U, return_var=FALSE, log_scale=TRUE, ...)
-  
-  # Normalize density.
-  drop(normalize_density(pred$log_mean, U, log_scale=log_scale))
-}
-
-get_post_noisy <- function(grid_info, lpost_em, par_prior, mode="mcwmh", use_joint=TRUE,
-                           n_chains=4, n_itr=10000, itr_start=7000, adjustment="rectified", 
-                           lbl=NULL, ...) {
-
-  if(is.null(lbl)) lbl <- paste(mode, ifelse(use_joint, "joint", "ind"), sep="_")
-  
-  ics <- get_batch_design("simple", N_batch=n_chains, prior_params=par_prior)
-  mcmc_settings <- list(mcmc_func_name="mcmc_noisy_llik", par_prior=par_prior, 
-                        par_init=ics, mode=mode, use_joint=use_joint, n_itr=n_itr, 
-                        n_chain=n_chains, itr_start=itr_start, try_parallel=FALSE,
-                        cov_prop=matrix(0.5^2), log_scale_prop=0, 
-                        adapt_cov_prop=FALSE, adapt_scale_prop=FALSE,
-                        llik_em=lpost_em, test_label=lbl)
-  results <- do.call(run_mcmc_chains, mcmc_settings)
-  
-  max_rhat <- calc_R_hat(results$samp)$R_hat_vals$R_hat
-  if(max_rhat > 1.05) message("Warning: R-hat above threshold.")
-
-  return(results)
-}
-
-
 plot_post_comparison <- function(grid_info, design_info, lpost_em, 
                                  n_mc_EP=1e5, log_scale=FALSE, plt=NULL, ...) {
   # If existing ggplot object `plt` is passed, then adds to this plot.
@@ -541,7 +451,7 @@ par_prior <- data.frame(dist="Truncated_Gaussian", param1=0,
 rownames(par_prior) <- "u"
 n_chains <- 4L
 
-# Run noisy MCMC samplers.
+# Run noisy MCMC samplers [llik].
 Eacc_results <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh", 
                                use_joint=TRUE, lbl="E-acc")
 Eacc_results_rect <- get_post_noisy(grid_info, lpost_em_bounded, par_prior, 
@@ -551,7 +461,7 @@ mcwmh_results <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh",
 mcwmh_results_rect <- get_post_noisy(grid_info, lpost_em_bounded, par_prior, 
                                      mode="mcwmh", use_joint=FALSE, lbl="mcwmh")
 
-# Forward model emulator.
+# Run noisy MCMC samplers [fwd].
 Eacc_results_fwd <- get_post_noisy(grid_info, lpost_em_fwd, par_prior, mode="mcwmh", 
                                    use_joint=TRUE, lbl="E-acc", n_chains=3, n_itr=20000,
                                    itr_start=10000)
@@ -573,6 +483,7 @@ plot(kde_plt)
 plot(kde_plt_rect)
 plot(kde_plt_fwd)
 ```
+
 
 ```{r}
 # MCMC diagnostics.
@@ -639,6 +550,116 @@ test <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh",
                                     use_joint=FALSE, lbl="mcwmh", n_chains=3,
                                     n_itr=20000, itr_start=10000)
 ```
+
+
+```{r}
+# Effect of proposal distribution on E-Acc algorithm.
+prop_sdevs <- c(0.01, 0.05, 0.1, 0.5, 1.0, 1.5)
+cov_props <- vector(mode="list", length=length(prop_sdevs))
+for(i in seq_along(cov_props)) cov_props[[i]] <- matrix(prop_sdevs[i]^2)
+ics <- matrix(seq(-0.4, 0.4, length.out=4L), ncol=1L)
+
+eacc_results <- vector(mode="list", length=length(cov_props))
+
+for(i in seq_along(eacc_results)) {
+  print(i)
+  eacc_results[[i]] <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh", 
+                                      use_joint=TRUE, lbl=as.character(i), ics=ics,
+                                      cov_prop=cov_props[[i]])
+
+}
+```
+
+```{r}
+trc <- get_trace_plots(eacc_results[[4]]$samp)
+
+for(plt in trc) plot(plt)
+```
+
+```{r}
+eacc_results[[2]]$samp <- eacc_results[[2]]$samp[chain_idx != 3L]
+```
+
+```{r}
+# Independent MCwmH. 
+
+ind_results <- get_post_noisy(grid_info, lpost_em, par_prior, mode="mcwmh", 
+                              use_joint=FALSE, n_avg=1L, n_chains=4L, 
+                              n_itr=10000L, itr_start=7000L, adjustment="rectified", 
+                              lbl="mcwmh-ind", cov_prop=matrix(0.3^2, ncol=1L))
+
+trc_ind <- get_trace_plots(ind_results$samp)[[1]]
+plot(trc_ind)
+```
+
+```{r}
+samp_noisy <- combine_samp_dt(eacc_results[[1]]$samp, eacc_results[[2]]$samp, 
+                              eacc_results[[3]]$samp, eacc_results[[4]]$samp,
+                              eacc_results[[5]]$samp, eacc_results[[6]]$samp,
+                              ind_results$samp)
+```
+
+```{r}
+grid_info <- as.list(grid_info)
+grid_info$input <- matrix(grid_info$input, ncol=1L)
+mean_approx <- get_post_mean(grid_info, lpost_em, log_scale=FALSE, adjustment="rectified")
+kde_plt_noisy <- get_1d_kde_plots(samp_noisy)[[1]] + 
+                  geom_line(aes(x=x, y=y), data.frame(x=drop(grid_info$input), y=mean_approx),
+                            color="black", linewidth=1.0)
+plot(kde_plt_noisy)
+```
+
+```{r}
+post_EP <- get_EP_dens_grid(lpost_em_bounded, input_grid, n_mc=1e6, 
+                            log_scale=FALSE, adjustment="rectified")
+
+ep_plt <- ggplot(data.frame(x=drop(input_grid), post=post_EP)) + 
+          geom_line(aes(x=x, y=post), color="black")
+plot(ep_plt)
+```
+
+
+```{r}
+mwg_results <- mcmc_mwg_ep(lpost_em_bounded, par_prior, n_itr=10000L, 
+                           cov_prop=matrix(0.5^2, ncol=1L), 
+                           log_scale_prop=0, adapt_cov_prop=FALSE, 
+                           adapt_scale_prop=FALSE, adjustment="rectified")
+
+samp_mwg <- format_mcmc_output(mwg_results$samp, test_label="mwg")
+```
+
+```{r}
+ics <- get_batch_design("simple", N_batch=n_chains, prior_params=par_prior)
+
+mcmc_settings <- list(mcmc_func_name="mcmc_mwg_ep", par_prior=par_prior, 
+                      n_itr=100000, n_chain=4L, itr_start=1, par_init=ics,
+                      try_parallel=FALSE, cov_prop=matrix(0.5^2, ncol=1L), 
+                      log_scale_prop=0, adapt_cov_prop=FALSE, 
+                      adapt_scale_prop=FALSE, llik_em=lpost_em_bounded, 
+                      test_label="mwg", adjustment="rectified")
+results <- do.call(run_mcmc_chains, mcmc_settings)
+samp_mwg <- results$samp
+```
+
+
+```{r}
+trc_mwg <- get_trace_plots(samp_mwg)
+for(plt in trc_mwg) plot(plt)
+```
+
+```{r}
+hist_mwg <- get_hist_plots(samp_mwg)
+for(plt in hist_mwg) plot(plt)
+```
+
+
+
+
+
+
+
+
+
 
 
 
