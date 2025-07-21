@@ -56,6 +56,10 @@
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
 
+% Ensure cleverref knows how to handle citing of multiple subsubsections
+\crefname{subsubsection}{section}{sections}
+\Crefname{subsubsection}{Section}{Sections}
+
 % Title and author
 \title{Uncertainty Propagation and Active Learning for Surrogate-Based Bayesian Inference}
 \author{Andrew Roberts}
@@ -159,7 +163,7 @@ Assuming a prior density $\priorDens(\Par)$ and likelihood $p(\obs \given \Par)$
 we seek to characterize the posterior distribution 
 \begin{align}
 &\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst} \priorDens(\Par) p(\obs \given \Par), 
-&&\normCst = \int_{\parSpace} \priorDens(\Par) p(\obs \given \Par) d\Par, \label{post_dens_generic}
+&&\normCst = \int_{\parSpace} \priorDens(\Par) p(\obs \given \Par) d\Par, \label{eq:post_dens_generic}
 \end{align}
 where $\normCst$ is an (intractable) normalizing constant. 
 Let $\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par)$ denote the unnormalized posterior 
@@ -204,8 +208,9 @@ $\Par \mapsto \func(\Par)$. Different target maps may be emulated in order to
  $\postDens(\Par; \func)$ to indicate the dependence of the posterior density 
  on $\func$, with the assumption that $\postDens(\Par; \func)$ is relatively 
  quick to compute once the expensive computation $\func(\Par)$ is
- obtained. 
-
+ obtained. In addition, let $\lik(\func(\Par); \obs)$ denote the likelihood parameterized
+ as a function of the target quantity. 
+ 
 Consider a computational budget of $\Ndesign$ evaluations of $\func$, where 
 $\Ndesign$ is typically much smaller than that required by standard posterior
 inference algorithms. Surrogate modeling offers a solution to this problem 
@@ -247,19 +252,18 @@ In this special case, the induced posterior density surrogate takes the form
 \end{align}
 
 \subsubsection{Log-Density Emulation}
-Other lines of research have instead targeted the log-likelihood $\Par \mapsto \log p(\obs \given \Par)$
+Other lines of research have instead targeted the log-likelihood $\Par \mapsto \log \lik(\func(\Par); \obs)$
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP}
 or the (unnormalized) log-posterior 
-$\Par \mapsto \log \left\{\priorDens(\Par)p(\obs \given \Par)\right\}$
+$\Par \mapsto \log \left\{\priorDens(\Par)\lik(\func(\Par); \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
 landslideCalibration}.
 
-
 We collectively refer to these strategies as \textit{log-density emulation}. In the 
 log-likelihood case, an emulator $\funcEm$ is fit to a design 
-$\{(\Par_n, \log p(\obs \given \Par_n))\}_{n=1}^{\Ndesign}$
+$\{(\Par_n, \log \lik(\func(\Par_n); \obs)\}_{n=1}^{\Ndesign}$
 and induces a posterior density surrogate 
 \begin{align}
 \postEm(\Par) &= \priorDens(\Par) \Exp{\funcEm(\Par)}. \label{eq:post-em-llik}
@@ -281,7 +285,7 @@ proposed [\todo: cite]. This problem shares a close resemblance with other
 instances of modular inference, including data imputation [\todo: cite],
 cut distributions [\todo: cite], and dimension reduction via active subspaces [\todo: cite].
 
-Irrespective of the underlying target quantity $\func$, the probabilistic emulator $\funcEm$ 
+Irrespective of the underlying target $\func$, the probabilistic emulator $\funcEm$ 
 induces a random approximation of the posterior density
 \begin{align}
 \postNormEm(\Par) &\Def \frac{1}{\normCstEm} \postEm(\Par),
@@ -290,8 +294,10 @@ induces a random approximation of the posterior density
 which is referred to as the ``sample'' approximation in \citet{StuartTeck1}. We can thus
 view the challenge of uncertainty propagation as that of constructing a deterministic 
 posterior approximation that summarizes the uncertainty encoded in $\postNormEm$.
-Below we introduce two methods that have been proposed for this purpose, and then
-analyze when the behavior of these methods deviate. 
+Below we introduce two methods that have been proposed for this purpose. We generically
+analyze when the behavior of the two methods tends to deviate, and show how these 
+results translate to forward model and log-density emulators under tractable 
+Gaussian assumptions.
 
 \subsubsection{Expected Posterior}
 A deterministic summary of $\postNormEm$ can be constructed via the expectation 
@@ -300,49 +306,143 @@ A deterministic summary of $\postNormEm$ can be constructed via the expectation
 \end{equation}
 with $\E_{\Ndesign}$ denoting the expectation with respect to the underlying emulator $\funcEm$.
 We follow the terminology in \citet{BurknerSurrogate} and call $\postApproxEP$ the 
-\textit{expected posterior (EP)}. The EP can be understood via the generative procedure
+\textit{expected posterior (EP)}. The EP arises as the marginal conditional $\Par \given \obs$ under 
+the joint probability model over $(\Par, \funcEm, \obs)$ defined generatively via
 \begin{align}
-&\postDensNorm^\prime \sim \mathrm{law}(\postNormEm) 
-&&\Par^\prime \sim \postDensNorm^\prime, \label{eq:ep-direct-sample}
+\Par^\prime &\sim \priorDens \label{eq:ep-prob-model} \\
+\func^\prime &\sim \mathrm{law}(\funcEm) \nonumber \\
+\obs^\prime &\sim \lik(\func^\prime(\Par^\prime); \cdot) \nonumber
 \end{align}
-implying that $\postApproxEP$ represents the aggregation of samples from an ensemble of 
-posterior approximations, each corresponding to a single trajectory of $\funcEm$.
+In principle, $\postApproxEP$ can be directly sampled via \Cref{alg:ep} (see \Cref{sec:computation}
+for a detailed discussion), implying that $\postApproxEP$ represents the aggregation of samples 
+from an ensemble of posterior approximations, each corresponding to a single trajectory of $\funcEm$.
+
+\begin{algorithm}
+    \caption{Direct sampling from $\postApproxEP$}
+    \label{alg:ep}
+    \begin{algorithmic}[1]
+    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
+        		\State $\func^{(\sampleIndex)} \sim \mathrm{law}(\funcEm)$ \Comment{Sample emulator trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \func^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
+	\EndFor
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
 Note that the quantity $\postNormEm(\Par)$ depends on the entire random function $\funcEm$ 
 through its dependence on $\normCstEm$, as opposed to only depending on the prediction 
 $\funcEm(\Par)$ at the single input $\Par$. Therefore, care must be taken in ensuring the 
 expectation in \Cref{eq:ep-approx} is well-defined in the case that $\funcEm$ is an infinite-dimensional
 random element (e.g., a GP). We assume throughout that $\funcEm$ is constructed such that 
 trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
-in \Cref{eq:ep-direct-sample} is well-defined. See 
+in \Cref{alg:ep} is well-defined. See 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
-technical details. The EP corresponds to the cut posterior in modular Bayesian inference
-\citep{PlummerCut}, and the sampling procedure in \Cref{eq:ep-direct-sample} is closely 
-related to multiple imputation algorithms used to handle missing data [\todo: cite]. The 
-potentially infinite-dimensional nature of $\funcEm$ presents additional practical difficulties
-not typically present in these other settings, the consequences of which are 
-discussed in \Cref{sec:computation}.
+technical details. 
+
+Beyond surrogate uncertainty propagation, the EP appears as the ``cut posterior'' in the generic
+modular Bayesian inference setting \citep{PlummerCut}, and the sampling procedure in 
+\Cref{alg:ep} is closely related to multiple imputation algorithms used to handle missing data [\todo: cite].
+The notion of aggregating multiple posterior distributions is also used in contexts other than
+modular inference, including for robustness to model misspecification \citep{BayesBag,BayesBag2}. 
+Despite these similarities, our present setting features a few key differentiating characteristics.
+First, the ``stage one'' quantity $\funcEm$ is a random function. The potentially infinite-dimensional 
+nature of $\funcEm$ presents additional practical difficulties not typically present in these other 
+settings, the consequences of which are discussed in \Cref{sec:computation}.
+In addition, a conceptual distinction is that we do not assume $\funcEm$ is necessarily derived 
+using Bayesian methods, and thus do not view this two-stage framework as an approximation to 
+an overarching Bayesian graphical model. The predictive distribution of the emulator may arise 
+via non-Bayesian methodology, such as deep ensembles \citep{deepEnsembles} or 
+epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
 
 \subsubsection{Expected Likelihood}
-Note that the random posterior $\postNormEm(\Par)$ depends on the entire 
-emulator $\funcEm$ due to its dependence on $\normCstEm$, while the unnormalized 
-density surrogate $\postEm(\Par)$ depends only on $\funcEm(\Par)$, the prediction at $\Par$.
+As noted above, the presence of $\normCstEm$ in the expectation in \Cref{eq:ep-approx}
+can present computational challenges. Citing these difficulties, previous research has 
+eschewed the EP in favor of approximations of the \textit{unnormalized}
+density surrogate $\postEm$ \citep{StuartTeck1,StuartTeck2,VehtariParallelGP}. Unlike 
+$\postNormEm(\Par)$, $\postEm(\Par)$ depends only on the single-point prediction 
+$\funcEm(\Par)$ and thus can be approximated in a pointwise fashion. 
+Summarizing $\postEm(\Par)$ with its expectation, we obtain the \textit{expected likelihood (EL)} approximation
+\begin{equation}
+\postApproxMarg(\Par) \Def 
+\frac{\E_{\Ndesign}\left[\postEm(\Par) \right]}{\int_{\parSpace} \E_{\Ndesign}\left[\postEm(\Par) \right] d\Par}
+= \frac{\E_{\Ndesign}\left[\postEm(\Par) \right]}{\E_{\Ndesign}[\normCstEm]}, \label{eq:post-approx-EL} 
+\end{equation}
+a term again borrowed from \cite{BurknerSurrogate}. The equality in \Cref{eq:post-approx-EL} follows from
+changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. 
 
+The EL approximation is the marginal conditional $\Par \given \obs$ under the joint model on 
+$(\Par, \gamma, \obs)$ defined generatively as
+\begin{align}
+\Par^\prime &\sim \priorDens \label{eq:el-prob-model} \\
+\gamma^\prime \given \Par^\prime &\sim \mathrm{law}(\funcEm(\Par^\prime)) \nonumber \\
+\obs^\prime &\sim \lik(\gamma^\prime; \cdot). \nonumber
+\end{align}
+This joint model is proposed as the basis for surrogate uncertainty propagation in 
+\citet{BilionisBayesSurrogates}, and is also used as justification for the EL approximation
+in \citet{SinsbeckNowak}. \citet{StuartTeck2,CES} also note this extended parameter space 
+perspective in the Gaussian setting of \Cref{eq:post-em-fwd-Gaussian}. The EL approximation
+has been widely used in special cases that admit a closed-form expression for 
+$\E_{\Ndesign}\left[\postEm(\Par) \right]$. This primarily includes the use of GP forward
+model emulators with Gaussian likelihoods 
+\citep{weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
+villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2},
+as well as GP log-density emulators 
+\citep{VehtariParallelGP,StuartTeck1,StuartTeck2,GP_PDE_priors, random_fwd_models,TeckHyperpar}. 
+We analyze these special cases in \Cref{sec:fwd-Gaussian,sec:ldens-Gaussian}.
 
+\subsection{Comparison of EP and EL}
+While there are many instances of either the EP or EL being employed as the chosen uncertainty
+propagation method, there has been little work on comparing the performance of the two approaches.
+One exception is \citet{BurknerSurrogate}, who conduct an empirical comparison of these methods
+in several case studies. 
+\footnote{Technically, \citet{BurknerSurrogate} empirically test approximations to both EP and EL, derived
+by replacing the expectations in \Cref{eq:ep-approx,eq:post-approx-EL} with sample average approximations.}
+The authors ultimately endorse both approximations, concluding that they produce ``non-equivalent''
+but ``very similar'' inference in their applications. However, the experiments are limited to relatively simple 
+models involving polynomial-based forward model emulators. \citet{garegnani2021NoisyMCMC} also
+consider both approaches, though their purpose is to study the performance of sampling algorithms, rather
+than compare uncertainty propagation methods.
 
-Early work in surrogate-based Bayesian inference focused on jointly learning
-the parameters of both the computer model and emulator within a unified Bayesian model 
-(e.g., \citet{KOH}). In this case, surrogate uncertainty is automatically quantified via the 
-Bayesian posterior. However, subsequent work highlighted common deficiencies of this
-approach \citep{modularization}. In particular, allowing observational data to inform 
-emulator parameters can produce counterintuitive posterior inferences when the computer
-model is misspecified. This line of research inspired the two-step (i.e., modular)
-surrogate workflow commonly used today \citep{modularization,BurknerTwoStep,BurknerSurrogate}.
-This can also be seen as a particular inference of cut Bayesian inference \citep{PlummerCut}. 
+Note that the difference between $\postApproxEP(\Par) = \E_{\Ndesign}[\postEm(\Par)/\normCstEm]$ and 
+$\postApproxNormMarg(\Par) = \E_{\Ndesign}\left[\postEm(\Par) \right]/\E_{\Ndesign}[\normCstEm]$ 
+stems from the fact that the expectation of a ratio does not 
+in general equal to the ratio of the expectations. An application of the Delta method yields the approximation
+\begin{align}
+\postApproxEP(\Par)
+&\approx \postApproxNormMarg(\Par)[1 + \cv(\normCstEm) \tau_{\Ndesign}(\Par)] \label{eq:delta-method} \\
+\tau_{\Ndesign}(\Par) &\Def \cv(\normCstEm) - \Cor(\postEm(\Par), \normCstEm) \cv(\postEm(\Par)), \nonumber
+\end{align}
+where $\cv(\psi) \Def \sqrt{\Var(\psi)}/\E[\psi]$ denotes the coefficient of variation of a random 
+variable $\psi$ and $\Cor(\psi, \psi^\prime)$ is the correlation coefficient between $\psi$
+and $\psi^\prime$. According to this second order approximation, when 
+$\cv(\normCstEm) \tau_{\Ndesign}(\Par)$ is positive then $\postApproxEP(\Par) > \postApproxNormMarg(\Par)$,
+and vice versa. Since these densities must integrate to
+one over $\parSpace$, a positive discrepancy in one region implies a negative discrepancy in another.
+Based on \Cref{eq:delta-method}, we expect the two approximations to roughly agree when variability 
+in $\normCstEm$ is small, which happens when $\funcEm$ contains little uncertainty, or 
+$\postDens(\cdot; \func)$ is not sensitive to perturbations to $\func$. Alternatively, we expect 
+agreement when $\tau_{\Ndesign}(\Par) \approx 0$ for most $\Par$. This happens when
+$\Cor(\postEm(\Par), \normCstEm) \approx \cv(\normCstEm) / \cv(\postEm(\Par))$; i.e., the ratio of the 
+variability in $\normCstEm$ over the variability in $\postEm(\Par)$ is well-approximated by the 
+correlation between these two quantities. Such a linear relationship will generally not hold when 
+$\postEm(\Par)$ is heavy-tailed. In this case the ratio of means
+$\E_{\Ndesign}\left[\postEm(\Par) \right]/\E_{\Ndesign}[\normCstEm]$ will typically exceed the average
+realization of $\postEm(\Par)/\normCstEm$. For the latter, large realizations of $\postEm(\Par)$
+are typically correlated with large values of $\normCstEm$, which moderates the magnitude of 
+$\postEm(\Par)/\normCstEm$. In the extreme case where $\postEm(\Par)$ has a very heavy 
+upper tail, then $\Cor(\postEm(\Par), \normCstEm) \cv(\postEm(\Par)) \gg \cv(\normCstEm)$ and
+consequently $\postApproxNormMarg(\Par) \gg \postApproxEP(\Par)$. In other words, the 
+EL approximation is susceptible to concentrating in regions of $\parSpace$ where the 
+surrogate $\postEm(\Par)$ is highly uncertain---particularly when $\postEm(\Par)$ has a 
+heavy upper tail. This sensitivity may be mitigated in cases where the emulator predictive
+distribution is bounded from above. We explore these ideas in the context of GP emulators 
+below. 
 
+\subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian}
+\subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
 
-\subsection{Comparison}
-\subsubsection{Gaussian Log-Density Emulation Setting}
-\subsubsection{Gaussian Forward Model Emulation Setting}
 
 % Computation for the Posterior Approximations
 \section{Computation for the Posterior Approximations} \label{sec:computation}
@@ -510,17 +610,14 @@ of $\postDens(\Par)$. Our framework thus seeks to be agnostic to the particular 
 being emulated. Concrete examples of typical surrogate modeling workflows are given in \cref{sec:surrogate-examples}.
 
 Given $\postEm[\Ndesign]$, a fixed random approximation of $\postDens$, a natural question is how to 
-utilize this surrogate in approximating the posterior distribution in \cref{post_dens_generic}. \Cref{sec:post-approx}
+utilize this surrogate in approximating the posterior distribution in \Cref{eq:post_dens_generic}. \Cref{sec:post-approx}
 is dedicated to this question, in which we summarize previous approaches and present our proposed method.
 
 
 
 
 We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
-density 
-\begin{equation}
-\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par) \label{post_dens_generic}
-\end{equation}
+
 are available, but expensive owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
 commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
 Consider a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing 

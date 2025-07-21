@@ -914,7 +914,7 @@ Assuming the expectation exists, \Cref{alg:ep} could in principle
 be used to draw samples from $\llikEmSampDensNorm$. 
 
 \begin{algorithm}
-    \caption{Direct sampling from $\llikEmSampDensNorm$}
+    \caption{Direct sampling from $\postApproxEP$}
     \label{alg:ep}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
@@ -1078,7 +1078,7 @@ in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \cite
 representing a special case of the extended parameter space perspective taken in \citet{BilionisBayesSurrogates}.
 The closed-form expression in \Cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
 \citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
-\citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
+\citep{weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
 villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}. 
 \citet{Surer2023sequential} derive the special case of \Cref{eq:post-approx-fwd-EL-Gaussian}
 under the multi-output basis vector model in \Cref{basis_func_GPs,basis_func_noise}, while 
