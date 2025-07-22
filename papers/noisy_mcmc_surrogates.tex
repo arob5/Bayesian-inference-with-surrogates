@@ -408,7 +408,8 @@ than compare uncertainty propagation methods.
 Note that the difference between $\postApproxEP(\Par) = \E_{\Ndesign}[\postEm(\Par)/\normCstEm]$ and 
 $\postApproxNormMarg(\Par) = \E_{\Ndesign}\left[\postEm(\Par) \right]/\E_{\Ndesign}[\normCstEm]$ 
 stems from the fact that the expectation of a ratio does not 
-in general equal to the ratio of the expectations. An application of the Delta method yields the approximation
+in general equal to the ratio of the expectations. An application of the Delta method [\todo: add in appendix] 
+yields the approximation
 \begin{align}
 \postApproxEP(\Par)
 &\approx \postApproxNormMarg(\Par)[1 + \cv(\normCstEm) \tau_{\Ndesign}(\Par)] \label{eq:delta-method} \\
@@ -441,6 +442,49 @@ distribution is bounded from above. We explore these ideas in the context of GP 
 below. 
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian}
+Consider the model
+\begin{align}
+&\obs = \fwd(\Par) + \noise, &&\noise \sim \Gaussian(0, \likPar)
+\end{align}
+with prior $\Par \sim \priorDens$ independent of $\noise$. We consider the case 
+where $\fwd$ is replaced with a (potentially multi-output) GP emulator 
+$\funcEm \sim \GP(\gpMean, \gpKer)$, such that $\E[\funcEm(\Par)] = \gpMean(\Par)$ and 
+$\Cov[\funcEm(\Par),\funcEm(\Par^\prime)] = \gpKer(\Par, \Par^\prime)$ for all 
+$\Par, \Par^\prime \in \parSpace$. This setup has been considered frequently in various 
+applications \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
+idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
+
+The unnormalized posterior surrogate takes the form 
+$\postEm(\Par) = \priorDens(\Par) \Gaussian(\obs \mid \funcEm(\Par), \likPar)$, implying
+\begin{equation}
+\postApproxNormMarg(\Par) \propto \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
+\label{eq:EL-Gaussian-fwd}
+\end{equation}
+following from the formula for the convolution of two Gaussians [\todo: add to appendix].
+We have used the shorthand $\gpKer(\Par) \Def \gpKer(\Par, \Par)$. A key observation 
+in this setting is that $\postEm(\Par) \in [0, B_{\likPar}]$, where 
+$B_{\likPar} \Def \sup_{u \in \parSpace} \priorDens(\Par) / \det(2\pi\likPar)^{1/2}$.
+[\todo: need to finish this thought. The conjecture here is that the EL in this setting is 
+more robust in this setting due to the bound. May be able to show that $\cv$ is upper
+bounded--issue is the possibility of expectation approaching 0].
+
+In general, it is tempting to view the EL as inflating the posterior approximation in regions
+where surrogate uncertainty is larger. However, this is not strictly the case in this context.
+Indeed, consider the plug-in mean approximation 
+$\postApproxNormMean(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar)$,
+which ignores the emulator uncertainty. We can consider the ratio 
+$\postApproxNormMarg(\Par)/\postApproxNormMean(\Par)$ to represent the uncertainty 
+inflation factor for the EL approximation at a parameter $\Par$. This ratio can be above 
+or below one, depending on the distance between $\obs$ and $\gpMean(\Par)$. In particular,
+if $\obs$ and $\gpMean(\Par)$ are close, then increasing $\gpKer(\Par)$ actually has the effect
+of deflating the EL density at $\Par$. This is due to the fact that the Gaussian density is 
+upper bounded, and thus near the upper bound the expectation has nowhere to go but down.
+ 
+
+
+
+
+
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
 
 
