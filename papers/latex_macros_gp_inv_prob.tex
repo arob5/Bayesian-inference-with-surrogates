@@ -38,7 +38,6 @@
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
 
-
 % --------------------------------------------------------------------------------------------------
 % Gaussian Process Emulators
 % --------------------------------------------------------------------------------------------------
@@ -63,6 +62,11 @@
 \newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
 \newcommand{\designRand}[2][\Nbatch]{\mathcal{D}_{#1}^{#2}} % When the response is unobserved/random. 
 \newcommand{\emLaw}[2][\design]{{\Pi}^{#2}_{#1}} % The conditional law/distribution of an emulator (may or may not be Gaussian). 
+\newcommand{\target}{\mathsf{f}} % Target map for emulation
+\newcommand{\targetEm}[1][\Ndesign]{f_{#1}} % Emulator for target quantity
+\newcommand{\targetTraj}{f} % Trajectory of emulator for target map
+\newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
+\newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Distribution (law) of the emulator (a stochastic process)
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
@@ -204,6 +208,7 @@
 \newcommand{\mcmcIndex}{\sampleIndex}
 % \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
 \newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
+\newcommand{\AR}{\mathsf{A}} % Metropolis-Hastings accept-reject step
 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
