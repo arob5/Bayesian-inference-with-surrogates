@@ -612,19 +612,12 @@ and updated state, respectively. We also use the function defined by
 \Cref{alg:acc-rej} to succinctly represent the Metropolis-Hastings
 accept-reject step.
 
-\begin{algorithm}[H]
-    \caption{Metropolis-Hastings Accept-Reject Step}
-    \label{alg:acc-rej}
-    \begin{algorithmic}[1]
-    \Function{$\AR$}{$\Par$, $\propPar$, $\targetTraj$, $\targetTrajProp$}     
-        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
-        		\State $\targetTraj^{(\sampleIndex)} \sim \mathrm{law}(\targetEm)$ \Comment{Sample emulator trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
-	\EndFor
-	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
+\paragraph{TODO: some themes to stress throughout this section:}
+\begin{enumerate}
+\item Approximate computation approaches (no target density defined beforehand)
+\item How computation differs between log-density and forward model emulator approaches.
+\item Whether algorithms are applicable to the infinite-dimensional emulator case (e.g., GPs)
+\end{enumerate}
 
 \subsection{Expected Likelihood}
 We start by summarizing algorithms proposed for EL-based inference. Recall the target distribution in this 
@@ -666,27 +659,78 @@ The pseudo-marginal approach to sampling from the EL approximation is noted in \
 in depth in \citep{garegnani2021NoisyMCMC}. The latter also studies a closely-related, but approximate, algorithm
 whereby the estimators $\hat{\postDens}^M(\Par)$ and $\hat{\postDens}^M(\propPar)$ are both sampled independently
 each iteration, rather than recycling the value of $\hat{\postDens}^M(\Par)$ from the previous iteration. This approach, 
-typically known as \textit{Monte Carlo within Metropolis-Hastings (MCwMH)}, does not directly target $\postApproxNormMarg$
+typically known as \textit{Monte Carlo within Metropolis (MCwM)}, does not directly target $\postApproxNormMarg$
 but is known to typically be more efficient \citep{noisyMCMC,stabilityNoisyMH,noisyMCSurvey}.
-The limiting distribution of MCwMH (if it exists) depends on the value of $M$. As $M \to \infty$, the limiting distribution 
-will tend towards $\postApproxNormMarg$. \citep{FerEmulation} utilize a MCwMH scheme with $M = 1$, adopting an
+The limiting distribution of MCwM (if it exists) depends on the value of $M$. As $M \to \infty$, the limiting distribution 
+will tend towards $\postApproxNormMarg$. \citet{FerEmulation} utilize a MCwM scheme with $M = 1$, adopting an
 approximate computation viewpoint rather than explicitly trying to target $\postApproxNormMarg$.
-
-
-
-\paragraph{TODO: some themes to stress throughout this section:}
-\begin{enumerate}
-\item Approximate computation approaches (no target density defined beforehand)
-\item How computation differs between log-density and forward model emulator approaches.
-\item Whether algorithms are applicable to the infinite-dimensional emulator case (e.g., GPs)
-\end{enumerate}
+\citet{BurknerSurrogate} propose an alternative approximation defined by sampling 
+$\targetTraj^{(m)} \overset{\mathrm{iid}}{\sim} \emDist$ and then targeting the fixed density approximation
+\begin{align}
+\hat{\postDens}^M(\Par \given \{\targetTraj^{(m)}\}_{m=1}^{M}) \Def 
+\frac{1}{M} \sum_{m=1}^{M} \postDens(\Par; \targetTraj^{(m)}).
+\end{align}
+In contract to the pseudo-marginal and MCwM algorithms, the Monte Carlo samples $\{\targetTraj^{(m)}\}_{m=1}^{M}$
+are fixed across all iterations. This is akin to a sample average approximation from the optimization literature
+\citep{SAA}. In this method, the target distribution also depends on $M$, and approaches $\postApproxNormMarg$
+as $M \to \infty$. The benefit of this approach is that it defines a deterministic density approximation which can be input
+into standard software (e.g., Stan). The downside is that it requires sampling trajectories $\targetTraj^{(m)}$, which are 
+then evaluated at many different values of $\Par$ throughout the MCMC run. This is not a problem when the randomness
+in $\funcEm$ derives from a finite-dimensional random vector. However, it presents challenges for infinite-dimensional models
+such as GPs. In principle, such an approach could be implemented by repeatedly conditioning the GPs at new evaluation points,
+thus iteratively building the GP trajectories ``just-in-time''. However, such an approach is fraught with numerical instability issues,
+which has been well-documented in the Bayesian optimization literature \citep{pathwiseConditioning}. 
+The pseudo-marginal and MCwM algorithms only require the ability to sample from $\emDist(\cdot \given \Par)$, 
+rather than $\emDist$.
 
 \subsection{Expected Posterior}
-\subsubsection{Direct Sampling}
-Direct sampling, MCMC within Monte Carlo, Just-in-time sampling
+We next consider existing work on sampling methods for the EP approximation. In general, the
+EP distribution is more challenging and computationally expensive to approximate than the EL. It also presents
+additional challenges for GP emulators. Recall the target distribution in this case is 
+$\postApproxEP(\Par) = \E_{\Ndesign}\left[\postEm(\Par)/\normCstEm \right]$.
+
+\subsubsection{Direct Sampling and Extensions}
+In principle, the EP distribution can be directly sampled via \Cref{alg:ep}.
+One iteration of this algorithm is completed by first sampling 
+a surrogate trajectory $\targetTraj \sim \emDist$, and then 
+drawing samples 
+$\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$,
+where $\postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ is the induced trajectory of $\postNormEm$.
+If $M = 1$, then the resulting samples of $\Par$ are independent; otherwise, they are dependent.
+Both of these sampling steps may be infeasible in practice. In almost all cases, direct sampling from 
+$\postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ will not be possible. The samples $\Par^{(\sampleIndex, m)}$ are thus
+typically generated via MCMC. This approach, sometimes called \textit{Metropolis within Monte Carlo (MwMC)} 
+(not to be confused with MCwM), is considered in \citep{garegnani2021NoisyMCMC,BurknerSurrogate}.
+If the distribution of $\postEm$ is complex, then a large value of $M$ may be required, implying 
+$M$ runs of an MCMC algorithm. This may not be an issue in modern parallel computing environments, but
+it may still be desirable to consider adjustments to lower the required number of runs. Such considerations 
+have been explored in the multiple imputation literature; e.g., assuming the EP is approximately Gaussian [\todo: cite].
+\citep{BurknerTwoStep} present an alternative approach relying on Pareto-smoothed importance sampling. 
+ 
+While these methods focus primarily on reducing the cost of the MCMC sampling step, they implicitly assume
+that sampling from $\emDist$ is straightforward. On the other end of the spectrum, authors interested in GP 
+surrogates have explicitly attributed their avoidance of the EP to the difficulty of sampling $\emDist$ 
+\citep{VehtariParallelGP,StuartTeck2}. To our knowledge, the only work to attempt an implementation of the 
+MwMC algorithm with a GP emulator is \citet{trainDynamics}.
+Their method consists of approximating GP 
+trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
+the trajectory as the GP mean, conditional on the sampled values at these points. This approach represents
+a middle ground between discretizing the GP and applying just-in-time sampling. The authors present a method
+for selecting the grid points, though this is likely to present challenges in higher dimensions. 
+
+\subsubsection{Approximate MCMC Methods}
+Instead of running $M$ MCMC algorithms, it is natural to wonder if a single MCMC scheme can be designed
+to (approximately) target $\postApproxEP$. Motivated by applications to cut Bayesian inference, 
+such an algorithm was developed for the OpenBUGS software [\todo: cite]. This algorithm is described in 
+\citep{PlummerCut} and referred to as the \textit{naive cut algorithm}. A single step of the algorithm proceeds
+as follows:
+\begin{enumerate}
+\item Apply a $\emDist$-invariant Markov update $\targetTraj \to \targetTraj^\prime$.
+\item Apply a $\postDens(\cdot; \targetTraj^\prime)$-invariant Markov update $\Par \to \Par^\prime$.
+\end{enumerate}
 
 \subsection{Approximate MCMC Methods}
-
+\subsection{An MCMC Approximation for the Expected Posterior} \label{sec:mcmc-ep}
 
 
 \section{Temporary}
