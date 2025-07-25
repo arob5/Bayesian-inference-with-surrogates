@@ -608,15 +608,19 @@ degree to which uncertainty is propagated.
 \paragraph{Notation.} Throughout this section, we define MCMC algorithms
 based on the steps performed for a single iteration of computation. For any 
 state variable $\theta$, we write $\theta$ and $\theta^\prime$ for the current
-and updated state, respectively. We also use the function defined by 
-\Cref{alg:acc-rej} to succinctly represent the Metropolis-Hastings
-accept-reject step.
+and updated state, respectively.
 
 \paragraph{TODO: some themes to stress throughout this section:}
 \begin{enumerate}
-\item Approximate computation approaches (no target density defined beforehand)
+\item Approximate computation approaches (no target density defined beforehand); appealing but urge caution
 \item How computation differs between log-density and forward model emulator approaches.
 \item Whether algorithms are applicable to the infinite-dimensional emulator case (e.g., GPs)
+\item Emphasizing the difference between the typical application of pseudo-marginal/noisy (trying to target underlying true
+distribution) vs. our use of these algorithms here (trying to propagate uncertainty). While there is a clear notion of what is
+"correct" in the former case, this is less clear in the latter. For example, in MCwM increasing $M$ leads to a 
+more correct algorithm in the sense of tending towards the pseudo-marginal target. However, in the uncertainty
+propagation setting one could argue that lower values of $M$ result in propagating uncertainty in a more 
+reasonable way.
 \end{enumerate}
 
 \subsection{Expected Likelihood}
@@ -728,8 +732,30 @@ as follows:
 \item Apply a $\emDist$-invariant Markov update $\targetTraj \to \targetTraj^\prime$.
 \item Apply a $\postDens(\cdot; \targetTraj^\prime)$-invariant Markov update $\Par \to \Par^\prime$.
 \end{enumerate}
+\citet{PlummerCut} shows that this algorithm does not admit $\postApproxEP$ as an invariant
+distribution, and moreover that the implicit target distribution depends on the particular Markov kernels
+chosen to perform the updates. Two natural modifications emerge as candidates to improve the approximation.
+First, many $\Par$-updates can be performed for each fixed $\targetTraj^\prime$, with the final update
+set to $\Par^\prime$. However, such an approach is effectively an implementation of the MwMC scheme
+described above, which is what we sought to avoid in considering this algorithm. As an alternative to this,
+\citet{PlummerCut} proposes performing a smaller number of $\Par$ updates using a tempering schedule.
+Second, one could 
+seek to slow down the mixing rate of the $\targetTraj$ chain. If the updates  $\targetTraj \to \targetTraj^\prime$
+are constrained to be small, then $\postDens(\cdot; \targetTraj^\prime)$ should be relatively stable. Consequently,
+the $\Par$ samples might be expected to converge to a reasonable approximation of $\postApproxEP$.
 
 \subsection{Approximate MCMC Methods}
+In the preceding sections, we introduced the MCwM and naive cut algorithms. These MCMC schemes
+seek to target the EL and EP approximations, respectively, but in general both are approximate.
+In this section, we provide connections between a family of different MCMC approximations and propose
+a new approximate algorithm with intuitive appeal. While these algorithms can produce quite reasonable
+empirical results, we also urge caution in their application, as seemingly arbitrary modifications to the 
+algorithms result in varied levels of uncertainty propagation. We provide more insight into these mechanisms
+in the particular setting of a GP log-density emulator.
+
+\subsubsection{Expected Acceptance Probability}
+\subsubsection{Example: Gaussian Log-Density emulator}
+
 \subsection{An MCMC Approximation for the Expected Posterior} \label{sec:mcmc-ep}
 
 
