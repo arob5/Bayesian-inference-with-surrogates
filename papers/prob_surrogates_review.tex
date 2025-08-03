@@ -670,7 +670,7 @@ dimension reduction when the observation space is high-dimensional.
 Consider the special case where both the likelihood and forward model emulator are Gaussian.
 In particular, this implies an induced unnormalized posterior density surrogate
 \begin{align}
-\postDens(\Par; \fwdEm[\Ndesign]) &= \priorDens(\Par)\Gaussian(\obs| \fwdEm[\Ndesign](\Par), \likPar) \label{eq:fwd-em-Gaussian-post} \\
+\postDens(\Par; \fwdEm[\Ndesign]) &= \priorDens(\Par)\Gaussian(\obs \given \fwdEm[\Ndesign](\Par), \likPar) \label{eq:fwd-em-Gaussian-post} \\
 \fwdEm[\Ndesign](\Par) &\sim \Gaussian(\emMean[\Ndesign]{\fwd}(\Par), \emKer[\Ndesign]{\fwd}(\Par))
 \label{eq:fwd-em-Gaussian}
 \end{align}
@@ -679,11 +679,11 @@ for each $\Par \in \parSpace$. We refer to \Cref{eq:fwd-em-Gaussian-post,eq:fwd-
 These Gaussian assumptions facilitate closed-form computation of the posterior surrogate mean and variance
 \begin{align*}
 \E_{\fwdEm}\left[\postDens(\Par; \fwdEm[\Ndesign]) \right] 
-&= \priorDens(\Par) \Gaussian(\obs | \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
+&= \priorDens(\Par) \Gaussian(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \likPar + \emKer[\Ndesign]{\fwd}(\Par)) \\
 \Var_{\fwdEm}\left[\postDens(\Par; \fwdEm[\Ndesign]) \right]
-&= \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + 
+&= \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\likPar + 
 \emKer[\Ndesign]{\fwd}(\Par)  \right)}{\det(2\pi \likPar)^{1/2}} - \\
-&\qquad \qquad\qquad \frac{\Gaussian\left(\obs | \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}\bigg]
+&\qquad \qquad\qquad \frac{\Gaussian\left(\obs \given \emMean[\Ndesign]{\fwd}(\Par), \frac{1}{2}\left[\likPar + \emKer[\Ndesign]{\fwd}(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}\bigg]
 \end{align*}
 for each $\Par \in \parSpace$.
 The canonical example of a Gaussian surrogate is a GP, which is defined by specifying a prior distribution  
@@ -914,7 +914,7 @@ Assuming the expectation exists, \Cref{alg:ep} could in principle
 be used to draw samples from $\llikEmSampDensNorm$. 
 
 \begin{algorithm}
-    \caption{Direct sampling from $\llikEmSampDensNorm$}
+    \caption{Direct sampling from $\postApproxEP$}
     \label{alg:ep}
     \begin{algorithmic}[1] % The number tells where the line numbering should start
     \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
@@ -1078,7 +1078,7 @@ in \Cref{inv_prob_Gaussian_modified} is noted in \citet{SinsbeckNowak} and \cite
 representing a special case of the extended parameter space perspective taken in \citet{BilionisBayesSurrogates}.
 The closed-form expression in \Cref{eq:post-approx-fwd-EL-Gaussian} is also noted in both
 \citet{SinsbeckNowak, StuartTeck1} and has been used in many subsequent studies 
-\citep{VehtariParallelGP,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
+\citep{weightedIVAR,StuartTeck2,GP_PDE_priors,CES,idealizedGCM,
 villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}. 
 \citet{Surer2023sequential} derive the special case of \Cref{eq:post-approx-fwd-EL-Gaussian}
 under the multi-output basis vector model in \Cref{basis_func_GPs,basis_func_noise}, while 
