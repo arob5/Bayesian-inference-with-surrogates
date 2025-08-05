@@ -856,240 +856,143 @@ degrees to which the covariance term $\gpKer(\Par, \propPar)$ exerts influence o
 the acceptance probability.
 
 \subsection{An MCMC Approximation for the Expected Posterior} \label{sec:mcmc-ep}
-See below ``Temporary'' section. 
-
-\section{Temporary}
-\subsection{Expected Likelihood}
-The expected likelihood approximation may also be motivated via the definition of a modified 
-inverse problem with an extended parameter space. To this end, we introduce a random variable
-$\gamma$ such that $\targetEm[\Ndesign](\Par) \overset{\mathrm{d}}{=} \gamma \given \Par$.
-Consider the joint probability model 
-\begin{align}
-p(\Par, \obs, \gamma) \Def 
-p(\obs \given \gamma) p(\gamma \given \Par) \priorDens(\Par). \label{eq:EL-prob-model}
-\end{align}
-For a forward model emulator $p(\obs \given \gamma)$ is the likelihood evaluated at
-the forward model output $\gamma$. For a log-likelihood emulator, 
-$p(\obs \given \gamma) = \Exp{\gamma}$. The expected likelihood approximation 
-corresponds to the conditional marginal 
-\begin{align}
-p(\Par \given \obs) \propto \priorDens(\Par) \int p(\obs \given \gamma) p(\gamma \given \Par) d\gamma
-\label{eq:EL-marginal}
-\end{align}
-This extended parameter space formulation is adopted in \citet{BilionisBayesSurrogates}, noted in
-\citet{SinsbeckNowak}, and a special case is given as an example in \citet{StuartTeck2}.
-
-When the integral in \Cref{eq:EL-marginal} can be computed analytically, then $p(\Par \given \obs)$ can 
-be targeted by any standard MCMC sampler. If samples can be drawn from $p(\gamma \given \Par)$ then
-it can still be targeted exactly via pseudo-marginal methods. A third option is to update the marginal conditionals
-\begin{align}
-p(\Par \given \gamma, \obs) &\propto p(\gamma \given \Par) \priorDens(\Par) \label{eq:EL-conditionals} \\
-p(\gamma \given \Par, \obs) &\propto p(\obs \given \gamma) p(\gamma \given \Par)
-\end{align}
-in turn, which can be done via Metropolis-Hastings steps, slice sampling, or other means. This algorithm
-requires the ability to evaluate the predictive density of the emulator.
-
-\subsection{Expected Posterior}
-The probability model in \Cref{eq:EL-prob-model} does not encode the dependence structure of the 
-surrogate predictive distribution across different values of $\Par$; the conditionals $\gamma \given \Par$
-only capture the pointwise predictions. In this section, we consider formulating a probability model that 
-reflects the full distribution of the random function $\targetEm$. Formally, consider
+In this section we propose a new Metropolis-Hastings algorithm that approximately targets 
+the EP distribution, and is applicable in the GP setting. We start by noting that $\postApproxEP$
+is a conditional posterior of the extended model 
 \begin{align}
 p(\Par, \obs, \targetEm) &\Def
-p(\Par \given \obs, \targetEm) p(\targetEm) p(\obs) \\
-&= \priorDens(\Par) p(\obs \given \targetEm(\Par))p(\targetEm) \frac{p(\obs)}{p(\obs \given \targetEm)}, \label{eq:EP-prob-model}
+\postDensNorm(\Par; \targetEm) \emDist(\targetEm) p(\obs) \\
+&= \priorDens(\Par) \lik(\targetEm(\Par); \obs) \emDist(\targetEm) \frac{p(\obs)}{\normCst(\targetEm)},
+\label{eq:EP-prob-model}
 \end{align}
-where $p(\Par \given \obs, \targetEm)$ is the posterior over $\Par$ obtained using a particular 
-trajectory of the emulator, with associated normalizing constant $p(\obs \given \targetEm)$.
-The quantity $p(\targetEm)$ is purely formal at the moment, as no Lebesgue 
-density exists for the random element $\targetEm$. This could be given meaning in \Cref{eq:EP-prob-model}
-by replacing $\targetEm$ with a random vector representing a discretization of $\targetEm$. The expected 
-posterior corresponds to the conditional marginal
+where $\normCst(\targetEm)$ is the normalizing constant for $\postDensNorm(\cdot; \targetEm)$.
+The quantity $\emDist(\targetEm)$ is purely formal at the moment, since $\normCst$ does not 
+have a Lebesgue density when $\targetEm$ is a GP.  Consider a Metropolis-within-Gibbs algorithm 
+targeting the joint posterior over $(\Par, \targetEm)$, which updates the marginal conditionals  
 \begin{align}
-p(\Par \given \obs) \propto \int p(\Par \given \obs, \targetEm) p(\targetEm) d\targetEm.
-\label{eq:EP-marginal}
+p(\Par \given \targetEm, \obs) \propto \priorDens(\Par) \lik(\targetEm(\Par); \obs) \label{eq:EP-conditionals} \\
+p(\targetEm \given \Par, \obs) \propto \lik(\targetEm(\Par); \obs) \emDist(\targetEm) \frac{p(\obs)}{\normCst(\targetEm)}
 \end{align}
-A sample can be directly drawn from this distribution by first sampling a trajectory $\target \sim \mathrm{law}(\targetEm)$
-and then drawing a sample from $p(\Par \given \obs, \target)$. Assuming the first step can be completed, 
-then the second step will still typically require an MCMC run. This approach is thus parallelizable, but 
-may require many MCMC runs to adequately characterize the expected posterior. The larger problem is 
-that the first step is often intractable without resorting to discretization of $\targetEm$. An alternative to direct
-sampling is to target the joint posterior over $(\Par, \targetEm)$ within a single MCMC run. We might try to 
-do this analogously to \Cref{eq:EL-conditionals} by updating the marginal conditionals 
-\begin{align}
-p(\Par \given \targetEm, \obs) \propto \priorDens(\Par) p(\obs \given \targetEm(\Par)) \label{eq:EP-conditionals} \\
-p(\targetEm \given \Par, \obs) \propto p(\obs \given \targetEm(\Par)) \frac{p(\targetEm)}{p(\obs \given \targetEm)}
-\end{align}
-in turn, which is most simply done via Metropolis-Hastings updates.
-The $\Par$ update should only require a standard Metropolis-Hastings step. We focus on the
-$\target$ update.
+in turn. The $\Par$ update can be accomplished with a standard Metropolis-Hastings step. We focus on the
+$\targetEm$ update.
 
- Assuming a proposal 
-$\tilde{\target} \sim q_{\target}(\target, \cdot)$, the ratio appearing in the MH acceptance
-probability for the $\targetEm$ update takes the form 
+Suppose the current state of the chain is $(\Par, \targetTraj)$ and consider a proposal
+$\tilde{\targetTraj} \sim q_{\target}(\targetTraj, \cdot)$. The MH acceptance ratio then takes the form
 \begin{align}
-\frac{p(\obs \given \tilde{\target}(\Par))}{p(\obs \given \target(\Par))} \frac{p(\tilde{\target})}{p(\target)} 
-\frac{q_{\target}(\tilde{\target}, \target)}{q_{\target}(\target, \tilde{\target})} \frac{p(\obs \given \target)}{p(\obs \given \tilde{\target})}.
+\frac{\lik(\tilde{\targetTraj}(\Par); \obs)}{\lik(\targetTraj(\Par); \obs)} \frac{\emDist(\tilde{\targetTraj})}{\emDist(\targetTraj)} 
+\frac{q_{\target}(\tilde{\targetTraj}, \targetTraj)}{q_{\target}(\targetTraj, \tilde{\targetTraj})} \frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})}.
 \end{align}
-There are two issues to deal with here. The first is the proposal and the infinite dimensional nature of $\targetEm$.
-However, if we choose $q_\target$ to be $\mathrm{law}(\targetEm)$-invariant then the ratio should simplify to
+There are two issues to deal with here. The first is the inability to compute $\emDist(\targetTraj)$ in general, 
+unless we replace $\targetTraj$ with a finite-dimensional discretization.
+To address this, we can choose $q_\target$ to be $\emDist$-invariant so that the ratio simplifies to
 \begin{align}
-\frac{p(\obs \given \tilde{\target}(\Par))}{p(\obs \given \target(\Par))} \frac{p(\obs \given \target)}{p(\obs \given \tilde{\target})}.
+\frac{\lik(\tilde{\targetTraj}(\Par); \obs)}{\lik(\targetTraj(\Par); \obs)} 
+\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})}.
 \label{eq:MH-ratio-prior-invariant}
 \end{align}
-The simplest option is to set $q_\target(\target, \cdot) \Def \mathrm{law}(\targetEm)$, which yields an MH independence
+The simplest option is to set $q_\target(\targetTraj, \cdot) \Def \emDist(\cdot)$, which yields an MH independence
 sampler update. If the emulator $\targetEm$ depends on a transformation of a latent Gaussian, then 
 specialized alternatives such as the preconditioned Crank-Nicolson proposal, or an elliptical slice
 sampling update, may be considered. We emphasize that the simplification in 
 \Cref{eq:MH-ratio-prior-invariant} means that this ratio only depends on the emulator trajectories at the current 
-value of $\Par$. Thus, there is no requirement to sample full trajectories. See \Cref{alg:mwg-ep}.
-
-The second issue is the dependence on the intractable normalizing constants 
-$p(\obs \given \target)$ and $p(\obs \given \tilde{\target})$. 
-If the proposed value $\tilde{\target}$ is not too far from $\target$ then it may be reasonable to invoke the 
-approximation $p(\obs \given \target) / p(\obs \given \tilde{\target}) \approx 1$.
-\Cref{alg:mwg-ep} uses this approximation, along with the independence MH proposal.
+value of $\Par$. Thus, there is no requirement to sample full trajectories; see \Cref{alg:mwg-ep}.
 
 \begin{algorithm}
-    \caption{Metropolis-within-Gibbs Approximation to $\llikEmSampDensNorm$}
+    \caption{Metropolis-within-Gibbs Approximation to $\postApproxEP$}
     \label{alg:mwg-ep}
     \begin{algorithmic}[1] 
-    \State \textbf{Input:} Current state $(\Par, \target_\Par)$
-    \State \textbf{Output:} Updated state $(\Par^\prime, \target^\prime_{\Par^\prime})$
+    \State \textbf{Input:} Current state $(\Par, \targetTraj_\Par)$
+    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime_{\Par^\prime})$
      \State Propose $\tilde{\Par} \sim q(\Par, \cdot)$
-     \State Propose $(\tilde{\target}_\Par, \tilde{\target}_{\propPar}) \sim \mathrm{law}(\targetEm(\Par), \targetEm(\propPar))$ \Comment{Begin $\target$ update}
-     \State $\alpha_{\target} \gets \min\left\{1, p(\obs \given \tilde{\target}_\Par) / p(\obs \given \target_\Par) \right\}$
-      	\If{$\mathrm{Unif}(0,1) < \alpha_{\target}$}
-                \State $(\target^\prime_\Par, \target^\prime_{\propPar}) \gets (\tilde{\target}_\Par, \tilde{\target}_{\propPar})$ 
+     \State Propose $(\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar}) \sim \emDist(\cdot, \cdot \given \Par, \propPar)$ \Comment{Begin $\targetTraj$ update}
+     \State $\alpha_{\targetTraj} \gets \min\left\{1, \lik(\tilde{\targetTraj}_\Par; \obs) / \lik(\targetTraj_\Par; \obs) \right\}$
+      	\If{$\mathrm{Unif}(0,1) < \alpha_{\targetTraj}$}
+                \State $(\targetTraj^\prime_\Par, \targetTraj^\prime_{\propPar}) \gets (\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar})$ 
             \Else
-                \State $\target^\prime_{\Par} \gets \target_{\Par}$
-                \State $\target^\prime_{\propPar} \gets \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \target_\Par)$
+                \State $\targetTraj^\prime_{\Par} \gets \targetTraj_{\Par}$
+                \State $\targetTraj^\prime_{\propPar} \gets \emDist(\cdot \given \targetEm(\Par) = \targetTraj_\Par)$
             \EndIf
-      \State $\alpha_{\Par} \gets \min\left\{1, \priorDens(\propPar )p(\obs \given \target^\prime_{\propPar}) / \priorDens(\Par) p(\obs \given \target^\prime_{\Par}) \right\}$ \Comment{Begin $\Par$ update}
+      \State $\alpha_{\Par} \gets \min\left\{1, \priorDens(\propPar )\lik(\targetTraj^\prime_{\propPar}; \obs) / \priorDens(\Par) \lik(\targetTraj^\prime_{\Par}; \obs) \right\}$ \Comment{Begin $\Par$ update}
              \If{$\mathrm{Unif}(0,1) < \alpha_{\Par}$}
                 \State $\Par^\prime \gets \propPar$
-                \State $\target^\prime_{\Par^\prime} \gets \target^\prime_{\propPar}$ 
+                \State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\propPar}$ 
             \Else
             	\State $\Par^\prime \gets \Par$
-		\State $\target^\prime_{\Par^\prime} \gets \target^\prime_{\Par}$
+		\State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\Par}$
             \EndIf
     \end{algorithmic}
 \end{algorithm}
 
-A second option is to consider an $\target$ update based on algorithms designed 
-for doubly intractable target distributions. 
+The second issue is the dependence on the intractable normalizing constants 
+$\normCst(\targetTraj)$ and $\normCst(\tilde{\targetTraj})$. We can consider applying techniques
+from the doubly intractable MCMC literature, but these algorithms (e.g., the exchange algorithm)
+typically require the ability to directly sample $\postDensNorm(\Par; \targetEm)$.
+Alternatively, if the proposed value $\tilde{\targetTraj}$ is not too far from $\targetTraj$ then it may be 
+reasonable to invoke the approximation $\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$.
+\Cref{alg:mwg-ep} uses this approximation, along with the independence MH proposal.
+ 
+\section{Alternative Viewpoints}
+I've been playing around with some alternative viewpoints recently, so am adding them here for now.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-\subsection{Noisy Algorithm}
-
-A common solution to this computational bottleneck is to learn a statistical approximation of the map 
-$\Par \mapsto \postDens(\Par)$, which we refer to synonymously as a \textit{surrogate} or \textit{emulator}
-model. Learning the surrogate typically consists of an initial offline step where training data 
-is generated by running the expensive simulator at a set of input parameter values. A regression model 
-is then fit to this training set to learn an approximation of the input-output relationship 
-$\Par \mapsto \postDens(\Par)$. Our interest is in \textit{probabilistic} surrogate models, which output
-a prediction for $\postDens(\Par)$ in the form of a probability distribution, as opposed to just a point estimate.
-We let $\postEm[\Ndesign](\Par)$ denote the random variable representing the surrogate prediction 
-of $\postDens(\Par)$, with the subscript indicating the number of exact simulation runs that were used 
-to train the surrogate. We refer to the distribution of $\postEm[\Ndesign](\Par)$ as the surrogate 
-\textit{predictive distribution} at input $\Par$; we allow this distribution to be arbitrary, and potentially 
-only accessible through samples. Note that the map $\Par \mapsto \postDens(\Par)$ is typically not 
-approximated directly; rather, an emulator is fit to a quantity on which $\postDens(\Par)$ depends 
-(e.g., the log-likelihood or an underlying mechanistic model), which then induces a random approximation 
-of $\postDens(\Par)$. Our framework thus seeks to be agnostic to the particular quantity that is 
-being emulated. Concrete examples of typical surrogate modeling workflows are given in \cref{sec:surrogate-examples}.
-
-Given $\postEm[\Ndesign]$, a fixed random approximation of $\postDens$, a natural question is how to 
-utilize this surrogate in approximating the posterior distribution in \Cref{eq:post_dens_generic}. \Cref{sec:post-approx}
-is dedicated to this question, in which we summarize previous approaches and present our proposed method.
-
-
-
-
-We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
-
-are available, but expensive owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
-commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
-Consider a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing 
-some system of interest, parameterized by input parameters $\Par \in \parSpace$. In addition, suppose that 
-we have noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ 
-seeks to approximate. The \textit{inverse problem} concerns learning the parameter values $\Par$ such
- that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating} the model so that it agrees with the observations. 
- The statistical approach to this problem assumes that the link between model outputs and 
-observations is governed by a probability distribution on $\obs \given \Par$. We assume that this distribution 
-admits a density with corresponding log-likelihood 
-\begin{align}
-\llik: \parSpace \to \R, \label{log_likelihood}
-\end{align}
-such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
-on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
-calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
-are fixed. We discuss inference for such nuisance parameters in \Cref{section_lik_par}.
-
-The Bayesian approach completes this specification with a prior distribution 
-on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
-by the posterior distribution
-\begin{align}
-\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst}\postDens(\Par) = \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
-\end{align}
-with normalizing constant given by 
-\begin{align}
-\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
-\end{align}
-We emphasize that throughout this paper $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. We will also find it useful to introduce the notation
+\subsection{Nested Monte Carlo}
+Consider approximating the normalizing constant $\normCst(\targetTraj)$ with an importance sampling
+estimator of the form
 \begin{equation}
-\lpost(\Par) \Def \log \postDens(\Par) = \log \priorDens(\Par) + \llik(\Par) \label{eq:lpost}
+\normCst^K(\targetTraj) \Def \sum_{k=1}^{K} w(\Par_k; \targetTraj) \postDens(\Par_k; \targetTraj), 
+\qquad \Par_k \sim g
 \end{equation}
-for the logarithm of the unnormalized posterior density.
-When relevant, we will make explicit the dependence on the forward 
-model by writing $\llik(\Par; \fwd)$, $\lpost(\Par; \fwd)$, and $\postDens(\Par; \fwd)$. 
-
-In addition to considering 
-generic likelihoods, we will give special attention to the additive Gaussian noise model
+for some proposal distribution $g$. We can then consider the 
+(biased) nested Monte Carlo approximation 
 \begin{align}
-\obs &= \fwd(\Par) + \noise \label{inv_prob_Gaussian} \\
-\noise &\sim \Gaussian(0, \likPar) \nonumber 
+\hat{\pi}^{K,M}(\Par) \Def \E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right]
+&\approx \E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst^K(\targetTraj)} \right] \\
+&\approx \frac{1}{M} \sum_{m=1}^{M} \frac{\postDens(\Par; \targetTraj_m)}{\normCst^K(\targetTraj_m)} \\
+&= \frac{1}{M} \sum_{m=1}^{M}  
+\left[\sum_{k=1}^{K} \frac{w(\Par_k; \targetTraj_m) \postDens(\Par_k; \targetTraj_m)}{\postDens(\Par; \targetTraj_m)}\right]^{-1}.
 \end{align}
-with corresponding log-likelihood 
-\begin{align}
-\llik(\Par; \fwd) &= \log\Gaussian(\obs| \fwd(\Par), \likPar) 
-= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)), \label{llik_Gaussian}
-\end{align}
-as this model features prominently in the inverse problems literature.
-In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
-standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
-algorithm. Such algorithms are serial in nature, often requiring $\sim 10^5 - 10^7$ iterations, with each 
-iteration involving an evaluation of the unnormalized posterior density $\postDens(\Par; \fwd)$. 
-In the inverse problem context, this computational requirement is often prohibitive when the forward model 
-evaluations $\fwd(\Par)$ incur significant computational cost, as each density evaluation requires the 
-expensive computation $\fwd(\Par)$. Motivated by this problem, a large body of work has focused on deriving 
-cheap approximations to either $\fwd(\Par)$ or $\lpost(\Par)$ (note that approximating the former induces 
-an approximation of the latter). We focus on surrogate models that take the form of statistical 
-regression models approximating the maps $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
-\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
-that exploit the specific structure of the forward model; see, e.g., \todo.}
-We refer to methods that explicitly model the former map as \textit{forward model emulation}, and those that 
-model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
-map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
-Throughout this review, we will typically view the functions
-$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ as computationally expensive black-boxes. We will occasionally refer to 
-such maps as \textit{simulators}, owing to the fact that in typical applications evaluating these maps requires
-running an expensive computer code. The following section provides a concrete example of such a simulation
-model stemming from the numerical solution of differential equations.
 
+Suppose we ignored the bias and tried to target $\hat{\pi}(\Par) \Def \E[\hat{\pi}^{K,M}(\Par)]$. If the current state of the Markov chain is $\Par$
+and the proposal is $\propPar$, then the random acceptance ratio takes the form $\hat{\pi}^{K,M}(\propPar)/\hat{\pi}^{K,M}(\Par)$. 
+For example, with $M = K = 1$,
+\begin{align}
+&\frac{\hat{\pi}^{1,1}(\propPar)}{\hat{\pi}^{1,1}(\Par)}
+= \frac{\postDens(\propPar; \targetTraj)}{\postDens(\Par; \targetTraj)} \cdot
+\frac{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}, &&\targetTraj \sim \emDist,
+\end{align}
+where the second term cancels. The MH algorithm that replaces the acceptance ratio $\hat{\pi}(\propPar)/\hat{\pi}(\Par)$ with the 
+above unbiased estimate (freshly sampled each iteration) thus reduces to the E-Acc algorithm. Since we know the target distribution 
+of E-acc depends on the proposal kernel, then it is clear that replacing the acceptance ratio with an unbiased estimate in this context does
+not yield a valid algorithm targeting $\hat{\pi}$. Alternatively, we could consider a pseudo-marginal algorithm targeting $\hat{\pi}$ (still 
+considering $M = K = 1$). In this case, the ratio would look like
+\begin{align}
+&\frac{\postDens(\propPar; \targetTraj^\prime)}{\postDens(\Par; \targetTraj)} \cdot
+\frac{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}{w(\Par_1^\prime; \targetTraj^\prime)\postDens(\Par_1^\prime; \targetTraj^\prime)}, 
+&&\targetTraj \sim \emDist, \ \Par_1 \sim g,
+\end{align}
+where $(\Par_1, \targetTraj)$ are recycled from the previous iteration. In this case, the second term does not cancel. Without the second
+term, this is the pseudo-marginal algorithm targeting the EL approximation. This alternative pseudo-marginal algorithm incorporates 
+information about the trajectory $\targetTraj$ at points other than the current and proposed states $(\Par, \propPar)$.
+Compared to EL, acceptance is more probable if $\postDens(\Par_1; \targetTraj) > \postDens(\Par_1; \targetTraj^\prime)$.
+
+\subsection{Some Similar Ideas}
+We can arrive at some similar algorithms via a slightly different route. 
+As discussed above, the EL distribution can be derived from the EP via the approximation
+\begin{equation}
+\E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right] \approx \frac{\E[\postDens(\Par; \targetTraj)]}{\E[\normCst(\targetTraj)]},
+\end{equation}
+which ignores the dependence between $\postDens(\Par; \targetTraj)$ and $\normCst(\targetTraj)$. We could consider 
+the alternative approximation 
+\begin{equation}
+\E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right] 
+= \E\left[\frac{1}{\normCst(\targetTraj)/\postDens(\Par; \targetTraj)}\right]
+\approx \frac{1}{\E[\normCst(\targetTraj)/\postDens(\Par; \targetTraj)]}}
+= \left(\int \E\left[\frac{\postDens(\Par^\prime; \targetTraj)}{\postDens(\Par; \targetTraj)} \right] d\Par^\prime \right)^{-1}
+\end{equation}
+which still considers this dependence.
+ 
+\subsection{Log-Density Emulators}
+
+ 
 
 \bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}
