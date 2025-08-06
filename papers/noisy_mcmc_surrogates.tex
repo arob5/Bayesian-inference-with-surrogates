@@ -987,21 +987,91 @@ the alternative approximation
 = \E\left[\frac{1}{\normCst(\targetTraj)/\postDens(\Par; \targetTraj)}\right]
 \approx \frac{1}{\E[\normCst(\targetTraj)/\postDens(\Par; \targetTraj)]}}
 = \left(\int \E\left[\frac{\postDens(\Par^\prime; \targetTraj)}{\postDens(\Par; \targetTraj)} \right] d\Par^\prime \right)^{-1}
+\label{eq-EP-approx}
 \end{equation}
-which still considers this dependence.
+which still considers this dependence. Nested Monte Carlo estimators of the final expression will then 
+yield similar expressions as above. 
  
 \subsection{Log-Density Emulators}
+We now return to the special case of the GP log-density emulator 
+\begin{align}
+&\postEm(\Par) = \Exp{\targetEm(\Par)},
+&&\targetEm \sim \GP(\gpMean, \gpKer),
+\end{align}
+which implies 
+\begin{align}
+\E\left[\frac{\postDens(\Par^\prime; \targetEm)}{\postDens(\Par; \targetEm)} \right]
+&= \Exp{\gpMean(\Par^\prime) - \gpMean(\Par)} 
+\Exp{\frac{1}{2}[\gpKer(\Par^\prime) + \gpKer(\Par)]} \Exp{-\gpKer(\Par, \Par^\prime)}.
+\end{align}
+Plugging this into \Cref{eq-EP-approx} we obtain
+\begin{align}
+&\left(\int \E\left[\frac{\postDens(\Par^\prime; \targetTraj)}{\postDens(\Par; \targetTraj)} \right] d\Par^\prime \right)^{-1} \nonumber \\
+&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)} 
+\left(\int \Exp{\gpMean(\Par^\prime) + \frac{1}{2}\gpKer(\Par^\prime)} \Exp{-\gpKer(\Par, \Par^\prime)} d\Par^\prime \right)^{-1} \nonumber \\
+&\propto \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)}
+\left(\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime) \right)^{-1} \label{eq-EP-approx-ldens}
+\end{align}
 
- 
+\paragraph{Naive approximation 1.}
+The expression in \Cref{eq-EP-approx-ldens} reduces to $\postApproxMarg(\Par)$ by invoking the approximation
+\begin{align}
+\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
+&\approx \Exp{-\gpKer(\Par)}.
+\end{align}
+Intuitively, this seems like a poor approximation in general; e.g., if there are many 
+values far away from from $\Par$ that are given significant weight under $\postApproxNormMarg$
+then these values will tug the integral towards one.
+
+\paragraph{Naive approximation 2.}
+If $\postApproxNormMarg(d\Par^\prime) \approx \delta_{\Par_\star}(d\Par^\prime)$ then the approximation
+\begin{align}
+\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
+&\approx \Exp{-\gpKer(\Par, \Par_\star)}
+\end{align}
+may be reasonable. In this case, we obtain the (unnormalized) density approximation
+\begin{align}
+\hat{\pi}(\Par)
+&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par) + \gpKer(\Par, \Par_\star)} \\
+&= \postApproxMarg(\Par) \Exp{\gpKer(\Par, \Par_\star) - \gpKer(\Par)} \\ 
+&\propto \Exp{\gpMean(\Par) - \frac{1}{2} \Var[\funcEm(\Par) - \funcEm(\Par_\star)]} \\
+&= \Exp{\gpMean(\Par) - \gamma_N(\Par, \Par_\star)},
+\end{align}
+where $\gamma_N}$ is the variogram of the random function $\funcEm$, a commonly-used
+measure of dependence in geostatistics. 
+Interestingly, this yields a computable unnormalized density approximation (like EL) which 
+now depends on the GP covariance as well. Based on the final expression above, 
+$\hat{\pi}(\Par)$ favors points where the predictive mean is large, and the dependence 
+between $\funcEm(\Par)$ and $\funcEm(\Par_\star)$ is large (i.e., the variogram is small).  
+To better compare to EL, consider
+\begin{align}
+\frac{\hat{\pi}(\propPar) / \hat{\pi}(\Par)}{\postApproxMarg(\propPar) / \postApproxMarg(\Par)}
+&= \frac{\Exp{\gpKer(\Par) - \gpKer(\Par, \Par_\star)}}{\Exp{\gpKer(\propPar) - \gpKer(\propPar, \Par_\star)}}.
+\end{align} 
+We conclude that $\hat{\pi}$ inflates the point $\propPar$, relative to $\hat{\pi}$, when 
+$\gpKer(\Par) - \gpKer(\Par, \Par_\star) > \gpKer(\propPar) - \gpKer(\propPar, \Par_\star)$.
+Since this still seems to favor points close to $\Par_\star$, it is unclear how much this can 
+help offset the undesirable behavior of EL in certain settings. 
+
+\paragraph{Naive approximation 3.}
+Next, suppose that $\postApproxNormMarg$ has multiple concentrated nodes so that 
+$\postApproxNormMarg(d\Par^\prime) \approx \sum_{m=1}^{M} w_m \delta_{\Par_m}(d\Par^\prime)$,
+in which case
+\begin{align}
+\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
+&\approx \sum_{m=1}^{M} w_m \Exp{-\gpKer(\Par, \Par_m)}.
+\end{align}
+In this case, we obtain the (unnormalized) density approximation
+\begin{align}
+\hat{\pi}(\Par)
+&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)} \cdot \left[\sum_{m=1}^{M} w_m \Exp{-\gpKer(\Par, \Par_m)}\right]^{-1} \\
+&= \left[\sum_{m=1}^{M} \frac{w_m}{\Exp{\gpMean(\Par) - \gamma_N(\Par, \Par_m)}}  \right]^{-1},
+\end{align}
+another harmonic mean type estimator.
 
 \bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}
 
 \end{document}
-
-
-
-
-
 
 
