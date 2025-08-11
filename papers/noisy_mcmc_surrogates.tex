@@ -359,9 +359,9 @@ with respect to the expected forward KL-divergence
 \begin{equation}
 \mathcal{D}(\postNormEm, q) = \emE \left[\KL{\postNormEm}{q}\right]
 \end{equation}
-and expected $L_2$ loss
+and expected squared $L_2$ loss
 \begin{equation}
-\mathcal{D}(\postNormEm, q) = \emE \left[\norm{\postNormEm - q}_{L_2(\parSpace)}\right].
+\mathcal{D}(\postNormEm, q) = \emE \left[\norm{\postNormEm - q}_{L_2(\parSpace)}^2\right].
 \end{equation}
 \end{prop}
 
@@ -395,7 +395,7 @@ sampling procedure in \Cref{eq:ep-prob-model}.
 The notion of aggregating multiple posterior distributions is also used in contexts other than
 modular inference, including for robustness to model misspecification \citep{BayesBag,BayesBag2}.
 
-\subsubsection{Expected Likelihood}
+\subsubsection{Expected Unnormalized Posterior}
  While the EP has been generally recognized as the gold standard 
  in the broader field of modularized Bayesian inference, surrogate 
  modeling applications commonly target alternative distributions when 
@@ -1189,8 +1189,8 @@ another harmonic mean type estimator.
 % Appendix
 \section{Appendix}
 
-For the below proofs we use the following measure-theoretic setup. We drop the 
-$\Ndesign$ subscripts used throughout the paper for brevity.
+For the below proofs we use the following measure-theoretic setup. For brevity, we drop the 
+$\Ndesign$ subscripts on quantities other than $\postNormEm$.
 Let $\refMeas$ be a reference measure (e.g., Lebesgue) on $(\parSpace, \BorelSig)$,
 and $\emDist[]$ a probability measure on $(\emSpace, \emSig)$. Assume that 
 the map $(\Par, \targetTraj) \mapsto \postDens(\Par; \targetTraj)$ is measurable
@@ -1207,7 +1207,7 @@ Let $\qMeas$ be a probability measure on $\parSpace$ with
 $\refMeas$-density $\qDens$. We restrict to measures 
 $\postApproxEP[] \ll \qMeas$, as the KL divergence is infinite otherwise. 
 Note that 
-$\frac{d\emJoint}{d(\emDist \otimes \qMeas)}(\Par, \targetTraj) = \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}$.
+$\frac{d\emJoint}{d(\emDist[] \otimes \qMeas)}(\Par, \targetTraj) = \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}$.
 Using Tonelli's theorem, we have 
 \begin{align*}
 \E_{\emDist[]}\left[\KL{\postNormEm}{\qMeas} \right]
@@ -1216,31 +1216,34 @@ Using Tonelli's theorem, we have
 \refMeas(d\Par) \emDist[](d\targetTraj) \\
 &= \int_{\parSpace \times \emSpace}  \log \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}
 \emJoint(d\Par, d\targetTraj) \\
-&= \int_{\parSpace \times \emSpace}  \log \frac{d\emJoint}{d(\emDist \otimes \qMeas)}(\Par, \targetTraj)
+&= \int_{\parSpace \times \emSpace}  \log \frac{d\emJoint}{d(\emDist[] \otimes \qMeas)}(\Par, \targetTraj)
 \ \emJoint(d\Par, d\targetTraj) \\
 &= \KL{\emJoint}{\emDist[] \otimes \qMeas}.
 \end{align*}
+Finally, 
+\begin{align*}
+\KL{\emJoint}{\emDist[] \otimes \qMeas}
+&= \int \log \frac{d\emJoint}{d(\emDist[] \otimes \qMeas)} d\emJoint \\
+&= \int \log \left[\frac{d\emJoint}{d(\emDist[] \otimes \postApproxEP[])} \frac{d(\emDist[] \otimes \postApproxEP[])}{d(\emDist[] \otimes \qMeas)}\right] d\emJoint \\
+&\propto \int \log \frac{d(\emDist[] \otimes \postApproxEP[])}{d(\emDist[] \otimes \qMeas)} d\emJoint \\
+&= \int_{\emSpace \times \parSpace} 
+\log \frac{\postApproxEP[](\Par)}{\qDens(\Par)} \postDensNorm(\Par; \targetTraj) \emDist[](d\targetTraj) \refMeas(d\Par) \\
+&= \int_{\parSpace} \log \frac{\postApproxEP[](\Par)}{\qDens(\Par)} 
+ \postApproxEP[](\Par) \refMeas(d\Par) \\
+&= \KL{\postApproxEP[]}{\qMeas}.
+\end{align*} 
+where we have used ``$\propto$'' to absorb additive constants with respect to $\qMeas$. The result follows 
+from the fact that $\KL{\postApproxEP[]}{\qMeas}$ is uniquely minimized at $\qMeas = \postApproxEP[]$. $\qquad \blacksquare$
+
+\paragraph{Squared $L_2$ loss.} 
+For the expected squared error objective, apply Tonneli's theorem 
+\begin{align}
+\E_{\emDist[]}\left[\norm{\postNormEm - \qMeas}^2_{L_2(\parSpace)} \right]
+&= \int \E_{\emDist[]} \left[\postDensNorm(\Par; \targetTraj) - \qDens(\Par) \right]^2 \refMeas(d\Par) \nonumber
+\end{align}
+and notice that the integrand is minimized pointwise by
+$\qDens(\Par) = \E_{\emDist[]}[\postDensNorm(\Par; \targetTraj)] = \postApproxEP[](\Par)$. $\qquad \blacksquare$
  
-
-
-\begin{prop}
-The expected posterior admits the variational formulation 
-\begin{equation}
-\postApproxEP = \argmin_{q \in \mathcal{Q}} \mathcal{D}(\postNormEm, q)
-\end{equation}
-with respect to the expected forward KL-divergence
-\begin{equation}
-\mathcal{D}(\postNormEm, q) = \emE \left[\KL{\postNormEm}{q}\right]
-\end{equation}
-and expected $L_2$ loss
-\begin{equation}
-\mathcal{D}(\postNormEm, q) = \emE \left[\norm{\postNormEm - q}_{L_2(\parSpace)}\right].
-\end{equation}
-\end{prop}
-
-
-
-
 \bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}
 
