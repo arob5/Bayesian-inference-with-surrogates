@@ -47,4 +47,9 @@
 \newcommand{\Gaussian}{\mathcal{N}}
 \newcommand{\LN}{\mathrm{LN}} % Log-normal distribution 
 \newcommand{\given}{\mid} 
+\DeclarePairedDelimiterX{\divergencex}[2]{(}{)}{%
+  #1\;\delimsize\|\;#2%
+}
+\newcommand{\divergence}{\mathcal{D}\divergencex}
+\newcommand{\KL}{\mathcal{D}_{\mathrm{KL}}\divergencex}
 

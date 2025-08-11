@@ -12,6 +12,10 @@
 \newcommand{\law}{\textrm{law}}
 \newcommand{\cv}{\mathsf{cv}}
 \newcommand{\Cor}{\mathrm{Cor}}
+\newcommand{\BorelSig}{\mathcal{B}}
+\newcommand{\emSpace}{\mathcal{F}}
+\newcommand{\emSig}{\mathcal{A}} % Sigma algebra in function space for emulator
+\newcommand{\refMeas}{\lambda} % Reference measure on parameter space
 
 % --------------------------------------------------------------------------------------------------
 % Bayesian inverse problem: general setup 
@@ -37,6 +41,8 @@
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
+\newcommand{\qMeas}{Q} % Generic prob measure on parSpace (used in variational formulation)
+\newcommand{\qDens}{q} % Density of qDens.
 
 % --------------------------------------------------------------------------------------------------
 % Gaussian Process Emulators
@@ -67,6 +73,9 @@
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
 \newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
 \newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Distribution (law) of the emulator (a stochastic process)
+\newcommand{\emE}{\E_{\Ndesign}} % Expectation wrt emulator distribution.
+\newcommand{\emJoint}{\eta} % Joint measure over (u,f)
+
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
@@ -95,8 +104,8 @@
 \newcommand{\normCstEm}[1][\Ndesign]{\normCst_{#1}}
 \newcommand{\postApproxEP}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EP}}}
 \newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\mathrm{mean}}}
-\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\mathrm{EL}}}
-\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EL}}}
+\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\mathrm{EUP}}}
+\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EUP}}}
 \newcommand{\postApproxNormMean}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{mean}}}
 
 
