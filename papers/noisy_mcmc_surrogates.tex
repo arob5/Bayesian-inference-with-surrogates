@@ -670,8 +670,37 @@ could retain an infinite-dimensional GP representation by constructing
 GP trajectories ``just-in-time'' within the MCMC algorithm; that is, iteratively
 condition the GP at each value of $\Par$ considered within the MCMC run.
 However, this approach is well-known to suffer from significant numerical 
-instability \citep{pathwiseConditioning}.
+instability \citep{pathwiseConditioning}. Finally, we highlight the method of 
+\citet{trainDynamics}, which is to our knowledge the only existing work to 
+attempt EP-based inference with a GP surrogate. 
+Their method consists of approximating GP 
+trajectories by sampling the surrogate only at a finite grid of points, 
+and then approximating the trajectory as the GP mean, conditional on the 
+sampled values at these points. Our MCMC method avoids the challenging 
+task of choosing an appropriate conditioning set.
 
+\subsection{Approximate MCMC}
+In this section, we present two variants of an approximate MCMC algorithm that 
+overcome the limitations of alternative methods discussed above. The algorithms seek 
+to target the joint distribution 
+$\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par$, which admits
+$\postApproxEP$ as a marginal. First, consider a Metropolis-within-Gibbs (MwG)
+scheme that alternates between $\Par$ and $\targetTraj$ updates. 
+For a fixed $\targetTraj$, the $\Par$ update must leave the distribution 
+$\postDensNorm(\Par; \targetTraj) d\Par$ invariant, which can be achieved 
+with a standard Metropolis-Hastings (MH) step. For a fixed $\Par$, the $\targetTraj$
+update must leave the distribution $\emDist(d\targetTraj)\postDensNorm(\Par; \targetTraj)$
+invariant. This step faces two issues: (i.) the fact that $\targetTraj$ is potentially 
+infinite-dimensional, and (ii.) the fact that we cannot compute 
+$\postDensNorm(\Par; \targetTraj)$. The former can be addressed by so-called 
+function-space MCMC methods \citep{functionSpaceMCMC}. If we utilize an
+MH step with a $\emDist$-reversible proposal distribution 
+$\propDist(\targetTraj, \cdot)$ then the Metropolis acceptance probability reduces to
+\begin{equation}
+\accProbMH(\targetTraj, \tilde{\targetTraj})
+= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right),
+\end{equation}
+where $\tilde{\targetTraj} \sim \propDist(\targetTraj, \cdot)$ is the proposed value.
 
 
 
