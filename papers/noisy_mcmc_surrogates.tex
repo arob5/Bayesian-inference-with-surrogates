@@ -302,7 +302,7 @@ A simple approximation may be constructed by plugging in the surrogate mean
 \postApproxMean(\Par) \Def \postDensNorm(\Par; \emE[\targetEm]),
 \label{eq:mean-approx}
 \end{equation}
-but this ignores the emulator uncertainty, leading to overconfident 
+but this ignores the emulator uncertainty, resulting in overconfident 
 posterior inference. This leads to the problem of constructing a posterior 
 approximation that correctly propagates the uncertainty in $\targetEm$. 
 Given the lack of a unifying probabilistic model across the two stages, proper uncertainty 
@@ -322,22 +322,27 @@ Irrespective of the underlying target $\target$, the probabilistic emulator $\ta
 induces a random approximation of the posterior defined by plugging $\targetEm$
 in place of $\target$; this yields
 \begin{align}
-\postNormEm(\Par) \Def \postDensNorm(\Par; \targetEm) 
+\postDensNorm(\Par; \targetEm) 
 &\Def \frac{\postEm(\Par; \targetEm)}{\normCst(\targetEm)},
 &&\normCst(\targetEm) \Def \int_{\parSpace} \postEm(\Par; \targetEm) d\Par, \label{eq:random-post}
 \end{align}
-which is referred to as the ``sample'' approximation in \citet{StuartTeck1}. We can thus
-view the challenge of uncertainty propagation as that of constructing a deterministic 
+which is referred to as the ``sample'' approximation in \citet{StuartTeck1}. We use the 
+shorthand $\postEm(\cdot) \Def \postDens(\cdot; \targetEm)$, 
+$\postNormEm(\cdot) \Def \postDensNorm(\cdot; \targetEm)$, and 
+$\normCstEm \Def \normCst(\targetEm)$ when referencing the underlying 
+emulator is not necessary. 
+We view the challenge of uncertainty propagation as that of constructing a deterministic 
 probability distribution that summarizes the uncertainty encoded in $\postNormEm$.
 We argue that the \textit{expected posterior}
 \begin{equation}
 \postApproxEP(\Par) \Def 
-\E_{\Ndesign}\left[\postDensNorm(\Par; \targetEm) \right]
+\E_{\Ndesign}\left[\postNormEm(\Par) \right]
 = \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj) \label{eq:ep-approx}
 \end{equation}
 represents the deterministic distribution providing the correct uncertainty quantification 
 in this context. We write $\E_{\Ndesign}$ to denote the expectation with respect to the 
-emulator predictive distribution $\emDist$. The EP arises as the marginal of the 
+emulator predictive distribution $\emDist$. 
+The EP arises as the marginal of the 
 joint distribution $\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par$, which 
 can be understood via the hierarchical model 
 \begin{align}
@@ -347,7 +352,13 @@ can be understood via the hierarchical model
 \end{align}
 This perspective highlights the interpretation of the EP as a mixture of posteriors,
 with each ensemble member $\postDensNorm(\Par; \targetTraj)$ induced by 
-a particular emulator realization $\targetTraj$ that is weighted according to $\emDist$. 
+a particular emulator realization $\targetTraj$ that is weighted according to $\emDist$.
+We assume throughout that $\targetEm$ is 
+constructed such that 
+trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
+in \Cref{eq:ep-prob-model} is well-defined. See 
+\citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
+technical conditions ensuring existence. 
 
 The EP can be justified both as an optimal estimate of $\postNormEm$, as well as 
 the distribution providing calibrated uncertainty estimates under the natural 
@@ -370,19 +381,6 @@ and expected squared $L_2$ loss
 \mathcal{D}(\postNormEm, q) = \emE \left[\norm{\postNormEm - q}_{L_2(\parSpace)}^2\right].
 \end{equation}
 \end{prop}
-
-\begin{rmk}
-Note that the quantity $\postNormEm(\Par)$ depends on the entire random function $\targetEm$ 
-through its dependence on $\normCstEm$, as opposed to only depending on the prediction 
-$\targetEm(\Par)$ at the single input $\Par$. Therefore, care must be taken in ensuring the 
-expectation in \Cref{eq:ep-approx} is well-defined in the case that $\targetEm$ is an 
-infinite-dimensional random element (e.g., a GP). We assume throughout that $\targetEm$ is 
-constructed such that 
-trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
-in \Cref{eq:ep-prob-model} is well-defined. See 
-\citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
-technical conditions ensuring existence. 
-\end{rmk}
 
 \paragraph{Related work.} In the surrogate modeling literature the EP has been considered 
 in \citet{trainDynamics,BurknerSurrogate,garegnani2021NoisyMCMC}; we borrow 
@@ -478,20 +476,20 @@ EUP as a computationally-convenient approximation.
 Notice from \Cref{eq:post-approx-EL} that the EUP is a ratio estimator, and differs from 
 the EP due to the nonlinearity of the normalization operation.
 
-\begin{prop}
+\begin{prop} \label{prop:ep-eup-pw-err}
 The pointwise difference between the EP and EUP is given by
 \begin{equation}
 \postApproxEP(\Par) - \postApproxMarg(\Par)
-= \emE[\postDens(\Par; \targetEm)] \jgap + \Cov[\postDens(\Par; \targetEm), \normCst(\targetEm)],
+= \emE[\postEm(\Par)] \jgap + \Cov[\postEm(\Par), \normCstEm],
 \label{eq:ep-eup-pw-err}
 \end{equation}
-where $\jgap \Def \emE[\normCst^{-1}(\targetEm)] - \emE[\normCst(\targetEm)]^{-1}$
+where $\jgap \Def \emE[\normCstEm^{-1}] - \emE[\normCstEm]^{-1}$
 denotes the ``Jensen gap.''
 \end{prop}
 
 By Jensen's inequality $\jgap \geq 0$, implying that the Jensen gap represents a 
 $\Par$-independent positive bias in the difference between EP and EUP, modulated by the magnitude of 
-$\emE[\postDens(\Par; \targetEm)]$. Since both distributions integrate to one, any positive 
+$\emE[\postEm(\Par)]$. Since both distributions integrate to one, any positive 
 biases must be balanced by negative biases at other values of $\Par$.
 The second term in \Cref{eq:ep-eup-pw-err} will be negative for ``influential'' $\Par$ values, 
 meaning that larger realizations of $\postEm(\Par)$ correspond to larger values of 
@@ -500,15 +498,31 @@ $\postEm(\Par)$ is large on average, highly variable, and is positively correlat
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
 a GP emulator with a long lengthscale. Based on this logic, we expect the EUP to inflate 
 influential regions and depress non-influential regions, relative to the EP. This can lead 
-the EUP to be more peaked, while the EP is more smooth. 
+the EUP to be more peaked, while the EP is more smooth. The pointwise error in 
+\Cref{prop:ep-eup-pw-err} can be integrated to obtain the following $L_1$ bound 
+between $\postApproxEP$ and $\postApproxMarg$. Multiplying both sides by $1/2$
+yields a total variation bound.
 
-Decreasing the variance of $\normCst(\targetEm)$ will shrink both terms in 
-\Cref{eq:ep-eup-pw-err} for all $\Par$ values. This may occur when there is little 
+\begin{prop} \label{prop:ep-eup-TV-err}
+Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
+\begin{equation}
+\norm{\postApproxEP - \postApproxMarg}_{L_1(\parSpace)}
+\leq \jgap \emE[\normCstEm] + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
+\label{eq:ep-eup-TV-err}
+\end{equation}
+\end{prop}
+
+Decreasing the variance of $\normCstEm$ will shrink both terms in 
+\Cref{eq:ep-eup-TV-err}. This may occur when there is little 
 uncertainty in $\targetEm$, the unnormalized posterior $\postDens(\cdot; \targetTraj)$
 is insensitive to $\targetTraj$, or $\normCst(\targetEm)$ is insensitive to the variability 
-in $\postDens(\cdot; \targetTraj)$. In the first case, note that if $\funcEm$ is heavily 
+in $\postEm$. In the first case, note that if $\funcEm$ is heavily 
 concentrated around its mean, then both the EP and EUP will bear a close resemblance
 to the plug-in mean approximation in \Cref{eq:mean-approx}.
+In special cases, the two terms in \Cref{eq:ep-eup-TV-err} perfectly balance so that 
+the EP and EUP agree. For example, this occurs when 
+$\postEm(\Par) = \omega g(\Par)$, where $\omega$ is a random constant and 
+$g(\Par)$ a deterministic function. 
 
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
 We now consider the particular example where $\postEm(\Par) = \Exp{\targetEm(\Par)}$
@@ -525,49 +539,48 @@ StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy,Alawieh
 In this setting, the pointwise distribution of the induced posterior surrogate is given by
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, implying that
 \begin{equation}
-\postApproxNormMarg(\Par) \propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}.
+\postApproxNormMarg(\Par) 
+\propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}
+= \postApproxMean(\Par) \Exp{\frac{1}{2}\gpKer(\Par)}.
 \label{eq:EL-Gaussian-fwd}
 \end{equation} 
-Using the known form of the coefficient of variation of a log-normal variable, we also see that
-$\cv(\postEm(\Par)) = \sqrt{\Exp{\gpKer(\Par)} - 1}$. Even at relatively small values for the 
-predictive variance (say, $\gpKer(\Par) > 4$), this quantity scales like $\Exp{\gpKer(\Par)/2}$
-and thus blows up quickly as uncertainty increases. In very uncertain regions, we thus expect
-$\tau_{\Ndesign}(\Par) \ll 0$ and $\postApproxNormMarg(\Par) \gg \postApproxEP(\Par)$.
-To better understand how the uncertainty propagates, we compare to the ``plug-in mean''
- baseline approximation $\postApproxNormMean(\Par) \propto \Exp{\gpMean(\Par)}$, 
- which ignores the emulator uncertainty. Consider the uncertainty inflation factor
+As noted in \citet{VehtariParallelGP}, this log-normal mean is often a poor summary of the 
+distribution of $\postEm$, as it can significantly exceed the bulk of the support 
+of the distribution. In particular, values of $\Par$ with large $\gpKer(\Par)$ can exert significant 
+influence on the magnitude of $\normCst(\targetEm)$, causing the second term in 
+\Cref{eq:ep-eup-pw-err} to blow up. This can result in $\postApproxNormMarg$ concentrating 
+on small regions of $\parSpace$ where emulator uncertainty is the largest. Another 
+way to see this is to compare the relative weightings between a pair of points $(\Par, \Par^\prime)$
+as assigned by $\postApproxNormMarg$ versus $\postApproxNormMean$. This 
+``uncertainty inflation factor'' is given by
  \begin{equation}
- \lambda(\Par, \Par^\prime) 
- \Def \frac{\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
+ \frac{\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
  = \Exp{\frac{1}{2}\left[\gpKer(\Par^\prime) - \gpKer(\Par) \right]},
  \label{eq:unc-infl-factor}
  \end{equation}
-which measures the EL relative weighting between the points $(\Par, \Par^\prime)$, relative to the 
-weighting assigned by the plug-in mean approximation. We conclude from \Cref{eq:unc-infl-factor}
-that, if $\gpMean(\Par^\prime) = \gpMean(\Par)$, then $\postApproxNormMarg(\Par^\prime) > \postApproxNormMarg(\Par)$
-when $\gpKer(\Par^\prime) > \gpKer(\Par)$. In other words, the EL approximation inflates the posterior
-in accordance with the magnitude of the emulator uncertainty at a particular point. 
-This is not true in general; see \Cref{sec:fwd-Gaussian}. Moreover, we see from \Cref{eq:unc-infl-factor} that
+in this setting. We conclude from \Cref{eq:unc-infl-factor}
+that, if $\gpMean(\Par^\prime) = \gpMean(\Par)$, then 
+$\postApproxNormMarg(\Par^\prime) > \postApproxNormMarg(\Par)$
+when $\gpKer(\Par^\prime) > \gpKer(\Par)$. In other words, the EUP density 
+inflation is always higher where the emulator uncertainty is larger.
+Moreover, 
 $\postApproxNormMarg(\Par^\prime) \gg \postApproxNormMarg(\Par)$ even when 
 $\gpKer(\Par^\prime) - \gpKer(\Par)$ is only modestly large, owing to the exponential scaling. 
 For example, when the standard deviation of $\targetEm(\Par^\prime)$ is twice that of $\targetEm(\Par)$,
-then $\lambda(\Par, \Par^\prime) = \Exp{\frac{3}{2}\gpKer(\Par)}$. If $\gpKer(\Par) = 4$, this means
-$\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$ -- the ratio $\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)$
+then \Cref{eq:unc-infl-factor} reduces to $\Exp{\frac{3}{2}\gpKer(\Par)}$. If $\gpKer(\Par) = 4$, this means
+$\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$ -- the ratio 
+$\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)$
 is $400$ times larger than $\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)$.
 
-We conclude that great care must be taken when propagating uncertainty using a log-density emulator. 
-A seemingly small level of surrogate uncertainty on the log-density scale can easily dominate the posterior
-approximation. Our analysis above demonstrates that the EL approximation is especially susceptible to 
-this issue. In numerical experiments we find that the EP approximation is more robust in this respect, 
-but not immune [\todo: add illustrative plots]. \citet{VehtariParallelGP} are well-aware of this concern, 
-noting that the expectation of $\postEm(\Par)$ often provides a poor summary of the predictive distribution, 
-owing to the heavy log-normal tail. Their solution is to instead define a posterior approximation via a pointwise 
-quantile 
-$\postNormEm^{\alpha}(\Par) \propto \mathrm{Quantile}_{\quantileProb}(\postEm(\Par)) = \Exp{\gpMean(\Par) + \GaussianCDF^{-1}(\quantileProb) \sqrt{\gpKer(\Par)}}$, where $\GaussianCDF$ denotes the standard Gaussian distribution function.
-This quantile approximation is also considered in \citet{quantileApprox,FATES_CES}. While more robust, the quantile 
-approximation is still quite sensitive to uncertainty in the log-density emulator. The exception is when $\alpha = 1/2$, in which 
-case the quantile approximation reduces to the plug-in mean approximation. This is the choice used in the experiments
-conducted by \citet{VehtariParallelGP}. 
+Given this extreme sensitivity to emulator uncertainty, we recommend against the use of the EUP
+approximation in this setting. \citet{VehtariParallelGP} reach a similar conclusion, and propose
+the use of an alternative approximation defined via a pointwise quantile of $\postEm(\Par)$.
+This quantile approximation is also considered in \citet{quantileApprox,FATES_CES}.
+While this approximation is more robust, we highlight that the true underlying issue is often 
+a poorly calibrated emulator. For example, many common likelihoods (e.g., Gaussian) 
+have known upper bounds, which are ignored by the GP emulator $\targetEm$. The simple 
+adjustment of enforcing this bound constraint within $\targetEm$ can motigate the aforementioned issues.
+\citet{quantileApprox} employs such a bound-constrained GP log-density emulator.
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian} 
 Consider the model
@@ -581,7 +594,7 @@ applications \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,C
 idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
 
 The unnormalized posterior surrogate takes the form 
-$\postEm(\Par) = \priorDens(\Par)\lik(\funcEm(\Par); \obs) =  \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$, implying
+$\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$, implying
 \begin{equation}
 \postApproxNormMarg(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
 \label{eq:EL-Gaussian-fwd}
