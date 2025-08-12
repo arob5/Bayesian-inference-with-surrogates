@@ -623,12 +623,17 @@ emulator uncertainty as in the log-density setting?]
  
 % Computation for the Posterior Approximations
 \section{Computation for the Expected Posterior} \label{sec:computation}
-The adoption of the EP in the surrogate modeling setting has likely been 
-inhibited by computational challenges. We alleviate these challenges 
-by introducing an efficient MCMC approximation. Before introducing this 
-algorithm, we clarify the source of the difficulties. 
+The adoption of the EP in the surrogate modeling setting has been 
+inhibited by computational challenges, as noted in 
+\citet{VehtariParallelGP,StuartTeck2}. We first clarify the limitations
+of existing inference methods, and then introduce an efficient MCMC 
+approximation that alleviates these difficulties.
 
-\begin{algorithm}
+\subsection{Sampling Trajectories}
+In light of the hierarchical model in \Cref{eq:ep-prob-model}, the following 
+algorithm can in principle be applied to directly sample $\postApproxEP$.  
+
+\begin{algorithm}[H]
     \caption{Direct sampling from $\postApproxEP$}
     \label{alg:ep}
     \begin{algorithmic}[1]
@@ -641,7 +646,31 @@ algorithm, we clarify the source of the difficulties.
 	\EndFunction
     \end{algorithmic}
 \end{algorithm}
+If one sample is drawn from each posterior trajectory (i.e., $M=1$) then the resulting samples are 
+independent. Otherwise, \Cref{alg:ep} produces dependent samples identically distributed according to
+$\postApproxEP$. In practice, directly sampling $\Par \given \targetTraj \sim \postDensNorm(\cdot; \targetTraj)$
+is rarely possible, so this inner sampling step is replaced by an MCMC algorithm.
+The resulting sampling scheme is sometimes called \textit{Metropolis within Monte Carlo (MwMC)} 
+\citep{garegnani2021NoisyMCMC}. MwMC has the downside of requiring $\NSample \gg 1$
+MCMC runs, but this may be less of an issue in modern parallel computing environments \citep{BurknerSurrogate}. 
+Moreover, methods have been developed to reduce the size of $\NSample$ required to achieve a
+desired level of precision \citep{BurknerTwoStep}. 
 
+The more significant issue is the outer sampling step, which requires simulating surrogate 
+trajectories $\targetEm \sim \emDist$. While not a problem for finite-dimensional 
+surrogate models (e.g., linear models), this presents major challenges for surrogates 
+derived from GPs. Given the popularity GP surrogates, 
+this computational bottleneck must be resolved for the EP to be broadly accessible in 
+surrogate-based Bayesian workflows. Standard remedies suffer from poor scalability,
+limited applicability, or bespoke numerical implementations. For example, naive 
+approximations that discretize $\parSpace$ are limited to low-dimensional settings.
+Finite-rank GP approximations offer an alternative, but are dependent on the 
+particular form of the surrogate \citep{pathwiseConditioning}. In theory, one 
+could retain an infinite-dimensional GP representation by constructing 
+GP trajectories ``just-in-time'' within the MCMC algorithm; that is, iteratively
+condition the GP at each value of $\Par$ considered within the MCMC run.
+However, this approach is well-known to suffer from significant numerical 
+instability \citep{pathwiseConditioning}.
 
 
 
