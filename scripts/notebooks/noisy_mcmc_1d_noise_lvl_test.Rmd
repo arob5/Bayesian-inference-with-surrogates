@@ -13,11 +13,9 @@ library(scales)
 library(grid)
 library(support)
 
-base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
-code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
+base_dir <- file.path("/projectnb/dietzelab/arober/bip-surrogates-paper")
+code_dir <- file.path("/projectnb/dietzelab/arober/gp-calibration")
 
-# base_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper")
-# code_dir <- file.path("/Users/andrewroberts/Desktop/git-repos/gp-calibration")
 src_dir <- file.path(code_dir, "src")
 
 # Source required files.
@@ -39,7 +37,7 @@ update_geom_defaults("line", list(linewidth=line_thickness))
 update_geom_defaults("point", list(size=design_pt_size))
 
 # Settings for saving plots.
-save_output <- TRUE
+save_output <- FALSE
 output_dir <- file.path(base_dir, "output", "plots", "noisy_1d")
 
 dir.create(output_dir, recursive=TRUE)
