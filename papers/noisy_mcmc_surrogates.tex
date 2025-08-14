@@ -62,102 +62,103 @@
 \Crefname{subsubsection}{Section}{Sections}
 
 % Title and author
-\title{Uncertainty Propagation and Active Learning for Surrogate-Based Bayesian Inference}
-\author{Andrew Roberts}
+\title{Uncertainty Propagation in Surrogate-Based Bayesian Inference}
+\author{Andrew Roberts, Jonathan Huggins, Michael Dietze}
 
 \begin{document}
 
 \maketitle
 
+\begin{abstract}
+Standard Bayesian inference schemes are infeasible for inverse problems 
+with computationally expensive forward models. A common solution is to 
+replace the model with a cheaper surrogate. To avoid overconfident 
+conclusions, it is essential to acknowledge the surrogate approximation by propagating 
+its uncertainty. However, at present there is no standard method for uncertainty 
+propagation in this context. To fill this gap, we propose a particular uncertainty-aware 
+posterior approximation as the baseline, which is justified by Bayesian decision theoretic
+arguments.  
+\end{abstract}
+
+\section{Introduction}
 Simulation-based computer models are key tools for studying complex systems within 
-the physical, biological, and engineering sciences. 
-Such models often have uncertain parameters that must be estimated from data. 
-Bayesian methods are commonly employed
-to quantify uncertainty in these parameter calibration tasks.
-However, standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
-are hindered by the computational cost of the simulation model.
-A popular approach to deal with this issue is to train a surrogate model 
-(i.e., emulator) as a computationally thrifty approximation of the expensive computer code.
-Surrogates have seen widespread use in Bayesian inference pipelines across a variety 
-of applications [\todo: cite]. 
+the physical, biological, and engineering sciences. Such models often have 
+uncertain parameters that must be estimated (i.e., calibrated) using observational data.
+Quantifying the uncertainty in these estimated values is crucial for downstream 
+decision making. While Bayesian methods are particularly well-suited to this task, 
+standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
+are hindered by the computational cost of the simulation model. A popular solution 
+is to use a small set of expensive simulations to train a statistical approximation 
+of the simulator. This emulator (i.e., surrogate) is then used as a drop-in replacement 
+for the true computer model, enabling the application of algorithms like MCMC. 
+This modular surrogate-based Bayesian workflow has seen widespread use across
+a variety of applications \citep{FerEmulation,FadikarAgentBased,idealizedGCM,
+trainDynamics,FATES_CES,CLMBayesianCalibration}.
 
 Despite significant advances in surrogate modeling, fitting a 
 highly accurate emulator under a limited computational budget remains a challenging task.
-In computationally-intensive applications, the surrogate error can be non-negligible. 
-This error is propagated when the emulator is used to infer the values of the calibration 
-parameters, potentially leading to overconfident results with miscalibrated uncertainty 
-estimates in downstream applications \citep{BurknerSurrogate}.
-It is thus crucial to acknowledge and propagate this 
-additional source of uncertainty in surrogate-based Bayesian workflows.
-Probabilistic surrogates such as Gaussian processes \citep{gpML,gramacy2020surrogates} 
+Given this reality, it is inevitable that emulator errors will propagate to estimates
+of the calibration parameters. Ignoring these errors can lead to overconfident results 
+with miscalibrated uncertainties \citep{BilionisBayesSurrogates,BurknerSurrogate}.
+It is thus crucial to acknowledge and propagate this additional source of uncertainty in 
+surrogate-based Bayesian workflows. 
+Probabilistic surrogates such as Gaussian processes (GPs; \citet{gpML,gramacy2020surrogates}) 
 and probabilistic neural networks \citep{deepEnsembles,BayesOptNN} provide a notion of 
-predictive uncertainty that can utilized to this end
- \citep{reviewPaper,BilionisBayesSurrogates,BurknerSurrogate,CES,FerEmulation}.
- Despite this, applications of surrogate-based Bayesian inference routinely ignore 
- surrogate uncertainty [\todo: cite], or propagate it in ad hoc ways [\todo: cite].
- 
-Typical surrogate-modeling workflows employ a two-step procedure
-in which an emulator is fit to data generated from a computer model in the first stage, 
-and then deployed in a second stage to accelerate inference for the computer 
-model parameters \citep{modularization,BurknerTwoStep,BurknerSurrogate}. 
-In the first step, emulators are trained to approximate a particular target quantity, 
-often a summary of the computer model outputs 
-(e.g., \citet{hydrologicalModel,idealizedGCM,Surer2023sequential}), the log-likelihood
-function (e.g., \citet{VehtariParallelGP,FATES_CES,trainDynamics}), or the unnormalized 
-log-posterior density (e.g., \citet{emPostDens,gp_surrogates_random_exploration,Kandasamy_2017}).
-In the second step, the emulator 
-is inserted in place of the target quantity to enable the application of Bayesian inference  
-algorithms without requiring further queries to the expensive simulator.
+predictive uncertainty that be can utilized to this end.
 
-This modular framework 
-has several practical benefits \citep{modularization,PlummerCut}, but leaves open the 
-question as to the ``correct'' approach for propagating surrogate uncertainty within the 
-posterior approximation in the second stage. A variety of uncertainty-aware posterior 
+While in principle surrogate and calibration parameters can be learned 
+jointly (e.g., \citet{KOH}), in practice it is more common to conduct inference 
+for these quantities in two distinct stages \citep{modularization,PlummerCut}.
+Such decoupling has several practical benefits, but leaves open the 
+question as to the ``correct'' approach for propagating surrogate uncertainty 
+within the posterior approximation in the second stage.
+A variety of uncertainty-aware posterior 
 approximations have been proposed, but little guidance exists on choosing a particular 
 method \citep{reviewPaper,BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,
-BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, previous research 
-tends to focus on a particular surrogate model (e.g., Gaussian process) and target 
-(e.g., the log-likelihood), limiting the ability to understand how a particular 
-uncertainty propagation method may perform under different modeling setups. 
- 
-In addition to improving our conceptual understanding of competing uncertainty 
-propagation methods, the development of practical, general-purpose computational 
-algorithms are needed to support generic workflows for modular surrogate-based 
-Bayesian inference. A wide body of work has sidestepped computational difficulties
-by focusing on special cases that allow for tractable surrogate approximations of the 
-likelihood function 
-\citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,
-Surer2023sequential,VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES,
-FATES_CES,VehtariParallelGP,quantileApprox}. A closed-form likelihood approximation
-enables the use of standard MCMC software. However, such approaches typically require 
-particular distributional assumptions on the emulator predictive distribution and the 
-likelihood function. \citep{garegnani2021NoisyMCMC} studies the application of 
-pseudo-marginal and ``noisy'' MCMC algorithms, which do not rely on such distributional
-assumptions. \citep{BurknerSurrogate} propose a generic probabilistic programming workflow,
-including MCMC schemes for a variety of different uncertainty propagation methods. 
+BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, previous studies have 
+explicitly cited computational challenges as a key factor in determining their 
+approach \citep{VehtariParallelGP,StuartTeck2}. In this paper, we start by setting 
+aside the computational considerations in order to specify a theoretically-justified 
+baseline posterior approximation. We then analyze existing methods as 
+approximations to this baseline, and provide a new MCMC scheme that outperforms 
+these approximations. 
 
-[\todo: need to motivate our work here; these two papers don't directly apply to the GP setting]
+\subsection{Contributions.}
+\begin{itemize}
+\item We adopt a Bayesian decision theoretic viewpoint to formalize the question of 
+choosing the correct uncertainty propagation method. We show that, with respect 
+to common loss functions, the Bayes' estimator is given by a mixture distribution 
+termed the \textit{expected posterior (EP)}.
+\item We analyze an existing alternative, the \textit{expected unnormalized posterior (EUP)},
+as an approximation to the EP. We clarify when this approximation is reasonable and 
+when it can deviate significantly from the EP baseline.
+\item We provide additional insights tailored to two popular modeling setups: 
+(i.) emulating the log-likelihood or log-posterior with a GP, and (ii.) emulating an 
+underlying forward model with a GP under an additive Gaussian error structure. 
+We show that the EUP is generally a robust approximation to the EP in 
+the latter case, but can suffer pathological behavior in the former.
+\item We provide two variants of an approximate MCMC algorithm that directly 
+target the EP, and numerically demonstrate favorable performance compared 
+to the EUP approximation. In the case that the surrogate is a function of a GP, we 
+show that our algorithm can be viewed as a correlated pseudo-marginal scheme,
+which leverages a preconditioned Crank-Nicholson proposal.
+\end{itemize}
 
-\paragraph{Contributions.}
-As summarized above, a wide variety of methods have been proposed for 
-uncertainty-aware posterior approximation in surrogate-based Bayesian inference. 
-In this paper, we provide new insights into when and why the performance of different 
-methods can deviate. In particular, we investigate the implications of propagating
-uncertainty through the derivation of a pointwise likelihood approximation, as compared 
-to aggregating samples from an ensemble of posterior approximations. We demonstrate 
-that the extent to which these two methods agree depends crucially on the emulator 
-target and on the tails of the emulator predictive distribution. 
-
-[\todo: paragraph on MCMC] [\todo: paragraph on practical considerations/model checking]
-
-These algorithms require only
-slight adjustments to standard MCMC implementations, and are generally applicable to any 
-surrogate with a predictive distribution from which samples can be drawn.
+\subsection{Outline.}
+\Cref{sec:surrogates-intro} introduces the surrogate-based Bayesian workflow.
+In \Cref{sec:compare-unc-prop} we derive the EP as a Bayes' estimator, and 
+analyze the EUP as an EP approximation. Additional results are given for
+two common modeling setups involving GP emulators.
+\Cref{sec:computation} presents an approximate MCMC scheme targeting 
+the EP, and describes connections with alternative inference algorithms. 
+\Cref{sec:experiments} contains numerical experiments, and 
+\Cref{sec:conclusion} concludes. Proofs are given in the appendix.
 
 % Surrogates for Bayesian Inverse Problems
-\section{Surrogates for Bayesian Inference}
-We begin by introducing the generic Bayesian inference setting... [\todo]
-We describe the common two-stage surrogate modeling pipeline, and highlight 
+\section{Surrogates for Bayesian Inference} \label{sec:surrogates-intro}
+We begin by introducing the Bayesian inference setting, including the challenges
+associated with Bayesian inverse problems involving expensive forward models. 
+We then describe the common two-stage surrogate modeling pipeline, and highlight 
 several different strategies for integrating surrogates within a Bayesian analysis.
 
 \subsection{Bayesian Inference Setting}
@@ -427,7 +428,7 @@ a pointwise expectation of $\targetEm(\Par)$ and then normalizing post-hoc:
 The equality in \Cref{eq:post-approx-EL} follows from
 changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. The EUP
 is a marginal of the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)d\Par / \emE[\normCst(\targetEm)]$. 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetTraj)] d\Par$. 
 When $\funcEm$ is a forward model emulator, this implies that the EUP is the 
 marginal conditional $\Par \given \obs$ under the hierarchical model 
 \begin{align}
@@ -683,24 +684,87 @@ task of choosing an appropriate conditioning set.
 In this section, we present two variants of an approximate MCMC algorithm that 
 overcome the limitations of alternative methods discussed above. The algorithms seek 
 to target the joint distribution 
-$\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par$, which admits
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits
 $\postApproxEP$ as a marginal. First, consider a Metropolis-within-Gibbs (MwG)
 scheme that alternates between $\Par$ and $\targetTraj$ updates. 
 For a fixed $\targetTraj$, the $\Par$ update must leave the distribution 
 $\postDensNorm(\Par; \targetTraj) d\Par$ invariant, which can be achieved 
 with a standard Metropolis-Hastings (MH) step. For a fixed $\Par$, the $\targetTraj$
-update must leave the distribution $\emDist(d\targetTraj)\postDensNorm(\Par; \targetTraj)$
+update must leave the distribution 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$
 invariant. This step faces two issues: (i.) the fact that $\targetTraj$ is potentially 
 infinite-dimensional, and (ii.) the fact that we cannot compute 
-$\postDensNorm(\Par; \targetTraj)$. The former can be addressed by so-called 
+$\normCst(\targetTraj)$. The former can be addressed by so-called 
 function-space MCMC methods \citep{functionSpaceMCMC}. If we utilize an
 MH step with a $\emDist$-reversible proposal distribution 
-$\propDist(\targetTraj, \cdot)$ then the Metropolis acceptance probability reduces to
+$\propDist(\targetTraj, \cdot)$, then the MH acceptance probability reduces to
 \begin{equation}
 \accProbMH(\targetTraj, \tilde{\targetTraj})
-= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right),
+= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
+\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right),
+\label{eq:MH-ratio-mwg}
 \end{equation}
 where $\tilde{\targetTraj} \sim \propDist(\targetTraj, \cdot)$ is the proposed value.
+If $\funcEm \sim \GP(\gpMean, \gpKer)$
+\footnote{More generally, this applies when $\postEm$ arises as a transformation
+of an underlying Gaussian. The emulator predictive distribution need not be Gaussian.}, 
+then we can take $\propDist$ as
+the preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
+\begin{equation}
+\tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
+\qquad \xi \sim \GP(0, \gpKer).
+\end{equation}
+To address the issue regarding the intractable normalizing constant ratio in 
+\Cref{eq:MH-ratio-mwg}, we might try to apply techniques from the doubly 
+intractable MCMC literature \citep{doublyIntractableReview}. However, exact 
+MCMC schemes such as the exchange algorithm \citep{exchangeAlg} require 
+directly sampling $\postDensNorm(\cdot; \tilde{\targetTraj})$,
+which is infeasible in this context. To avoid the challenging task of estimating the 
+normalizing constant ratio, we instead invoke the simple approximation 
+$\normCst(\targetTraj)/\normCst(\tilde{\targetTraj}) \approx 1$, which is reasonable when 
+the proposal $\tilde{\targetTraj}$ does not differ significantly from the current
+state $\targetTraj$. We can thus control the error in the approximation by slowing
+down the mixing speed of the $\targetTraj$-chain.
+
+\begin{algorithm}[H]
+    \caption{Metropolis-within-Gibbs Approximation to $\postApproxEP$}
+    \label{alg:mwg-ep}
+    \begin{algorithmic}[1] 
+    \State \textbf{Input:} Current state $(\Par, \targetTraj_\Par)$
+    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime_{\Par^\prime})$
+     \State Propose $\tilde{\Par} \sim \propDist(\Par, \cdot)$
+     \State Propose $(\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar}) \sim \emDist(\cdot, \cdot \given \Par, \propPar)$ \Comment{Begin $\targetTraj$ update}
+     \State $\alpha_{\targetTraj} \gets \min\left\{1, \postDens(\tilde{\targetTraj}_\Par) / \postDens(\targetTraj_\Par) \right\}$
+      	\If{$\mathrm{Unif}(0,1) < \alpha_{\targetTraj}$}
+                \State $(\targetTraj^\prime_\Par, \targetTraj^\prime_{\propPar}) \gets (\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar})$ 
+            \Else
+                \State $\targetTraj^\prime_{\Par} \gets \targetTraj_{\Par}$
+                \State $\targetTraj^\prime_{\propPar} \gets \emDist(\cdot \given \targetEm(\Par) = \targetTraj_\Par)$
+            \EndIf
+      \State $\alpha_{\Par} \gets \min\left\{1, \priorDens(\propPar )\lik(\targetTraj^\prime_{\propPar}; \obs) / \priorDens(\Par) \lik(\targetTraj^\prime_{\Par}; \obs) \right\}$ \Comment{Begin $\Par$ update}
+             \If{$\mathrm{Unif}(0,1) < \alpha_{\Par}$}
+                \State $\Par^\prime \gets \propPar$
+                \State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\propPar}$ 
+            \Else
+            	\State $\Par^\prime \gets \Par$
+		\State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\Par}$
+            \EndIf
+    \end{algorithmic}
+\end{algorithm}
+
+\section{Numerical Experiments} \label{sec:experiments}
+\section{Conclusion} \label{sec:conclusion}
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -986,8 +1050,6 @@ r^{\mathrm{mean}}(\Par, \propPar) \Exp{\frac{1}{2}\left[\gpKer(\propPar) + \gpKe
 \textbf{NOTE:} The latter two are technically not correct; the acc prob used by these algorithms
 is of the form $\E[\alpha(1, r_N)]$, which reduces to a weighted average between $1$ and 
 $\E[r_N]$. I report only the $\E[r_N]$ part for now.
-
-\vspace 
 
 The EL approximation scales $r^{\mathrm{mean}}(\Par, \propPar)$ with the exponential of the difference
 $\gpKer(\propPar) - \gpKer(\Par)$, inflating the acceptance probability when emulator uncertainty is 

@@ -73,10 +73,9 @@
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
 \newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
 \newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Distribution (law) of the emulator (a stochastic process)
-\newcommand{\emE}{\E_{\Ndesign}} % Expectation wrt emulator distribution.
+\newcommand{\emE}{\E_{\emDist[]}} % Expectation wrt emulator distribution.
 \newcommand{\emJoint}{\eta} % Joint measure over (u,f)
 \newcommand{\jgap}{\Delta_\normCst} % The "Jensen gap" for the normalizing constant.
-
 
 % Exponentiated quadratic kernel.
 \newcommand{\lengthscale}{\ell}
@@ -220,6 +219,9 @@
 % \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
 \newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
 \newcommand{\AR}{\mathsf{A}} % Metropolis-Hastings accept-reject step
+
+% Preconditioned Crank-Nicholson
+\newcommand{\pcnCor}{\rho}
 
 % --------------------------------------------------------------------------------------------------
 % Dynamical Models. 
