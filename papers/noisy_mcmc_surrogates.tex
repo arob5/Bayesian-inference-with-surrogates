@@ -483,15 +483,15 @@ rather than the full emulator $\funcEm$. The EUP is defined by computing
 a pointwise expectation of $\targetEm(\Par)$ and then normalizing post-hoc:
 \begin{equation}
 \postApproxMarg(\Par) \Def 
-\frac{\E_{\Ndesign}\left[\postEm(\Par) \right]}{\int_{\parSpace} \E_{\Ndesign}\left[\postEm(\Par) \right] d\Par}
-= \frac{\E_{\Ndesign}\left[\postEm(\Par) \right]}{\E_{\Ndesign}[\normCstEm]}. \label{eq:post-approx-EL} 
+\frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] d\Par}
+= \frac{\emE\left[\postEm(\Par) \right]}{\emE[\normCstEm]}. \label{eq:post-approx-EL} 
 \end{equation}
 The equality in \Cref{eq:post-approx-EL} follows from
 changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. The EUP
 is a marginal of the joint distribution 
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetTraj)] d\Par$. 
 When $\funcEm$ is a forward model emulator, this implies that the EUP is the 
-marginal conditional $\Par \given \obs$ under the hierarchical model 
+marginal posterior $\Par \given \obs$ under the hierarchical model 
 \begin{align}
 \Par &\sim \priorDens \label{eq:el-prob-model} \\
 \gamma \given \Par &\sim \emDist(\cdot \given \Par) \nonumber \\
@@ -499,54 +499,23 @@ marginal conditional $\Par \given \obs$ under the hierarchical model
 \end{align}
 which can be interpreted as an inverse problem on an extended parameter space.
 
-\paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
-in \citet{BilionisBayesSurrogates}, motivated by the extended parameter space viewpoint
-in \Cref{eq:el-prob-model}. \citet{StuartTeck2,CES} also note this perspective
-in the particular Gaussian setting of \Cref{eq:post-em-fwd-Gaussian}.
-In \citet{SinsbeckNowak}, the EUP is justified as the distribution 
-$q$ that minimizes $\emE\left[\norm{\postEm - q}_{L_2(\parSpace)} \right]$.
-\citet{StuartTeck1,StuartTeck2,VehtariParallelGP} also highlight this Bayesian 
-decision theoretic justification. 
-In contrast with the EP, the optimality is only guaranteed for the estimate of the 
-\textit{unnormalized} posterior.
-As shown in \Cref{prop:EP-variational}, the EP is the minimizer when the complete 
-normalized distributions are considered.
-
-The EUP is referred to as the ``marginal'' approximation in 
-\citet{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar},
-in which it is analyzed theoretically for both log-density and forward 
-model emulators. \citet{VehtariParallelGP} highlight pathological 
-behavior of the EUP for GP log-density emulators, and recommend 
-against its use in this setting. \citet{BurknerSurrogate} refer to 
-the EUP as the ``expected likelihood'' and empirically compare its 
-performance to other approximations (including the EP) in the 
-forward model emulation setting. The EUP has seen wide 
-use in various applications involving both forward model 
-and log-density emulators 
-\citep{weightedIVAR,GP_PDE_priors,CES,idealizedGCM,
-villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
-
 \subsection{Comparison of the EP and EUP}
-Despite the increased popularity of surrogate-based Bayesian inference, there is 
-little previous work comparing the performance of different surrogate-based 
-posterior approximations. One exception is \citet{BurknerSurrogate}, who conduct an 
-empirical comparison of several methods and demonstrate reasonable results for 
-both the EP and EUP in their examples. Based on our results in \Cref{sec:EP}, 
-we consider the EP as the baseline target for uncertainty propagation and analyze 
-EUP as a computationally-convenient approximation.
-
-Notice from \Cref{eq:post-approx-EL} that the EUP is a ratio estimator, and differs from 
-the EP due to the nonlinearity of the normalization operation.
+Notice in \Cref{eq:post-approx-EL} that the EUP is a ratio estimator, and differs from 
+the EP due to the nonlinearity of the normalization operation. The EUP can thus 
+be derived from the EP by invoking two approximations: 
+(i.) treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
+(ii.) assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
+The below result quantifies the effect of these two approximations.
 
 \begin{prop} \label{prop:ep-eup-pw-err}
 The pointwise difference between the EP and EUP is given by
 \begin{equation}
 \postApproxEP(\Par) - \postApproxMarg(\Par)
-= \emE[\postEm(\Par)] \jgap + \Cov[\postEm(\Par), \normCstEm],
+= \emE[\postEm(\Par)] \jgap + \Cov[\postEm(\Par), \normCstEm^{-1}],
 \label{eq:ep-eup-pw-err}
 \end{equation}
 where $\jgap \Def \emE[\normCstEm^{-1}] - \emE[\normCstEm]^{-1}$
-denotes the ``Jensen gap.''
+is the ``Jensen gap.''
 \end{prop}
 
 By Jensen's inequality $\jgap \geq 0$, implying that the Jensen gap represents a 
@@ -555,7 +524,7 @@ $\emE[\postEm(\Par)]$. Since both distributions integrate to one, any positive
 biases must be balanced by negative biases at other values of $\Par$.
 The second term in \Cref{eq:ep-eup-pw-err} will be negative for ``influential'' $\Par$ values, 
 meaning that larger realizations of $\postEm(\Par)$ correspond to larger values of 
-$\normCst(\targetEm)$. The influence of a parameter value will typically increase when 
+$\normCstEm$. The influence of a parameter value will typically increase when 
 $\postEm(\Par)$ is large on average, highly variable, and is positively correlated other 
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
 a GP emulator with a long lengthscale. Based on this logic, we expect the EUP to inflate 
@@ -569,7 +538,7 @@ yields a total variation bound.
 Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
 \begin{equation}
 \norm{\postApproxEP - \postApproxMarg}_{L_1(\parSpace)}
-\leq \jgap \emE[\normCstEm] + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
+\leq \emE[\normCstEm] \jgap + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
 \label{eq:ep-eup-TV-err}
 \end{equation}
 \end{prop}
@@ -577,7 +546,7 @@ Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
 Decreasing the variance of $\normCstEm$ will shrink both terms in 
 \Cref{eq:ep-eup-TV-err}. This may occur when there is little 
 uncertainty in $\targetEm$, the unnormalized posterior $\postDens(\cdot; \targetTraj)$
-is insensitive to $\targetTraj$, or $\normCst(\targetEm)$ is insensitive to the variability 
+is insensitive to $\targetTraj$, or $\normCstEm$ is insensitive to the variability 
 in $\postEm$. In the first case, note that if $\funcEm$ is heavily 
 concentrated around its mean, then both the EP and EUP will bear a close resemblance
 to the plug-in mean approximation in \Cref{eq:mean-approx}.
@@ -683,8 +652,36 @@ upper bounded, and thus near the upper bound the expectation has nowhere to go b
 to typically be quite far apart. In such settings, can the EL approximation exhibit similar sensitivity to 
 emulator uncertainty as in the log-density setting?]
  
-% Computation for the Posterior Approximations
-\section{Computation for the Expected Posterior} \label{sec:computation}
+\paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
+in \citet{BilionisBayesSurrogates}, motivated by the extended parameter space viewpoint
+in \Cref{eq:el-prob-model}. \citet{StuartTeck2,CES} also note this perspective
+in the particular Gaussian setting of \Cref{eq:post-em-fwd-Gaussian}.
+In \citet{SinsbeckNowak}, the EUP is justified as the distribution 
+$q$ that minimizes $\emE\left[\norm{\postEm - q}_{L_2(\parSpace)}^2 \right]$.
+\citet{StuartTeck1,StuartTeck2,VehtariParallelGP} also highlight this Bayesian 
+decision theoretic justification. 
+In contrast with the EP, the optimality is only guaranteed for the estimate of the 
+\textit{unnormalized} posterior.
+As shown in \Cref{prop:EP-variational}, the EP is the minimizer when the complete 
+normalized distributions are considered.
+
+The EUP is referred to as the ``marginal'' approximation in 
+\citet{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar},
+in which it is analyzed theoretically for both log-density and forward 
+model emulators. \citet{VehtariParallelGP} highlight pathological 
+behavior of the EUP for GP log-density emulators, and recommend 
+against its use in this setting. To our knowledge, \citet{BurknerSurrogate}
+is the only previous work to directly compare the EP and EUP (which 
+they call the ``expected likelihood''). Their comparison is limited to 
+numerical results in case studies involving forward model emulators.
+The EUP has seen wide 
+use in various applications involving both forward model 
+and log-density emulators 
+\citep{weightedIVAR,GP_PDE_priors,CES,idealizedGCM,
+villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
+ 
+% Approximate Computation for the EP
+\section{Approximate Computation for the Expected Posterior} \label{sec:computation}
 The adoption of the EP in the surrogate modeling setting has been 
 inhibited by computational challenges, as noted in 
 \citet{VehtariParallelGP,StuartTeck2}. We first clarify the limitations
