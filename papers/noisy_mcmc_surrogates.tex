@@ -556,7 +556,8 @@ $\postEm(\Par) = \omega g(\Par)$, where $\omega$ is a random constant and
 $g(\Par)$ a deterministic function. 
 
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
-We now consider the particular example where $\postEm(\Par) = \Exp{\targetEm(\Par)}$
+We now consider the particular example from \Cref{sec:ldens-em},
+where $\postEm(\Par) = \Exp{\targetEm(\Par)}$
 and $\targetEm \sim \GP(\gpMean, \gpKer)$ is a GP emulator; that is, 
 $\E[\targetEm(\Par)] = \gpMean(\Par)$ and 
 $\Cov[\targetEm(\Par),\targetEm(\Par^\prime)] = \gpKer(\Par, \Par^\prime)$ for all 
@@ -567,41 +568,36 @@ GP log-density emulators have been used in various studies
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,
 StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP}.
 
-In this setting, the pointwise distribution of the induced posterior surrogate is given by
+In this setting, the pointwise distribution of the induced posterior surrogate is log-normal
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, implying that
 \begin{equation}
 \postApproxNormMarg(\Par) 
 \propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}
 = \postApproxMean(\Par) \Exp{\frac{1}{2}\gpKer(\Par)}.
-\label{eq:EL-Gaussian-fwd}
+\label{eq:EUP-Gaussian-ldens}
 \end{equation} 
-As noted in \citet{VehtariParallelGP}, this log-normal mean is often a poor summary of the 
-distribution of $\postEm$, as it can significantly exceed the bulk of the support 
-of the distribution. In particular, values of $\Par$ with large $\gpKer(\Par)$ can exert significant 
-influence on the magnitude of $\normCst(\targetEm)$, causing the second term in 
-\Cref{eq:ep-eup-pw-err} to blow up. This can result in $\postApproxNormMarg$ concentrating 
-on small regions of $\parSpace$ where emulator uncertainty is the largest. Another 
-way to see this is to compare the relative weightings between a pair of points $(\Par, \Par^\prime)$
-as assigned by $\postApproxNormMarg$ versus $\postApproxNormMean$. This 
-``uncertainty inflation factor'' is given by
+The expression in \Cref{eq:EUP-Gaussian-ldens} shows that the EUP inflates the plug-in mean 
+density in uncertain regions \citep{StuartTeck2,GP_PDE_priors}. In particular, 
  \begin{equation}
  \frac{\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
  = \Exp{\frac{1}{2}\left[\gpKer(\Par^\prime) - \gpKer(\Par) \right]},
  \label{eq:unc-infl-factor}
  \end{equation}
-in this setting. We conclude from \Cref{eq:unc-infl-factor}
-that, if $\gpMean(\Par^\prime) = \gpMean(\Par)$, then 
-$\postApproxNormMarg(\Par^\prime) > \postApproxNormMarg(\Par)$
-when $\gpKer(\Par^\prime) > \gpKer(\Par)$. In other words, the EUP density 
-inflation is always higher where the emulator uncertainty is larger.
-Moreover, 
-$\postApproxNormMarg(\Par^\prime) \gg \postApproxNormMarg(\Par)$ even when 
-$\gpKer(\Par^\prime) - \gpKer(\Par)$ is only modestly large, owing to the exponential scaling. 
-For example, when the standard deviation of $\targetEm(\Par^\prime)$ is twice that of $\targetEm(\Par)$,
-then \Cref{eq:unc-infl-factor} reduces to $\Exp{\frac{3}{2}\gpKer(\Par)}$. If $\gpKer(\Par) = 4$, this means
-$\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$ -- the ratio 
-$\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)$
-is $400$ times larger than $\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)$.
+showing that the degree of inflation scales with the emulator variance; that is, if 
+$\postApproxNormMean(\Par)=\postApproxNormMean(\Par^\prime)$, then the EUP will give 
+always give higher weight to the location with higher emulator uncertainty.
+
+Unfortunately, the exponential scaling in \Cref{eq:EUP-Gaussian-ldens} can result in
+undesirable degrees of uncertainty inflation. For example, suppose that 
+the standard deviation of $\targetEm(\Par^\prime)$ is twice that of $\targetEm(\Par)$, so that 
+the expression in \Cref{eq:unc-infl-factor} reduces to $\Exp{\frac{3}{2}\gpKer(\Par)}$.
+If $\gpKer(\Par) = 4$, this means
+$\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$, vastly magnifying the modest difference 
+in emulator uncertainty. Practically, this can result in $\postApproxNormMarg$ concentrating 
+on small subsets of $\parSpace$ where emulator uncertainty is the largest.
+With respect to \Cref{eq:ep-eup-pw-err}, this manifests as a large negative covariance 
+between $\postEm(\Par)$ and $\normCstEm$ in uncertain regions, implying 
+$\postApproxNormMarg(\Par) \gg \postApproxEP(\Par)$. 
 
 Given this extreme sensitivity to emulator uncertainty, we recommend against the use of the EUP
 approximation in this setting. \citet{VehtariParallelGP} reach a similar conclusion, and propose
@@ -610,11 +606,11 @@ This quantile approximation is also considered in \citet{quantileApprox,FATES_CE
 While this approximation is more robust, we highlight that the true underlying issue is often 
 a poorly calibrated emulator. For example, many common likelihoods (e.g., Gaussian) 
 have known upper bounds, which are ignored by the GP emulator $\targetEm$. The simple 
-adjustment of enforcing this bound constraint within $\targetEm$ can motigate the aforementioned issues.
+adjustment of enforcing this bound constraint within $\targetEm$ can mitigate the aforementioned issues.
 \citet{quantileApprox} employs such a bound-constrained GP log-density emulator.
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian} 
-Consider the model
+We next return to the setting in \Cref{sec:fwd-em}, where
 \begin{align}
 &\obs = \fwd(\Par) + \noise, &&\noise \sim \Gaussian(0, \likPar)
 \end{align}
@@ -628,29 +624,20 @@ The unnormalized posterior surrogate takes the form
 $\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$, implying
 \begin{equation}
 \postApproxNormMarg(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
-\label{eq:EL-Gaussian-fwd}
+\label{eq:EUP-Gaussian-fwd}
 \end{equation}
 following from the formula for the convolution of two Gaussians [\todo: add to appendix].
 A key observation in this setting is that $\postEm(\Par) \in [0, B_{\likPar}]$, where 
 $B_{\likPar} \Def \sup_{u \in \parSpace} \priorDens(\Par) / \det(2\pi\likPar)^{1/2}$.
-[\todo: need to finish this thought. The conjecture here is that the EL in this setting is 
-more robust in this setting due to the bound. May be able to show that $\cv$ is upper
-bounded--issue is the possibility of expectation approaching 0].
+[\todo: need to finish this thought. The conjecture here is that the EUP in this setting is 
+more robust in this setting due to the bound.
 
-Unlike in the Gaussian log-density emulation setting, in this case the EL does does simply 
-inflate the posterior in accordance with the magnitude of emulator uncertainty at different points.
-In fact, it is possible for an increase in $\gpKer(\Par)$ to deflate the value of $\postApproxNormMarg(\Par)$.
-To investigate this, we again consider the plug-in mean approximation
-$\postApproxNormMean(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar)$,
-which ignores the emulator uncertainty. The ratio 
-$\postApproxNormMarg(\Par)/\postApproxNormMean(\Par)$ can be above 
-or below one, depending on the distance between $\obs$ and $\gpMean(\Par)$. In particular,
-if $\obs$ and $\gpMean(\Par)$ are close, then increasing $\gpKer(\Par)$ actually has the effect
-of deflating the EL density at $\Par$. This is due to the fact that the Gaussian density is 
-upper bounded, and thus near the upper bound the expectation has nowhere to go but down.
-[\todo: in cases, where the forward model is quite imperfect we would expect $\obs$ and $\gpMean(\Par)$
-to typically be quite far apart. In such settings, can the EL approximation exhibit similar sensitivity to 
-emulator uncertainty as in the log-density setting?]
+Unlike in the Gaussian log-density case, the EUP does not strictly inflate the plug-in 
+mean approximation in regions of larger uncertainty. This is due to the fact that 
+the Gaussian likelihood is bounded above. When $\gpMean(\Par)$ and $\obs$
+are close, then an increase in $\gpKer(\Par)$ may actually deflate the density 
+at $\Par$. The same increase in $\gpKer(\Par)$ will inflate the density at values 
+of $\Par$ where $\gpMean(\Par)$ and $\obs$ are far apart.
  
 \paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
 in \citet{BilionisBayesSurrogates}, motivated by the extended parameter space viewpoint
@@ -674,6 +661,11 @@ against its use in this setting. To our knowledge, \citet{BurknerSurrogate}
 is the only previous work to directly compare the EP and EUP (which 
 they call the ``expected likelihood''). Their comparison is limited to 
 numerical results in case studies involving forward model emulators.
+The closed-form EUP expressions in 
+\Cref{eq:EUP-Gaussian-ldens,eq:EUP-Gaussian-fwd} have been 
+noted in a variety of works 
+\citep{StuartTeck1,StuartTeck2,VehtariParallelGP,weightedIVAR,
+GP_PDE_priors,Surer2023sequential,Takhtaganov2018AdaptiveBayesianGP}. 
 The EUP has seen wide 
 use in various applications involving both forward model 
 and log-density emulators 
