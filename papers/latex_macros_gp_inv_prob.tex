@@ -23,12 +23,12 @@
 
 % General inverse problems.
 \newcommand{\Par}{u}
-\newcommand{\parSpace}{\mathcal{U}} % Parameter space
+\newcommand{\parSpace}{\mathsf{U}} % Parameter space
 \newcommand{\dimPar}{D} % Parameter dimension 
 \newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
 \newcommand{\obs}{y} % Data observation (response) vector
 \newcommand{\noise}{\epsilon} % Random variable representing noise, typically in additive noise model. 
-\newcommand{\obsSpace}{\mathcal{Y}} % Output space
+\newcommand{\obsSpace}{\mathsf{Y}} % Output space
 \newcommand{\dimObs}{P} % Dimension of data observation vector
 \newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
 \newcommand{\fwd}{\mathcal{G}} % Forward model
@@ -41,8 +41,12 @@
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
+
+% Variational formulation.
 \newcommand{\qMeas}{Q} % Generic prob measure on parSpace (used in variational formulation)
 \newcommand{\qDens}{q} % Density of qDens.
+\newcommand{\qSpace}{\mathcal{Q}} % Space of densities or measures.
+\newcommand{\loss}{\mathcal{L}}
 
 % --------------------------------------------------------------------------------------------------
 % Gaussian Process Emulators
@@ -74,7 +78,10 @@
 \newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
 \newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Distribution (law) of the emulator (a stochastic process)
 \newcommand{\emE}{\E_{\emDist[]}} % Expectation wrt emulator distribution.
+\newcommand{\emObs}{z} % The design set used to train the emulator.
+\newcommand{\targetRange}{\mathsf{F}}
 \newcommand{\emJoint}{\eta} % Joint measure over (u,f)
+\newcommand{\jointKOH}{\zeta} % Joint distribution over both surrogate and calibration parameters (as in KOH setup)
 \newcommand{\jgap}{\Delta_\normCst} % The "Jensen gap" for the normalizing constant.
 
 % Exponentiated quadratic kernel.
