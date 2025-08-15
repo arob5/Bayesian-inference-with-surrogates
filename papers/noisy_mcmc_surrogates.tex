@@ -455,28 +455,28 @@ The notion of aggregating multiple posterior distributions is also used in
 contexts other than modular inference, including for robustness to model 
 misspecification \citep{BayesBag,BayesBag2}.
 
-\section{Approximating the Expected Posterior}
- While the EP has been generally recognized as the gold standard 
- in the broader field of modularized Bayesian inference, surrogate 
- modeling applications commonly target alternative distributions when 
- propagating emulator uncertainty in two-stage procedures. This may 
- be explained in part due to computational difficulties posed by 
- the dependence of $\postApproxEP$ on $\normCst(\funcEm)$.
-Citing these difficulties, previous research has 
-eschewed the EP in favor of approximations of the \textit{unnormalized}
+\section{Approximating the Expected Posterior} \label{sec:approximating-ep}
+Having justified the EP as the baseline target distribution for uncertainty 
+propagation, we now turn to the practical question of conducting EP-based
+inference. While directly sampling the EP is typically infeasible, one natural 
+approach is to consider approximate computation (see \Cref{sec:computation}).
+An alternative route, which is the focus of this section, is to explicitly target a
+different distribution that is more amenable to standard inference algorithms.
+Citing the difficulties of EP-based inference, previous research has 
+adopted this latter approach, 
+eschewing the EP in favor of approximations of the \textit{unnormalized}
 density surrogate $\postEm$ \citep{StuartTeck1,StuartTeck2,VehtariParallelGP}.
-We introduce the most popular of these approximations, the 
+However, these works stop short of studying how such alternative approximations 
+relate to the EP. 
+
+In this section, we introduce the most popular of these approximations, the 
 \textit{expected unnormalized posterior (EUP)}, and demonstrate 
-how the EUP can be viewed as an approximation to the EP. We analyze when 
-this approximation is reasonable, and when the EUP may deviate significantly 
-from the EP baseline.
+how the EUP can be viewed as an approximation to the EP.
+We analyze when this approximation is reasonable, and when the EUP may 
+deviate significantly from the EP baseline. We highlight practical takeaways 
+in popular special cases involving GP log-density and forward model emulators.
 
-[\todo: where to put this] We then show how a popular alternative,
-the \textit{expected unnormalized posterior (EUP)}, can be viewed as an 
-approximation to the EP. We analyze when the EUP can deviate from the EP,
-including in popular special cases of log-density and forward model emulation
-with GP emulators.
-
+\subsection{The Expected Unnormalized Posterior} \label{sec:eup}
 Notice that, unlike $\postNormEm(\Par)$, the unnormalized density surrogate
 $\postEm(\Par)$ depends only on the single-point prediction $\targetEm(\Par)$
 rather than the full emulator $\funcEm$. The EUP is defined by computing
@@ -526,7 +526,7 @@ and log-density emulators
 \citep{weightedIVAR,GP_PDE_priors,CES,idealizedGCM,
 villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
 
-\subsection{Comparison of EP and EL}
+\subsection{Comparison of the EP and EUP}
 Despite the increased popularity of surrogate-based Bayesian inference, there is 
 little previous work comparing the performance of different surrogate-based 
 posterior approximations. One exception is \citet{BurknerSurrogate}, who conduct an 
