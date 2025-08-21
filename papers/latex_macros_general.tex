@@ -22,6 +22,7 @@
 \newcommand{\Log}[1]{\log\mathopen{}\left\{#1\right\}\mathclose{}}
 \newcommand{\BigO}{\mathcal{O}}
 \newcommand{\Def}{\coloneqq} % coloneqq comes from the mathtools package. 
+\let\oldd\d\renewcommand\d{\relax\ifmmode\mathrm{d}\else\oldd\fi} %make \d be mathrm{d} in math mode, usual defn as underdot(?) in text mode
 
 \DeclareMathOperator*{\argmax}{argmax}
 \DeclareMathOperator*{\argmin}{argmin}

@@ -35,7 +35,7 @@
 
 % Local custom commands. 
 \include{latex_macros_general}
-\include{latex_macros_gp_inv_prob}
+\include{latex_macros_unc_prop}
 \newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
@@ -56,6 +56,7 @@
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
 \newtheorem{rmk}{Remark}
+\newtheorem{ex}{Example}
 
 % Ensure cleverref knows how to handle citing of multiple subsubsections
 \crefname{subsubsection}{section}{sections}
@@ -66,7 +67,6 @@
 \author{Andrew Roberts, Jonathan Huggins, Michael Dietze}
 
 \begin{document}
-
 \maketitle
 
 \begin{abstract}
@@ -77,7 +77,7 @@ conclusions, it is essential to acknowledge the surrogate approximation by propa
 its uncertainty. However, at present there is no standard method for uncertainty 
 propagation in this context. To fill this gap, we propose a particular uncertainty-aware 
 posterior approximation as the baseline, which is justified by Bayesian decision theoretic
-arguments.  
+arguments. [\todo: unfinished]
 \end{abstract}
 
 \section{Introduction}
@@ -119,10 +119,13 @@ BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, previous studies have
 explicitly cited computational challenges as a key factor in determining their 
 approach \citep{VehtariParallelGP,StuartTeck2}. In this paper, we start by setting 
 aside the computational considerations in order to specify a theoretically-justified 
-baseline posterior approximation. We then analyze existing methods as 
-approximations to this baseline, and provide a new MCMC scheme that outperforms 
-these approximations. 
-
+baseline posterior approximation. While in general computation for this distribution 
+is difficult, one can consider (1) targeting a simpler distribution approximating the baseline,
+or (2) developing approximate inference algorithms that directly target the baseline.
+We show that existing uncertainty propagation methods can be viewed as 
+implementations of the former approach, and then introduce a new MCMC algorithm
+falling under the latter approach that outperforms the alternatives. 
+ 
 \subsection{Contributions.}
 \begin{itemize}
 \item We adopt a Bayesian decision theoretic viewpoint to formalize the question of 
@@ -137,20 +140,22 @@ when it can deviate significantly from the EP baseline.
 underlying forward model with a GP under an additive Gaussian error structure. 
 We show that the EUP is generally a robust approximation to the EP in 
 the latter case, but can suffer pathological behavior in the former.
-\item We provide two variants of an approximate MCMC algorithm that directly 
-target the EP, and numerically demonstrate favorable performance compared 
-to the EUP approximation. In the case that the surrogate is a function of a GP, we 
-show that our algorithm can be viewed as a correlated pseudo-marginal scheme,
-which leverages a preconditioned Crank-Nicholson proposal.
+\item We introduce an approximate MCMC algorithm that directly 
+targets the EP, and numerically demonstrate favorable performance compared 
+to the EUP approximation. In the case that the surrogate is a function of a 
+GP, we highlight connections with correlated pseudo-marginal and 
+preconditioned Crank-Nicholson algorithms. 
 \end{itemize}
 
 \subsection{Outline.}
 \Cref{sec:surrogates-intro} introduces the surrogate-based Bayesian workflow.
-In \Cref{sec:compare-unc-prop} we derive the EP as a Bayes' estimator, and 
-analyze the EUP as an EP approximation. Additional results are given for
-two common modeling setups involving GP emulators.
-\Cref{sec:computation} presents an approximate MCMC scheme targeting 
-the EP, and describes connections with alternative inference algorithms. 
+In \Cref{sec:EP} we derive the EP as a Bayes' estimator, and discuss connections 
+with the so-called cut posterior distribution. In \Cref{sec:approximating-ep}
+we analyze the EUP as an EP approximation and highlight practical 
+takeaways for common applications in which GPs are used to emulate 
+forward models or log-densities.
+\Cref{sec:computation} presents an approximate MCMC scheme directly 
+targeting the EP, and describes connections with alternative inference algorithms. 
 \Cref{sec:experiments} contains numerical experiments, and 
 \Cref{sec:conclusion} concludes. Proofs are given in the appendix.
 
@@ -284,7 +289,7 @@ The log-posterior case is quite similar, except that the effect of the prior is 
 approximated by the emulator, so the induced posterior surrogate simply takes 
 the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 
-% Comparing Uncertainty Propagation Methods
+% The Expected Posterior
 \section{The Expected Posterior} \label{sec:EP}
 The second stage in the modular surrogate workflow consists of using the 
 trained emulator $\targetEm$ to approximate the posterior $\postDensNorm$.
@@ -312,10 +317,10 @@ induces a random approximation of the posterior defined by plugging $\targetEm$
 in place of $\target$; this yields
 \begin{align}
 \postDensNorm(\Par; \targetEm) 
-&\Def \frac{\postEm(\Par; \targetEm)}{\normCst(\targetEm)},
-&&\normCst(\targetEm) \Def \int_{\parSpace} \postEm(\Par; \targetEm) d\Par, \label{eq:random-post}
+&= \frac{\postDens(\Par; \targetEm)}{\normCst(\targetEm)},
+&&\normCst(\targetEm) \Def \int_{\parSpace} \postDens(\Par; \targetEm) \d\Par, \label{eq:random-post}
 \end{align}
-which is referred to as the ``sample'' approximation in \citet{StuartTeck1}. We use the succinct
+which is referred to as the ``sample approximation'' in \citet{StuartTeck1}. We use the succinct
 shorthand $\postEm(\cdot) \Def \postDens(\cdot; \targetEm)$, 
 $\postNormEm(\cdot) \Def \postDensNorm(\cdot; \targetEm)$, and 
 $\normCstEm \Def \normCst(\targetEm)$ when referencing the underlying 
@@ -326,31 +331,31 @@ probability distribution that summarizes the uncertainty encoded in $\postNormEm
 To identify such a distribution, we adopt a Bayesian decision theoretic viewpoint and consider
 the Bayes' estimator
 \begin{equation}
-\qDens_\star \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)],
+\qDensOpt \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)],
 \label{eq:variational-opt}
 \end{equation}
 for a loss function $\loss$ and space of densities $\qSpace$ over $\parSpace$. The following 
-result provides the unique minimizer $\qDens_\star$ with respect to two common losses.
+result provides the unique minimizer $\qDensOpt$ with respect to two common losses.
 
 \begin{prop} \label{prop:EP-variational}
 If the loss $\loss(\postNormEm, q)$ is chosen as the forward Kullback-Leibler (KL) divergence 
 $\KL{\postNormEm}{q}$ or squared $L_2$ error $\norm{\postNormEm - q}_{L_2(\parSpace)}^2$
 then the optimization problem in \Cref{eq:variational-opt} is solved uniquely by 
 \begin{equation}
-\qDens_\star(\Par) = 
+\qDensOpt(\Par) = 
 \emE \left[\postNormEm(\Par) \right]
 = \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj).
 \label{eq:ep-approx}
 \end{equation}
 \end{prop}
 
-We thus take $\qDens_\star$ as the baseline for surrogate-based uncertainty propagation. 
+We thus take $\qDensOpt$ as the baseline for surrogate-based uncertainty propagation. 
 This distribution has been considered previously in various 
 contexts, but is not widely used in the surrogate modeling literature
 \citep{trainDynamics,BurknerSurrogate,garegnani2021NoisyMCMC}.
 This is likely due in part to computational difficulties, which we address in \Cref{sec:computation}.
-Following \citet{BurknerSurrogate}, we refer to $\qDens_\star$ as the \textit{expected posterior (EP)},
-denoted by $\postApproxEP \Def \qDens_\star$.
+Following \citet{BurknerSurrogate}, we refer to $\qDensOpt$ as the \textit{expected posterior (EP)},
+denoted by $\postApproxEP \Def \qDensOpt$.
 
 \subsection{Hierarchical Formulation}
 The EP arises as the marginal of the 
@@ -389,17 +394,17 @@ as defined in the modular Bayes literature
 \citep{PlummerCut,cutInference,moduleModels,cutVar,cutVar2}.
 
 In particular, suppose that the surrogate model is defined by specifying 
-a prior $\targetTraj \sim \emDist[0]$ and likelihood $\lik(\targetTraj; \emObs)$,
+a prior $\targetTraj \sim \emDistPrior$ and likelihood $\lik(\targetTraj; \emObs)$,
 where $\emObs \Def \{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ denotes
 the emulator training data. The common example of a conjugate GP model 
-corresponds to $\emDist[0] = \GP(\gpMean[0], \gpKer[0])$ and 
+corresponds to $\emDistPrior = \GP(\gpMean[0], \gpKer[0])$ and 
 $\lik(\targetTraj; \emObs) = \Gaussian(\target(\Par_{1:\Ndesign}) \given \targetTraj(\Par_{1:\Ndesign}), \tau^2 I)$.
 This setup encompasses standard parametric Bayesian models as well.
 We can thus consider the joint Bayesian model 
 \begin{equation}
-\jointKOH(d\Par, d\targetTraj, d\obs, d\emObs) \Def
+\jointKOH(\d\Par, \d\targetTraj, \d\obs, \d\emObs) \Def
 \priorDens(\Par) \lik(\targetTraj(\Par); \obs) \lik(\targetTraj; \emObs) 
-\emDist[0](d\targetTraj) \, d\Par \, d\obs \, d\emObs
+\emDistPrior(\d\targetTraj) \, \d\Par \, \d\obs \, \d\emObs
 \label{eq:koh-joint}
 \end{equation}
 over all unknowns $(\targetTraj, \Par)$. This fully Bayesian (non-modular) model 
@@ -411,19 +416,19 @@ the EP can be viewed as an optimal approximation to the fully Bayesian model,
 subject to the constraint that $\obs$ is not allowed to inform $\targetTraj$.
 
 \begin{prop} \label{prop:kl-cut-op}
-Let $\jointKOH^{\obs, \emObs}$ denote the distribution of $(\Par, \targetTraj)$
+Let $\postKOH$ denote the distribution of $(\Par, \targetTraj)$
 given $(\obs, \emObs)$ under the joint $\jointKOH$. Also, let $\emDist$ denote 
 the distribution of $\targetTraj$ given $\emObs$ under the joint 
-$\emDist[0](d\targetTraj) \lik(\targetTraj; \emObs) d\emObs$. Then, 
+$\emDistPrior(\d\targetTraj) \lik(\targetTraj; \emObs) \d\emObs$. Then, 
 \begin{equation}
-\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj)d\Par
-= \argmin_{\qMeas \in \qSpace_{\mathrm{cut}}} \KL{\qMeas}{\jointKOH^{\obs, \emObs}},
+\emDist(\d\targetTraj) \postDensNorm(\Par; \targetTraj)\d\Par
+= \argmin_{\qMeas \in \qSpaceCut}} \KL{\qMeas}{\jointKOH^{\obs, \emObs}},
 \label{eq:kl-cut-opt}
 \end{equation}
 where 
 \begin{equation}
-\qSpace_{\mathrm{cut}} \Def 
-\left\{\qMeas(d\Par, d\targetTraj) : \int \qMeas(d\Par, \cdot) = \emDist(\cdot) \right\}.
+\qSpaceCut \Def 
+\left\{\qMeas(\d\Par, \d\targetTraj) : \int \qMeas(\d\Par, \cdot) = \emDist(\cdot) \right\}.
 \end{equation}
 \end{prop} 
 The optimum in \Cref{eq:kl-cut-opt} is precisely the joint distribution noted in the previous 
@@ -479,7 +484,7 @@ in popular special cases involving GP log-density and forward model emulators.
 \subsection{The Expected Unnormalized Posterior} \label{sec:eup}
 Notice that, unlike $\postNormEm(\Par)$, the unnormalized density surrogate
 $\postEm(\Par)$ depends only on the single-point prediction $\targetEm(\Par)$
-rather than the full emulator $\funcEm$. The EUP is defined by computing
+rather than the full emulator $\targetEm$. The EUP is defined by computing
 a pointwise expectation of $\targetEm(\Par)$ and then normalizing post-hoc:
 \begin{equation}
 \postApproxMarg(\Par) \Def 
@@ -490,7 +495,7 @@ The equality in \Cref{eq:post-approx-EL} follows from
 changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. The EUP
 is a marginal of the joint distribution 
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetTraj)] d\Par$. 
-When $\funcEm$ is a forward model emulator, this implies that the EUP is the 
+When $\targetEm$ is a forward model emulator, this implies that the EUP is the 
 marginal posterior $\Par \given \obs$ under the hierarchical model 
 \begin{align}
 \Par &\sim \priorDens \label{eq:el-prob-model} \\
@@ -510,7 +515,7 @@ The below result quantifies the effect of these two approximations.
 \begin{prop} \label{prop:ep-eup-pw-err}
 The pointwise difference between the EP and EUP is given by
 \begin{equation}
-\postApproxEP(\Par) - \postApproxMarg(\Par)
+\postApproxEP(\Par) - \postApproxNormMarg(\Par)
 = \emE[\postEm(\Par)] \jgap + \Cov[\postEm(\Par), \normCstEm^{-1}],
 \label{eq:ep-eup-pw-err}
 \end{equation}
@@ -547,7 +552,7 @@ Decreasing the variance of $\normCstEm$ will shrink both terms in
 \Cref{eq:ep-eup-TV-err}. This may occur when there is little 
 uncertainty in $\targetEm$, the unnormalized posterior $\postDens(\cdot; \targetTraj)$
 is insensitive to $\targetTraj$, or $\normCstEm$ is insensitive to the variability 
-in $\postEm$. In the first case, note that if $\funcEm$ is heavily 
+in $\postEm$. In the first case, note that if $\targetEm$ is heavily 
 concentrated around its mean, then both the EP and EUP will bear a close resemblance
 to the plug-in mean approximation in \Cref{eq:mean-approx}.
 In special cases, the two terms in \Cref{eq:ep-eup-TV-err} perfectly balance so that 
@@ -674,11 +679,11 @@ villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel
  
 % Approximate Computation for the EP
 \section{Approximate Computation for the Expected Posterior} \label{sec:computation}
-The adoption of the EP in the surrogate modeling setting has been 
-inhibited by computational challenges, as noted in 
-\citet{VehtariParallelGP,StuartTeck2}. We first clarify the limitations
-of existing inference methods, and then introduce an efficient MCMC 
-approximation that alleviates these difficulties.
+In this section, we consider a more direct route to EP-based inference through
+the use of approximate computational algorithms. 
+We first clarify the limitations of existing inference methods, 
+and then introduce an efficient MCMC approximation that alleviates 
+these difficulties.
 
 \subsection{Sampling Trajectories}
 In light of the hierarchical model in \Cref{eq:ep-prob-model}, the following 
@@ -688,7 +693,7 @@ algorithm can in principle be applied to directly sample $\postApproxEP$.
     \caption{Direct sampling from $\postApproxEP$}
     \label{alg:ep}
     \begin{algorithmic}[1]
-    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
+    \Function{sampleEP}{$\postNormEm, \NSample, M$}     
         \For{$\sampleIndex \gets 1, \dots, \NSample$} 
         		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
 		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
@@ -725,17 +730,17 @@ instability \citep{pathwiseConditioning}. Finally, we highlight the method of
 \citet{trainDynamics}, which is to our knowledge the only existing work to 
 attempt EP-based inference with a GP surrogate. 
 Their method consists of approximating GP 
-trajectories by sampling the surrogate only at a finite grid of points, 
+trajectories by sampling the surrogate at a finite grid of points, 
 and then approximating the trajectory as the GP mean, conditional on the 
 sampled values at these points. Our MCMC method avoids the challenging 
 task of choosing an appropriate conditioning set.
 
-\subsection{Approximate MCMC}
-In this section, we present two variants of an approximate MCMC algorithm that 
-overcome the limitations of alternative methods discussed above. The algorithms seek 
-to target the joint distribution 
+\subsection{Approximate Metropolis-within-Gibbs}
+In this section, we present an approximate Metropolis-within-Gibbs (MwG) algorithm that 
+overcomes the limitations of the alternative methods discussed above. We 
+target the joint distribution 
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits
-$\postApproxEP$ as a marginal. First, consider a Metropolis-within-Gibbs (MwG)
+$\postApproxEP$ as a marginal. Consider a MwG
 scheme that alternates between $\Par$ and $\targetTraj$ updates. 
 For a fixed $\targetTraj$, the $\Par$ update must leave the distribution 
 $\postDensNorm(\Par; \targetTraj) d\Par$ invariant, which can be achieved 
@@ -745,20 +750,20 @@ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$
 invariant. This step faces two issues: (i.) the fact that $\targetTraj$ is potentially 
 infinite-dimensional, and (ii.) the fact that we cannot compute 
 $\normCst(\targetTraj)$. The former can be addressed by so-called 
-function-space MCMC methods \citep{functionSpaceMCMC}. If we utilize an
+function space MCMC methods \citep{functionSpaceMCMC}. If we utilize an
 MH step with a $\emDist$-reversible proposal distribution 
-$\propDist(\targetTraj, \cdot)$, then the MH acceptance probability reduces to
+$\propDist_{\target}(\targetTraj, \cdot)$, then the MH acceptance probability reduces to
 \begin{equation}
-\accProbMH(\targetTraj, \tilde{\targetTraj})
+\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
 = \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
 \frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right),
 \label{eq:MH-ratio-mwg}
 \end{equation}
-where $\tilde{\targetTraj} \sim \propDist(\targetTraj, \cdot)$ is the proposed value.
-If $\funcEm \sim \GP(\gpMean, \gpKer)$
+where $\tilde{\targetTraj} \sim \propDist_{\target}(\targetTraj, \cdot)$ is the proposed value.
+If $\targetEm \sim \GP(\gpMean, \gpKer)$
 \footnote{More generally, this applies when $\postEm$ arises as a transformation
 of an underlying Gaussian. The emulator predictive distribution need not be Gaussian.}, 
-then we can take $\propDist$ as
+then we can take $\propDist_{\target}$ as
 the preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
 \begin{equation}
 \tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
@@ -774,7 +779,72 @@ normalizing constant ratio, we instead invoke the simple approximation
 $\normCst(\targetTraj)/\normCst(\tilde{\targetTraj}) \approx 1$, which is reasonable when 
 the proposal $\tilde{\targetTraj}$ does not differ significantly from the current
 state $\targetTraj$. We can thus control the error in the approximation by slowing
-down the mixing speed of the $\targetTraj$-chain.
+down the mixing speed of the $\targetTraj$-chain. For the pCN proposal,
+the $\pcnCor$ parameter controls the correlation between $\targetTraj$ and 
+$\tilde{\targetTraj}$. Therefore, choosing $\pcnCor$ close to one ensures that
+$\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. 
+
+\subsection{A Correlated Pseudo-Marginal Algorithm}
+We now consider the alternative starting point of constructing an 
+approximate correlated pseudo-marginal algorithm (cPM) targeting $\postApproxEP$. 
+See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
+for background on pseudo-marginal MCMC.
+Designing a pseudo-marginal chain with the correct invariant distribution would 
+require access to an unbiased estimator of
+$\postDens(\Par; \targetEm)/\normCst(\targetEm)$, which is infeasible.
+If we could compute $\normCst(\targetTraj)$, then an unbiased
+estimate is given by
+ \begin{align}
+&\hat{\postDens}^M(\Par; \targetTraj_{1:M}) \Def \frac{1}{M} \sum_{m=1}^{M} \frac{\postDens(\Par; \targetTraj_m)}{\normCst(\targetTraj_m)},
+&&\targetTraj_m \overset{iid}{\sim} \emDist.
+\end{align}
+We write $\targetTraj_{1:M} \sim \emDist^{\otimes M}$ to denote the $M$ independent samples.
+A cPM algorithm is defined by specifying a proposal of the form 
+$\propDist(\Par, \targetTraj_{1:M}; d\propPar, d\tilde{\targetTraj}_{1:M}) = 
+\propDist(\Par, d\propPar) \propDist_{\target}(\targetTraj_{1:M}, d\tilde{\targetTraj}_{1:M})$, where 
+$\propDist_{\target}$ is a $\emDist^{\otimes M}$-reversible Markov kernel. This yields an acceptance probability
+\begin{align}
+\accProbMH &= 
+\min\left(1, \frac{\propDist(\propPar, d\Par)\hat{\postDens}^M(\propPar; \tilde{\targetTraj}_{1:M})}{\propDist(\Par, d\propPar)\hat{\postDens}^M(\Par; \targetTraj_{1:M})} \right) \\
+&= \min\left(1, 
+\frac{\propDist(\propPar, d\Par)}{\propDist(\Par, d\propPar)}
+\sum_{m=1}^{M} \frac{\postDens(\propPar; \tilde{\targetTraj}_m)}{\sum_{l=1}^{L} \postDens(\Par; \targetTraj_l) 
+\frac{\normCst(\tilde{\targetTraj}_m)}{\normCst(\targetTraj_l)}}
+\right) \\
+&\approx
+\min\left(1, \frac{\propDist(\propPar, d\Par)\postDens(\propPar; \tilde{\targetTraj}_{1:M})}{\propDist(\Par, d\propPar)\postDens(\Par; \targetTraj_{1:M})} \right),
+\end{align}
+where the final step again invokes the approximation $\normCst(\tilde{\targetTraj}_m)/\normCst(\targetTraj_l) \approx 1$ for each $(m,l)$. 
+In the case that $\targetEm$ is Gaussian, we can define $\propDist_{\target}$ to perform $M$ independent pCN updates.
+[stopping here for now, see notes below]
+
+\vspace 
+
+\paragraph{Some considerations:}
+\begin{itemize}
+\item I am realizing that the cPM algorithm exactly targets the EUP. The idea of ``slowing down the f chain'' to improve
+the approximation won't work with any MCMC algorithm with a well-defined target distribution (since changing the mixing
+rate won't change the target). We can perhaps tout the merits of the cPM approach over the PM approach based on
+efficiency, but not based on the quality of the EP approximation.
+\item On the other hand, I believe the MwG algorithm still provides this opportunity for ``slowing down the f chain''.
+This algorithm can be viewed as an instance of the naive cut algorithm on function space (the practical implementation of
+the algorithm ends up looking different due to the necessary conditioning).
+\item When I originally derived the cPM algorithm, I had thought that it would have the same target distribution
+as the MwG algorithm, with the only difference being whether we choose to update $(u,f)$ jointly or one at
+a time. In the joint case, we invoke the approx $Z(\tilde{f})/Z(f) \approx 1$, which ends up reducing the acc prob
+that which is consistent with the EUP target. On the other hand, for the MwG scheme we only invoke this approximation 
+in the $f$ step, which I guess leads to the two updates being inconsistent with one another.
+\item Doesn't really make sense to introduce the idea of using a sample mean with $M$ samples here, but not with the
+MwG algorithm. Can use this idea for both algorithms.
+\item My current thought is that we first introduce the MwG scheme, mentioning connections to the naive cut algorithm.
+Then we can demonstrate how it slightly differs from cPM/PM schemes. The derivation I use for the cPM scheme above
+provides a nice connection between the two EP approximation viewpoints we lay out in this paper 
+(approx dist vs approx computation).
+\item The algorithm below is the ``practical'' version of the MwG scheme (some of the notation is out of date). Need
+to decide whether we want to have the algorithm boxes state the conceptual version of the algorithms (in function space)
+or the practical version. If going with the latter, need to figure out notation we want to use for the conditioning required
+in the algorithm.
+\end{itemize}
 
 \begin{algorithm}[H]
     \caption{Metropolis-within-Gibbs Approximation to $\postApproxEP$}
@@ -802,634 +872,139 @@ down the mixing speed of the $\targetTraj$-chain.
     \end{algorithmic}
 \end{algorithm}
 
+\paragraph{Related work.}
+The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
+in depth in \citep{garegnani2021NoisyMCMC}. \citet{BurknerSurrogate} propose targeting the 
+distribution proportional to $\hat{\postDens}^M(\Par; \targetTraj_{1:M})$, where $\targetTraj_{1:M}$
+is fixed across all MCMC iterations. This does not target the EUP exactly, and can be viewed
+as an analog of the sample average approximation from the optimization literature \citep{SAA}.
+To improve MCMC efficiency, \citet{garegnani2021NoisyMCMC} also considers ``noisy'' approximations
+of the EUP. In contrast to pseudo-marginal algorithms, these methods re-sample both 
+$\targetTraj_{1:M}$ and $\tilde{\targetTraj}_{1:M}$ each iteration. 
+\citet{FerEmulation} utilize a similar noisy algorithm with $M = 1$, adopting an
+approximate computation viewpoint rather than explicitly trying to target $\postApproxNormMarg$.
+
+Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
+for EP-based inference. They appear to implicitly assume the use of finite-dimensional emulators,
+as difficulties related to sampling trajectories are not addressed. There has been interest in the 
+modular Bayes community in designing approximate MCMC schemes as an alternative to
+MwMC for cut posterior inference. \citet{PlummerCut} describes the implementation of such 
+an algorithm in the WinBUGS software [\todo: cite], referred to as the \textit{naive cut algorithm}.
+The author shows that this algorithm does not admit the cut posterior as an invariant
+distribution, and moreover that the implicit target distribution depends on the particular Markov kernels
+chosen to perform the updates. The paper proposes a solution to improve the approximation 
+using tempered transitions. Subsequent work has considered more sophisticated algorithms
+that seek to explicitly estimate the intractable normalizing constant ratios
+\citep{SAACut} [\todo: add Yves' paper here]. 
+Our MwG algorithm can be viewed as a version of the naive cut algorithm operating in function space.
+We opt to avoid normalizing constant estimation and instead slow down the mixing of the 
+$\targetTraj$-chain to control the approximation error.
+
 \section{Numerical Experiments} \label{sec:experiments}
 \section{Conclusion} \label{sec:conclusion}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Despite the widespread use of surrogates in various application domains, 
-surrogate uncertainty is often ignored or propagated in an ad hoc manner.
-This can be explained in part due to poor conceptual understanding 
-of the consequences of different uncertainty propagation methods
-(\Cref{sec:compare-unc-prop}), but also to a lack of general-purpose software
-for computation. Previous work has often relied on specific assumptions that
-enable closed-form computations, with algorithms geared towards
-particular emulators or likelihoods [\todo: cite]. Recently, \citep{BurknerSurrogate}
-proposed a generic MCMC pipeline rooted in standard probabilistic programming
-workflows. While a step in the right direction, a potential drawback of their approach
-is that their MCMC methods only approximately target the desired distributions 
-due to their use of fixed Monte Carlo estimates (i.e., sample average approximations).
-Another limitation is that their algorithms do not directly accommodate 
-infinite-dimensional surrogates such as GPs, owing to the requirement of 
-sampling trajectories of $\funcEm$.
-
-We aim to address these challenges, focusing primarily on MCMC schemes for the EL
-and EP approximations that are applicable to generic probabilistic surrogate models 
-and likelihood functions. While general-purpose computation for the EL approximation 
-has been studied \citep{garegnani2021NoisyMCMC}, existing methods for EP inference
-are largely limited to the direct sampling scheme in \Cref{alg:ep}. As noted in 
-\citep{VehtariParallelGP,StuartTeck2}, this approach is impractical for GP emulators.
-We present a new MCMC method that is applicable to the GP setting, and is
-shown to provide a close approximation of the EP distribution in various experiments.
-
-Prior to presenting this algorithm, we provide a thorough review of MCMC methods
-targeting the EL and EP distributions, or approximations to these distributions. 
-We emphasize connections between pseudo-marginal MCMC \citep{pseudoMarginalMCMC}, 
-``noisy'' MCMC \citep{noisyMCMC}, and inference schemes for cut 
-posteriors \citep{PlummerCut}. We also highlight an ``approximate computation'' 
-perspective to the uncertainty propagation question. Typically, inference proceeds
-by first defining a target distribution and then designing an MCMC scheme that
-converges to this distribution. Alternatively, one might skip the first step and instead 
-alter a standard MCMC scheme by strategically injecting noise within the 
-algorithm to account for the surrogate uncertainty. Assuming the altered algorithm 
-still converges to a well-defined posterior distribution, then this approach yields 
-a strategy for implicitly defining an uncertainty-aware posterior approximation.
-In the spirit of this approach, we consider several intuitive alterations of Metropolis-Hastings
-algorithms to account for emulator uncertainty. In some cases, the resulting algorithms
-coincide with existing methods. While intuitively appealing, we show that care must 
-be taken when adopting this approach, as certain design choices can arbitrarily change the 
-degree to which uncertainty is propagated.
-
-\begin{algorithm}
-    \caption{Direct sampling from $\postApproxEP$}
-    \label{alg:ep}
-    \begin{algorithmic}[1]
-    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
-        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
-        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
-	\EndFor
-	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-\paragraph{Notation.} Throughout this section, we define MCMC algorithms
-based on the steps performed for a single iteration of computation. For any 
-state variable $\theta$, we write $\theta$ and $\theta^\prime$ for the current
-and updated state, respectively.
-
-\paragraph{TODO: some themes to stress throughout this section:}
-\begin{enumerate}
-\item Approximate computation approaches (no target density defined beforehand); appealing but urge caution
-\item How computation differs between log-density and forward model emulator approaches.
-\item Whether algorithms are applicable to the infinite-dimensional emulator case (e.g., GPs)
-\item Emphasizing the difference between the typical application of pseudo-marginal/noisy (trying to target underlying true
-distribution) vs. our use of these algorithms here (trying to propagate uncertainty). While there is a clear notion of what is
-"correct" in the former case, this is less clear in the latter. For example, in MCwM increasing $M$ leads to a 
-more correct algorithm in the sense of tending towards the pseudo-marginal target. However, in the uncertainty
-propagation setting one could argue that lower values of $M$ result in propagating uncertainty in a more 
-reasonable way.
-\end{enumerate}
-
-\subsection{Expected Likelihood}
-We start by summarizing algorithms proposed for EL-based inference. Recall the target distribution in this 
-case is $\postApproxNormMarg(\Par) \propto \E_{\Ndesign}[\postEm(\Par)]$. If the expectation in this 
-expression is available in closed form, then off-the-shelf samplers can be applied. This is the case in the 
-Gaussian settings considered in \Cref{sec:ldens-Gaussian,sec:fwd-Gaussian}. However, alternative 
-algorithms are required to generalize to more complicated emulators and likelihoods. 
-As a starting point for general-purpose algorithms, we might consider the fact that the extended model 
-in \Cref{eq:el-prob-model} admits $\postApproxNormMarg$ as a marginal posterior. We can thus 
-consider an MCMC scheme targeting the joint density
-\begin{equation}
-p(\Par, \gamma \given \obs) \propto \priorDens(\Par) \lik(\gamma; \obs) \emDist(\gamma \given \Par). 
-\end{equation}
-If we consider a joint Metropolis-Hastings update for $(\Par, \gamma)$ using a proposal of the form
-\begin{equation}
-\propDens(\tilde{\Par}, \tilde{\gamma} \given \Par, \gamma)
-\Def \propDens_{\Par}(\tilde{\Par} \given \Par) \emDist(\tilde{\gamma} \given \tilde{\Par}),
-\end{equation}
-then the standard Metropolis-Hastings acceptance probability reduces to
-\begin{equation}
-\accProbMH(\tilde{\Par}, \tilde{\gamma} \given \Par, \gamma)
-= \min\left\{1, \frac{\priorDens(\propPar) \lik(\tilde{\gamma}; \obs)\propDens_{\Par}(\Par \given \tilde{\Par})}{\priorDens(\Par)\lik(\gamma; \obs)\propDens_{\Par}(\tilde{\Par} \given \Par)} \right\}
-\end{equation}
-This auxiliary variable Metropolis-Hastings scheme is precisely a pseudo-marginal algorithm 
-targeting $\postApproxNormMarg$.
-We could have alternatively arrived at this method by noting that $\postDens(\Par; \gamma)$ is an unbiased 
-estimator of $\postEm(\Par)$ when $\gamma \sim \emDist(\cdot \given \Par)$. The pseudo-marginal method
-can be viewed as a noisy alteration of the standard Metropolis-Hastings algorithm, such that exact evaluations 
-of $\postDens(\Par)$ are replaced with realizations of $\postEm(\Par)$. The key to ensuring 
-$\postApproxNormMarg$-invariance is that 
-only a new sample of $\postEm(\tilde{\Par})$ is drawn at each iteration; 
-the sampled value of $\postEm(\Par)$ is recycled from the previous iteration. The algorithm can be made more 
-efficient (while still targeting $\postApproxNormMarg$), by averaging multiple sampled values. In particular, in place
-of $\postDens(\propPar)$, we use 
-$\hat{\postDens}^M(\propPar) \Def M^{-1} \sum_{m=1}^{M} \postDens(\propPar; \targetTraj^{(m)})$ where 
-$\targetTraj^{(m)} \overset{\mathrm{iid}}{\sim} \emDist(\cdot; \tilde{\Par})$.
-
-The pseudo-marginal approach to EL-based inference is noted in \citep{StuartTeck1} and studied 
-in depth in \citep{garegnani2021NoisyMCMC}. The latter also studies a closely-related, but approximate, algorithm
-whereby the estimators $\hat{\postDens}^M(\Par)$ and $\hat{\postDens}^M(\propPar)$ are both sampled independently
-each iteration, rather than recycling the value of $\hat{\postDens}^M(\Par)$ from the previous iteration. This approach, 
-typically known as \textit{Monte Carlo within Metropolis (MCwM)}, does not directly target $\postApproxNormMarg$
-but is often more efficient \citep{noisyMCMC,stabilityNoisyMH,noisyMCSurvey}.
-The limiting distribution of MCwM (if it exists) depends on the value of $M$. As $M \to \infty$, the limiting distribution 
-will tend towards $\postApproxNormMarg$. \citet{FerEmulation} utilize a MCwM scheme with $M = 1$, adopting an
-approximate computation viewpoint rather than explicitly trying to target $\postApproxNormMarg$.
-\citet{BurknerSurrogate} propose an alternative approximation defined by sampling 
-$\targetTraj^{(m)} \overset{\mathrm{iid}}{\sim} \emDist$ and then targeting the fixed density approximation
-\begin{align}
-\hat{\postDens}^M(\Par \given \{\targetTraj^{(m)}\}_{m=1}^{M}) \Def 
-\frac{1}{M} \sum_{m=1}^{M} \postDens(\Par; \targetTraj^{(m)}).
-\end{align}
-In contract to the pseudo-marginal and MCwM algorithms, the Monte Carlo samples $\{\targetTraj^{(m)}\}_{m=1}^{M}$
-are fixed across all iterations, akin to a sample average approximation from the optimization literature
-\citep{SAA}. In this method, the target distribution also depends on $M$, and approaches $\postApproxNormMarg$
-as $M \to \infty$. The benefit of this approach is that it defines a deterministic density approximation which can be input
-into standard software (e.g., Stan). The downside is that it requires sampling trajectories $\targetTraj^{(m)}$, which are 
-then evaluated at many different values of $\Par$ throughout the MCMC run. This is not a problem when the randomness
-in $\funcEm$ derives from a finite-dimensional random vector. However, it presents challenges for infinite-dimensional models
-such as GPs. In principle, such an approach could be implemented by repeatedly conditioning the GPs at new evaluation points,
-thus iteratively building the GP trajectories ``just-in-time''. However, such an approach is fraught with numerical instability issues,
-which has been well-documented in the Bayesian optimization literature \citep{pathwiseConditioning}. 
-The pseudo-marginal and MCwM algorithms only require the ability to sample from $\emDist(\cdot \given \Par)$, 
-rather than $\emDist$.
-
-\subsection{Expected Posterior}
-We next consider existing work on sampling methods for the EP approximation. In general, the
-EP distribution is more challenging and computationally expensive to approximate than the EL. It also presents
-additional challenges for GP emulators. Recall the target distribution in this case is 
-$\postApproxEP(\Par) = \E_{\Ndesign}\left[\postEm(\Par)/\normCstEm \right]$.
-
-\subsubsection{Direct Sampling and Extensions}
-In principle, the EP distribution can be directly sampled via \Cref{alg:ep}.
-One iteration of this algorithm is completed by first sampling 
-a surrogate trajectory $\targetTraj \sim \emDist$, and then 
-drawing samples 
-$\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$,
-where $\postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ is the induced trajectory of $\postNormEm$.
-If $M = 1$, then the resulting samples of $\Par$ are independent; otherwise, they are dependent.
-Both of these sampling steps may be infeasible in practice. In almost all cases, direct sampling from 
-$\postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ will not be possible. The samples $\Par^{(\sampleIndex, m)}$ are thus
-typically generated via MCMC. This approach, sometimes called \textit{Metropolis within Monte Carlo (MwMC)} 
-(not to be confused with MCwM), is considered in \citep{garegnani2021NoisyMCMC,BurknerSurrogate}.
-If the distribution of $\postEm$ is complex, then a large value of $M$ may be required, implying 
-$M$ runs of an MCMC algorithm. While this may not be problematic in modern parallel computing 
-environments, it may still be desirable to consider adjustments to lower the required number of runs. 
-Such considerations 
-have been explored in the multiple imputation literature; e.g., assuming the EP is approximately Gaussian [\todo: cite].
-\citep{BurknerTwoStep} present an alternative approach relying on Pareto-smoothed importance sampling. 
- 
-While these methods focus primarily on reducing the cost of the MCMC sampling step, they implicitly assume
-that sampling from $\emDist$ is straightforward. This is not the case for GP surrogates, which 
-has resulted in a lack of EP-based inference in the GP emulation literature \citep{VehtariParallelGP,StuartTeck2}. 
-To our knowledge, the only exception is \citet{trainDynamics}.
-Their method consists of approximating GP 
-trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
-the trajectory as the GP mean, conditional on the sampled values at these points. This approach represents
-a middle ground between discretizing the GP and applying just-in-time sampling. The authors present a method
-for selecting the grid points, though this is likely to present challenges in higher dimensions. 
-
-\subsubsection{Approximate MCMC Methods}
-Instead of running $M$ MCMC algorithms, it is natural to wonder if a single MCMC scheme can be designed
-to (approximately) target $\postApproxEP$. This question has not been investigated in the surrogate 
-literature, but has been addressed in the case where $\postApproxEP$ corresponds to the ``cut posterior''
-of a modular Bayesian model. \citet{PlummerCut} describes the implementation of such an algorithm 
-in the WinBUGS software [\todo: cite], referred to as the \textit{naive cut algorithm}.
-A single step of the algorithm proceeds as follows:
-\begin{enumerate}
-\item Apply a $\emDist$-invariant Markov update $\targetTraj \to \targetTraj^\prime$.
-\item Apply a $\postDens(\cdot; \targetTraj^\prime)$-invariant Markov update $\Par \to \Par^\prime$.
-\end{enumerate}
-\citet{PlummerCut} shows that this algorithm does not admit $\postApproxEP$ as an invariant
-distribution, and moreover that the implicit target distribution depends on the particular Markov kernels
-chosen to perform the updates. Their analysis reveals two natural modifications geared towards 
-improving the approximation. 
-First, many $\Par$-updates can be performed for each fixed $\targetTraj^\prime$, with the final update
-set to $\Par^\prime$. However, such an approach is effectively an implementation of the MwMC scheme
-described above, which is what we sought to avoid in considering this algorithm. As an alternative,
-\citet{PlummerCut} offers a middle ground solution that involves performing a smaller number of 
-$\Par$ updates using a sequence of tempered distributions.
-Second, one could seek to slow down the mixing rate of the $\targetTraj$ chain. 
-If the updates  $\targetTraj \to \targetTraj^\prime$ are constrained to be small, then 
-$\postDens(\cdot; \targetTraj^\prime)$ should be relatively stable. Consequently,
-the $\Par$ samples might be expected to converge to a reasonable approximation of $\postApproxEP$.
-Note that in the surrogate modeling setting, it is often the case that $\emDist$ can be sampled directly,
-rather than requiring an update that merely leaves $\emDist$ invariant. However, using this natural 
-update $\targetTraj^\prime \sim \emDist$ would be counterproductive with respect to the goal
-of approximating EP in light of the effect on the mixing speed of $\targetTraj$.
-
-\citet{SAACut} take a different approach to improve upon the naive cut algorithm, rooted in the use
-of stochastic approximation Monte Carlo to approximate the intractable normalizing function 
-$p(\obs \given \targetTraj^\prime)$. Their algorithm is more amenable to theoretical analysis, but 
-typically requires more user tuning. [\todo: need to better understand their algorithm and verify this claim]
-
-\subsection{Approximate MCMC Methods}
-In the preceding sections, we introduced the MCwM and naive cut algorithms. These MCMC schemes
-seek to target the EL and EP approximations, respectively, but in general are both approximate.
-In this section, we provide connections between a family of different MCMC approximations and propose
-a new approximate algorithm with intuitive appeal. While these algorithms can produce quite reasonable
-empirical results, we also urge caution in their application, as seemingly arbitrary modifications to the 
-algorithms result in varied levels of uncertainty propagation. We provide more insight into these mechanisms
-in the particular setting of a GP log-density emulator.
-
-\subsubsection{Expected Acceptance Probability}
-We consider connections between MCwM and the naive cut algorithm, and then suggest 
-a modification. To start, recall that the MCwM is a standard Metropolis-Hastings scheme, but
-at each iteration the exact density evaluations $\postDens(\Par)$, $\postDens(\propPar)$
-are replaced with $\hat{\postDens}^M(\Par)$ and $\hat{\postDens}^M(\propPar)$, respectively.
-However, by neglecting the covariance between $\funcEm(\Par)$ and $\funcEm(\propPar)$ this 
-approach typically overestimates the uncertainty in the Metropolis-Hastings acceptance probability.
-We could thus consider sampling these values jointly, yielding the algorithm:
-\begin{enumerate}
-\item Sample $\targetTraj^\prime \sim \emDist$.
-\item Apply a $\postDens(\cdot; \targetTraj^\prime)$-invariant Markov update $\Par \to \Par^\prime$.
-\end{enumerate}
-Note that this is identical to the naive cut algorithm in the special case that we can sample directly from 
-$\emDist$. It also presents no computational issues for infinite-dimensional surrogates, since we only 
-require the value of $\targetTraj^\prime$ at a finite set of points. In particular, if the second step is implemented
-with a Metropolis-Hastings kernel, then the first step simplifies to 
-$[\targetTraj^\prime(\Par), \targetTraj^\prime(\propPar)] \sim \emDist(\cdot, \cdot \given \Par, \propPar)$, since the values
-of $\targetTraj^\prime$ are only required at the current and proposed states $(\Par, \propPar)$.
-
-The MCwM algorithm uses the estimator $\hat{\postDens}^M(\Par)$, which averages the likelihood over $M$
-samples from $\funcEm$. It is natural to wonder if averaging could also be utilized in the joint version of the 
-algorithm. It seems reasonable to consider averaging over the acceptance probability
-\begin{equation}
-\alpha^M(\Par, \propPar) \Def \frac{1}{M} \sum_{m=1}^{M} \alpha(\Par, \propPar \given \targetEm^{(m)}),
-\end{equation}
-where $\targetEm^{(m)} \overset{iid}{\sim} \emDist$. We refer to this as the expected acceptance probability (E-Acc) method.
-Unlike MCwM, the implicit target distribution for E-Acc does not depend on the value of $M$. However, also unlike MCwM, the 
-target now depends on the proposal kernel. This is a particular case of the naive cut algorithm target distribution
-depending on the Markov kernel used for the $\Par$-update. To provide intuition, we return to the GP log-density emulator example.
- 
-\subsubsection{Example: Gaussian Log-Density emulator}
-We return to the example from \Cref{sec:ldens-Gaussian}. We consider Metropolis-Hastings 
-implementations of various algorithms described above, illustrating how they incorporate noise
-into the MH acceptance probability in various ways.  
-Let 
-\begin{align}
-&\accProbMH^{\mathrm{mean}}(\Par, \propPar) \Def
-\min\{1, r^{\mathrm{mean}}(\Par, \propPar)\},
-&&r^{\mathrm{mean}}(\Par, \propPar) \Def 
-\frac{\postDens(\propPar; \gpMean) \propDens(\propPar, \Par)}{\postDens(\Par; \gpMean) \propDens(\Par, \propPar)}
-\label{eq:acc-prob-mean}
-\end{align}
-denote the \textit{plug-in mean} MH acceptance probability, which plugs in $\gpMean$ as an approximation 
-to $\target$ without consideration of emulator uncertainty. In the setting $\postEm(\Par) = \Exp{\targetEm(\Par)}$
-with $\targetEm \sim \GP(\gpMean, \gpKer)$, the Metropolis-Hastings ratio in \Cref{eq:acc-prob-mean} reduces to
-\begin{equation}
-r^{\mathrm{mean}}(\Par, \propPar) \Def 
-\frac{\propDens(\propPar, \Par)}{\propDens(\Par, \propPar)}
-\Exp{\gpMean(\propPar) - \gpMean(\Par)}. 
-\end{equation}
-The EL, MCwM, and E-Acc approximations introduce emulator uncertainty as
-\begin{align}
-r^{\mathrm{EL}}(\Par, \propPar) &\Def 
-r^{\mathrm{mean}}(\Par, \propPar) \Exp{\frac{1}{2}\left(\gpKer(\propPar) - \gpKer(\Par) \right)} \\
-r^{\mathrm{MCwM}}(\Par, \propPar) &\Def 
-r^{\mathrm{mean}}(\Par, \propPar) \Exp{\frac{1}{2}\left[\gpKer(\propPar) + \gpKer(\Par) \right]} \\
-r^{\textrm{E-acc}}(\Par, \propPar) &\Def 
-r^{\mathrm{mean}}(\Par, \propPar) \Exp{\frac{1}{2}\left[\gpKer(\propPar) + \gpKer(\Par) \right] - \gpKer(\Par, \propPar)} 
-\end{align}
-
-\textbf{NOTE:} The latter two are technically not correct; the acc prob used by these algorithms
-is of the form $\E[\alpha(1, r_N)]$, which reduces to a weighted average between $1$ and 
-$\E[r_N]$. I report only the $\E[r_N]$ part for now.
-
-The EL approximation scales $r^{\mathrm{mean}}(\Par, \propPar)$ with the exponential of the difference
-$\gpKer(\propPar) - \gpKer(\Par)$, inflating the acceptance probability when emulator uncertainty is 
-larger at the proposed point. By contrast, MCwM scales $r^{\mathrm{mean}}(\Par, \propPar)$ by 
-the average of $\gpKer(\propPar)$ and $\gpKer(\Par)$; the GP uncertainty is included in a 
-symmetric manner, not favoring transitions in one direction or the other. This is also the case 
-with $r^{\textrm{E-acc}}(\Par, \propPar)$, but the E-acc inflation factor scales with the 
-variance of $\funcEm(\propPar) - \funcEm(\Par)$, rather than the average of their variances.
-If $\propPar$ and $\Par$ are close, then there may be little uncertainty in the difference
-$\funcEm(\propPar) - \funcEm(\Par)$ even if the marginal variances are large. This example 
-makes clear the dependence on the proposal kernel in the E-acc algorithm. If we choose a 
-very small proposal, then there will be little uncertainty in the $\funcEm(\propPar) - \funcEm(\Par)$,
-and thus the algorithm will target a distribution close to the plug-in mean approximation.
-A proposal that favors far away points will imply $\gpKer(\Par, \propPar) \approx 0$, in which 
-case E-acc will look like MCwM. Varying the width of the proposal will result in different 
-degrees to which the covariance term $\gpKer(\Par, \propPar)$ exerts influence on 
-the acceptance probability.
-
-\subsection{An MCMC Approximation for the Expected Posterior} \label{sec:mcmc-ep}
-In this section we propose a new Metropolis-Hastings algorithm that approximately targets 
-the EP distribution, and is applicable in the GP setting. We start by noting that $\postApproxEP$
-is a conditional posterior of the extended model 
-\begin{align}
-p(\Par, \obs, \targetEm) &\Def
-\postDensNorm(\Par; \targetEm) \emDist(\targetEm) p(\obs) \\
-&= \priorDens(\Par) \lik(\targetEm(\Par); \obs) \emDist(\targetEm) \frac{p(\obs)}{\normCst(\targetEm)},
-\label{eq:EP-prob-model}
-\end{align}
-where $\normCst(\targetEm)$ is the normalizing constant for $\postDensNorm(\cdot; \targetEm)$.
-The quantity $\emDist(\targetEm)$ is purely formal at the moment, since $\normCst$ does not 
-have a Lebesgue density when $\targetEm$ is a GP.  Consider a Metropolis-within-Gibbs algorithm 
-targeting the joint posterior over $(\Par, \targetEm)$, which updates the marginal conditionals  
-\begin{align}
-p(\Par \given \targetEm, \obs) \propto \priorDens(\Par) \lik(\targetEm(\Par); \obs) \label{eq:EP-conditionals} \\
-p(\targetEm \given \Par, \obs) \propto \lik(\targetEm(\Par); \obs) \emDist(\targetEm) \frac{p(\obs)}{\normCst(\targetEm)}
-\end{align}
-in turn. The $\Par$ update can be accomplished with a standard Metropolis-Hastings step. We focus on the
-$\targetEm$ update.
-
-Suppose the current state of the chain is $(\Par, \targetTraj)$ and consider a proposal
-$\tilde{\targetTraj} \sim q_{\target}(\targetTraj, \cdot)$. The MH acceptance ratio then takes the form
-\begin{align}
-\frac{\lik(\tilde{\targetTraj}(\Par); \obs)}{\lik(\targetTraj(\Par); \obs)} \frac{\emDist(\tilde{\targetTraj})}{\emDist(\targetTraj)} 
-\frac{q_{\target}(\tilde{\targetTraj}, \targetTraj)}{q_{\target}(\targetTraj, \tilde{\targetTraj})} \frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})}.
-\end{align}
-There are two issues to deal with here. The first is the inability to compute $\emDist(\targetTraj)$ in general, 
-unless we replace $\targetTraj$ with a finite-dimensional discretization.
-To address this, we can choose $q_\target$ to be $\emDist$-invariant so that the ratio simplifies to
-\begin{align}
-\frac{\lik(\tilde{\targetTraj}(\Par); \obs)}{\lik(\targetTraj(\Par); \obs)} 
-\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})}.
-\label{eq:MH-ratio-prior-invariant}
-\end{align}
-The simplest option is to set $q_\target(\targetTraj, \cdot) \Def \emDist(\cdot)$, which yields an MH independence
-sampler update. If the emulator $\targetEm$ depends on a transformation of a latent Gaussian, then 
-specialized alternatives such as the preconditioned Crank-Nicolson proposal, or an elliptical slice
-sampling update, may be considered. We emphasize that the simplification in 
-\Cref{eq:MH-ratio-prior-invariant} means that this ratio only depends on the emulator trajectories at the current 
-value of $\Par$. Thus, there is no requirement to sample full trajectories; see \Cref{alg:mwg-ep}.
-
-\begin{algorithm}
-    \caption{Metropolis-within-Gibbs Approximation to $\postApproxEP$}
-    \label{alg:mwg-ep}
-    \begin{algorithmic}[1] 
-    \State \textbf{Input:} Current state $(\Par, \targetTraj_\Par)$
-    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime_{\Par^\prime})$
-     \State Propose $\tilde{\Par} \sim q(\Par, \cdot)$
-     \State Propose $(\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar}) \sim \emDist(\cdot, \cdot \given \Par, \propPar)$ \Comment{Begin $\targetTraj$ update}
-     \State $\alpha_{\targetTraj} \gets \min\left\{1, \lik(\tilde{\targetTraj}_\Par; \obs) / \lik(\targetTraj_\Par; \obs) \right\}$
-      	\If{$\mathrm{Unif}(0,1) < \alpha_{\targetTraj}$}
-                \State $(\targetTraj^\prime_\Par, \targetTraj^\prime_{\propPar}) \gets (\tilde{\targetTraj}_\Par, \tilde{\targetTraj}_{\propPar})$ 
-            \Else
-                \State $\targetTraj^\prime_{\Par} \gets \targetTraj_{\Par}$
-                \State $\targetTraj^\prime_{\propPar} \gets \emDist(\cdot \given \targetEm(\Par) = \targetTraj_\Par)$
-            \EndIf
-      \State $\alpha_{\Par} \gets \min\left\{1, \priorDens(\propPar )\lik(\targetTraj^\prime_{\propPar}; \obs) / \priorDens(\Par) \lik(\targetTraj^\prime_{\Par}; \obs) \right\}$ \Comment{Begin $\Par$ update}
-             \If{$\mathrm{Unif}(0,1) < \alpha_{\Par}$}
-                \State $\Par^\prime \gets \propPar$
-                \State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\propPar}$ 
-            \Else
-            	\State $\Par^\prime \gets \Par$
-		\State $\targetTraj^\prime_{\Par^\prime} \gets \targetTraj^\prime_{\Par}$
-            \EndIf
-    \end{algorithmic}
-\end{algorithm}
-
-The second issue is the dependence on the intractable normalizing constants 
-$\normCst(\targetTraj)$ and $\normCst(\tilde{\targetTraj})$. We can consider applying techniques
-from the doubly intractable MCMC literature, but these algorithms (e.g., the exchange algorithm)
-typically require the ability to directly sample $\postDensNorm(\Par; \targetEm)$.
-Alternatively, if the proposed value $\tilde{\targetTraj}$ is not too far from $\targetTraj$ then it may be 
-reasonable to invoke the approximation $\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$.
-\Cref{alg:mwg-ep} uses this approximation, along with the independence MH proposal.
- 
-\section{Alternative Viewpoints}
-I've been playing around with some alternative viewpoints recently, so am adding them here for now.
-
-\subsection{Nested Monte Carlo}
-Consider approximating the normalizing constant $\normCst(\targetTraj)$ with an importance sampling
-estimator of the form
-\begin{equation}
-\normCst^K(\targetTraj) \Def \sum_{k=1}^{K} w(\Par_k; \targetTraj) \postDens(\Par_k; \targetTraj), 
-\qquad \Par_k \sim g
-\end{equation}
-for some proposal distribution $g$. We can then consider the 
-(biased) nested Monte Carlo approximation 
-\begin{align}
-\hat{\pi}^{K,M}(\Par) \Def \E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right]
-&\approx \E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst^K(\targetTraj)} \right] \\
-&\approx \frac{1}{M} \sum_{m=1}^{M} \frac{\postDens(\Par; \targetTraj_m)}{\normCst^K(\targetTraj_m)} \\
-&= \frac{1}{M} \sum_{m=1}^{M}  
-\left[\sum_{k=1}^{K} \frac{w(\Par_k; \targetTraj_m) \postDens(\Par_k; \targetTraj_m)}{\postDens(\Par; \targetTraj_m)}\right]^{-1}.
-\end{align}
-
-Suppose we ignored the bias and tried to target $\hat{\pi}(\Par) \Def \E[\hat{\pi}^{K,M}(\Par)]$. If the current state of the Markov chain is $\Par$
-and the proposal is $\propPar$, then the random acceptance ratio takes the form $\hat{\pi}^{K,M}(\propPar)/\hat{\pi}^{K,M}(\Par)$. 
-For example, with $M = K = 1$,
-\begin{align}
-&\frac{\hat{\pi}^{1,1}(\propPar)}{\hat{\pi}^{1,1}(\Par)}
-= \frac{\postDens(\propPar; \targetTraj)}{\postDens(\Par; \targetTraj)} \cdot
-\frac{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}, &&\targetTraj \sim \emDist,
-\end{align}
-where the second term cancels. The MH algorithm that replaces the acceptance ratio $\hat{\pi}(\propPar)/\hat{\pi}(\Par)$ with the 
-above unbiased estimate (freshly sampled each iteration) thus reduces to the E-Acc algorithm. Since we know the target distribution 
-of E-acc depends on the proposal kernel, then it is clear that replacing the acceptance ratio with an unbiased estimate in this context does
-not yield a valid algorithm targeting $\hat{\pi}$. Alternatively, we could consider a pseudo-marginal algorithm targeting $\hat{\pi}$ (still 
-considering $M = K = 1$). In this case, the ratio would look like
-\begin{align}
-&\frac{\postDens(\propPar; \targetTraj^\prime)}{\postDens(\Par; \targetTraj)} \cdot
-\frac{w(\Par_1; \targetTraj)\postDens(\Par_1; \targetTraj)}{w(\Par_1^\prime; \targetTraj^\prime)\postDens(\Par_1^\prime; \targetTraj^\prime)}, 
-&&\targetTraj \sim \emDist, \ \Par_1 \sim g,
-\end{align}
-where $(\Par_1, \targetTraj)$ are recycled from the previous iteration. In this case, the second term does not cancel. Without the second
-term, this is the pseudo-marginal algorithm targeting the EL approximation. This alternative pseudo-marginal algorithm incorporates 
-information about the trajectory $\targetTraj$ at points other than the current and proposed states $(\Par, \propPar)$.
-Compared to EL, acceptance is more probable if $\postDens(\Par_1; \targetTraj) > \postDens(\Par_1; \targetTraj^\prime)$.
-
-\subsection{Some Similar Ideas}
-We can arrive at some similar algorithms via a slightly different route. 
-As discussed above, the EL distribution can be derived from the EP via the approximation
-\begin{equation}
-\E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right] \approx \frac{\E[\postDens(\Par; \targetTraj)]}{\E[\normCst(\targetTraj)]},
-\end{equation}
-which ignores the dependence between $\postDens(\Par; \targetTraj)$ and $\normCst(\targetTraj)$. We could consider 
-the alternative approximation 
-\begin{equation}
-\E\left[\frac{\postDens(\Par; \targetTraj)}{\normCst(\targetTraj)} \right] 
-= \E\left[\frac{1}{\normCst(\targetTraj)/\postDens(\Par; \targetTraj)}\right]
-\approx \frac{1}{\E[\normCst(\targetTraj)/\postDens(\Par; \targetTraj)]}}
-= \left(\int \E\left[\frac{\postDens(\Par^\prime; \targetTraj)}{\postDens(\Par; \targetTraj)} \right] d\Par^\prime \right)^{-1}
-\label{eq-EP-approx}
-\end{equation}
-which still considers this dependence. Nested Monte Carlo estimators of the final expression will then 
-yield similar expressions as above. 
-
-\subsection{Avoiding Approximation of Normalizing Function}
-Let's consider a pseudo-marginal scheme targeting 
-\begin{equation}
-\postApproxEP(\Par) = \E[\postDens(\Par; \targetEm)/\normCst(\targetEm)],
-\end{equation}
-ignoring the fact that we cannot compute $\normCst(\targetEm)$ for now. An unbiased estimate
-is
-\begin{align}
-&\hat{\postDens}(\Par) \Def \frac{1}{M} \sum_{m=1}^{M} \frac{\postDens(\Par; \targetTraj_m)}{\normCst(\targetTraj_m)},
-&&\targetTraj_m \overset{iid}{\sim} \emDist.
-\end{align}
-We consider a pseudo-marginal scheme targeting $\postApproxEP$. Let $\Par$ be the current state with associated
-density estimate $\hat{\postDens}$, and $\propPar$ the proposed state with density estimate
-$\hat{\postDens}^\prime$. The acceptance ratio (ignoring the proposal) is 
-\begin{align}
-\frac{\hat{\postDens}^\prime(\propPar)}{\hat{\postDens}(\Par)}
-&= \sum_{m=1}^{M} \frac{\postDens(\propPar; \targetTraj_m^\prime)}{\sum_{l=1}^{L} \postDens(\Par; \targetTraj_l) 
-\frac{\normCst(\targetTraj_m^\prime)}{\normCst(\targetTraj_l)}},
-\end{align}
-which is intractable only due to $\normCst(\targetTraj_m^\prime)/\normCst(\targetTraj_l)$. If we invoke the approximation
-$\normCst(\targetTraj_m^\prime)/\normCst(\targetTraj_l) \approx 1$ for all $m,l$ (or that over and under-estimates even 
-themselves out across the terms) then the acceptance ratio simplifies to
-\begin{equation}
-\frac{M^{-1} \sum_{m=1}^{M} \postDens(\propPar; \targetTraj_m^\prime)}{M^{-1} \sum_{l=1}^{M} \postDens(\Par; \targetTraj_l)},
-\end{equation}
-which recovers the pseudo-marginal algorithm targeting EL. However, the approximation
-$\normCst(\targetTraj_m^\prime)/\normCst(\targetTraj_l) \approx 1$ may be quite bad given that the $\targetTraj^\prime_m$
-are independently sampled at the new iteration. Supposing $\targetEm \sim \GP(\gpMean, \gpKer)$, we could consider applying the 
-correlated pseudo-marginal algorithm, which draws samples via
-\begin{align}
-\targetTraj^\prime_m \Def \gpMean + \rho (\targetTraj_m  - \gpMean) + \sqrt{1 - \rho^2} \psi, \qquad \psi \sim \GP(0, \gpKer).
-\end{align}
-This slows down the mixing speed of $\targetTraj$, which will help make the approximation
-$\normCst(\targetTraj_m^\prime)/\normCst(\targetTraj_l) \approx 1$ more reasonable. Note that the above proposal 
-is precisely the preconditioned Crank-Nicholson proposal, and that this algorithm bears a very close resemblance to
-\Cref{alg:mwg-ep}. The motivation for the correlated pseudo-marginal algorithm is typically to reduce the variance
-of a noisy likelihood estimator, but in our case the motivation is achieve a better approximation of the 
-normalizing function ratio. I need to work through the details of this more to better understand how this relates to the previous
-algorithm; currently, they are different in that this algorithm does not include an accept-reject for $\targetEm$ (all samples
-are accepted).
- 
-\subsection{Log-Density Emulators}
-We now return to the special case of the GP log-density emulator 
-\begin{align}
-&\postEm(\Par) = \Exp{\targetEm(\Par)},
-&&\targetEm \sim \GP(\gpMean, \gpKer),
-\end{align}
-which implies 
-\begin{align}
-\E\left[\frac{\postDens(\Par^\prime; \targetEm)}{\postDens(\Par; \targetEm)} \right]
-&= \Exp{\gpMean(\Par^\prime) - \gpMean(\Par)} 
-\Exp{\frac{1}{2}[\gpKer(\Par^\prime) + \gpKer(\Par)]} \Exp{-\gpKer(\Par, \Par^\prime)}.
-\end{align}
-Plugging this into \Cref{eq-EP-approx} we obtain
-\begin{align}
-&\left(\int \E\left[\frac{\postDens(\Par^\prime; \targetTraj)}{\postDens(\Par; \targetTraj)} \right] d\Par^\prime \right)^{-1} \nonumber \\
-&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)} 
-\left(\int \Exp{\gpMean(\Par^\prime) + \frac{1}{2}\gpKer(\Par^\prime)} \Exp{-\gpKer(\Par, \Par^\prime)} d\Par^\prime \right)^{-1} \nonumber \\
-&\propto \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)}
-\left(\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime) \right)^{-1} \label{eq-EP-approx-ldens}
-\end{align}
-
-\paragraph{Naive approximation 1.}
-The expression in \Cref{eq-EP-approx-ldens} reduces to $\postApproxMarg(\Par)$ by invoking the approximation
-\begin{align}
-\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
-&\approx \Exp{-\gpKer(\Par)}.
-\end{align}
-Intuitively, this seems like a poor approximation in general; e.g., if there are many 
-values far away from from $\Par$ that are given significant weight under $\postApproxNormMarg$
-then these values will tug the integral towards one.
-
-\paragraph{Naive approximation 2.}
-If $\postApproxNormMarg(d\Par^\prime) \approx \delta_{\Par_\star}(d\Par^\prime)$ then the approximation
-\begin{align}
-\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
-&\approx \Exp{-\gpKer(\Par, \Par_\star)}
-\end{align}
-may be reasonable. In this case, we obtain the (unnormalized) density approximation
-\begin{align}
-\hat{\pi}(\Par)
-&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par) + \gpKer(\Par, \Par_\star)} \\
-&= \postApproxMarg(\Par) \Exp{\gpKer(\Par, \Par_\star) - \gpKer(\Par)} \\ 
-&\propto \Exp{\gpMean(\Par) - \frac{1}{2} \Var[\funcEm(\Par) - \funcEm(\Par_\star)]} \\
-&= \Exp{\gpMean(\Par) - \gamma_N(\Par, \Par_\star)},
-\end{align}
-where $\gamma_N}$ is the variogram of the random function $\funcEm$, a commonly-used
-measure of dependence in geostatistics. 
-Interestingly, this yields a computable unnormalized density approximation (like EL) which 
-now depends on the GP covariance as well. Based on the final expression above, 
-$\hat{\pi}(\Par)$ favors points where the predictive mean is large, and the dependence 
-between $\funcEm(\Par)$ and $\funcEm(\Par_\star)$ is large (i.e., the variogram is small).  
-To better compare to EL, consider
-\begin{align}
-\frac{\hat{\pi}(\propPar) / \hat{\pi}(\Par)}{\postApproxMarg(\propPar) / \postApproxMarg(\Par)}
-&= \frac{\Exp{\gpKer(\Par) - \gpKer(\Par, \Par_\star)}}{\Exp{\gpKer(\propPar) - \gpKer(\propPar, \Par_\star)}}.
-\end{align} 
-We conclude that $\hat{\pi}$ inflates the point $\propPar$, relative to $\hat{\pi}$, when 
-$\gpKer(\Par) - \gpKer(\Par, \Par_\star) > \gpKer(\propPar) - \gpKer(\propPar, \Par_\star)$.
-Since this still seems to favor points close to $\Par_\star$, it is unclear how much this can 
-help offset the undesirable behavior of EL in certain settings. 
-
-\paragraph{Naive approximation 3.}
-Next, suppose that $\postApproxNormMarg$ has multiple concentrated nodes so that 
-$\postApproxNormMarg(d\Par^\prime) \approx \sum_{m=1}^{M} w_m \delta_{\Par_m}(d\Par^\prime)$,
-in which case
-\begin{align}
-\int \Exp{-\gpKer(\Par, \Par^\prime)} \postApproxNormMarg(d\Par^\prime)
-&\approx \sum_{m=1}^{M} w_m \Exp{-\gpKer(\Par, \Par_m)}.
-\end{align}
-In this case, we obtain the (unnormalized) density approximation
-\begin{align}
-\hat{\pi}(\Par)
-&= \Exp{\gpMean(\Par) - \frac{1}{2}\gpKer(\Par)} \cdot \left[\sum_{m=1}^{M} w_m \Exp{-\gpKer(\Par, \Par_m)}\right]^{-1} \\
-&= \left[\sum_{m=1}^{M} \frac{w_m}{\Exp{\gpMean(\Par) - \gamma_N(\Par, \Par_m)}}  \right]^{-1},
-\end{align}
-another harmonic mean type estimator.
 
 % Appendix
 \section{Appendix}
 
-For the below proofs we use the following measure-theoretic setup. For brevity, we drop the 
-$\Ndesign$ subscripts on quantities other than $\postNormEm$.
+For the below proofs we use the following measure-theoretic setup.
 Let $\refMeas$ be a reference measure (e.g., Lebesgue) on $(\parSpace, \BorelSig)$,
-and $\emDist[]$ a probability measure on $(\emSpace, \emSig)$. Assume that 
+and $\emDist$ a probability measure on $(\emSpace, \emSig)$. Assume that 
 the map $(\Par, \targetTraj) \mapsto \postDens(\Par; \targetTraj)$ is measurable
-and $\normCst(\targetTraj) \Def \int \postDens(\Par; \targetTraj) \emDist[](d\targetTraj) \in (0,\infty)$
-$\emDist[]$-almost surely. Let $\postDensNorm(\Par; \targetTraj) \Def \postDens(\Par; \targetTraj) / \normCst(\targetTraj)$
+and $\normCst(\targetTraj) \Def \int \postDens(\Par; \targetTraj) \emDist(\d\targetTraj) \in (0,\infty)$
+$\emDist$-almost surely. Let $\postDensNorm(\Par; \targetTraj) \Def \postDens(\Par; \targetTraj) / \normCst(\targetTraj)$
 and define the joint distribution 
-$\emJoint(d\Par, d\targetTraj) \Def \postDensNorm(\Par; \targetTraj) \refMeas(d\Par)\emDist[](d\targetTraj)$.
-Define $\postApproxEP[]$ to be the density corresponding to the $\Par$-marginal of $\emJoint$; that is,
-$\postApproxEP[](\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist[](d\targetTraj)$. 
+$\emJoint(\d\Par, \d\targetTraj) \Def \postDensNorm(\Par; \targetTraj) \refMeas(\d\Par)\emDist(\d\targetTraj)$.
+Define $\postApproxEP$ to be the density corresponding to the $\Par$-marginal of $\emJoint$; that is,
+$\postApproxEP(\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj)$. 
 
 \subsection{Proof of \Cref{prop:EP-variational}}
 \paragraph{KL Divergence.} We start by proving the KL divergence result.
 Let $\qMeas$ be a probability measure on $\parSpace$ with 
 $\refMeas$-density $\qDens$. We restrict to measures 
-$\postApproxEP[] \ll \qMeas$, as the KL divergence is infinite otherwise. 
+$\postApproxEP \ll \qMeas$, as the KL divergence is infinite otherwise. 
 Note that 
-$\frac{d\emJoint}{d(\emDist[] \otimes \qMeas)}(\Par, \targetTraj) = \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}$.
+$\frac{\d\emJoint}{\d(\emDist \otimes \qMeas)}(\Par, \targetTraj) = \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}$.
 Using Tonelli's theorem, we have 
 \begin{align*}
-\E_{\emDist[]}\left[\KL{\postNormEm}{\qMeas} \right]
+\E_{\emDist}\left[\KL{\postNormEm}{\qMeas} \right]
 &= \int_{\emSpace} \int_{\parSpace} 
 \postDensNorm(\Par; \targetTraj) \log \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}
-\refMeas(d\Par) \emDist[](d\targetTraj) \\
+\refMeas(\d\Par) \emDist(\d\targetTraj) \\
 &= \int_{\parSpace \times \emSpace}  \log \frac{\postDensNorm(\Par; \targetTraj)}{\qDens(\Par)}
-\emJoint(d\Par, d\targetTraj) \\
-&= \int_{\parSpace \times \emSpace}  \log \frac{d\emJoint}{d(\emDist[] \otimes \qMeas)}(\Par, \targetTraj)
-\ \emJoint(d\Par, d\targetTraj) \\
-&= \KL{\emJoint}{\emDist[] \otimes \qMeas}.
+\emJoint(\d\Par, \d\targetTraj) \\
+&= \int_{\parSpace \times \emSpace}  \log \frac{\d\emJoint}{\d(\emDist \otimes \qMeas)}(\Par, \targetTraj)
+\ \emJoint(\d\Par, \d\targetTraj) \\
+&= \KL{\emJoint}{\emDist \otimes \qMeas}.
 \end{align*}
 Finally, 
 \begin{align*}
-\KL{\emJoint}{\emDist[] \otimes \qMeas}
-&= \int \log \frac{d\emJoint}{d(\emDist[] \otimes \qMeas)} d\emJoint \\
-&= \int \log \left[\frac{d\emJoint}{d(\emDist[] \otimes \postApproxEP[])} \frac{d(\emDist[] \otimes \postApproxEP[])}{d(\emDist[] \otimes \qMeas)}\right] d\emJoint \\
-&\propto \int \log \frac{d(\emDist[] \otimes \postApproxEP[])}{d(\emDist[] \otimes \qMeas)} d\emJoint \\
+\KL{\emJoint}{\emDist \otimes \qMeas}
+&= \int \log \frac{\d\emJoint}{\d(\emDist \otimes \qMeas)} \d\emJoint \\
+&= \int \log \left[\frac{\d\emJoint}{\d(\emDist \otimes \postApproxEP)} \frac{\d(\emDist \otimes \postApproxEP)}{\d(\emDist \otimes \qMeas)}\right] d\emJoint \\
+&\proptoAdd \int \log \frac{\d(\emDist \otimes \postApproxEP)}{\d(\emDist \otimes \qMeas)} \d\emJoint \\
 &= \int_{\emSpace \times \parSpace} 
-\log \frac{\postApproxEP[](\Par)}{\qDens(\Par)} \postDensNorm(\Par; \targetTraj) \emDist[](d\targetTraj) \refMeas(d\Par) \\
-&= \int_{\parSpace} \log \frac{\postApproxEP[](\Par)}{\qDens(\Par)} 
- \postApproxEP[](\Par) \refMeas(d\Par) \\
-&= \KL{\postApproxEP[]}{\qMeas}.
+\log \frac{\postApproxEP(\Par)}{\qDens(\Par)} \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj) \refMeas(\d\Par) \\
+&= \int_{\parSpace} \log \frac{\postApproxEP(\Par)}{\qDens(\Par)} 
+ \postApproxEP(\Par) \refMeas(\d\Par) \\
+&= \KL{\postApproxEP}{\qMeas}.
 \end{align*} 
-where we have used ``$\propto$'' to absorb additive constants with respect to $\qMeas$. The result follows 
-from the fact that $\KL{\postApproxEP[]}{\qMeas}$ is uniquely minimized at $\qMeas = \postApproxEP[]$. $\qquad \blacksquare$
+where we have used $\proptoAdd$ to absorb additive constants with respect to $\qMeas$. The result follows 
+from the fact that $\KL{\postApproxEP}{\qMeas}$ is uniquely minimized at $\qMeas = \postApproxEP$. $\qquad \blacksquare$
 
 \paragraph{Squared $L_2$ loss.} 
 For the expected squared error objective, apply Tonneli's theorem 
 \begin{align}
-\E_{\emDist[]}\left[\norm{\postNormEm - \qMeas}^2_{L_2(\parSpace)} \right]
-&= \int \E_{\emDist[]} \left[\postDensNorm(\Par; \targetTraj) - \qDens(\Par) \right]^2 \refMeas(d\Par) \nonumber
+\E_{\emDist}\left[\norm{\postNormEm - \qMeas}^2_{L_2(\parSpace)} \right]
+&= \int \E_{\emDist} \left[\postDensNorm(\Par; \targetTraj) - \qDens(\Par) \right]^2 \refMeas(d\Par) \nonumber
 \end{align}
 and notice that the integrand is minimized pointwise by
-$\qDens(\Par) = \E_{\emDist[]}[\postDensNorm(\Par; \targetTraj)] = \postApproxEP[](\Par)$. $\qquad \blacksquare$
+$\qDens(\Par) = \E_{\emDist}[\postDensNorm(\Par; \targetTraj)] = \postApproxEP(\Par)$. $\qquad \blacksquare$
+ 
+\subsection{Proof of \Cref{prop:kl-cut-op}}
+Recall the joint distribution 
+$\jointKOH(\d\Par, \d\targetTraj, \d\obs, \d\emObs) =
+\priorDens(\Par) \lik(\targetTraj(\Par); \obs) \lik(\targetTraj; \emObs) 
+\emDistPrior(\d\targetTraj) \, \d\Par \, \d\obs \, \d\emObs$
+with conditional $\postKOH(\d\Par, \d\targetTraj)$.
+Let $\postKOH_{\targetTraj}(\d\Par)$ denote the $\targetTraj$-marginal of this conditional.
+Similarly, let $\condMargKOH$ denote the marginal conditional of 
+$\Par$ given $(\obs,\targetTraj)$.
+By the disintegration theorem, any $\qMeas \in \qSpaceCut$ can be written as 
+$\qMeas(\d\Par, \d\targetTraj) = \emDist(\d\targetTraj) \qCond(\targetTraj, \d\Par)$ since 
+$\qSpaceCut$ restricts the $\targetTraj$-marginal of $\qMeas$ to equal $\emDist$.
+Subject to regularity conditions [\todo: be precise here], it follows that
+\begin{equation}
+\frac{\d\qMeas}{\d\postKOH}(\Par, \targetTraj) =
+\frac{\d\emDist}{\postKOH_{\targetTraj}(\d\Par)}(\targetTraj)
+\frac{\d\qCond(\targetTraj,\cdot)}{d\condMargKOH}(\Par).
+\end{equation}
+Therefore,
+\begin{align*}
+\KL{\qMeas}{\postKOH} 
+&= \int \log \left[\frac{\d\qMeas}{\d\postKOH}\right] \qMeas(\d\Par, \d\targetTraj) \\
+&\proptoAdd \int \log \left[\frac{\d\qCond(\targetTraj,\cdot)}{d\condMargKOH}(\Par)\right] \emDist(\d\targetTraj) \qCond(\targetTraj,\d\Par) \\
+&= \int_{\emSpace} \left\{\int_{\parSpace}  
+\log \left[\frac{\d\qCond(\targetTraj,\cdot)}{d\condMargKOH}(\Par)\right] \qCond(\targetTraj,\d\Par) \right\} \emDist(\d\targetTraj) \\
+&= \int_{\emSpace} \KL{\qCond(\targetTraj,\cdot)}{\condMargKOH} \emDist(\d\targetTraj).
+\end{align*}
+Since the integrand is minimized pointwise by $\qCond(\targetTraj,\cdot) = \condMargKOH$, it follows that
+$\qMeasOpt(\d\Par, \d\targetTraj) = \emDist(\d\targetTraj)\condMargKOH(\d\Par)$. $\qquad \blacksquare$
+ 
+\subsection{Proofs of \Cref{prop:ep-eup-pw-err} and \Cref{prop:ep-eup-TV-err}}
+Recall that for two random variables $a$ and $b$ it holds that $\E[ab] = \E[a]\E[b] + \Cov(a,b)$.
+Applying this identity, we have
+\begin{equation*}
+\postApproxEP(\Par)
+= \emE[\postEm(\Par) \normCstEm^{-1}]
+= \emE[\postEm(\Par)] \emE[\normCstEm^{-1}] + \Cov(\postEm(\Par), \normCstEm^{-1}).
+\end{equation*} 
+Subtracting $\postApproxNormMarg(\Par) = \emE[\postEm(\Par)] / \emE[\normCstEm]$
+and grouping terms completes the derivation. The integrated error follows from integrating 
+over $\parSpace$ and applying Tonelli's theorem, which gives
+\begin{equation*}
+\int \emE[\postEm(\Par)] \refMeas(\d\Par) = \emE \int \postEm(\Par) \refMean(\d\Par) = \emE[\normCstEm]
+\qquad \blacksquare
+\end{equation*} 
  
 \bibliography{prob_surrogates_bayes} 
 % \bibliographystyle{ieeetr}

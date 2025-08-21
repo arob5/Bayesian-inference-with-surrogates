@@ -1,5 +1,3 @@
-%!TEX root = SMA-book.tex
-
 % Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
 
 % --------------------------------------------------------------------------------------------------
@@ -23,12 +21,12 @@
 
 % General inverse problems.
 \newcommand{\Par}{u}
-\newcommand{\parSpace}{\mathsf{U}} % Parameter space
+\newcommand{\parSpace}{\mathbb{U}} % Parameter space
 \newcommand{\dimPar}{D} % Parameter dimension 
 \newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
 \newcommand{\obs}{y} % Data observation (response) vector
 \newcommand{\noise}{\epsilon} % Random variable representing noise, typically in additive noise model. 
-\newcommand{\obsSpace}{\mathsf{Y}} % Output space
+\newcommand{\obsSpace}{\mathbb{Y}} % Output space
 \newcommand{\dimObs}{P} % Dimension of data observation vector
 \newcommand{\idxObsDim}{p} % Primary symbol used to index each data dimension. 
 \newcommand{\fwd}{\mathcal{G}} % Forward model
@@ -72,14 +70,14 @@
 \newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
 \newcommand{\designRand}[2][\Nbatch]{\mathcal{D}_{#1}^{#2}} % When the response is unobserved/random. 
 \newcommand{\emLaw}[2][\design]{{\Pi}^{#2}_{#1}} % The conditional law/distribution of an emulator (may or may not be Gaussian). 
-\newcommand{\target}{\mathsf{f}} % Target map for emulation
-\newcommand{\targetEm}[1][\Ndesign]{f_{#1}} % Emulator for target quantity
+\newcommand{\target}{f_{\circ}} % Target map for emulation
+\newcommand{\targetEm}{f} % Emulator for target quantity
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
 \newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
-\newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Distribution (law) of the emulator (a stochastic process)
-\newcommand{\emE}{\E_{\emDist[]}} % Expectation wrt emulator distribution.
+\newcommand{\emDist}{\nu} % Distribution (law) of the emulator (a stochastic process)
+\newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
 \newcommand{\emObs}{z} % The design set used to train the emulator.
-\newcommand{\targetRange}{\mathsf{F}}
+\newcommand{\targetRange}{\mathbb{F}}
 \newcommand{\emJoint}{\eta} % Joint measure over (u,f)
 \newcommand{\jointKOH}{\zeta} % Joint distribution over both surrogate and calibration parameters (as in KOH setup)
 \newcommand{\jgap}{\Delta_\normCst} % The "Jensen gap" for the normalizing constant.
