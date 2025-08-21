@@ -388,9 +388,17 @@ represents the marginal posterior $\Par \given \obs$ under the hierarchical mode
 \begin{align*}
 &\targetTraj  \sim \emDist \\
 &\Par \sim \priorDens \\
-&\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \obs).
+&\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \cdot)/\normCst(\targetTraj).
 \label{eq:ep-prob-model-fwd}
 \end{align*}
+In this setting, the EP is of the form 
+\begin{align*}
+&\postApproxEP(\Par) \propto \priorDens(\Par) \likApproxEP(\Par; \obs),
+&&\likApproxEP(\Par; \obs) \Def \int \frac{\lik(\targetTraj(\Par); \obs)}{\normCst(\targetTraj)} \emDist(\d\targetTraj). 
+\label{eq:lik-approx-EP}
+\end{align*}
+We observe that the exact likelihood is replaced with an approximation averaged over $\targetTraj$ and 
+weighted both by the surrogate predictive distribution and the marginal likelihood $\normCst(\targetTraj)$.
 
 \subsection{Cut Posterior} \label{sec:cut}
 Our above formulation is agnostic to how the emulator is constructed. The 
@@ -496,7 +504,7 @@ $\postEm(\Par)$ depends only on the single-point prediction $\targetEm(\Par)$
 rather than the full emulator $\targetEm$. The EUP is defined by computing
 a pointwise expectation of $\targetEm(\Par)$ and then normalizing post-hoc:
 \begin{equation}
-\postApproxMarg(\Par) \Def 
+\postApproxEUP(\Par) \Def 
 \frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] d\Par}
 = \frac{\emE\left[\postEm(\Par) \right]}{\emE[\normCstEm]}. \label{eq:post-approx-EL} 
 \end{equation}
@@ -507,16 +515,23 @@ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)] 
 As compared to the analogous EP joint
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \normCst(\targetTraj) d\Par$,
 we see that the EUP replaces the normalizing function $\normCst(\targetTraj)$ with
-the global point estimate $\emE[\normCst(\targetEm)] $.
-
-When $\targetEm$ is a forward model emulator, this implies that the EUP is the 
-marginal posterior $\Par \given \obs$ under the hierarchical model 
+the global point estimate $\emE[\normCst(\targetEm)]$. If $\targetEm$ is a forward 
+model emulator, then this difference manifests in the treatment of the marginal likelihood.
+Indeed, in this setting the EUP arises as the marginal posterior 
+$\Par \given \obs$ under the hierarchical model
 \begin{align}
 \Par &\sim \priorDens \label{eq:el-prob-model} \\
-\gamma \given \Par &\sim \emDist(\cdot \given \Par) \nonumber \\
-\obs \given \gamma &\sim \lik(\gamma; \cdot), \nonumber
+\targetTraj_\Par \given \Par &\sim \emDist(\cdot \given \Par) \nonumber \\
+\obs \given \targetTraj_\Par &\sim \lik(\targetTraj_\Par; \cdot). \nonumber
 \end{align}
-which can be interpreted as an inverse problem on an extended parameter space.
+This yields 
+\begin{align*}
+&\postApproxEUP(\Par) \propto \priorDens(\Par) \likApproxEUP(\Par; \obs),
+&&\likApproxEUP(\Par; \obs) \Def \int \lik(\targetTraj(\Par); \obs) \emDist(\d\targetTraj). 
+\end{align*}
+In contrast with \Cref{eq:lik-approx-EP}, we see that the EUP likelihood approximation 
+weights only by the surrogate predictive distribution, ignoring the marginal 
+likelihood $\normCst(\targetTraj)$.
 
 \subsection{Comparison of the EP and EUP}
 Notice in \Cref{eq:post-approx-EL} that the EUP is a ratio estimator, and differs from 
@@ -529,7 +544,7 @@ The below result quantifies the effect of these two approximations.
 \begin{prop} \label{prop:ep-eup-pw-err}
 The pointwise difference between the EP and EUP is given by
 \begin{equation}
-\postApproxEP(\Par) - \postApproxNormMarg(\Par)
+\postApproxEP(\Par) - \postApproxEUPNorm(\Par)
 = \emE[\postEm(\Par)] \jgap + \Cov[\postEm(\Par), \normCstEm^{-1}],
 \label{eq:ep-eup-pw-err}
 \end{equation}
@@ -550,13 +565,13 @@ a GP emulator with a long lengthscale. Based on this logic, we expect the EUP to
 influential regions and depress non-influential regions, relative to the EP. This can lead 
 the EUP to be more peaked, while the EP is more smooth. The pointwise error in 
 \Cref{prop:ep-eup-pw-err} can be integrated to obtain the following $L_1$ bound 
-between $\postApproxEP$ and $\postApproxMarg$. Multiplying both sides by $1/2$
+between $\postApproxEP$ and $\postApproxEUP$. Multiplying both sides by $1/2$
 yields a total variation bound.
 
 \begin{prop} \label{prop:ep-eup-TV-err}
 Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
 \begin{equation}
-\norm{\postApproxEP - \postApproxMarg}_{L_1(\parSpace)}
+\norm{\postApproxEP - \postApproxEUP}_{L_1(\parSpace)}
 \leq \emE[\normCstEm] \jgap + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
 \label{eq:ep-eup-TV-err}
 \end{equation}
@@ -590,7 +605,7 @@ StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy,Alawieh
 In this setting, the pointwise distribution of the induced posterior surrogate is log-normal
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, implying that
 \begin{equation}
-\postApproxNormMarg(\Par) 
+\postApproxEUPNorm(\Par) 
 \propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}
 = \postApproxMean(\Par) \Exp{\frac{1}{2}\gpKer(\Par)}.
 \label{eq:EUP-Gaussian-ldens}
@@ -598,7 +613,7 @@ $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, implying that
 The expression in \Cref{eq:EUP-Gaussian-ldens} shows that the EUP inflates the plug-in mean 
 density in uncertain regions \citep{StuartTeck2,GP_PDE_priors}. In particular, 
  \begin{equation}
- \frac{\postApproxNormMarg(\Par^\prime)/\postApproxNormMarg(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
+ \frac{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
  = \Exp{\frac{1}{2}\left[\gpKer(\Par^\prime) - \gpKer(\Par) \right]},
  \label{eq:unc-infl-factor}
  \end{equation}
@@ -612,11 +627,11 @@ the standard deviation of $\targetEm(\Par^\prime)$ is twice that of $\targetEm(\
 the expression in \Cref{eq:unc-infl-factor} reduces to $\Exp{\frac{3}{2}\gpKer(\Par)}$.
 If $\gpKer(\Par) = 4$, this means
 $\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$, vastly magnifying the modest difference 
-in emulator uncertainty. Practically, this can result in $\postApproxNormMarg$ concentrating 
+in emulator uncertainty. Practically, this can result in $\postApproxEUPNorm$ concentrating 
 on small subsets of $\parSpace$ where emulator uncertainty is the largest.
 With respect to \Cref{eq:ep-eup-pw-err}, this manifests as a large negative covariance 
 between $\postEm(\Par)$ and $\normCstEm$ in uncertain regions, implying 
-$\postApproxNormMarg(\Par) \gg \postApproxEP(\Par)$. 
+$\postApproxEUPNorm(\Par) \gg \postApproxEP(\Par)$. 
 
 Given this extreme sensitivity to emulator uncertainty, we recommend against the use of the EUP
 approximation in this setting. \citet{VehtariParallelGP} reach a similar conclusion, and propose
@@ -642,7 +657,7 @@ idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydr
 The unnormalized posterior surrogate takes the form 
 $\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$, implying
 \begin{equation}
-\postApproxNormMarg(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
+\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
 \label{eq:EUP-Gaussian-fwd}
 \end{equation}
 following from the formula for the convolution of two Gaussians [\todo: add to appendix].
@@ -896,7 +911,7 @@ To improve MCMC efficiency, \citet{garegnani2021NoisyMCMC} also considers ``nois
 of the EUP. In contrast to pseudo-marginal algorithms, these methods re-sample both 
 $\targetTraj_{1:M}$ and $\tilde{\targetTraj}_{1:M}$ each iteration. 
 \citet{FerEmulation} utilize a similar noisy algorithm with $M = 1$, adopting an
-approximate computation viewpoint rather than explicitly trying to target $\postApproxNormMarg$.
+approximate computation viewpoint rather than explicitly trying to target $\postApproxEUPNorm$.
 
 Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
 for EP-based inference. They appear to implicitly assume the use of finite-dimensional emulators,
@@ -1012,7 +1027,7 @@ Applying this identity, we have
 = \emE[\postEm(\Par) \normCstEm^{-1}]
 = \emE[\postEm(\Par)] \emE[\normCstEm^{-1}] + \Cov(\postEm(\Par), \normCstEm^{-1}).
 \end{equation*} 
-Subtracting $\postApproxNormMarg(\Par) = \emE[\postEm(\Par)] / \emE[\normCstEm]$
+Subtracting $\postApproxEUPNorm(\Par) = \emE[\postEm(\Par)] / \emE[\normCstEm]$
 and grouping terms completes the derivation. The integrated error follows from integrating 
 over $\parSpace$ and applying Tonelli's theorem, which gives
 \begin{equation*}
