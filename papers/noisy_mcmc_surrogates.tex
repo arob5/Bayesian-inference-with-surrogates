@@ -36,7 +36,6 @@
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_unc_prop}
-\newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
 \setlist[1]{leftmargin=\parindent}
@@ -56,11 +55,18 @@
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
 \newtheorem{rmk}{Remark}
+
 \newtheorem{ex}{Example}
+\crefname{ex}{example}{examples}
+\Crefname{ex}{Example}{Examples}
+\Cref{ex:fwd-em, ex:ldens-em}
+
 
 % Ensure cleverref knows how to handle citing of multiple subsubsections
 \crefname{subsubsection}{section}{sections}
 \Crefname{subsubsection}{Section}{Sections}
+\crefname{ex}{example}{examples}
+\Crefname{ex}{Example}{Examples}
 
 % Title and author
 \title{Uncertainty Propagation in Surrogate-Based Bayesian Inference}
@@ -218,7 +224,7 @@ induces a cheap approximation of $\postDens(\Par)$.
 Different target maps may be emulated in order to
 accelerate Bayesian inference, so long as $\target(\Par)$ is sufficient 
 to compute $\postDens(\Par)$ without requiring additional simulator runs.
-Two common examples are detailed in \Cref{sec:fwd-em, sec:ldens-em}.
+Two common examples are detailed in \Cref{ex:fwd-em, ex:ldens-em}.
 We write $\postDens(\Par; \target)$ and $\normCst(\target)$ to indicate the 
 dependence of the posterior density and normalizing constant on $\target$, 
 with the assumption that $\postDens(\Par; \target)$ is relatively 
@@ -230,7 +236,7 @@ In many applications, computational constraints impose a budget of
 $\Ndesign$ evaluations of $\target$, where 
 $\Ndesign$ is typically much smaller than that required by standard posterior
 inference algorithms. The queries $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$
-are then leveraged to fit a regression or interpolation model $\targetEm$,
+are then leveraged to fit a regression model $\targetEm$,
 such that $\targetEm(\Par)$ provides a prediction of $\target(\Par)$.
 In order to quantify the uncertainty introduced via this approximation, we consider 
 emulators that provide predictions in the form of a probability distribution; 
@@ -251,7 +257,7 @@ been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}. See
 \citet{reviewPaper} for a discussion of practical considerations in choosing 
 the emulator target. 
 
-\subsubsection{Forward Model Emulation} \label{sec:fwd-em}
+\begin{ex} \label{ex:fwd-em}
 In the Bayesian inverse problem setting in \Cref{sec:bip},
 a natural approach is to target the underlying forward model 
 $\Par \mapsto \fwd(\Par)$ (i.e., choose $\target \Def \fwd$), a strategy 
@@ -267,8 +273,9 @@ In this special case, the induced (unnormalized) posterior density surrogate tak
 \begin{align}
 \postEm(\Par) &= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar). \label{eq:post-em-fwd-Gaussian}
 \end{align}
+\end{ex}
 
-\subsubsection{Log-Density Emulation} \label{sec:ldens-em}
+\begin{ex} \label{ex:ldens-em}
 Other lines of research have instead targeted the log-likelihood $\Par \mapsto \log \lik(\target(\Par); \obs)$
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,
@@ -288,6 +295,7 @@ and induces a posterior density surrogate
 The log-posterior case is quite similar, except that the effect of the prior is also 
 approximated by the emulator, so the induced posterior surrogate simply takes 
 the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
+\end{ex}
 
 % The Expected Posterior
 \section{The Expected Posterior} \label{sec:EP}
@@ -323,7 +331,7 @@ in place of $\target$; this yields
 which is referred to as the ``sample approximation'' in \citet{StuartTeck1}. We use the succinct
 shorthand $\postEm(\cdot) \Def \postDens(\cdot; \targetEm)$, 
 $\postNormEm(\cdot) \Def \postDensNorm(\cdot; \targetEm)$, and 
-$\normCstEm \Def \normCst(\targetEm)$ when referencing the underlying 
+$\normCstEm \Def \normCst(\targetEm)$ when explicit reference to the underlying 
 emulator is not necessary.
 
 We view the challenge of uncertainty propagation as that of constructing a deterministic 
@@ -375,7 +383,7 @@ in \Cref{eq:ep-prob-model} is well-defined. See
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
 technical conditions ensuring existence.
 
-In the case that $\targetEm$ is a forward model emulator (\Cref{sec:fwd-em}), the EP 
+In the case that $\targetEm$ is a forward model emulator (\Cref{ex:fwd-em}), the EP 
 represents the marginal posterior $\Par \given \obs$ under the hierarchical model 
 \begin{align*}
 &\targetTraj  \sim \emDist \\
@@ -422,7 +430,7 @@ the distribution of $\targetTraj$ given $\emObs$ under the joint
 $\emDistPrior(\d\targetTraj) \lik(\targetTraj; \emObs) \d\emObs$. Then, 
 \begin{equation}
 \emDist(\d\targetTraj) \postDensNorm(\Par; \targetTraj)\d\Par
-= \argmin_{\qMeas \in \qSpaceCut}} \KL{\qMeas}{\jointKOH^{\obs, \emObs}},
+= \argmin_{\qMeas \in \qSpaceCut}} \KL{\qMeas}{\postKOH},
 \label{eq:kl-cut-opt}
 \end{equation}
 where 
@@ -463,13 +471,14 @@ misspecification \citep{BayesBag,BayesBag2}.
 \section{Approximating the Expected Posterior} \label{sec:approximating-ep}
 Having justified the EP as the baseline target distribution for uncertainty 
 propagation, we now turn to the practical question of conducting EP-based
-inference. While directly sampling the EP is typically infeasible, one natural 
-approach is to consider approximate computation (see \Cref{sec:computation}).
-An alternative route, which is the focus of this section, is to explicitly target a
-different distribution that is more amenable to standard inference algorithms.
-Citing the difficulties of EP-based inference, previous research has 
-adopted this latter approach, 
-eschewing the EP in favor of approximations of the \textit{unnormalized}
+inference. While exact inference is typically infeasible, two 
+natural strategies are to
+(1) target a distribution that approximates the EP but is more amenable
+to standard inference algorithms, and (2) employ an approximate 
+inference algorithm (see \Cref{sec:computation} for the latter). We re-interpret 
+alternative posterior approximations proposed in the literature 
+as instances of the former approach. Previous work commonly
+eschews the EP in favor of approximations of the \textit{unnormalized}
 density surrogate $\postEm$ \citep{StuartTeck1,StuartTeck2,VehtariParallelGP}.
 However, these works stop short of studying how such alternative approximations 
 relate to the EP. 
@@ -478,8 +487,8 @@ In this section, we introduce the most popular of these approximations, the
 \textit{expected unnormalized posterior (EUP)}, and demonstrate 
 how the EUP can be viewed as an approximation to the EP.
 We analyze when this approximation is reasonable, and when the EUP may 
-deviate significantly from the EP baseline. We highlight practical takeaways 
-in popular special cases involving GP log-density and forward model emulators.
+deviate significantly from the EP baseline. We then show how these results map 
+onto the popular GP settings from \Cref{ex:fwd-em, ex:ldens-em}.
 
 \subsection{The Expected Unnormalized Posterior} \label{sec:eup}
 Notice that, unlike $\postNormEm(\Par)$, the unnormalized density surrogate
@@ -494,7 +503,12 @@ a pointwise expectation of $\targetEm(\Par)$ and then normalizing post-hoc:
 The equality in \Cref{eq:post-approx-EL} follows from
 changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. The EUP
 is a marginal of the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetTraj)] d\Par$. 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)] d\Par$. 
+As compared to the analogous EP joint
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \normCst(\targetTraj) d\Par$,
+we see that the EUP replaces the normalizing function $\normCst(\targetTraj)$ with
+the global point estimate $\emE[\normCst(\targetEm)] $.
+
 When $\targetEm$ is a forward model emulator, this implies that the EUP is the 
 marginal posterior $\Par \given \obs$ under the hierarchical model 
 \begin{align}
@@ -561,7 +575,7 @@ $\postEm(\Par) = \omega g(\Par)$, where $\omega$ is a random constant and
 $g(\Par)$ a deterministic function. 
 
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
-We now consider the particular example from \Cref{sec:ldens-em},
+We now consider the particular example from \Cref{ex:ldens-em},
 where $\postEm(\Par) = \Exp{\targetEm(\Par)}$
 and $\targetEm \sim \GP(\gpMean, \gpKer)$ is a GP emulator; that is, 
 $\E[\targetEm(\Par)] = \gpMean(\Par)$ and 
@@ -615,7 +629,7 @@ adjustment of enforcing this bound constraint within $\targetEm$ can mitigate th
 \citet{quantileApprox} employs such a bound-constrained GP log-density emulator.
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian} 
-We next return to the setting in \Cref{sec:fwd-em}, where
+We next return to the setting in \Cref{ex:fwd-em}, where
 \begin{align}
 &\obs = \fwd(\Par) + \noise, &&\noise \sim \Gaussian(0, \likPar)
 \end{align}
