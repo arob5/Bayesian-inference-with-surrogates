@@ -159,7 +159,7 @@ class Gaussian:
             chol = None
 
         return Gaussian(mean= A @ self.mean + b,
-                        cov=cov, chol=chol, store=store)
+                        cov=cov, chol=chol, store=store, rng=self.rng)
 
 
     def convolve_with_Gaussian(self, A: np.ndarray|None = None, b: np.ndarray|None = None,
@@ -220,7 +220,7 @@ class Gaussian:
         L_post = cholesky(A @ B + cov_noise, lower=True)
 
         # Posterior mean.
-        r = y - b - A @ self.mean
+        r = y.flatten() - b.flatten() - (A @ self.mean).flatten()
         v = solve_triangular(L_post.T, solve_triangular(L_post, r, lower=True), lower=False)
         mean_post = self.mean + B @ v
 
@@ -228,4 +228,4 @@ class Gaussian:
         C = solve_triangular(L_post, B.T, lower=True)
         cov_post = self.cov - C.T @ C
 
-        return Gaussian(mean=mean_post, cov=cov_post, store=store)
+        return Gaussian(mean=mean_post, cov=cov_post, store=store, rng=self.rng)

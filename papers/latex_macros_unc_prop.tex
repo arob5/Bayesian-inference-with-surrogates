@@ -151,7 +151,27 @@
 \newcommand{\forcing}{w}
 
 % --------------------------------------------------------------------------------------------------
-% Very Simple Ecosystem Model (VSEM)
+% Numerical example: linear Gaussian model
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\fwdLin}{G} % Linear forward model
+\newcommand{\priorMean}{m_0} 
+\newcommand{\priorCov}{C_0}
+\newcommand{\postMean}{m}
+\newcommand{\postCov}{C}
+\newcommand{\noiseCov}{\Sigma}
+\newcommand{\emBias}{r}
+\newcommand{\emCov}{Q}
+\newcommand{\postMeanEP}{\postMean^{\mathrm{EP}}}
+\newcommand{\postMeanEUP}{\postMean^{\mathrm{EUP}}}
+\newcommand{\postCovEP}{\postCov^{\mathrm{EP}}}
+\newcommand{\postCovEUP}{\postCov^{\mathrm{EUP}}}
+\newcommand{\epGain}{H} % = \postCov \fwdLin^\top \noiseCov^{-1}
+\newcommand{\eupNoiseCov}{\tilde{\noiseCov}} % = \noiseCov + \emCov
+\newcommand{\eupObs}{\tilde{\obs}} % = \obs - \emBias
+
+% --------------------------------------------------------------------------------------------------
+% Numerical example: Very Simple Ecosystem Model (VSEM)
 % --------------------------------------------------------------------------------------------------
 
 \newcommand{\stateV}{\state_{\textrm{v}}}

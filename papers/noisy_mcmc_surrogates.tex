@@ -930,7 +930,60 @@ We opt to avoid normalizing constant estimation and instead slow down the mixing
 $\targetTraj$-chain to control the approximation error.
 
 \section{Numerical Experiments} \label{sec:experiments}
+
+% Linear Gaussian Example
+\subsection{Linear Gaussian Example}
+We start with a toy linear Gaussian model in which the exact posterior, EP, and EUP are all 
+Gaussian and available in closed-form. A similar example is considered in
+\citet{garegnani2021NoisyMCMC}.
+Consider the linear Gaussian inverse problem
+\begin{align}
+\obs &= \fwdLin \Par + \noise
+&&\noise \sim \Gaussian(0, \noiseCov) \label{eq:lin-Gauss-inv-prob} \\
+\Par &\sim \Gaussian(\priorMean, \priorCov). \nonumber
+\end{align}
+The exact posterior is $\Par \given \obs \sim \Gaussian(\postMean, \postCov)$, where
+\begin{align}
+\postMean &= \postCov \left(\fwdLin^\top \noiseCov^{-1}\obs + \priorCov^{-1}\priorMean \right) \label{eq:lin-Gauss-post-moments} \\
+\postCov &= \left(\fwdLin^\top \noiseCov^{-1}\fwdLin + \priorCov^{-1} \right)^{-1} \nonumber
+\end{align}
+We consider a forward model emulator of the form
+\begin{align}
+\targetEm(\Par) \sim \Gaussian(\fwdLin\Par + \emBias, \emCov) \label{eq:lin-Gauss-em}, 
+\end{align}
+corresponding to an additive Gaussian shift of the true model, with bias $\emBias$.
+The following results characterize the EP and EUP in this setting. See the appendix for derivations.
+
+\begin{prop}
+Under the linear Gaussian model \Cref{eq:lin-Gauss-inv-prob} with the emulator \Cref{eq:lin-Gauss-em},
+the EP is given by $\postApproxEP(\Par) = \Gaussian(\Par \given \postMeanEP, \postCovEP)$, where
+\begin{align*}
+\postMeanEP &= \postMean - \epGain \emBias,
+&&\postCovEP = \postCov + \epGain \emCov \epGain^\top,
+\end{align*}
+and $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$. The quantities $\postMean, \postCov$ are the 
+exact posterior moments given in \Cref{eq:lin-Gauss-post-moments}.
+\end{prop}
+
+\begin{prop}
+Under the linear Gaussian model \Cref{eq:lin-Gauss-inv-prob} with the emulator \Cref{eq:lin-Gauss-em},
+the EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, \postCovEUP)$, where
+\begin{align}
+\postMeanEUP &= \postCovEUP \left(\fwdLin^\top \eupNoiseCov^{-1}\eupObs + \priorCov^{-1}\priorMean \right) 
+\label{eq:lin-Gauss-post-moments} \\
+\postCovEUP &= \left(\fwdLin^\top \eupNoiseCov^{-1}\fwdLin + \priorCov^{-1} \right)^{-1} \nonumber
+\end{align}
+and $\eupNoiseCov \Def \noiseCov + \emCov$, $\eupObs \Def \obs - \emBias$.
+\end{prop}
+
+The EP represents an infinite Gaussian mixture of linear Gaussian posteriors, while the EUP is the posterior
+of a single linear Gaussian inverse problem with modified data and noise covariance.
+
 \section{Conclusion} \label{sec:conclusion}
+
+
+
+
 
 % Appendix
 \section{Appendix}
