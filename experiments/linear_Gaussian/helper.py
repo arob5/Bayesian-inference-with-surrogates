@@ -46,3 +46,44 @@ def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
     for k in range(n_cols, nrows*ncols):
         fig.delaxes(axs[k])
     return fig
+
+
+def plot_trace(samp_arr, nrows=1, ncols=None, figsize=(5,4),
+               col_labs=None, plot_kwargs=None):
+    """
+    Generate one trace plot per column of `samp_arr`.
+
+    Parameters:
+        arr: numpy array of shape (n, d)
+        col_labs: list of labels associated with each column of `samp_arr`.
+
+    Returns:
+        fig: matplotlib Figure object
+        ax: matplotlib Axes object
+    """
+    n_itr, n_cols = samp_arr.shape
+    x = np.arange(n_itr)
+
+    if plot_kwargs is None:
+        plot_kwargs = {}
+
+    if ncols is None:
+        ncols = int(np.ceil(n_cols / nrows))
+
+    if col_labs is None:
+        col_labs = [f"Column {i}" for i in range(n_cols)]
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
+    axs = np.array(axs).reshape(-1)
+    for col in range(n_cols):
+        ax = axs[col]
+        ax.plot(x, samp_arr[:,col], **plot_kwargs)
+        ax.set_title(col_labs[col])
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Value")
+
+    # Hide unused axes
+    for k in range(n_cols, nrows*ncols):
+        fig.delaxes(axs[k])
+
+    return fig

@@ -101,13 +101,19 @@ class Gaussian:
     def dim(self) -> int:
         return self.mean.shape[0]
 
-    def sample(self, num_samp: int = 1) -> np.ndarray:
+    def sample(self, num_samp: int = 1, simplify: book = True) -> np.ndarray:
         """
         Returns (num_samp, dim) array containing `num_samp` iid samples from
-        the Gaussian stacked in the rows of the array.
+        the Gaussian stacked in the rows of the array. If `simplify = True`
+        and `num_samp = 1` then the return type is flattened, so that the
+        return shape is `(dim,)`.
         """
         Z = self.rng.normal(size=(num_samp, self.dim))
-        return self.mean + mult_A_Lt(Z, self.chol)
+        samp = self.mean + mult_A_Lt(Z, self.chol)
+
+        if simplify and (num_samp == 1):
+            samp = samp.ravel()
+        return samp
 
     def log_p(self, x: np.ndarray) -> np.ndarray:
         """
