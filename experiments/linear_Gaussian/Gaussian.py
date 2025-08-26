@@ -17,8 +17,12 @@ def mult_A_L(A, L):
 def mult_A_Lt(A, L):
     return dtrmm(side=1, a=L, b=A, alpha=1.0, trans_a=1, lower=1)
 
+def mult_L_A(A, L):
+    return dtrmm(side=0, a=L, b=A, alpha=1.0, trans_a=0, lower=1)
 
 class Gaussian:
+    # TODO: look into using scipy cho_factor(), cho_solve().
+
     def __init__(self,
                  mean: np.ndarray|None = None,
                  cov: np.ndarray|None = None,
@@ -170,8 +174,9 @@ class Gaussian:
         The covariance C_new is specified either via `cov_new` or `chol_new`
         (`cov_new` takes precedence).
         """
-        # Intermediate Gaussian.
-        y = self.apply_affine_map(A, b, store)
+        # Intermediate Gaussian. Need the covariance below, so tell
+        # `apply_affine_map` to only compute cov.
+        y = self.apply_affine_map(A, b, store="cov")
 
         # Default to identity covariance if not provided.
         if cov_new is None and chol_new is None:
@@ -186,6 +191,12 @@ class Gaussian:
                                b: np.ndarray|None = None, cov_noise: np.ndarray|None = None,
                                chol_noise: np.ndarray|None = None,
                                store: str = "chol") -> Gaussian:
+        """
+        Solves the inverse problem:
+            y = Ax + b + e, e ~ N(0, cov_noise), x ~ N(m, C)
+        where N(m, C) is the current Gaussian (self). That is, returns the
+        posterior p(x|y), which is itself a Gaussian.
+        """
         # TODO: currently performs "data space" update. Should update this
         # to choose whether to perform "data space" vs. "parameter space"
         # update based on dims and which Cholesky factors are provided.
@@ -205,7 +216,7 @@ class Gaussian:
 
         # Chokesky factorize ACA^T + cov_noise
         L_prior = self.chol
-        B = L_prior @ (A @ L_prior).T
+        B = mult_L_A(mult_A_L(A, L_prior).T, L_prior)
         L_post = cholesky(A @ B + cov_noise, lower=True)
 
         # Posterior mean.
@@ -215,6 +226,6 @@ class Gaussian:
 
         # Posterior covariance.
         C = solve_triangular(L_post, B.T, lower=True)
-        cov_post = self.cov - C @ C.T
+        cov_post = self.cov - C.T @ C
 
         return Gaussian(mean=mean_post, cov=cov_post, store=store)
