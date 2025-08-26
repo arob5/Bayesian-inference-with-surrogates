@@ -4,10 +4,19 @@ from __future__ import annotations
 import math
 import copy
 import numpy as np
-from scipy.linalg import cholesky, solve_triangular
+from scipy.linalg.blas import dtrmm
+from scipy.linalg import cholesky, qr, solve_triangular
 
 # Constants.
 LOG_TWO_PI = math.log(2.0 * math.pi)
+
+# Helper functions.
+def mult_A_L(A, L):
+    return dtrmm(side=1, a=L, b=A, alpha=1.0, trans_a=0, lower=1)
+
+def mult_A_Lt(A, L):
+    return dtrmm(side=1, a=L, b=A, alpha=1.0, trans_a=1, lower=1)
+
 
 class Gaussian:
     def __init__(self,
@@ -35,6 +44,8 @@ class Gaussian:
         elif cov is None and chol is None:
             dim = mean.shape[0]
             chol = np.eye(dim)
+            self.mean = mean
+        else:
             self.mean = mean
 
         self.set_cov_info(cov, chol, store)
@@ -91,7 +102,8 @@ class Gaussian:
         Returns (num_samp, dim) array containing `num_samp` iid samples from
         the Gaussian stacked in the rows of the array.
         """
-        return self.mean + self.rng.normal(size=(num_samp, self.dim)) @ self.chol
+        Z = self.rng.normal(size=(num_samp, self.dim))
+        return self.mean + mult_A_Lt(Z, self.chol)
 
     def log_p(self, x: np.ndarray) -> np.ndarray:
         """
@@ -131,9 +143,20 @@ class Gaussian:
         elif b is None:
             b = np.zeros(A.shape[0])
 
+        # Computing Cholesky of ACA^T = (AL)(AL)^T. AL is a sqrt; turn into
+        # Cholesky factor via QR decomposition.
+        S = mult_A_L(A, self.chol)
+        if store == "chol":
+            Q, R = qr(S.T, mode="economic")
+            chol = R.T
+            cov = None
+        else:
+            cov = S @ S.T
+            chol = None
+
         return Gaussian(mean= A @ self.mean + b,
-                        chol= A @ self.chol,
-                        store=store)
+                        cov=cov, chol=chol, store=store)
+
 
     def convolve_with_Gaussian(self, A: np.ndarray|None = None, b: np.ndarray|None = None,
                                cov_new: np.ndarray|None = None, chol_new: np.ndarray|None = None,
