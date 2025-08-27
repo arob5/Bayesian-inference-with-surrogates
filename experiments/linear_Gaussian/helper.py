@@ -1,10 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import solve_triangular
+from scipy.special import logsumexp
 
 from Gaussian import Gaussian
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
-from modmcmc.kernels import GaussMetropolisKernel, DiscretePCNKernel, mvn_logpdf
+from modmcmc.kernels import GaussMetropolisKernel, DiscretePCNKernel, UncalibratedDiscretePCNKernel, mvn_logpdf
 
 def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
                       col_labs=None, plot_labs=None, density=True, hist_kwargs=None):
@@ -98,7 +99,26 @@ def plot_trace(samp_arr, nrows=1, ncols=None, figsize=(5,4),
 # Approximate MCMC schemes.
 # ------------------------------------------------------------------------------
 
-def get_mwg_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
+def run_sampler(sampler, n_steps=50000, burn_in_start=25000, trace_plot_kwargs=None):
+    sampler.sample(num_steps=n_steps)
+
+    # Store samples in array.
+    d = sampler.trace[0].primary["u"].shape[0]
+    itr_range = range(burn_in_start, len(sampler.trace))
+    samp = np.empty((len(itr_range), d))
+
+    for i in range(len(itr_range)):
+        samp[i,:] = sampler.trace[i].primary["u"]
+
+    # Produce trace plots.
+    if trace_plot_kwargs is None:
+        trace_plot_kwargs = {}
+    trace_plots = plot_trace(samp, **trace_plot_kwargs)
+
+    return samp, sampler, trace_plots
+
+
+def get_cpm_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
     L_noise = noise.chol
 
     # Extended state space. Initialize state via prior sample.
@@ -126,6 +146,48 @@ def get_mwg_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
     mwg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
     return mwg
 
+
+def get_approx_mwg_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1,
+                           pcn_cor=0.9, n_samp_norm_ratio=100):
+    L_noise = noise.chol
+    d = u.dim
+
+    # Extended state space. Initialize state via prior sample.
+    state = State(primary={"u": u.sample(), "e": e.sample()})
+
+    # Target density.
+    # ldens_surrogate = lambda state: e.log_p(state.primary["e"])
+    # def ldens_post(state):
+    #     fwd = G @ state.primary["u"] + state.primary["e"]
+    #     return mvn_logpdf(y, mean=fwd, L=L_noise) + u.log_p(state.primary["u"])
+
+    llik = Gaussian(mean=y, chol=L_noise)
+
+    # Vectorized over u_vals (num_u,d). Uses single e. Output is (num_u,).
+    def ldens_post(u_vals, e):
+        fwd = u_vals @ G.T + e # (num_u, n)
+        return llik.log_p(fwd) + u.log_p(u_vals)
+
+    def ldens_post_norm_approx(state):
+        e_val = state.primary["e"]
+        log_post = ldens_post(state.primary["u"].reshape((1,d)), e_val)
+        log_Z_approx = logsumexp(ldens_post(u.sample(n_samp_norm_ratio), e_val))
+        return log_post - log_Z_approx
+
+    target = TargetDensity(LogDensityTerm("post", ldens_post_norm_approx), use_cache=False)
+
+    # u and e updates.
+    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*u.cov,
+                                  term_subset="post", block_vars="u", rng=rng)
+    ker_e = DiscretePCNKernel(target, mean_Gauss=e.mean, cov_Gauss=e.cov,
+                              cor_param=pcn_cor, term_subset="post",
+                              block_vars="e", rng=rng)
+
+    # Sampler
+    mwg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
+    return mwg
+
+
 def get_naive_cut_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1):
     L_noise = noise.chol
 
@@ -145,6 +207,28 @@ def get_naive_cut_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1):
     # Sampler
     cut_alg = BlockMCMCSampler(target, initial_state=state, kernels=ker)
     return cut_alg
+
+def get_cut_pcn_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
+    L_noise = noise.chol
+
+    # Extended state space. Initialize state via prior sample.
+    state = State(primary={"u": u.sample(), "e": e.sample()})
+
+    # Target density.
+    def ldens_post(state):
+        fwd = G @ state.primary["u"] + state.primary["e"]
+        return mvn_logpdf(y, mean=fwd, L=L_noise) + u.log_p(state.primary["u"])
+    target = TargetDensity(LogDensityTerm("post", ldens_post))
+
+    # u and e updates.
+    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*u.cov,
+                                  term_subset="post", block_vars="u", rng=rng)
+    ker_e = UncalibratedDiscretePCNKernel(target, mean_Gauss=e.mean, cov_Gauss=e.cov,
+                                          cor_param=pcn_cor, block_vars="e", rng=rng)
+
+    # Sampler
+    cut_pcn = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
+    return cut_pcn
 
 # ------------------------------------------------------------------------------
 # Exact computation for EP and EUP

@@ -14,5 +14,13 @@ papers/*.out
 *.blg
 *.gz
 
+## Python
+**/__pycache__/
+*.py[cod]
+
+## R
+.Rapp.history
+
+
 ## Plots directory
 figures/
