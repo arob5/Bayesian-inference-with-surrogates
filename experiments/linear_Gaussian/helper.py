@@ -7,6 +7,20 @@ from Gaussian import Gaussian
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
 from modmcmc.kernels import GaussMetropolisKernel, DiscretePCNKernel, UncalibratedDiscretePCNKernel, mvn_logpdf
 
+def get_random_corr_mat(dim, rng):
+    # Random orthogonal matrix
+    Q, _ = np.linalg.qr(rng.normal(size=(dim,dim)))
+    # Random eigenvalues between 0 and 1
+    eigvals = rng.uniform(0, 1, size=dim)
+    eigvals /= eigvals.sum()  # Ensure psd
+    matrix = Q @ np.diag(eigvals) @ Q.T # psd matrix
+
+    # Convert to corr.
+    D = np.sqrt(np.diag(matrix))
+    corr = matrix / np.outer(D, D)
+    np.fill_diagonal(corr, 1)
+    return corr
+
 def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
                       col_labs=None, plot_labs=None, density=True, hist_kwargs=None):
     """
