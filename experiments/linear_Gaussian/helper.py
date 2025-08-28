@@ -63,14 +63,16 @@ def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
         ax.set_title(col_labs[col])
         ax.legend()
 
-    # Hide unused axes
+    # Hide unused axes and close figure.
     for k in range(n_cols, nrows*ncols):
         fig.delaxes(axs[k])
+    plt.close(fig)
+
     return fig
 
 
-def plot_trace(samp_arr, nrows=1, ncols=None, figsize=(5,4),
-               col_labs=None, plot_kwargs=None):
+def get_trace_plots(samp_arr, nrows=1, ncols=None, figsize=(5,4),
+                    col_labs=None, plot_kwargs=None):
     """
     Generate one trace plot per column of `samp_arr`.
 
@@ -103,11 +105,52 @@ def plot_trace(samp_arr, nrows=1, ncols=None, figsize=(5,4),
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Value")
 
-    # Hide unused axes
+    # Hide unused axes and close figure.
     for k in range(n_cols, nrows*ncols):
         fig.delaxes(axs[k])
+    plt.close(fig)
 
     return fig
+
+def estimate_maginal_coverage(*samp, baseline, probs=None):
+    """
+    Empirical marginal (one dim at a time) coverage, with respect to `(n,d)`
+    samples `baseline` from a baseline (ground truth) distribution.
+    `samp` is a list of sample matrices (each with `d` columns) to compare
+    to the baseline. `probs` is a list of coverage levels to compute
+    (e.g., 0.9 = 90% coverage interval). Returns list of length `len(samp)`
+    with each element containing a `(m,d)` array, where `m = len(probs)`.
+    The `(i,j)` element of matrix `l` is the actual coverage of the `jth`
+    marginal of `samp[l]` (with respect to `baseline`) at level `probs[i]`.
+    """
+
+    # List of sample matrices.
+    samp_list = list(samp)
+    n_baseline = baseline.shape[0]
+
+    # Lower and upper quantiles defining coverage sets.
+    if probs is None:
+        probs = np.arange(0.1, 1.01, step=0.1)
+    lower = 0.5 * (1 - probs)
+    upper = 0.5 * (1 + probs)
+
+    actual_coverage = []
+
+    for x in samp_list:
+        # Nominal coverage.
+        nominal_lower = np.quantile(x, q=lower, axis=0)
+        nominal_upper = np.quantile(x, q=upper, axis=0)
+
+        # Actual coverage.
+        # nominal_lower,nominal_upper: (m, d), baseline: (n, d)
+        # Broadcast: nominal_lower (m, d) to (m, 1, d)
+        #            baseline      (n, d) to (1, n, d)
+        # Compare along axis 1 (baseline rows).
+        covered = np.logical_and(baseline[None,:,:] >= nominal_lower[:,None,:],
+                                 baseline[None,:,:] <= nominal_upper[:,None,:]) # (m, n, d)
+        actual_coverage.append(covered.sum(axis=1) / n_baseline)  # shape (m, d)
+
+    return actual_coverage
 
 # ------------------------------------------------------------------------------
 # Approximate MCMC schemes.
