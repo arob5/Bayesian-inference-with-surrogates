@@ -132,35 +132,6 @@ def run_sampler(sampler, n_steps=50000, burn_in_start=25000, trace_plot_kwargs=N
     return samp, sampler, trace_plots
 
 
-def get_cpm_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
-    L_noise = noise.chol
-
-    # Extended state space. Initialize state via prior sample.
-    state = State(primary={"u": u.sample(), "e": e.sample()})
-
-    # Target density.
-    # ldens_surrogate = lambda state: e.log_p(state.primary["e"])
-    def ldens_post(state):
-        fwd = G @ state.primary["u"] + state.primary["e"]
-        return mvn_logpdf(y, mean=fwd, L=L_noise) + u.log_p(state.primary["u"])
-
-    target = TargetDensity(LogDensityTerm("post", ldens_post))
-
-    # target = TargetDensity([LogDensityTerm("surrogate", ldens_surrogate),
-    #                         LogDensityTerm("post", ldens_post)])
-
-    # u and e updates.
-    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*u.cov,
-                                  term_subset="post", block_vars="u", rng=rng)
-    ker_e = DiscretePCNKernel(target, mean_Gauss=e.mean, cov_Gauss=e.cov,
-                              cor_param=pcn_cor, term_subset="post",
-                              block_vars="e", rng=rng)
-
-    # Sampler
-    mwg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
-    return mwg
-
-
 def get_approx_mwg_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1,
                            pcn_cor=0.9, n_samp_norm_ratio=100):
     L_noise = noise.chol
@@ -200,69 +171,3 @@ def get_approx_mwg_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1,
     # Sampler
     mwg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
     return mwg
-
-
-def get_naive_cut_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1):
-    L_noise = noise.chol
-
-    # Initialize state via prior sample.
-    state = State(primary={"u": u.sample()})
-
-    # Noisy target density.
-    def ldens_post_noisy(state):
-        fwd = G @ state.primary["u"] + e.sample()
-        return mvn_logpdf(y, mean=fwd, L=L_noise) + u.log_p(state.primary["u"])
-
-    target = TargetDensity(LogDensityTerm("post", ldens_post_noisy), use_cache=False)
-
-    # Metropolis-Hastings updates.
-    ker = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*u.cov, rng=rng)
-
-    # Sampler
-    cut_alg = BlockMCMCSampler(target, initial_state=state, kernels=ker)
-    return cut_alg
-
-def get_cut_pcn_sampler(y, u, G, noise, e, rng, u_prop_scale=0.1, pcn_cor=0.9):
-    L_noise = noise.chol
-
-    # Extended state space. Initialize state via prior sample.
-    state = State(primary={"u": u.sample(), "e": e.sample()})
-
-    # Target density.
-    def ldens_post(state):
-        fwd = G @ state.primary["u"] + state.primary["e"]
-        return mvn_logpdf(y, mean=fwd, L=L_noise) + u.log_p(state.primary["u"])
-    target = TargetDensity(LogDensityTerm("post", ldens_post))
-
-    # u and e updates.
-    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*u.cov,
-                                  term_subset="post", block_vars="u", rng=rng)
-    ker_e = UncalibratedDiscretePCNKernel(target, mean_Gauss=e.mean, cov_Gauss=e.cov,
-                                          cor_param=pcn_cor, block_vars="e", rng=rng)
-
-    # Sampler
-    cut_pcn = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e])
-    return cut_pcn
-
-# ------------------------------------------------------------------------------
-# Exact computation for EP and EUP
-# ------------------------------------------------------------------------------
-
-def get_ep_rv(y, u, G, noise, e):
-    u_post = u.invert_affine_Gaussian(y, A=G, cov_noise=noise.cov, store="both")
-    L_Sig = noise.chol
-    C1 = solve_triangular(L_Sig, G, lower=True)
-    C2 = solve_triangular(L_Sig.T, C1, lower=False)
-    B = -u_post.cov @ C2.T
-    u_ep = e.convolve_with_Gaussian(A=B, b=u_post.mean, cov_new=u_post.cov)
-    return u_ep
-
-def get_eup_rv(y, u, G, noise, e):
-    u_eup = u.invert_affine_Gaussian(y, A=G, b=e.mean, cov_noise=noise.cov+e.cov)
-    return u_eup
-
-def direct_sample_ep(y, u, G, noise, e, num_samp):
-    samp = np.empty((num_samp, u.dim))
-    for i in range(num_samp):
-        samp[i,:] = u.invert_affine_Gaussian(y, A=G, b=e.sample(), cov_noise=noise.cov).sample()
-    return samp

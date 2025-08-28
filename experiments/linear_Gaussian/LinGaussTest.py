@@ -6,6 +6,10 @@ from scipy.linalg import solve_triangular
 from Gaussian import Gaussian
 from helper import get_col_hist_grid, get_random_corr_mat
 
+from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
+from modmcmc.kernels import MarkovKernel, GaussMetropolisKernel, DiscretePCNKernel, mvn_logpdf
+
+
 class LinGaussTest:
     def __init__(self, rng, d, n, Sig_scale=1.0, Q_scale=1.0, C0_scale=1.0):
         Sig = Sig_scale**2 * get_random_corr_mat(n, rng)
@@ -74,3 +78,84 @@ class LinGaussTest:
         fig = get_col_hist_grid(*samp_list, plot_labs=plot_labs, col_labs=self.u_names,
                                 density=True, **plot_kwargs)
         return fig
+
+    def get_mwg_eup_sampler(self, u_prop_scale=0.1, pcn_cor=0.99):
+        """
+        Exactly targets the EUP.
+        """
+        L_noise = self.noise.chol
+
+        # Extended state space. Initialize state via prior sample.
+        state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
+
+        # Target density.
+        def ldens_post(state):
+            fwd = self.G @ state.primary["u"] + state.primary["e"]
+            return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+
+        target = TargetDensity(LogDensityTerm("post", ldens_post))
+
+        # u and e updates.
+        ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
+                                      term_subset="post", block_vars="u", rng=self.rng)
+        ker_e = DiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
+                                  cor_param=pcn_cor, term_subset="post",
+                                  block_vars="e", rng=self.rng)
+
+        # Sampler
+        alg = BlockMCMCSampler(target, initial_state=state,
+                               kernels=[ker_u, ker_e], rng=self.rng)
+        return alg
+
+    def get_rk_sampler(self, u_prop_scale=0.1):
+        L_noise = self.noise.chol
+
+        # Initialize state via prior sample.
+        state = State(primary={"u": self.prior.sample()})
+
+        # Noisy target density.
+        def ldens_post_noisy(state):
+            fwd = self.G @ state.primary["u"] + self.e.sample()
+            return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+
+        target = TargetDensity(LogDensityTerm("post", ldens_post_noisy), use_cache=False)
+
+        # Metropolis-Hastings updates.
+        ker = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov, rng=self.rng)
+
+        # Sampler
+        alg = BlockMCMCSampler(target, initial_state=state, kernels=ker, rng=self.rng)
+        return alg
+
+    def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.9):
+        L_noise = self.noise.chol
+
+        # Extended state space. Initialize state via prior sample.
+        state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
+
+        # Target density.
+        def ldens_post(state):
+            fwd = self.G @ state.primary["u"] + state.primary["e"]
+            return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+        target = TargetDensity(LogDensityTerm("post", ldens_post))
+
+        # u and e updates.
+        ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
+                                      term_subset="post", block_vars="u", rng=self.rng)
+        ker_e = UncalibratedDiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
+                                              cor_param=pcn_cor, block_vars="e", rng=self.rng)
+
+        # Sampler
+        alg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e], rng=self.rng)
+        return alg
+
+    def direct_sample_ep(self, n_samp=100000):
+        """
+        An alternative method to sample the EP. The analytical approach is
+        faster, this is mostly just used for validation.
+        """
+        samp = np.empty((n_samp, self.d))
+        for i in range(n_samp):
+            samp[i,:] = self.prior.invert_affine_Gaussian(y, A=self.G, b=self.e.sample(),
+                                                          cov_noise=self.noise.cov).sample()
+        return samp
