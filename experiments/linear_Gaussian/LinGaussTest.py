@@ -11,30 +11,83 @@ from helper import get_col_hist_grid, get_trace_plots, get_random_corr_mat
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
 from modmcmc.kernels import MarkovKernel, GaussMetropolisKernel, DiscretePCNKernel, UncalibratedDiscretePCNKernel, mvn_logpdf
 
+class LinGaussInvProb:
+    # Exact (no surrogate) linear Gaussian inverse problem.
 
-class LinGaussTest:
-    def __init__(self, rng, d, n, Sig_scale=1.0, Q_scale=1.0, C0_scale=1.0):
-        Sig = Sig_scale**2 * get_random_corr_mat(n, rng)
-        Q = Q_scale**2 * get_random_corr_mat(n, rng)
-        C0 = C0_scale**2 * get_random_corr_mat(d, rng)
-        m0 = rng.normal(size=d)
-
-        # Exact inverse problem.
+    def __init__(self, rng, d, n, C0_scale=1.0, Sig_scale=1.0):
         self.rng = rng
         self.d = d
         self.n = n
         self.u_names = [f"u{i+1}" for i in range(d)]
-        self.G = rng.normal(size=(n,d)) # linear forward model.
+
+        # Linear forward model
+        self.G = rng.normal(size=(n,d))
+
+        # Prior on parameter
+        m0 = rng.normal(size=d)
+        C0 = C0_scale**2 * get_random_corr_mat(d, rng)
         self.prior = Gaussian(mean=m0, cov=C0, rng=rng)
+
+        # Observation noise
+        Sig = Sig_scale**2 * get_random_corr_mat(n, rng)
         self.noise = Gaussian(cov=Sig, rng=rng, store="both")
+
+        # Ground truth parameter and observed data
         self.u_true = self.prior.sample()
         self.y = self.G @ self.u_true + self.noise.sample()
+
+        # Exact posterior
         self.post = self.prior.invert_affine_Gaussian(self.y, A=self.G,
                                                       cov_noise=self.noise.cov)
 
+    def plot_marginals(self, nrows=1, ncols=None, figsize=(5,4)):
+        # Plot marginal Gaussian prior and posterior densities.
+
+        if ncols is None:
+            ncols = int(np.ceil(self.d / nrows))
+
+        fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
+        axs = np.array(axs).reshape(-1)
+        for j in range(self.d):
+            ax = axs[j]
+            m0,s0 = self.prior.mean[j], np.sqrt(self.prior.cov[j,j])
+            m,s = self.post.mean[j], np.sqrt(self.post.cov[j,j])
+
+            bounds = norm.ppf([0.01, 0.99], loc=m0, scale=s0)
+            x = np.linspace(bounds[0], bounds[1], 100)
+            ax.plot(x, norm.pdf(x, loc=m0, scale=s0), label="prior")
+            ax.plot(x, norm.pdf(x, loc=m, scale=s), label="posterior")
+            ax.set_title(self.u_names[j])
+            ax.legend()
+
+        # Hide unused axes and close figure.
+        for k in range(self.d, nrows*ncols):
+            fig.delaxes(axs[k])
+        plt.close(fig)
+        return fig
+
+
+class LinGaussTest:
+    def __init__(self, inv_prob, Q, r=None):
+        # `inv_prob` is a `LinGaussInvProb` object. The emulator additive
+        # bias is sampled from N(r, Q).
+
+        # Exact inverse problem.
+        self.rng = inv_prob.rng
+        self.d = inv_prob.d
+        self.n = inv_prob.n
+        self.u_names = inv_prob.u_names
+        self.G = inv_prob.G
+        self.prior = inv_prob.prior
+        self.noise = inv_prob.noise
+        self.u_true = self.prior.sample()
+        self.y = inv_prob.y
+        self.post = inv_prob.post
+
         # Well-calibrated surrogate (sampling bias mean r from N(0,Q)).
-        r = Gaussian(cov=Q, rng=rng).sample()
-        self.e = Gaussian(mean=r, cov=Q, rng=rng) # Random bias; emulator is Gu + e.
+        if r is None:
+            r = Gaussian(cov=Q, rng=self.rng).sample()
+        self.e = Gaussian(mean=r, cov=Q, rng=self.rng) # Random bias; emulator is Gu + e.
 
         # Surrogate-based inversion.
         self.ep_post = self.get_ep_rv()
