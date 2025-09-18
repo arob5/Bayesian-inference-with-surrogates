@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import solve_triangular
+from scipy.linalg import solve_triangular, cholesky
 from scipy.special import logsumexp
 
 from Gaussian import Gaussian
@@ -20,6 +20,7 @@ def get_random_corr_mat(dim, rng):
     corr = matrix / np.outer(D, D)
     np.fill_diagonal(corr, 1)
     return corr
+
 
 def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
                       col_labs=None, plot_labs=None, density=True, hist_kwargs=None):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import copy
 import numpy as np
+from scipy.stats import chi2
 from scipy.linalg.blas import dtrmm
 from scipy.linalg import cholesky, qr, solve_triangular
 
@@ -19,6 +20,46 @@ def mult_A_Lt(A, L):
 
 def mult_L_A(A, L):
     return dtrmm(side=0, a=L, b=A, alpha=1.0, trans_a=0, lower=1)
+
+def squared_mah_dist(X, m, C=None, L=None):
+    """
+    Computes (x - m)^T C^{-1} (x-m) for each x in X. Returns array of length
+    equal to the number of rows of X.
+    """
+    if L is None:
+        L = cholesky(C, lower=True)
+
+    Y = X - m
+    L_inv_Y = solve_triangular(L, Y.T, lower=True)
+
+    return np.sum(L_inv_Y ** 2, axis=0)
+
+
+def log_det_tri(L):
+    """
+    Computes log[det(LL^T)], where L is lower triangular.
+    """
+
+    return 2 * np.log(np.diag(L)).sum()
+
+
+def kl_gauss(m0, m1, C0=None, C1=None, L0=None, L1=None):
+    """
+    Compute KL(N(m0,C0) || N(m1,C1))
+    """
+    if L0 is None:
+        L0 = cholesky(C0, lower=True)
+    if L1 is None:
+        L1 = cholesky(C1, lower=True)
+
+    d = L0.shape[0]
+
+    term1 = log_det_tri(L1) - log_det_tri(L0)
+    term2 = squared_mah_dist(m0, m1, L=L1)
+    term3 = np.sum(solve_triangular(L1, L0, lower=True) ** 2)
+
+    return 0.5 * (term1 + term2 + term3 - d)
+
 
 class Gaussian:
     # TODO: look into using scipy cho_factor(), cho_solve().
@@ -235,3 +276,35 @@ class Gaussian:
         cov_post = self.cov - C.T @ C
 
         return Gaussian(mean=mean_post, cov=cov_post, store=store, rng=self.rng)
+
+    def log_det_chol(self):
+        return log_det_tri(self.chol)
+
+    def squared_mah_dist(self, X):
+        return squared_mah_dist(X, m=self.mean, L=self.chol)
+
+    def kl(self, y):
+        """
+        Forward KL divergence between self and another Gaussian y.
+        """
+        return kl_gauss(m0=self.mean, m1=y.mean, L0=self.chol, L1=y.chol)
+
+    def compute_credible_ellipsoid_coverage(self, y, probs=None, n_mc=10000):
+        """
+        Given the current Gaussian N(m, C) (self) and a second Gaussian
+        y ~ N(m_y, C_y), estimates
+        P[x in R(alpha)], where x ~ N(m, C) and
+        R(alpha) = {y : (y - m_y)^T C_y^{-1} (y - m_y) <= F^{-1}(alpha)} is the
+        credible ellipsoid for y at level alpha. Here, F^{-1}(alpha) is the
+        Chi-squared quantile function with d degrees of freedom (for dim d Gaussians).
+        Returns array of length equal to length(probs).
+        """
+
+        if probs is None:
+            probs = np.append(np.arange(.1, 1.0, .1), .99)
+
+        X = self.sample(num_samp=n_mc)
+        X_mah = y.squared_mah_dist(X)
+
+        chi2_quantiles = chi2(df=self.dim).ppf(probs)
+        return np.array([np.mean(X_mah <= q) for q in chi2_quantiles])
