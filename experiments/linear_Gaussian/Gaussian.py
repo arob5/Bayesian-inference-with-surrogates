@@ -42,6 +42,14 @@ def log_det_tri(L):
 
     return 2 * np.log(np.diag(L)).sum()
 
+def trace_Ainv_B(A_chol, B_chol):
+    """
+    A_chol, B_chol are lower Cholesky factors of A = A_chol @ A_chol.T,
+    B = B_chol @ B_chol.T.
+
+    Computes tr(A^{-1}B) using the Cholesky factors.
+    """
+    return np.sum(solve_triangular(A_chol, B_chol, lower=True) ** 2)
 
 def kl_gauss(m0, m1, C0=None, C1=None, L0=None, L1=None):
     """
@@ -56,7 +64,7 @@ def kl_gauss(m0, m1, C0=None, C1=None, L0=None, L1=None):
 
     term1 = log_det_tri(L1) - log_det_tri(L0)
     term2 = squared_mah_dist(m0, m1, L=L1)
-    term3 = np.sum(solve_triangular(L1, L0, lower=True) ** 2)
+    term3 = trace_Ainv_B(L1, L0)
 
     return 0.5 * (term1 + term2 + term3 - d)
 

@@ -3,9 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-from scipy.linalg import solve_triangular
+from scipy.linalg import solve_triangular, cholesky
 
-from Gaussian import Gaussian
+from Gaussian import Gaussian, trace_Ainv_B
 from helper import get_col_hist_grid, get_trace_plots, get_random_corr_mat
 
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
@@ -69,8 +69,8 @@ class LinGaussInvProb:
 
 class LinGaussTest:
     def __init__(self, inv_prob, Q, r=None):
-        # `inv_prob` is a `LinGaussInvProb` object. The emulator additive
-        # bias is sampled from N(r, Q).
+        # `inv_prob` is a `LinGaussInvProb` object. If not provided, the
+        # emulator additive bias r is sampled from N(0, Q) (and then fixed).
 
         # Exact inverse problem.
         self.rng = inv_prob.rng
@@ -87,7 +87,7 @@ class LinGaussTest:
         # Well-calibrated surrogate (sampling bias mean r from N(0,Q)).
         if r is None:
             r = Gaussian(cov=Q, rng=self.rng).sample()
-        self.e = Gaussian(mean=r, cov=Q, rng=self.rng) # Random bias; emulator is Gu + e.
+        self.e = Gaussian(mean=r, cov=Q, rng=self.rng) # Emulator is Gu + e, e ~ N(r, Q)
 
         # Surrogate-based inversion.
         self.ep_post = self.get_ep_rv()
@@ -110,6 +110,52 @@ class LinGaussTest:
         eup = self.prior.invert_affine_Gaussian(self.y, A=self.G, b=self.e.mean,
                                                 cov_noise=self.noise.cov + self.e.cov)
         return eup
+
+    def sample_surrogate_posterior(self):
+        """
+        Draws a trajectory of a surrogate, and returns the Gaussian posterior
+        conditional on that trajectory.
+        """
+        return self.prior.invert_affine_Gaussian(self.y, A=self.G, b=self.e.sample(),
+                                                 cov_noise=self.noise.cov)
+
+    def estimate_expected_kl(self, n_samp=1000):
+        """
+        Estimates E[KL(pi_star || pi_EP)] and E[KL(pi_star || pi_EUP)], where
+        the expectation is with respect to the emulator predictive distribution.
+        """
+        post_trajectories = [self.sample_surrogate_posterior() for i in range(n_samp)]
+        ep_kl = np.mean([p.kl(self.ep_post) for p in post_trajectories])
+        eup_kl = np.mean([p.kl(self.eup_post) for p in post_trajectories])
+
+        return ep_kl, eup_kl
+
+    def calc_expected_kl(self):
+        """
+        Calculates E[KL(pi_star || pi_EP)] and E[KL(pi_star || pi_EUP)], where
+        the expectation is with respect to the emulator predictive distribution.
+        """
+
+        # TODO: not getting same answer as estimate_expected_kl
+        #   1.) First verify that KL calculation was not messed up by trace_Ainv_B
+        #   2.) Look over the math again
+        
+        H1 = solve_triangular(self.noise.chol, self.G @ self.post.cov, lower=True)
+        H = solve_triangular(self.noise.chol.T, H1, lower=False).T
+
+        shifted_Gaussian_ep = Gaussian(mean=self.ep_post.mean + H @ self.e.mean,
+                                       chol=self.ep_post.chol, rng=self.rng)
+        shifted_Gaussian_eup = Gaussian(mean=self.eup_post.mean + H @ self.e.mean,
+                                        chol=self.eup_post.chol, rng=self.rng)
+
+        HQHt = H @ self.e.cov @ H.T
+        L_HQHt = cholesky(HQHt, lower=True)
+
+        ep_kl = self.post.kl(shifted_Gaussian_ep) + trace_Ainv_B(self.ep_post.chol, L_HQHt)
+        eup_kl = self.post.kl(shifted_Gaussian_eup) + trace_Ainv_B(self.eup_post.chol, L_HQHt)
+
+        return ep_kl, eup_kl
+
 
     def run_sampler(self, sampler_name, n_samp, sampler_kwargs=None, plot_kwargs=None):
         """

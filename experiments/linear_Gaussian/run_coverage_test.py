@@ -8,28 +8,51 @@ from Gaussian import Gaussian
 from LinGaussTest import LinGaussInvProb, LinGaussTest
 from helper import get_random_corr_mat
 
-def run_coverage_test(rng, n_reps, d, n, Q_scale=1.0,
+def run_coverage_test(rng, n_reps, d, n, Q_scaler=1.0, Q_scale=1.0,
                       C0_scale=1.0, Sig_scale=1.0):
+    """
+    The inverse problem setup (d, n, C0_scale, Sig_scale) is fixed throughout
+    the whole test. So is the scale Q_scale of the surrogate covariance.
+    For a given forward model G, the surrogate for Gu will be defined by
+    N(Gu + r, Q), where Q is defined by generating a random correlation matrix
+    and then setting its scale to Q_scale. r is then defined by sampling
+    r ~ N(0, Q_scaler * Q). Q_scaler = 1.0 (default) thus corresponds to a
+    "calibrated" emulator, while Q_scaler > 1.0 implies the emulator predictive
+    distribution is overly confident (undercovers) and vice versa.
+
+    The randomness in the replicates is over:
+    1.) the exact linear Gaussian inverse problem. In particular, G, m0, and
+    the prior and noise correlation matrices are randomly generated. Then the
+    ground truth parameter u_true and observed data are randomly generated.
+    2.) correlation matrix for the surrogate (but the scale is fixed using Q_scale)
+    3.) bias r of the surrogate mean; sampled from N(0, Q_scaler * Q)
+    """
 
     # Exact inverse problem (fixed throughout test)
-    inv_prob = LinGaussInvProb(rng, d, n, C0_scale, Sig_scale)
-    plt_inv_prob = inv_prob.plot_marginals()
+    # inv_prob = LinGaussInvProb(rng, d, n, C0_scale, Sig_scale)
+    # plt_inv_prob = inv_prob.plot_marginals()
 
     # Surrogate covariance
-    Q = Q_scale**2 * get_random_corr_mat(n, rng)
+    # Q = Q_scale**2 * get_random_corr_mat(n, rng)
 
     # Quantiles to compute for coverage metrics
     probs = np.append(np.arange(0.1, 1.0, step=0.1), 0.99)
     n_probs = len(probs)
-    out = {"ep_cover_univariate" : np.empty((n_reps, n_probs, inv_prob.d)),
-           "eup_cover_univariate" : np.empty((n_reps, n_probs, inv_prob.d)),
+    out = {"ep_cover_univariate" : np.empty((n_reps, n_probs, d)),
+           "eup_cover_univariate" : np.empty((n_reps, n_probs, d)),
            "ep_cover_joint" : np.empty((n_reps, n_probs)),
            "eup_cover_joint" : np.empty((n_reps, n_probs)),
            "ep_kl" : np.empty(n_reps),
-           "eup_kl" : np.empty(n_reps)}
+           "eup_kl" : np.empty(n_reps),
+           "ep_expected_kl" : np.empty(n_reps),
+           "eup_expected_kl" : np.empty(n_reps)}
 
     for i in range(n_reps):
-        test = LinGaussTest(inv_prob, Q, r=None) # Samples r from N(0,Q)
+        inv_prob = LinGaussInvProb(rng, d, n, C0_scale, Sig_scale)
+        Q = Q_scale**2 * get_random_corr_mat(n, rng)
+        r = Gaussian(cov=Q_scaler*Q, rng=rng).sample()
+
+        test = LinGaussTest(inv_prob, Q, r=r)
         res = test.calc_coverage(probs=probs)
 
         out["ep_cover_univariate"][i,:,:] = res["ep"]
@@ -38,6 +61,7 @@ def run_coverage_test(rng, n_reps, d, n, Q_scale=1.0,
         out["eup_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.eup_post)
         out["ep_kl"][i] = test.post.kl(test.ep_post)
         out["eup_kl"][i] = test.post.kl(test.eup_post)
+        out["ep_expected_kl"][i], out["eup_expected_kl"][i] = test.estimate_expected_kl()
 
     return inv_prob, out, probs
 
