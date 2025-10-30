@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.linalg import solve_triangular, cholesky
 
-from Gaussian import Gaussian, trace_Ainv_B
+from Gaussian import Gaussian, trace_Ainv_B, log_det_tri, squared_mah_dist
 from helper import get_col_hist_grid, get_trace_plots, get_random_corr_mat
 
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
@@ -14,27 +14,32 @@ from modmcmc.kernels import MarkovKernel, GaussMetropolisKernel, DiscretePCNKern
 class LinGaussInvProb:
     # Exact (no surrogate) linear Gaussian inverse problem.
 
-    def __init__(self, rng, d, n, C0_scale=1.0, Sig_scale=1.0):
+    def __init__(self, rng, G, m0=None, C0=None, Sig=None):
         self.rng = rng
-        self.d = d
-        self.n = n
-        self.u_names = [f"u{i+1}" for i in range(d)]
+        self.n = G.shape[0]
+        self.d = G.shape[1]
+        self.u_names = [f"u{i+1}" for i in range(self.d)]
 
         # Linear forward model
-        self.G = rng.normal(size=(n,d))
+        self.G = G
 
         # Prior on parameter
-        m0 = rng.normal(size=d)
-        C0 = C0_scale**2 * get_random_corr_mat(d, rng)
+        if m0 is None:
+            m0 = np.zeros(self.d)
+        if C0 is None:
+            C0 = np.identity(self.d)
         self.prior = Gaussian(mean=m0, cov=C0, rng=rng)
 
         # Observation noise
-        Sig = Sig_scale**2 * get_random_corr_mat(n, rng)
+        if Sig is None:
+            Sig = np.identity(n)
         self.noise = Gaussian(cov=Sig, rng=rng, store="both")
 
         # Ground truth parameter and observed data
         self.u_true = self.prior.sample()
-        self.y = self.G @ self.u_true + self.noise.sample()
+        self.noise_realization = self.noise.sample()
+        self.g_true = self.G @ self.u_true
+        self.y = self.g_true + self.noise_realization
 
         # Exact posterior
         self.post = self.prior.invert_affine_Gaussian(self.y, A=self.G,
@@ -63,6 +68,30 @@ class LinGaussInvProb:
         # Hide unused axes and close figure.
         for k in range(self.d, nrows*ncols):
             fig.delaxes(axs[k])
+        plt.close(fig)
+        return fig
+
+    def plot_G_singular_vals(self, semilog=False, whiten=False):
+        forward_model = self.G
+        if whiten:
+            forward_model = solve_triangular(self.noise.chol, forward_model, lower=True)
+            title = "singular values of whitened G"
+        else:
+            title = "singular values of G"
+
+        U, s, Vh = np.linalg.svd(forward_model)
+
+        fig, ax = plt.subplots(1,1)
+
+        if semilog:
+            ax.semilogy(s)
+        else:
+            ax.plot(np.arange(len(s)), s)
+
+        ax.set_title(title)
+        ax.set_xlabel("index")
+        ax.set_ylabel("singular value")
+
         plt.close(fig)
         return fig
 
@@ -136,26 +165,26 @@ class LinGaussTest:
         the expectation is with respect to the emulator predictive distribution.
         """
 
-        # TODO: not getting same answer as estimate_expected_kl
-        #   1.) First verify that KL calculation was not messed up by trace_Ainv_B
-        #   2.) Look over the math again
-        
-        H1 = solve_triangular(self.noise.chol, self.G @ self.post.cov, lower=True)
-        H = solve_triangular(self.noise.chol.T, H1, lower=False).T
+        # E[KL(pi_star || pi_EP)]
+        ep_kl = 0.5 * (log_det_tri(self.ep_post.chol) - log_det_tri(self.post.chol))
 
-        shifted_Gaussian_ep = Gaussian(mean=self.ep_post.mean + H @ self.e.mean,
-                                       chol=self.ep_post.chol, rng=self.rng)
+        # E[KL(pi_star || pi_EUP)]
+        # H = C G^T \Sigma^{-1}
+        # H = solve_triangular(self.noise.chol, self.G @ self.post.cov, lower=True).T
+        H = self.post.cov @ self.G.T @ np.linalg.inv(self.noise.cov)
         shifted_Gaussian_eup = Gaussian(mean=self.eup_post.mean + H @ self.e.mean,
                                         chol=self.eup_post.chol, rng=self.rng)
-
         HQHt = H @ self.e.cov @ H.T
         L_HQHt = cholesky(HQHt, lower=True)
-
-        ep_kl = self.post.kl(shifted_Gaussian_ep) + trace_Ainv_B(self.ep_post.chol, L_HQHt)
         eup_kl = self.post.kl(shifted_Gaussian_eup) + trace_Ainv_B(self.eup_post.chol, L_HQHt)
 
-        return ep_kl, eup_kl
+        # TEMP
+        test = 0.5 * (log_det_tri(self.eup_post.chol) - log_det_tri(self.post.chol)) + \
+                squared_mah_dist(self.post.mean, self.eup_post.mean + H @ self.e.mean, L=self.eup_post.chol) + \
+                trace_Ainv_B(self.eup_post.chol, L_HQHt) + trace_Ainv_B(self.eup_post.chol, self.post.chol) - self.d
+        print(test)
 
+        return ep_kl, eup_kl
 
     def run_sampler(self, sampler_name, n_samp, sampler_kwargs=None, plot_kwargs=None):
         """

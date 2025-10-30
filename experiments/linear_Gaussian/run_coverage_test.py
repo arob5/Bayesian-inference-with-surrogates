@@ -8,32 +8,29 @@ from Gaussian import Gaussian
 from LinGaussTest import LinGaussInvProb, LinGaussTest
 from helper import get_random_corr_mat
 
-def run_coverage_test(rng, n_reps, d, n, Q_scaler=1.0, Q_scale=1.0,
-                      C0_scale=1.0, Sig_scale=1.0):
+def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
     """
-    The inverse problem setup (d, n, C0_scale, Sig_scale) is fixed throughout
-    the whole test. So is the scale Q_scale of the surrogate covariance.
-    For a given forward model G, the surrogate for Gu will be defined by
-    N(Gu + r, Q), where Q is defined by generating a random correlation matrix
-    and then setting its scale to Q_scale. r is then defined by sampling
-    r ~ N(0, Q_scaler * Q). Q_scaler = 1.0 (default) thus corresponds to a
-    "calibrated" emulator, while Q_scaler > 1.0 implies the emulator predictive
-    distribution is overly confident (undercovers) and vice versa.
-
-    The randomness in the replicates is over:
-    1.) the exact linear Gaussian inverse problem. In particular, G, m0, and
-    the prior and noise correlation matrices are randomly generated. Then the
-    ground truth parameter u_true and observed data are randomly generated.
-    2.) correlation matrix for the surrogate (but the scale is fixed using Q_scale)
-    3.) bias r of the surrogate mean; sampled from N(0, Q_scaler * Q)
+    The quantities (m0, C0, Sig, G, Q) are fixed throughout
+    the whole test. This implies the structure of the inverse problem
+        y|u ~ N(Gu, Sig)
+        u ~ N(m0, C0)
+    is fixed. The quantities (u_true, y, r) are randomized over different
+    replications of the experiment. In particular, the ground truth
+    parameter is sampled as u_true ~ N(m0, C0) and the synthetic observed
+    data is then generated from the model y ~ N(Gu_true, Sig). The
+    surrogate bias is sampled as r ~ N(0, Q_true) and the surrogate for
+    that replication is then defined as G_star(u) ~ N(Gu + r, Q) with
+    r fixed. If Q = Q_true then the surrogate is "calibrated", in the
+    sense that Q correctly quantifies the uncertainty in the surrogate
+    bias r.
     """
 
-    # Exact inverse problem (fixed throughout test)
-    # inv_prob = LinGaussInvProb(rng, d, n, C0_scale, Sig_scale)
-    # plt_inv_prob = inv_prob.plot_marginals()
+    n = G.shape[0]
+    d = G.shape[1]
 
-    # Surrogate covariance
-    # Q = Q_scale**2 * get_random_corr_mat(n, rng)
+    # Default to well-calibrated surrogate
+    if Q is None:
+        Q = Q_true
 
     # Quantiles to compute for coverage metrics
     probs = np.append(np.arange(0.1, 1.0, step=0.1), 0.99)
@@ -48,9 +45,8 @@ def run_coverage_test(rng, n_reps, d, n, Q_scaler=1.0, Q_scale=1.0,
            "eup_expected_kl" : np.empty(n_reps)}
 
     for i in range(n_reps):
-        inv_prob = LinGaussInvProb(rng, d, n, C0_scale, Sig_scale)
-        Q = Q_scale**2 * get_random_corr_mat(n, rng)
-        r = Gaussian(cov=Q_scaler*Q, rng=rng).sample()
+        inv_prob = LinGaussInvProb(rng, G, m0, C0, Sig)
+        r = Gaussian(cov=Q_true, rng=rng).sample()
 
         test = LinGaussTest(inv_prob, Q, r=r)
         res = test.calc_coverage(probs=probs)
@@ -63,7 +59,7 @@ def run_coverage_test(rng, n_reps, d, n, Q_scaler=1.0, Q_scale=1.0,
         out["eup_kl"][i] = test.post.kl(test.eup_post)
         out["ep_expected_kl"][i], out["eup_expected_kl"][i] = test.estimate_expected_kl()
 
-    return inv_prob, out, probs
+    return inv_prob, test, out, probs
 
 
 def plot_coverage(ep_coverage, eup_coverage, probs, q_min=0.05, q_max=0.95, ax=None):

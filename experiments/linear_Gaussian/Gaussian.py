@@ -23,7 +23,7 @@ def mult_L_A(A, L):
 
 def squared_mah_dist(X, m, C=None, L=None):
     """
-    Computes (x - m)^T C^{-1} (x-m) for each x in X. Returns array of length
+    Computes (x - m)^T C^{-1} (x - m) for each x in X. Returns array of length
     equal to the number of rows of X.
     """
     if L is None:

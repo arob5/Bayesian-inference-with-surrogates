@@ -24,3 +24,11 @@ papers/*.out
 
 ## Plots directory
 figures/
+
+## vscode
+*.vscode
+
+## Jupyter
+**.ipynb_checkpoints**
+
+
