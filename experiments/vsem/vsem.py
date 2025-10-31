@@ -9,6 +9,9 @@
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import uniform
+
 
 def get_PAR_driver(n_days, rng=None):
     # Generates a synthetic time series at a daily time step that is supposed to
@@ -125,95 +128,68 @@ def get_vsem_default_pars():
     return par_defaults
 
 
-def get_vsem_default_priors():
-    # A convenience function to return default priors for the VSEM model
-    # parameters, including the initial conditions. Note that this does not
-    # align with the bounds provided in the R BayesianTools function
-    # `VSEMgetDefaults()`.
-
-    # Default priors.
-    par_priors = [["KEXT", "Uniform", 2e-01, 1.0],
-                  ["LAR", "Uniform", 2e-01, 3.0],
-                  ["LUE", "Uniform", 5e-04, 4e-03],
-                  ["GAMMA", "Uniform", 2e-01, 6e-01],
-                  ["tauV", "Uniform", 5e+02, 3e+03],
-                  ["tauS", "Uniform", 4e+03, 5e+04],
-                  ["tauR", "Uniform", 5e+02, 3e+03],
-                  ["Av", "Uniform", 2e-01, 1.0],
-                  ["Cv", "Uniform", 0.0, 10.0],
-                  ["Cs", "Uniform", 0.0, 30.0],
-                  ["Cr", "Uniform", 0.0, 10.0]]
-    par_priors = pd.DataFrame(par_priors, columns=["par_name", "dist", "param1", "param2"])
-
-    return par_priors
-
-
-def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True):
+def fwd_vsem(par_subset, driver, par_names=None, par_default=None, simplify=True):
     # A convenience function defining a "forward map" for the VSEM model. This is
     # map from the calibration parameter (which includes initial conditions)
     # to the model outputs, which are the simulated trajectories of the 5
     # output variables. Note that the calibration parameters often represent a
     # subset of the set of 11 VSEM parameters. If this is the case, then
-    # `par_cal_idx` must be specified, which is an array giving the indices
-    # of the calibration parameters within the 11-dimensional full parameter
-    # vector. In this case, the values of the calibration parameters will be set
-    # to `par_cal`, while the values of the remaining ("fixed") parameters are
+    # `par_names` must be specified, which is a list giving the names of the 
+    # subset of parameters included in `par_subset`. `par_subset` is assumed
+    # to be ordered to align with the order defined by `get_vsem_par_names()`.
+    #
+    # The values of the remaining ("fixed") parameters are
     # set to those specified in `par_default`. If `par_default` is None, then
     # it is set to `get_vsem_default_pars()`. Note that `par_default` must
     # be a vector of length 11, containing ALL of the parameters. `par_cal` will
     # replace the values of the calibration parameters within this vector.
+    #
     # Finally, note that `fwd_vsem()` is vectorized so that multiple runs can
     # be conducted at different values of the calibration parameters. In this
-    # case `par_cal` should be an array of dimension (N_runs, N_cal), where
-    # N_cal is the number of calibration parameters. For a single run, an
-    # array of shape (1,N_cal) or (N_cal,) is allowed. For now, the same default
+    # case `par_subset` should be an array of dimension (N_runs, N_subset), where
+    # N_subset is the number of varied parameters. For a single run, an
+    # array of shape (1,N_subset) or (N_subset,) is allowed. For now, the same default
     # values for the fixed parameters are used across all runs, but this could
-    # change in the future. Note that `get_vsem_par_names()` defines the official
-    # ordering for the VSEM parameters. The return value of this function
+    # change in the future.
+    # 
+    # The return value of this function
     # is a Numpy array of shape (N_runs, N_time_step, N_outputs). If
     # there is only 1 run and `simplify` is True, then the output dimension is
     # simplified to `(N_time_step, N_outputs)`.
 
-    # Ensure `par_cal` dimension is consistent with single run or multiple runs.
-    n_dim = par_cal.ndim
+    # Ensure `par_subset` dimension is consistent with single run or multiple runs.
+    n_dim = par_subset.ndim
     if n_dim==1:
-        par_cal = par_cal.reshape((1,-1))
+        par_subset = par_subset.reshape((1,-1))
     elif n_dim > 2:
-        raise ValueError("`par_cal` must be a Numpy array with dimension 1 or 2.")
+        raise ValueError("`par_subset` must be a Numpy array with dimension 1 or 2.")
 
-    # If the set of calibration parameters is a subset of all VSEM parameters,
-    # ensure that `par_cal_idx` is provided, and define defaults for the parameters
-    # being fixed.
-    par_names = get_vsem_par_names()
-    n_par_vsem = len(par_names)
-    n_par_cal = par_cal.shape[1]
-    par_cal_is_subset = True
-    if n_par_cal < n_par_vsem:
-        assert par_cal_idx is not None
-        assert len(par_cal_idx) == n_par_cal
-        if par_default is None:
-            par_default = get_vsem_default_pars()["value"].values
-        else:
-            assert len(par_default) == n_par_vsem
-    elif n_par_cal > n_par_vsem:
-        raise ValueError("Number of calibration parameters exceeds VSEM parameter dimension.")
-    else:
-        par_cal_is_subset = False
+    # Default assumes `par_subset` contains all parameters
+    if par_names is None:
+        par_names = get_vsem_par_names()
+
+    # Default values for fixed parameters
+    par_default = get_vsem_default_pars()["value"].values
+
+    all_vsem_par_names = get_vsem_par_names()
+    if not set(par_names).issubset(set(all_vsem_par_names)):
+        raise ValueError("par_names must be subset of vsem parameter names.")
+    if not len(par_names) == len(set(par_names)):
+        raise ValueError("par_names cannot contain duplicates.")
+    
+    par_subset_idx = [all_vsem_par_names.index(par) for par in par_names]
 
     # Execute forward model evaluations. For now this is done in a loop, but
     # parallelization may be added in the future.
     vsem_output_names = get_vsem_output_names()
-    n_time_step = len(driver)
-    n_run = par_cal.shape[0]
     n_output = len(vsem_output_names)
-    model_output = np.empty((n_run,n_time_step,n_output))
+    n_time_step = len(driver)
+    n_run = par_subset.shape[0]
+    model_output = np.empty((n_run, n_time_step, n_output))
 
     for i in range(n_run):
-        if par_cal_is_subset:
-            par_run = par_default.copy()
-            par_run[par_cal_idx] = par_cal[i,:]
-        else:
-            par_run = par_cal[i,:]
+        par_run = par_default.copy()
+        par_run[par_subset_idx] = par_subset[i,:]
         model_output[i,:,:] = solve_vsem(driver, par_run)
 
     # Optionally simplify dimension for the single-run case.
@@ -222,7 +198,8 @@ def fwd_vsem(par_cal, driver, par_cal_idx=None, par_default=None, simplify=True)
 
     return model_output
 
-def get_vsem_fwd_model(driver, n_par_cal, par_cal_idx=None, par_default=None, simplify=True):
+
+def get_vsem_fwd_model(driver, par_names=None, par_default=None, simplify=True):
     # A convenience function that returns a function representing the VSEM
     # forward model `fwd_vsem()` but only as an argument of `par_cal`, with the
     # remaining arguments fixed. This is convenient for parameter estimation
@@ -231,10 +208,108 @@ def get_vsem_fwd_model(driver, n_par_cal, par_cal_idx=None, par_default=None, si
     # a check to ensure the parameter dimension is correct.
 
     def fwd(par_cal):
+        par_cal = np.asarray(par_cal)
         if par_cal.ndim == 1:
-            assert len(par_cal) == n_par_cal
+            assert len(par_cal) == len(par_names)
         else:
-            assert par_cal.shape[1] == n_par_cal
-        return fwd_vsem(par_cal, driver, par_cal_idx, par_default, simplify)
+            assert par_cal.shape[1] == len(par_names)
+        return fwd_vsem(par_cal, driver, par_names, par_default, simplify)
 
     return fwd
+
+
+def plot_vsem_outputs(output, output_names=None, nrows=1, ncols=None, figsize=(5,4), plot_kwargs=None):
+    """
+    `output` should be (n_run, n_time_step, n_output), with outputs ordered 
+    according to the convention `get_vsem_output_names`
+    """
+
+    if output.ndim == 2:
+        output = output[np.newaxis]
+    if output_names is None:
+        output_names = get_vsem_output_names()
+    if plot_kwargs is None:
+        plot_kwargs = {}
+
+    n_plots = len(output_names)
+    if ncols is None:
+        ncols = int(np.ceil(n_plots / nrows))
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
+    axs = np.array(axs).flatten()
+    time_steps = np.arange(output.shape[1])
+    all_output_names = get_vsem_output_names()
+
+    for j in range(n_plots):
+        output_name = output_names[j]
+        output_idx = all_output_names.index(output_name)
+
+        ax = axs[j]
+        ax.plot(time_steps, output[:,:,output_idx].T, color="gray")
+        ax.set_title(output_name)
+        ax.set_xlabel("time")
+        ax.set_ylabel(output_name)
+    
+    # Hide unused axes and close figure.
+    for k in range(n_plots, nrows*ncols):
+        fig.delaxes(axs[k])
+
+    plt.close(fig)
+    return fig
+
+
+def _uniform(lower, upper):
+    """
+    Wrapper for scipy.stats.Uniform that parameterizes in terms of lower and
+    upper bounds instead of (loc, scale).
+    """
+    return uniform(loc=lower, scale=upper-lower)
+
+
+
+class DefaultVSEMPrior:
+        
+        _dists = {
+            "KEXT": _uniform(0.2, 1.0),
+            "LAR" : _uniform(0.2, 3.0),
+            "LUE" : _uniform(5e-04, 4e-03),
+            "GAMMA": _uniform(2e-01, 6e-01),
+            "tauV": _uniform(5e+02, 3e+03),
+            "tauS": _uniform(4e+03, 5e+04),
+            "tauR": _uniform(5e+02, 3e+03), 
+            "Av": _uniform(2e-01, 1.0),
+            "Cv": _uniform(0.0, 10.0), 
+            "Cs": _uniform(0.0, 30.0),
+            "Cr": _uniform(0.0, 10.0)
+        }
+
+        def __init__(self, par_names=None, rng=None):
+            self.rng = rng or np.random.default_rng()
+            self._par_names = par_names or get_vsem_par_names()
+
+        @property
+        def dists(self):
+            return {par: self._dists[par] for par in self._par_names}
+
+        @property
+        def dim(self):
+            return len(self._par_names)
+        
+        def sample(self, n=1, rng=None):
+            samp = np.empty((n, self.dim))
+            for j in range(self.dim):
+                par_name = self._par_names[j]
+                samp[:,j] = self.dists[par_name].rvs(n, random_state=rng)
+
+            return samp
+        
+        def log_density(self, x):
+            x = np.asarray(x)
+            if x.ndim == 1:
+                x = x.reshape(1, -1)
+
+            log_dens = np.zeros(x.shape[0])
+            for par_idx, par_name in enumerate(self._par_names):
+                log_dens = log_dens + self.dists[par_name].logpdf(x[:,par_idx])
+            
+            return log_dens
