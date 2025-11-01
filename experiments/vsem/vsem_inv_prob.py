@@ -17,6 +17,10 @@ from modmcmc.kernels import (
     mvn_logpdf
 )
 
+import sys
+sys.path.append("./../linear_Gaussian/")
+from Gaussian import Gaussian
+
 
 Array = NDArray
 
@@ -41,6 +45,92 @@ class Likelihood(Protocol):
         ...
 
 
+class VSEMLikelihood:
+
+    def __init__(self, rng, n_days, par_names):
+        self.rng = rng
+        self.n_days = n_days
+        self.time_steps, self.driver = vsem.get_PAR_driver(self.n_days, self.rng)
+        self.par_names = par_names
+        self.d = len(par_names)
+
+        all_par_names = vsem.get_vsem_par_names()
+        self._par_idx = [all_par_names.index(par) for par in self.par_names]
+
+        # Observation operator defined as monthly averages of LAI.
+        self.lai_idx = vsem.get_vsem_output_names().index("LAI")
+        self.month_start_idx = np.arange(start=0, stop=self.n_days, step=31)
+        month_stop_idx = np.empty_like(self.month_start_idx)
+        month_stop_idx[:-1] = self.month_start_idx[1:]
+        month_stop_idx[-1] = self.n_days - 1
+        self.month_stop_idx = month_stop_idx
+        self.month_midpoints = np.round(0.5 * (self.month_start_idx + self.month_stop_idx))
+
+        # Ground truth
+        self._all_par_true = np.array([
+            7.92301322e-01, 1.86523322e+00, 6.84170991e-04, 5.04967614e-01,
+            2.95868049e+03, 2.58846896e+04, 1.77011520e+03, 6.88359631e-01,
+            3.04573410e+00, 2.11415896e+01, 5.58376223e+00
+        ])
+        self.par_true = self._all_par_true[self._par_idx]
+        
+        # VSEM forward model.
+        self.forward_model = vsem.get_vsem_fwd_model(self.driver, self.par_names, 
+                                                     par_default=self._all_par_true, simplify=False)
+
+        # self.par_true = vsem.DefaultVSEMPrior(rng=self.rng).sample().flatten()
+        self.vsem_output_true = self.forward_model(self.par_true)
+        self.observable_true = self.obs_op(self.vsem_output_true).flatten()
+        self.n = self.observable_true.size
+        self._sigma = 0.1 * np.std(self.observable_true)
+        self.noise = Gaussian(cov=self._sigma * np.identity(self.n))
+        self.y = self.observable_true + self.noise.sample()
+        self._likelihood_rv = Gaussian(mean=self.y, cov=self.noise.cov)
+        
+
+    def plot_driver(self):
+        plt.plot(self.time_steps, self.driver, "o")
+        plt.xlabel("days")
+        plt.ylabel("PAR")
+        plt.show()
+
+    def par_to_obs_map(self, par):
+        vsem_output = self.forward_model(par)
+        return self.obs_op(vsem_output)
+
+    def obs_op(self, vsem_output):
+        """ Observation operator: monthly averages of LAI """
+        lai_output = vsem_output[:,:,self.lai_idx]
+        monthly_lai_averages = np.array(
+            [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.month_start_idx, self.month_stop_idx)]
+        )        
+
+        return monthly_lai_averages.T
+    
+    def log_density(self, x):
+        pred_obs = self.par_to_obs_map(x)
+        return self._likelihood_rv.log_p(pred_obs)
+
+    def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
+        output = self.forward_model(par)
+        fig, axs = vsem.plot_vsem_outputs(output[:,burn_in_start:,:], nrows=2)
+
+        if include_predicted_obs:
+            pred_obs = self.obs_op(output)
+            axs[self.lai_idx].plot(self.month_midpoints, pred_obs.T, "o", color="red")
+
+        return fig
+    
+    def plot_ground_truth(self):
+        fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
+
+        lai_ax = axs[self.lai_idx]
+        lai_ax.plot(self.month_midpoints, self.y, "o", color="red")
+
+        return fig
+
+
+
 class InvProb:
 
     def __init__(self, rng, prior: Prior, likelihood: Likelihood, sampler=None, **sampler_kwargs):
@@ -52,6 +142,8 @@ class InvProb:
         self.sampler = self._set_default_sampler(**sampler_kwargs) if sampler is None else sampler
         self.posterior = None 
 
+    def log_posterior_density(self, x: Array) -> Array:
+        return self.prior.log_density(x) + self.likelihood.log_density(x)
 
     def _set_default_sampler(self, proposal_cov: Array | None = None, **kwargs):
         """ Defaults to Metropolis-Hastings. """
@@ -63,7 +155,7 @@ class InvProb:
         state = State(primary={"u": self.prior.sample()})
 
         # Target density.
-        post_log_dens = lambda state: self.likelihood.log_density(state.primary["u"])
+        post_log_dens = lambda state: self.log_posterior_density(state.primary["u"])
         target = TargetDensity(LogDensityTerm("post", post_log_dens))
 
         # Metropolis-Hastings kernel with Gaussian proposal.
@@ -74,27 +166,33 @@ class InvProb:
         return sampler
     
 
-    def sample_posterior(self, n_samp: int, sampler_kwargs=None, plot_kwargs=None):
+    def sample_posterior(self, n_step: int, burn_in_start: int | None = None, 
+                         sampler_kwargs=None, plot_kwargs=None):
         """
         Runs MCMC sampler, collects samples, and drops burn-in. Returns
-        `n_samp` samples after burn-in.
+        `n_samp` samples after burn-in. Default burn-in is to take second
+        half of samples.
         """
         if sampler_kwargs is None:
             sampler_kwargs = {}
         if plot_kwargs is None:
             plot_kwargs = {}
 
-        self.sampler.sample(num_steps=2*n_samp, **sampler_kwargs)
+        self.sampler.sample(num_steps=n_step, **sampler_kwargs)
 
         # Store samples in array.
-        len_trace = len(self.sampler.trace)
-        itr_range = np.arange(len_trace-n_samp, len_trace)
+        burn_in_start = burn_in_start or round(n_step / 2)
+        itr_range = np.arange(burn_in_start, len(self.sampler.trace))
+        n_samp = len(itr_range)
         samp = np.empty((n_samp, self.dim))
 
         for samp_idx, trace_idx in enumerate(itr_range):
             samp[samp_idx,:] = self.sampler.trace[trace_idx].primary["u"]
 
         return samp, self.get_trace_plot(samp, **plot_kwargs)
+
+    def reset_sampler(self):
+        self.sampler.reset()
 
     def get_trace_plot(self, samp, nrows=1, ncols=None, col_labs=None, figsize=(5,4), plot_kwargs=None):
         n_itr, n_cols = samp.shape

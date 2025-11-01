@@ -301,8 +301,9 @@ class DefaultVSEMPrior:
                 par_name = self._par_names[j]
                 samp[:,j] = self.dists[par_name].rvs(n, random_state=rng)
 
-            return samp
-        
+            return samp[0] if n == 1 else samp
+
+
         def log_density(self, x):
             x = np.asarray(x)
             if x.ndim == 1:
