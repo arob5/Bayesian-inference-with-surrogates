@@ -255,7 +255,7 @@ def plot_vsem_outputs(output, output_names=None, nrows=1, ncols=None, figsize=(5
         fig.delaxes(axs[k])
 
     plt.close(fig)
-    return fig
+    return fig, axs
 
 
 def _uniform(lower, upper):
