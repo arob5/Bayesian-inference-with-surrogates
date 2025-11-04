@@ -11,6 +11,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import tree_util, lax
+import matplotlib.pyplot as plt
 
 Array = jnp.ndarray
 
@@ -36,6 +37,7 @@ canonical_output_names = ["veg", "soil", "root", "nee", "lai"]
 
 # -----------------------------------------------------------------------------
 # Pytree classes: Parameter set, Initial conditions, Driver, and wrapper
+#   for all VSEM inputs
 # -----------------------------------------------------------------------------
 
 @tree_util.register_pytree_node_class
@@ -373,7 +375,7 @@ def build_vectorized_partial_forward_model(driver: Sequence[float] | Array,
         """par_array : (n_runs, n_params) array or convertible to same"""
         arr = jnp.asarray(par_array)
         if arr.ndim == 1:
-            return single_run_from_array(arr)
+            return single_run_from_array(arr)[jnp.newaxis]
         elif arr.ndim == 2:
             return vmapped(arr)
         else:
@@ -428,3 +430,47 @@ def get_vsem_driver(n_days, rng=None):
     time_steps = np.arange(n_days)
     PAR = 10 * np.abs(np.sin(time_steps/365 * np.pi) + 0.25 * rng.normal(size=n_days))
     return time_steps, PAR
+
+
+# -----------------------------------------------------------------------------
+# Plotting utilities
+# -----------------------------------------------------------------------------
+
+def plot_vsem_outputs(output, output_names=None, nrows=1, ncols=None, figsize=(5,4), plot_kwargs=None):
+    """
+    `output` should be (n_run, n_time_step, n_output), with outputs ordered 
+    according to the convention `get_vsem_output_names()`
+    """
+
+    if output.ndim == 2:
+        output = output[np.newaxis]
+    if output_names is None:
+        output_names = get_vsem_output_names()
+    if plot_kwargs is None:
+        plot_kwargs = {}
+
+    n_plots = len(output_names)
+    if ncols is None:
+        ncols = int(np.ceil(n_plots / nrows))
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
+    axs = np.array(axs).flatten()
+    time_steps = np.arange(output.shape[1])
+    all_output_names = get_vsem_output_names()
+
+    for j in range(n_plots):
+        output_name = output_names[j]
+        output_idx = all_output_names.index(output_name)
+
+        ax = axs[j]
+        ax.plot(time_steps, output[:,:,output_idx].T, color="gray")
+        ax.set_title(output_name)
+        ax.set_xlabel("time")
+        ax.set_ylabel(output_name)
+    
+    # Hide unused axes and close figure.
+    for k in range(n_plots, nrows*ncols):
+        fig.delaxes(axs[k])
+
+    plt.close(fig)
+    return fig, axs

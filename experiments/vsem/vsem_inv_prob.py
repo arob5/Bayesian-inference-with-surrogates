@@ -5,8 +5,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
 from typing import Protocol
+from scipy.stats import uniform
 
-import vsem
+import vsem_jax as vsem
 
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
 from modmcmc.kernels import (
@@ -45,12 +46,68 @@ class Likelihood(Protocol):
         ...
 
 
+def _uniform(lower, upper):
+    """
+    Wrapper for scipy.stats.Uniform that parameterizes in terms of lower and
+    upper bounds instead of (loc, scale).
+    """
+    return uniform(loc=lower, scale=upper-lower)
+
+
+class VSEMPrior:
+        _dists = {
+            "kext": _uniform(0.2, 1.0),
+            "lar" : _uniform(0.2, 3.0),
+            "lue" : _uniform(5e-04, 4e-03),
+            "gamma": _uniform(2e-01, 6e-01),
+            "tauv": _uniform(5e+02, 3e+03),
+            "taus": _uniform(4e+03, 5e+04),
+            "taur": _uniform(5e+02, 3e+03), 
+            "av": _uniform(2e-01, 1.0),
+            "veg_init": _uniform(0.0, 10.0), 
+            "soil_init": _uniform(0.0, 30.0),
+            "root_init": _uniform(0.0, 10.0)
+        }
+
+        def __init__(self, par_names=None, rng=None):
+            self.rng = rng or np.random.default_rng()
+            self._par_names = par_names or vsem.get_vsem_par_names()
+
+        @property
+        def dists(self):
+            return {par: self._dists[par] for par in self._par_names}
+
+        @property
+        def dim(self):
+            return len(self._par_names)
+        
+        def sample(self, n=1, rng=None):
+            samp = np.empty((n, self.dim))
+            for j in range(self.dim):
+                par_name = self._par_names[j]
+                samp[:,j] = self.dists[par_name].rvs(n, random_state=rng)
+
+            return samp[0] if n == 1 else samp
+
+
+        def log_density(self, x):
+            x = np.asarray(x)
+            if x.ndim == 1:
+                x = x.reshape(1, -1)
+
+            log_dens = np.zeros(x.shape[0])
+            for par_idx, par_name in enumerate(self._par_names):
+                log_dens = log_dens + self.dists[par_name].logpdf(x[:,par_idx])
+            
+            return log_dens
+
+
 class VSEMLikelihood:
 
     def __init__(self, rng, n_days, par_names):
         self.rng = rng
         self.n_days = n_days
-        self.time_steps, self.driver = vsem.get_PAR_driver(self.n_days, self.rng)
+        self.time_steps, self.driver = vsem.get_vsem_driver(self.n_days, self.rng)
         self.par_names = par_names
         self.d = len(par_names)
 
@@ -58,7 +115,7 @@ class VSEMLikelihood:
         self._par_idx = [all_par_names.index(par) for par in self.par_names]
 
         # Observation operator defined as monthly averages of LAI.
-        self.lai_idx = vsem.get_vsem_output_names().index("LAI")
+        self.lai_idx = vsem.get_vsem_output_names().index("lai")
         self.month_start_idx = np.arange(start=0, stop=self.n_days, step=31)
         month_stop_idx = np.empty_like(self.month_start_idx)
         month_stop_idx[:-1] = self.month_start_idx[1:]
@@ -67,16 +124,25 @@ class VSEMLikelihood:
         self.month_midpoints = np.round(0.5 * (self.month_start_idx + self.month_stop_idx))
 
         # Ground truth
-        self._all_par_true = np.array([
-            7.92301322e-01, 1.86523322e+00, 6.84170991e-04, 5.04967614e-01,
-            2.95868049e+03, 2.58846896e+04, 1.77011520e+03, 6.88359631e-01,
-            3.04573410e+00, 2.11415896e+01, 5.58376223e+00
-        ])
-        self.par_true = self._all_par_true[self._par_idx]
+        self._all_par_true = {
+            "kext": 7.92301322e-01,
+            "lar": 1.86523322e+00,
+            "lue": 6.84170991e-04,
+            "gamma": 5.04967614e-01,
+            "tauv": 2.95868049e+03,
+            "taus": 2.58846896e+04,
+            "taur": 1.77011520e+03,
+            "av": 6.88359631e-01,
+            "veg_init": 3.04573410e+00,
+            "soil_init": 2.11415896e+01,
+            "root_init": 5.58376223e+00
+        }
+
+        self.par_true = np.array(list(self._all_par_true.values()))
         
         # VSEM forward model.
-        self.forward_model = vsem.get_vsem_fwd_model(self.driver, self.par_names, 
-                                                     par_default=self._all_par_true, simplify=False)
+        self.forward_model = vsem.build_vectorized_partial_forward_model(self.driver, self.par_names,
+                                                                         par_default=self._all_par_true)
 
         # self.par_true = vsem.DefaultVSEMPrior(rng=self.rng).sample().flatten()
         self.vsem_output_true = self.forward_model(self.par_true)
@@ -87,7 +153,6 @@ class VSEMLikelihood:
         self.y = self.observable_true + self.noise.sample()
         self._likelihood_rv = Gaussian(mean=self.y, cov=self.noise.cov)
         
-
     def plot_driver(self):
         plt.plot(self.time_steps, self.driver, "o")
         plt.xlabel("days")
@@ -227,4 +292,3 @@ class InvProb:
 class VSEMTest:
     """ Uncertainty propagation experiment for surrogate modeling for VSEM inverse problem. """
     pass
-
