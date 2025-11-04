@@ -137,8 +137,7 @@ class VSEMLikelihood:
             "soil_init": 2.11415896e+01,
             "root_init": 5.58376223e+00
         }
-
-        self.par_true = np.array(list(self._all_par_true.values()))
+        self.par_true = np.array([self._all_par_true[par] for par in self.par_names])
         
         # VSEM forward model.
         self.forward_model = vsem.build_vectorized_partial_forward_model(self.driver, self.par_names,
