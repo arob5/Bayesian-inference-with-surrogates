@@ -942,10 +942,66 @@ and $\eupNoiseCov \Def \noiseCov + \emCov$, $\eupObs \Def \obs - \emBias$.
 The EP represents an infinite Gaussian mixture of linear Gaussian posteriors, while the EUP is the posterior
 of a single linear Gaussian inverse problem with modified data and noise covariance.
 
+\subsubsection{SVD Analysis}
+Consider the SVD $G = U S V^\top$ with singular values $s_j$ and consider the special case 
+$\priorCov = c_0^2 I$, $\noiseCov = \sigma^2 I$. The exact posterior covariance $\postCov$ is diagonalized
+in the $V$ basis, with $\postCov = V\Lambda V^\top$ where 
+\begin{equation}
+\lambda_j = \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2}}.
+\end{equation}
+The exact posterior mean $m$ can also be written with respect to this basis as
+\begin{align}
+m &= V\alpha + V_\perp \alpha_\perp \\
+\alpha_j &= \frac{\lambda_j s_j}{\sigma_j} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = 1, \dots, r \\
+(\alpha_\perp)_j &= \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = r+1, \dots, d
+\end{align}
+where $r$ is the rank of $G$.
+
+\paragraph{Case 1: $Q = q^2 I$}
+
+\begin{prop}
+Assume $Q = q^2 I$. Then both $\postCovEUP$ and $\postCovEP$ are diagonalized in the $V$ basis,
+with eigenvalues
+\begin{align}
+&\lambda_j^{\mathrm{EUP}} \Def \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2 + q^2}},
+&&\lambda_j^{\mathrm{EP}} \Def \lambda_j + \frac{q^2 s_j^2 c_0^4}{\sigma^4}.
+\end{align}
+\end{prop}
+Note that these eigenvalues correspond to the posterior variance along the respective $v_j$ directions.
+We see that as $q \to \infty$, $\lambda_j^{\mathrm{EUP}} \to c_0^2$ and $\lambda_j^{\mathrm{EP}} \to \infty$.
+In words, the EUP posterior variance is bounded by the prior while the EP variance is unbounded.
+The uncertainty inflation is small for both EP and EUP in poorly informed directions in parameter space 
+($v_j$ with $s_j \approx 0$). The inflation may be quite large in well-informed directions. 
+
+\begin{prop}
+Assume $Q = q^2 I$. Then $\postMeanEUP = V\alpha^{\mathrm{EUP}} + V_\perp \alpha_\perp $ and 
+$\postMeanEP = V\alpha^{\mathrm{EP}} + V_\perp \alpha_\perp$, where
+\begin{align}
+\alpha_j^{\mathrm{EUP}} 
+&\Def \frac{\lambda_j s_j}{\sigma + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \\
+&= \left[\frac{\lambda_j s_j}{\sigma + q^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \right]
+- \frac{\lambda_j s_j}{\sigma + q^2} \langle r, u_j \rangle \\
+\alpha_j^{\mathrm{EP}} &\Def \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
+\end{align}
+\end{prop}
+
+If the emulator bias $r$ is zero, then $\postMeanEP = \postMean$. This is not the case with the EUP, in which 
+case $\postMeanEUP$ will still be tugged towards $m_0$. Combining this with the covariance results, it follows that 
+in the regime $r = 0$ and $q \to \infty$,
+\begin{align}
+&\postApproxEUPNorm \to \Gaussian(\priorMean, \priorCov), &&\postApproxEP\to \Gaussian(\postMean, \infty).
+\end{align}
+
+The bias in $\postMeanEP$ depends only on $r$, not $q$. On the other hand, the bias in $\postMeanEUP$ depends 
+both on $q$ and $r$. In both cases, the posterior mean will be more biased when the emulator bias $r$ is aligned
+with directions that are well-informed by the data. 
+
+
+% In the regime $r > 0$ and $q \to 0$ we have 
+
+
+
 \section{Conclusion} \label{sec:conclusion}
-
-
-
 
 
 % Appendix
