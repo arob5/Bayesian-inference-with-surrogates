@@ -3,9 +3,16 @@ from __future__ import annotations
 
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Iterable, List, Optional, Tuple
 from numpy.typing import NDArray
 from typing import Protocol
 from scipy.stats import uniform
+from math import ceil
+
+import jax.numpy as jnp
+import jax.random as jr
+import gpjax as gpx
+from flax import nnx
 
 import vsem_jax as vsem
 
@@ -289,5 +296,401 @@ class InvProb:
 
 
 class VSEMTest:
-    """ Uncertainty propagation experiment for surrogate modeling for VSEM inverse problem. """
-    pass
+    """ Uncertainty propagation experiment for surrogate modeling for VSEM inverse problem.
+
+    Note that this class is specialized for an inverse problem with a 2d input space.
+    """
+    
+    def __init__(self, inv_prob: InvProb, n_design: int, n_test_grid_1d: int = 100):
+        self.inv_prob = inv_prob
+        self.n_design = n_design
+        self.set_test_grid_info(n_test_grid_1d)
+        self.set_gp_model()
+
+    def set_gp_model(self):
+        self.design = self.construct_design()
+        self.gp_prior = self.construct_gp_prior()
+        self.gp_likelihood = self.construct_gp_likelihood()
+        self.gp_untuned_posterior = self.gp_prior * self.gp_likelihood
+        self.gp_posterior, self.opt_info = self.train_gp_hyperpars()
+
+    def set_test_grid_info(self, n_test_grid_1d):
+        """
+        Note that this method currently assumes 2d bounded input space.
+        """
+        par_names = self.inv_prob.par_names
+        u1_supp = self.inv_prob.prior.dists[par_names[0]].support()
+        u2_supp = self.inv_prob.prior.dists[par_names[1]].support()
+
+        u1_grid = np.linspace(u1_supp[0], u1_supp[1], n_test_grid_1d)
+        u2_grid = np.linspace(u2_supp[0], u2_supp[1], n_test_grid_1d)
+
+        U1_grid, U2_grid = np.meshgrid(u1_grid, u2_grid, indexing='xy')
+        U_grid= np.stack([U1_grid.ravel(), U2_grid.ravel()], axis=1)
+        log_post = self.inv_prob.log_posterior_density(U_grid)
+        log_post_grid = log_post.reshape(U1_grid.shape)
+
+        self.test_grid_info = {
+            "u1_grid": u1_grid,
+            "u1_grid": u2_grid,
+            "U1_grid": U1_grid,
+            "U2_grid": U2_grid,
+            "U_grid": U_grid,
+            "log_post": log_post,
+            "log_post_grid": log_post_grid,
+            "axis_labels": par_names
+        }
+
+    def construct_design(self):
+        x_design = jnp.asarray(self.inv_prob.prior.sample(self.n_design))
+        y_design = jnp.asarray(self.inv_prob.log_posterior_density(x_design)).reshape((-1,1))
+        return gpx.Dataset(X=x_design, y=y_design)
+
+    def construct_gp_mean(self):
+        constant_param = gpx.parameters.Real(value=self.design.y.mean())
+        meanf = gpx.mean_functions.Constant(constant_param)
+        return meanf
+
+    def construct_gp_kernel(self):
+        lengthscales_init = average_pairwise_distance_per_dim(self.design.X)
+        lengthscales_init = jnp.array(lengthscales_init)
+
+        ker_var_init = gpx.parameters.PositiveReal(self.design.y.var())
+        kernel = gpx.kernels.RBF(lengthscale=lengthscales_init, variance=ker_var_init, n_dims=self.inv_prob.dim)
+        return kernel
+
+    def construct_gp_prior(self):
+        meanf = self.construct_gp_mean()
+        kernel = self.construct_gp_kernel()
+        gp_prior = gpx.gps.Prior(mean_function=meanf, kernel=kernel)
+        return gp_prior
+    
+    def construct_gp_likelihood(self):
+        obs_stddev = gpx.parameters.PositiveReal(self.gp_prior.jitter)
+        gp_likelihood = gpx.likelihoods.Gaussian(num_datapoints=self.design.n, obs_stddev=obs_stddev)
+        return gp_likelihood
+
+    def train_gp_hyperpars(self):
+        starting_mll = -gpx.objectives.conjugate_mll(self.gp_untuned_posterior, self.design)
+
+        gp_posterior, history = gpx.fit_scipy(
+            model=self.gp_untuned_posterior,
+            objective=lambda p, d: -gpx.objectives.conjugate_mll(p, d),
+            train_data=self.design,
+            trainable=gpx.parameters.Parameter,
+        )
+
+        ending_mll = -gpx.objectives.conjugate_mll(gp_posterior, self.design)
+        opt_info = {"starting_mll": starting_mll,
+                    "ending_mll": ending_mll,
+                    "history": history}
+        return gp_posterior, opt_info
+    
+    def plot_true_log_density(self):
+        test_grid_info = self.test_grid_info
+        U1_grid = 
+
+
+        plt.pcolormesh(U1_grid, U2_grid, log_post_grid, shading='auto', cmap='viridis')
+        plt.plot(*likelihood.par_true, "*", color="red", markersize=12)
+        plt.title("Log Posterior Density Heatmap")
+        plt.xlabel("u1")
+        plt.ylabel("u2")
+        plt.colorbar()
+        plt.show()
+
+
+# -----------------------------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------------------------
+
+def average_pairwise_distance(x):
+    """ x: (n, d) array. 
+    Computes average Euclidean distance over set of pairwise distinct points
+    """
+    n = x.shape[0]
+    diffs = x[:, None, :] - x[None, :, :]  # Shape: (n, n, d)
+    dists = np.linalg.norm(diffs, axis=-1) # Shape: (n, n)
+
+    # Distances between *distinct* pairs, so mask the diagonal
+    mask = ~np.eye(n, dtype=bool)
+    avg_dist = dists[mask].mean()
+    return avg_dist
+
+
+def average_pairwise_distance_per_dim(x):
+    n, d = x.shape
+    diffs = x[:, None, :] - x[None, :, :]  # (n, n, d)
+    abs_diffs = np.abs(diffs)
+
+    # Discard diagonal (i==j), only keep i != j pairs
+    mask = ~np.eye(n, dtype=bool)
+    abs_diffs_pairs = abs_diffs[mask].reshape(n * (n - 1), d)
+    avg_dist_per_dim = abs_diffs_pairs.mean(axis=0)
+    return avg_dist_per_dim
+
+
+def plot_heatmap(X, Y, Z, title=None, ax=None,
+                 cmap='viridis', shading='auto',
+                 xlabel=None, ylabel=None,
+                 cbar=True, cbar_kwargs=None):
+    """
+    Plot a single heatmap and return the mappable (QuadMesh/AxesImage).
+    If ax is None, create a new figure+axis.
+
+    Parameters
+    ----------
+    X, Y : 2D arrays
+        Grid coordinates (as used by pcolormesh).
+    Z : 2D array
+        Values to plot; must match X/Y shape.
+    title : str or None
+    ax : matplotlib.axes.Axes or None
+    cmap : str
+    shading : str
+    xlabel, ylabel : str or None
+    cbar : bool
+    cbar_kwargs : dict passed to fig.colorbar (optional)
+
+    Returns
+    -------
+    mappable : the object returned by pcolormesh
+    fig_or_none : If a new figure was created, returns that figure, otherwise None
+    """
+    created_fig = None
+    if ax is None:
+        created_fig, ax = plt.subplots()
+
+    # pcolormesh expects arrays shaped like the mesh
+    m = ax.pcolormesh(X, Y, Z, shading=shading, cmap=cmap)
+
+    if title is not None:
+        ax.set_title(title)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    if cbar:
+        cbar_kwargs = {} if cbar_kwargs is None else dict(cbar_kwargs)
+        orientation = cbar_kwargs.pop('orientation', 'horizontal')
+        fraction = cbar_kwargs.pop('fraction', 0.07)
+        pad = cbar_kwargs.pop('pad', 0.15)
+        fig_for_cb = created_fig if created_fig is not None else ax.figure
+        cb = fig_for_cb.colorbar(m, ax=ax, orientation=orientation,
+                                 fraction=fraction, pad=pad, **cbar_kwargs)
+    else:
+        cb = None
+
+    return m, created_fig  # created_fig is None if ax was passed in
+
+
+def plot_independent_heatmaps(X, Y, Z_list, titles=None,
+                              xlab=None, ylab=None,
+                              nrows=1, ncols=None, figsize=None,
+                              cmap='viridis', shading='auto',
+                              sharexy=False):
+    """
+    Plot multiple independent heatmaps (each with its own colorbar).
+    Returns (fig, axs, mappables) and does NOT call plt.show().
+
+    Parameters
+    ----------
+    X, Y : 2D arrays (same grid for all Zs)
+    Z_list : list/iterable of 2D arrays (each same shape as X/Y)
+    titles : list of str or None
+    xlab, ylab : labels (applied to all subplots if provided)
+    nrows : int
+    ncols : int or None (auto computed if None)
+    figsize : tuple or None (auto computed if None)
+    cmap, shading : passed to pcolormesh
+    sharexy : if True, share x/y axes between subplots (useful for aligned grids)
+
+    Returns
+    -------
+    fig, axs_flat, mappables_list
+    """
+    nplots = len(Z_list)
+    if ncols is None:
+        ncols = int(ceil(nplots / nrows))
+
+    # sensible default figure size if not provided:
+    # give each subplot ~4 x 3 inches
+    if figsize is None:
+        per_ax_w, per_ax_h = 4.0, 3.0
+        figsize = (per_ax_w * ncols, per_ax_h * nrows)
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False,
+                            sharex=sharexy, sharey=sharexy)
+    axs_flat = axs.reshape(-1)
+
+    # normalize titles list length
+    if titles is None:
+        titles = [None] * nplots
+    else:
+        # extend or truncate to match nplots
+        titles = list(titles) + [None] * max(0, nplots - len(titles))
+        titles = titles[:nplots]
+
+    mappables = []
+    for i, Z in enumerate(Z_list):
+        ax = axs_flat[i]
+        m = ax.pcolormesh(X, Y, Z, shading=shading, cmap=cmap)
+        mappables.append(m)
+
+        if titles[i] is not None:
+            ax.set_title(titles[i])
+        if xlab is not None:
+            ax.set_xlabel(xlab)
+        if ylab is not None:
+            ax.set_ylabel(ylab)
+
+        # add a horizontal colorbar under this axis with reasonable defaults
+        cb = fig.colorbar(m, ax=ax, orientation='horizontal',
+                          fraction=0.07, pad=0.18)
+
+    # Hide any unused axes
+    total_axes = nrows * ncols
+    for j in range(nplots, total_axes):
+        fig.delaxes(axs_flat[j])
+
+    # Use tight_layout but leave space for colorbars; caller may further adjust
+    fig.tight_layout()
+    return fig, axs_flat[:nplots], mappables
+
+
+def plot_shared_scale_heatmaps(
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z_list: Iterable[np.ndarray],
+    titles: Optional[Iterable[Optional[str]]] = None,
+    xlab: Optional[str] = None,
+    ylab: Optional[str] = None,
+    nrows: int = 1,
+    ncols: Optional[int] = None,
+    figsize: Optional[Tuple[float, float]] = None,
+    cmap: str = 'viridis',
+    shading: str = 'auto',
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    cbar: bool = True,
+    cbar_kwargs: Optional[dict] = None,
+    sharexy: bool = False,
+):
+    """
+    Plot multiple heatmaps that share a single global color scale (one colorbar).
+
+    Parameters
+    ----------
+    X, Y : 2D arrays
+        Grid coordinates (mesh) matching Z shapes (as used by pcolormesh).
+    Z_list : iterable of 2D arrays
+        Data arrays to plot; each must have the same shape as X/Y.
+    titles : list/iterable of str or None
+        Titles for each subplot (length will be truncated/extended to match the number of Zs).
+    xlab, ylab : str or None
+        Common x and y labels applied to all subplots if provided.
+    nrows : int
+        Number of subplot rows.
+    ncols : int or None
+        Number of subplot columns; auto-computed if None.
+    figsize : (w, h) or None
+        Figure size in inches; auto-computed if None (approx 4x3 inches per subplot).
+    cmap : str
+        Matplotlib colormap name.
+    shading : str
+        Passed to pcolormesh.
+    vmin, vmax : float or None
+        Global color limits. If None, computed from min/max of all Zs.
+    cbar : bool
+        Whether to draw the shared colorbar.
+    cbar_kwargs : dict or None
+        Extra kwargs passed to `fig.colorbar`. Common keys: orientation, fraction, pad, label, shrink, extend.
+    sharexy : bool
+        If True, share x and y axes between subplots.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    axs_flat : array-like of Axes (length == nplots)
+        Flat array of axes corresponding to each plot (in row-major order).
+    mappables : list
+        List of QuadMesh objects returned by pcolormesh for each subplot.
+    cbar_obj : matplotlib.colorbar.Colorbar or None
+        The shared colorbar object (None if cbar=False).
+    """
+    Z_list = list(Z_list)
+    nplots = len(Z_list)
+    if nplots == 0:
+        raise ValueError("Z_list must contain at least one array to plot.")
+
+    # compute ncols if necessary
+    if ncols is None:
+        ncols = int(ceil(nplots / nrows))
+
+    # reasonable default figure size if not provided
+    if figsize is None:
+        per_ax_w, per_ax_h = 4.0, 3.0
+        figsize = (per_ax_w * ncols, per_ax_h * nrows)
+
+    # compute global vmin/vmax if not provided
+    if vmin is None:
+        vmin = min(np.nanmin(Z) for Z in Z_list)
+    if vmax is None:
+        vmax = max(np.nanmax(Z) for Z in Z_list)
+
+    # prepare titles
+    if titles is None:
+        titles = [None] * nplots
+    else:
+        titles = list(titles) + [None] * max(0, nplots - len(list(titles)))
+        titles = titles[:nplots]
+
+    # create subplots
+    fig, axs = plt.subplots(
+        nrows, ncols, figsize=figsize, squeeze=False,
+        sharex=sharexy, sharey=sharexy
+    )
+    axs_flat = axs.reshape(-1)
+
+    mappables = []
+    for i, Z in enumerate(Z_list):
+        ax = axs_flat[i]
+        m = ax.pcolormesh(X, Y, Z, shading=shading, cmap=cmap, vmin=vmin, vmax=vmax)
+        mappables.append(m)
+
+        if titles[i] is not None:
+            ax.set_title(titles[i])
+        if xlab is not None:
+            ax.set_xlabel(xlab)
+        if ylab is not None:
+            ax.set_ylabel(ylab)
+
+    # hide unused axes
+    total_axes = nrows * ncols
+    for j in range(nplots, total_axes):
+        fig.delaxes(axs_flat[j])
+
+    # add a single shared colorbar (span all axes)
+    cbar_obj = None
+    if cbar:
+        cbar_kwargs = {} if cbar_kwargs is None else dict(cbar_kwargs)
+        # defaults for a horizontal colorbar placed beneath the axes
+        orientation = cbar_kwargs.pop('orientation', 'horizontal')
+        fraction = cbar_kwargs.pop('fraction', 0.07)
+        pad = cbar_kwargs.pop('pad', 0.18)
+        # use the first mappable as the reference, and provide all axes for placement
+        axes_for_cb = axs_flat[:nplots]  # only existing axes
+        cbar_obj = fig.colorbar(
+            mappables[0],
+            ax=axes_for_cb,
+            orientation=orientation,
+            fraction=fraction,
+            pad=pad,
+            **cbar_kwargs
+        )
+
+    fig.tight_layout()
+    # leave caller freedom to further adjust (e.g. fig.subplots_adjust(bottom=...))
+    return fig, axs_flat[:nplots], mappables, cbar_obj
