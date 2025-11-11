@@ -88,6 +88,10 @@ class VSEMPrior:
         def dim(self):
             return len(self._par_names)
         
+        @property
+        def par_names(self):
+            return self._par_names
+        
         def sample(self, n=1, rng=None):
             samp = np.empty((n, self.dim))
             for j in range(self.dim):
@@ -209,7 +213,7 @@ class InvProb:
         self.prior = prior
         self.likelihood = likelihood
         self.dim = int(self.prior.dim)
-        self.par_names = ["u"+str(i) for i in range(1, self.dim+1)]
+        self.par_names = prior.par_names
         self.sampler = self._set_default_sampler(**sampler_kwargs) if sampler is None else sampler
         self.posterior = None 
 
@@ -306,6 +310,7 @@ class VSEMTest:
         self.n_design = n_design
         self.set_test_grid_info(n_test_grid_1d)
         self.set_gp_model()
+        self.store_gp_pred()
 
     def set_gp_model(self):
         self.design = self.construct_design()
@@ -340,6 +345,20 @@ class VSEMTest:
             "log_post_grid": log_post_grid,
             "axis_labels": par_names
         }
+
+    def store_gp_pred(self):
+        U = self.test_grid_info["U_grid"]
+
+        # Prior predictions
+        prior_latent = self.gp_posterior.prior.predict(U)
+        prior_pred = self.gp_posterior.likelihood(prior_latent)
+
+        # Conditional predictions
+        post_latent = self.gp_posterior.predict(U, train_data=self.design)
+        post_pred = self.gp_posterior.likelihood(post_latent)
+
+        self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred}
+        self.gp_post_pred = {"latent": post_latent, "pred": post_pred}
 
     def construct_design(self):
         x_design = jnp.asarray(self.inv_prob.prior.sample(self.n_design))
@@ -386,18 +405,73 @@ class VSEMTest:
                     "history": history}
         return gp_posterior, opt_info
     
-    def plot_true_log_density(self):
-        test_grid_info = self.test_grid_info
-        U1_grid = 
+    def _get_plot_grid(self):
+        grid_info = self.test_grid_info
+
+        return grid_info["U1_grid"], grid_info["U2_grid"]
+    
+    def plot_exact_log_post(self):
+        U1, U2 = self._get_plot_grid()
+        log_post = self.test_grid_info["log_post_grid"]
+        xlab, ylab = self.test_grid_info["axis_labels"]
+
+        mappable, fig = plot_heatmap(U1, U2, log_post, title="Exact Posterior Log Density", 
+                                 xlabel=xlab, ylabel=ylab)
+        ax = fig.axes[0]
+        ax.plot(*self.inv_prob.likelihood.par_true, "*", color="red", markersize=12)
+
+        return fig, ax
+    
+    def plot_gp_pred(self, conditional=True, latent_pred=False, markersize=8, **kwargs):
+        dist_label = "latent" if latent_pred else "pred"
+        pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
+
+        U1, U2 = self._get_plot_grid()
+        n = U1.shape[0]
+        xlab, ylab = self.test_grid_info["axis_labels"]
+        means = pred_dist[dist_label].mean.reshape(n,n)
+        stdevs = jnp.sqrt(pred_dist[dist_label].variance).reshape(n,n)
+
+        fig, axs, mappables = plot_independent_heatmaps(
+            U1, U2,
+            Z_list=[means, stdevs],
+            titles=[f"{dist_label} mean", f"{dist_label} std dev"],
+            xlab=xlab, ylab=ylab,
+            **kwargs
+        )
+
+        # Add design points
+        axs[0].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+        axs[1].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+
+        return fig, axs
 
 
-        plt.pcolormesh(U1_grid, U2_grid, log_post_grid, shading='auto', cmap='viridis')
-        plt.plot(*likelihood.par_true, "*", color="red", markersize=12)
-        plt.title("Log Posterior Density Heatmap")
-        plt.xlabel("u1")
-        plt.ylabel("u2")
-        plt.colorbar()
-        plt.show()
+    def plot_true_vs_gp_mean(self, conditional=True, latent_pred=False, markersize=8, **kwargs):
+        dist_label = "latent" if latent_pred else "pred"
+        pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
+
+        U1, U2 = self._get_plot_grid()
+        n = U1.shape[0]
+        xlab, ylab = self.test_grid_info["axis_labels"]
+        means = pred_dist[dist_label].mean.reshape(n,n)
+        log_post_true = self.test_grid_info["log_post_grid"]
+
+        fig, axs, mappables, cbar_obj = plot_shared_scale_heatmaps(
+            U1, U2,
+            Z_list=[log_post_true, means],
+            titles=["exact log posterior", f"{dist_label} GP mean"],
+            xlab=xlab, ylab=ylab,
+            sharexy=True,
+            **kwargs
+        )
+
+        # Add design points
+        axs[0].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+        axs[1].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+
+        return fig, axs
+
 
 
 # -----------------------------------------------------------------------------
@@ -692,5 +766,6 @@ def plot_shared_scale_heatmaps(
         )
 
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.18) # extra space for colorbar     
     # leave caller freedom to further adjust (e.g. fig.subplots_adjust(bottom=...))
     return fig, axs_flat[:nplots], mappables, cbar_obj
