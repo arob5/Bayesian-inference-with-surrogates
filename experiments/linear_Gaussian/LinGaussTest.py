@@ -9,7 +9,13 @@ from Gaussian import Gaussian, trace_Ainv_B, log_det_tri, squared_mah_dist
 from helper import get_col_hist_grid, get_trace_plots, get_random_corr_mat
 
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
-from modmcmc.kernels import MarkovKernel, GaussMetropolisKernel, DiscretePCNKernel, UncalibratedDiscretePCNKernel, mvn_logpdf
+from modmcmc.kernels import (
+    MarkovKernel, 
+    GaussMetropolisKernel, 
+    DiscretePCNKernel, 
+    UncalibratedDiscretePCNKernel, 
+    mvn_logpdf
+)
 
 class LinGaussInvProb:
     # Exact (no surrogate) linear Gaussian inverse problem.
