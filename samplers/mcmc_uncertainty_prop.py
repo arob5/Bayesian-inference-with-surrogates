@@ -4,6 +4,13 @@ MCMC algorithms for uncertainty propagation in surrogate-based inverse problems
 """
 from __future__ import annotations
 import numpy as np
+import jax.numpy as jnp
+from jax.scipy.linalg import cho_solve
+
+from gpjax.linalg.utils import add_jitter
+from gpjax.gps import ConjugatePosterior as GPJaxConjugateGP
+from gpjax.dataset import Dataset as GPJaxDataset
+from gpjax.distributions import GaussianDistribution as GPJaxGaussian
 
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
 from modmcmc.samplers import MCMCSampler
@@ -52,6 +59,54 @@ class GaussianProcess(Protocol):
     """
     def __call__(self, x: Array, given: tuple[Array, Array] | None = None) -> DistWithMeanCov:
         ...
+
+
+# -----------------------------------------------------------------------------
+# Wrapper for gpjaxGP Gaussian process to align with protocol
+# -----------------------------------------------------------------------------
+
+class gpjaxGP:
+    """
+    Wrapper around a gpjax conditional posterior GP, modified to store the 
+    precision matrix for fast GP updates.
+    """
+    
+    def __init__(self, gp: GPJaxConjugateGP, design: GPJaxDataset):
+        self.gp = gp
+        self.design = design
+        self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
+        self.Sigma_inv = self._compute_kernel_precision()
+
+    def __call__(self, x: Array, given: tuple[Array, Array] | None = None) -> DistWithMeanCov:
+        Sigma_inv = self.Sigma_inv if given is None else self._update_kernel_precision(given)
+        return self._predict_using_precision(x, Sigma_inv)
+
+    def _predict_using_precision(self, x: Array, kernel_precision: Array) -> GPJaxGaussian:
+        # TODO: return predictive mvn with moments calculated from precision
+        ...
+
+    def _update_kernel_precision(self, given: tuple[Array, Array] | GPJaxDataset):
+        if isinstance(given, GPJaxDataset):
+            Xnew, ynew = given.X, given.y
+        else:
+            Xnew, ynew = given
+
+        # TODO: update precision using efficient low rank update
+
+        
+
+
+    def _compute_kernel_precision(self):
+        X = self.design.X
+        K = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter)
+        Sigma = K + jnp.eye(K.shape[0]) * self.sig2_obs
+        L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
+        Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
+        return Sigma_inv
+
+
+
+
 
 
 # -----------------------------------------------------------------------------
@@ -132,7 +187,6 @@ def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.9):
     return alg
 
 
-# TODO: currently assumes symmetric proposal
 class RandomKernelPCNSampler(MCMCSampler):
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
@@ -142,9 +196,7 @@ class RandomKernelPCNSampler(MCMCSampler):
     The algorithm rk-pcn sampler operates on the extended state space (u, f), which is in
     principle infinite dimensional. In reality, it is only necessary to instantiate 
     bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
-    implementation of this algorithm has state space of the form [u, u', f(u), f(u')].
-    The first slot is the actual state we are ultimately interested in; the other 
-    three are auxiliary variables.
+    implementation of this algorithm maintains a state of the form (u, f(u)).
     """
     def __init__(self,
                  log_density: Callable[[Array], float],
@@ -165,22 +217,19 @@ class RandomKernelPCNSampler(MCMCSampler):
         super().__init__(target=target, initial_state=init_state, rng=rng)
 
         # Proposal distribution for u updates.
-        # u_prop_cov = u_prop_cov or np.identity(u_dim)
-        # self.u_proposal = GaussianProposal(u_prop_cov, rng=self.rng)
-        self.ker_u = _RandomKernelPCNHelper(base_ker_u, log_density, gp, rng)
+        u_prop_cov = u_prop_cov or np.identity(u_dim)
+        self.u_proposal = GaussianProposal(u_prop_cov, rng=self.rng)
 
         # Data for f updates.
         self.pcn_cor = pcn_cor
         self.gp = gp
         
     def step(self) -> State:
-        # This algorithm requires 
-        #  (1) a MH kernel over u
-        #  (2) a PCN kernel wrt to a bivariate Gaussian [f, f']
-        #
-        # To clarify notation, let u, f denote current values of u and f, so that fu is the 
-        # current value of f(u). Let v, g be proposed values. So fv is the current value of 
-        # f evaluated at the proposed value of u.
+        """
+        To clarify notation, let u, f denote current values of u and f, so that fu is the 
+        current value of f(u). Let v, g be proposed values. So fv is the current value of 
+        f evaluated at the proposed value of u.
+        """
 
         current_state = self.current_state.copy_with(clear_cache=False)
 
@@ -188,133 +237,40 @@ class RandomKernelPCNSampler(MCMCSampler):
         u_block = current_state.extract_block(var_names="u")
         u = u_block["u"]
         fu = current_state.extract_block(var_names="fu")["fu"]
-        v = self.ker_u.proposal.propose(u_block)["u"]
-        # v = self.u_proposal.propose(u_block)["u"]
+        v = self.u_proposal.propose(u_block)["u"]
         uv = np.vstack([u, v])
 
         # Just in time sample for f(v)
         fv = self.gp(v, given=(u, fu)).sample()
         fuv = np.concatenate([fu, fv])
 
-        # f update
+        # f update (always accepted)
         fuv_dist = self.gp(uv)
-        guv = DiscretePCNProposal(mean=fuv_dist.mean, cov=fuv_dist.cov, cor_param=self.pcn_cor, rng=self.rng).propose({"fuv": fuv})["fuv"] # [g(u), g(v)]
+        guv = DiscretePCNProposal(mean=fuv_dist.mean, cov=fuv_dist.cov, 
+                                  cor_param=self.pcn_cor, rng=self.rng).propose({"fuv": fuv})["fuv"] # [g(u), g(v)]
+        gu, gv = guv
+        current_state = current_state.copy_with(primary_updates={"fu": gu}) # {u, g(u)}
 
         # u update: note that proposal already occurred above
-        new_state = self.ker_u(guv) # {u, fu}, (gu, gv); MH ratio uses (gu, gv)
+        candidate = current_state.copy_with(primary_updates={"u": v, "fu": gv}) # {v, g(v)}
+        new_state = _mh_accept_reject(self.target, current_state, candidate, self.rng)
 
-        # so proposal should return 
-
-
-        # u = _finish_mh_step(fuv, guv)
-
-        # return new_state
+        return new_state
 
 
-def _finish_mh_step(uv, guv, target):
-    u, v = uv[0], uv[1]
-    gu, gv = guv[0], guv[1]
-    gu_state = State(primary={"u": u_init, "fu": fu_init})
+def _mh_accept_reject(target: TargetDensity, 
+                      current: State, 
+                      candidate: State, 
+                      rng: np.random.Generator) -> State:
+    """ Assumes symmetric proposal """
 
+    log_p_old = target(current)
+    log_p_new = target(candidate)
 
-    log_p_u, log_p_v = target(gu), 
-
-
-
-
-
-
-
-class _RandomKernelPCNHelper(MetropolisKernel):
-    def __init__(self,
-                 base_kernel: MetropolisKernel,
-                 log_density: Callable[[Array], float],
-                 gp: GaussianProcess,
-                 rng = None):
-
-        self._check_base_kernel(base_kernel)
-
-        # Define target log density
-        def target_log_density(state):
-            return log_density(state.primary["fu"])
-        target = TargetDensity(LogDensityTerm("density_given_f", target_log_density))
-
-
-        init_state = State(primary={"u": u_init, "fu": fu_init})
-
-        super().__init__(target=target, is_exact=False, rng=rng)
-
-
-    def step(self, state: State, v) -> State:
-        
-        v["fu"] = 
-
-        candidate = state.copy_with(primary_updates=v) # updates u
-
-        # Compute MH log‐acceptance ratio.
-        log_p_old = self.target(state, term_names=self.term_subset)
-        log_p_new = self.target(candidate, term_names=self.term_subset)
-
-        if self.acc_ratio_includes_prop:
-            log_q_fwd = self.proposal.log_p(new_block, old_block)
-            log_q_back = self.proposal.log_p(old_block, new_block)
-        else:
-            log_q_fwd, log_q_back = 0,0
-
-        log_alpha = (log_p_new - log_p_old) + (log_q_back - log_q_fwd)
-        info = {"log_alpha": log_alpha}
-
-        # Accept/reject step.
-        if np.log(self.rng.random()) < log_alpha:
-            info["accepted"] = True
-            return candidate
-        else:
-            info["accepted"] = False
-            return state
-        
-
-    def _check_base_kernel(self, base_kernel):
-        if not isinstance(base_kernel, MetropolisKernel):
-            raise TypeError(f"_RandomKernelPCNHelper requires base_kernel to be a MetropolisKernel. Got {type(base_kernel)}")
-
-    
-
-
-    
-
-
-def _finish_mh_step(u, v, fu, fv, log_density, rng):
-    log_ratio = log_density(fv) - log_density(fu)
-    
-    # Accept/reject step.
-    if np.log(rng.random()) < log_ratio:
-        return v, fv
-    else:
-        return u, fu
-
-
-    # Propose new state with updated block.
-    old_block = state.extract_block(var_names=self.block_vars)
-    new_block = self.proposal.propose(old_block)
-    candidate = state.copy_with(primary_updates=new_block)
-
-    # Compute MH log‐acceptance ratio.
-    log_p_old = self.target(state, term_names=self.term_subset)
-    log_p_new = self.target(candidate, term_names=self.term_subset)
-
-    if self.acc_ratio_includes_prop:
-        log_q_fwd = self.proposal.log_p(new_block, old_block)
-        log_q_back = self.proposal.log_p(old_block, new_block)
-    else:
-        log_q_fwd, log_q_back = 0,0
-
-    log_alpha = (log_p_new - log_p_old) + (log_q_back - log_q_fwd)
-    info = {"log_alpha": log_alpha}
+    log_ratio = log_p_new - log_p_old
 
     # Accept/reject step.
-    if np.log(self.rng.random()) < log_alpha:
-        info["accepted"] = True
+    if np.log(rng.uniform()) < log_ratio:
         return candidate
     else:
-        info["accepted"] = False
-        return state
+        return current
