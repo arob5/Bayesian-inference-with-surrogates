@@ -7,6 +7,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax.scipy.linalg import cho_solve
 
+from gpjax.linalg import Dense, psd
 from gpjax.linalg.utils import add_jitter
 from gpjax.gps import ConjugatePosterior as GPJaxConjugateGP
 from gpjax.dataset import Dataset as GPJaxDataset
@@ -65,6 +66,17 @@ class GaussianProcess(Protocol):
 # Wrapper for gpjaxGP Gaussian process to align with protocol
 # -----------------------------------------------------------------------------
 
+class gpjaxGaussian(GPJaxGaussian):
+    """
+    Wrapper around a gpjax Gaussian distribution, slightly modified to align with
+    the `DistWithMeanCov` protocol.
+    """
+
+    @property
+    def cov(self):
+        return self.covariance_matrix
+
+
 class gpjaxGP:
     """
     Wrapper around a gpjax conditional posterior GP, modified to store the 
@@ -77,23 +89,64 @@ class gpjaxGP:
         self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
         self.Sigma_inv = self._compute_kernel_precision()
 
-    def __call__(self, x: Array, given: tuple[Array, Array] | None = None) -> DistWithMeanCov:
-        Sigma_inv = self.Sigma_inv if given is None else self._update_kernel_precision(given)
-        return self._predict_using_precision(x, Sigma_inv)
+    def __call__(self, x: Array, given: tuple[Array, Array] | None = None) -> GPJaxGaussian:
+        if given is None:
+            Sigma_inv = self.Sigma_inv
+            design = self.design
+        else:
+            Sigma_inv, design = self._update_kernel_precision(given)
 
-    def _predict_using_precision(self, x: Array, kernel_precision: Array) -> GPJaxGaussian:
-        # TODO: return predictive mvn with moments calculated from precision
-        ...
+        return self._predict_using_precision(x, Sigma_inv, design)
+
+    def _predict_using_precision(self, x: Array, Sigma_inv: Array, design: GPJaxDataset) -> GPJaxGaussian:
+        """ Compute posterior GP multivariate normal prediction at test inputs `x`, conditional
+            on dataset `design`. `Sigma_inv` is the inverse of the kernel matrix (including the noise covariance)
+            evaluated at `design.X`.
+        """
+        x_design, y_design = design.X, design.y
+        k_test_design =  self.gp.prior.kernel.cross_covariance(x, x_design)
+        k_test_design_Sigma_inv = k_test_design @ Sigma_inv
+
+        prior_mean_test = self.gp.prior.mean_function(x)
+        prior_mean_design = self.gp.prior.mean_function(x_design)
+        prior_cov_test = self.gp.prior.kernel.gram(x).to_dense()
+
+        pred_mean = prior_mean_test + k_test_design_Sigma_inv @ (y_design - prior_mean_design)
+        pred_cov = prior_cov_test - k_test_design_Sigma_inv @ k_test_design.T
+
+        return gpjaxGaussian(pred_mean, psd(Dense(pred_cov)))
+    
 
     def _update_kernel_precision(self, given: tuple[Array, Array] | GPJaxDataset):
         if isinstance(given, GPJaxDataset):
             Xnew, ynew = given.X, given.y
+            new_dataset = given
+        elif isinstance(given, tuple):
+            Xnew = given[0].reshape(-1, self.design.in_dim)
+            ynew = given[1].reshape(-1, 1)
+            new_dataset = self.design + GPJaxDataset(X=Xnew, y=ynew)
         else:
-            Xnew, ynew = given
-
-        # TODO: update precision using efficient low rank update
-
+            raise TypeError(f"`given` must be a tuple or gpjax Dataset object. Got {type(given)}")
         
+        num_new_points = Xnew.shape[0]
+        if num_new_points != 1:
+            raise ValueError("_update_kernel_precision() currently only supports single point update.")
+
+        # Partitioned matrix inverse update.
+        Sigma_inv = self.Sigma_inv.copy()
+        knm = self.gp.prior.kernel.cross_covariance(self.design.X, Xnew)
+        Kinv_knm = (Sigma_inv @ knm).flatten()
+        kn_pred = self.gp.prior.kernel(Xnew) - jnp.dot(Kinv_knm, Kinv_knm)
+        
+
+        num_new_points = Xnew.shape[0]
+        for i in range(num_new_points):
+            k_new_old = self.gp.prior.kernel.cross_covariance(self.design.X, Xnew)
+            Sigma_inv = _update_partitioned_matrix_inverse(Sigma_inv, )
+
+        new_Sigma_inv = None # TODO
+
+        return new_Sigma_inv, new_dataset
 
 
     def _compute_kernel_precision(self):
