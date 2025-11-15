@@ -5,6 +5,7 @@ MCMC algorithms for uncertainty propagation in surrogate-based inverse problems
 from __future__ import annotations
 import numpy as np
 import jax.numpy as jnp
+import jax.random as jr
 from jax.scipy.linalg import cho_solve
 
 from gpjax.linalg import Dense, psd
@@ -66,15 +67,29 @@ class GaussianProcess(Protocol):
 # Wrapper for gpjaxGP Gaussian process to align with protocol
 # -----------------------------------------------------------------------------
 
-class gpjaxGaussian(GPJaxGaussian):
+class gpjaxGaussian():
     """
     Wrapper around a gpjax Gaussian distribution, slightly modified to align with
-    the `DistWithMeanCov` protocol.
+    the `DistWithMeanCov` protocol. Since I am primarily using a numpy random 
+    generator for pseudorandomness, we use this to seed JAX key generators.
     """
+
+    def __init__(self, loc, scale, np_rng: np.random.Generator):
+        self.gpjax_gaussian = GPJaxGaussian(loc=loc, scale=Dense(scale))
+        self.np_rng = np_rng
+    
+    @property
+    def mean(self):
+        return self.gpjax_gaussian.mean
 
     @property
     def cov(self):
-        return self.covariance_matrix
+        return self.gpjax_gaussian.covariance_matrix
+    
+    def sample(self, n: int = 1):
+        jax_seed_from_np = self.np_rng.integers(0, 2**32, dtype=np.uint32)
+        jax_key = jr.key(jax_seed_from_np)
+        return self.gpjax_gaussian.sample(jax_key, sample_shape=(n,))
 
 
 class gpjaxGP:
@@ -83,11 +98,13 @@ class gpjaxGP:
     precision matrix for fast GP updates.
     """
     
-    def __init__(self, gp: GPJaxConjugateGP, design: GPJaxDataset):
+    def __init__(self, gp: GPJaxConjugateGP, design: GPJaxDataset, rng: np.random.Generator):
         self.gp = gp
         self.design = design
+        self.dim = self.design.in_dim
         self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
         self.Sigma_inv = self._compute_kernel_precision()
+        self.rng = rng
 
     def __call__(self, x: Array, given: tuple[Array, Array] | None = None) -> GPJaxGaussian:
         if given is None:
@@ -98,11 +115,12 @@ class gpjaxGP:
 
         return self._predict_using_precision(x, Sigma_inv, design)
 
-    def _predict_using_precision(self, x: Array, Sigma_inv: Array, design: GPJaxDataset) -> GPJaxGaussian:
+    def _predict_using_precision(self, x: Array, Sigma_inv: Array, design: GPJaxDataset) -> gpjaxGaussian:
         """ Compute posterior GP multivariate normal prediction at test inputs `x`, conditional
             on dataset `design`. `Sigma_inv` is the inverse of the kernel matrix (including the noise covariance)
             evaluated at `design.X`.
         """
+        x = x.reshape(-1, self.dim)
         x_design, y_design = design.X, design.y
         k_test_design =  self.gp.prior.kernel.cross_covariance(x, x_design)
         k_test_design_Sigma_inv = k_test_design @ Sigma_inv
@@ -113,16 +131,26 @@ class gpjaxGP:
 
         pred_mean = prior_mean_test + k_test_design_Sigma_inv @ (y_design - prior_mean_design)
         pred_cov = prior_cov_test - k_test_design_Sigma_inv @ k_test_design.T
+        n_pred = x.shape[0]
 
-        return gpjaxGaussian(pred_mean, psd(Dense(pred_cov)))
+        return gpjaxGaussian(pred_mean.squeeze(), 
+                             psd(Dense(pred_cov.reshape(n_pred, n_pred))), 
+                             self.rng)
     
 
     def _update_kernel_precision(self, given: tuple[Array, Array] | GPJaxDataset):
+        """ 
+        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
+        batch of new conditioning points Xnew are added. Returns the updated inverse 
+        kernel matrix as well as the updated dataset (union of the old dataset and 
+        the newly added points). `given` is either a gpjax `Dataset` containing the 
+        new input/output pairs or a tuple (Xnew, ynew) containing the same information.
+        """
         if isinstance(given, GPJaxDataset):
             Xnew, ynew = given.X, given.y
             new_dataset = self.design + given
         elif isinstance(given, tuple):
-            Xnew = given[0].reshape(-1, self.design.in_dim)
+            Xnew = given[0].reshape(-1, self.dim)
             ynew = given[1].reshape(-1, 1)
             new_dataset = self.design + GPJaxDataset(X=Xnew, y=ynew)
         else:
@@ -142,6 +170,11 @@ class gpjaxGP:
     
 
     def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
+        """ 
+        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
+        single conditioning point xnew is added. X is the current conditioning 
+        set and xnew is the new point to add.
+        """
         xnew = xnew.reshape(1, -1) # (1, 1)
         knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
         Kinv_knm = Sigma_inv @ knm # (n, 1)
@@ -156,7 +189,7 @@ class gpjaxGP:
 
         top = jnp.hstack([top_left, top_right])       # shape (n, n+1)
         bottom = jnp.hstack([bottom_left, bottom_right])  # shape (1, n+1)
-        
+
         return jnp.vstack([top, bottom]) # (n+1, n+1)
 
 
@@ -167,11 +200,6 @@ class gpjaxGP:
         L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
         Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
         return Sigma_inv
-
-
-
-
-
 
 
 # -----------------------------------------------------------------------------
@@ -282,7 +310,8 @@ class RandomKernelPCNSampler(MCMCSampler):
         super().__init__(target=target, initial_state=init_state, rng=rng)
 
         # Proposal distribution for u updates.
-        u_prop_cov = u_prop_cov or np.identity(u_dim)
+        if u_prop_cov is None:
+            u_prop_cov = np.identity(u_dim)
         self.u_proposal = GaussianProposal(u_prop_cov, rng=self.rng)
 
         # Data for f updates.
