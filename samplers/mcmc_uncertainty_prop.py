@@ -135,23 +135,29 @@ class gpjaxGP:
 
         for i in range(num_new_points):
             xnew = Xnew[i]
-            Xcurr = jnp.vstack([Xcurr, xnew])
             Sigma_inv = self._update_single_point_kernel_precision(Sigma_inv, Xcurr, xnew)
+            Xcurr = jnp.vstack([Xcurr, xnew])
 
         return Sigma_inv, new_dataset
     
 
     def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
-        knm = self.gp.prior.kernel.cross_covariance(X, xnew)
-        Kinv_knm = (Sigma_inv @ knm).flatten()
-        kappa = self.gp.prior.kernel.gram(xnew) + self.sig2_obs - jnp.dot(Kinv_knm, Kinv_knm)
-
-        top_left= Sigma_inv + Kinv_knm @ Kinv_knm.T / kappa
+        xnew = xnew.reshape(1, -1) # (1, 1)
+        knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
+        Kinv_knm = Sigma_inv @ knm # (n, 1)
+        k_new_new = self.gp.prior.kernel.gram(xnew).to_dense().squeeze() # scalar
+        kappa = k_new_new + self.sig2_obs - (knm.T @ Kinv_knm).squeeze() # scalar
+        
+        outer = Kinv_knm @ Kinv_knm.T  # (n,1) @ (1,n) -> (n,n)
+        top_left= Sigma_inv + outer / kappa # (n,n)
         top_right = -Kinv_knm / kappa
-        top = jnp.hstack([top_left, top_right])
-        bottom = jnp.concatenate([knm.flatten(), 1/kappa])
+        bottom_left = top_right.T
+        bottom_right = jnp.array([[1.0 / kappa]]) # (1,1)
 
-        return jnp.vstack([top, bottom])
+        top = jnp.hstack([top_left, top_right])       # shape (n, n+1)
+        bottom = jnp.hstack([bottom_left, bottom_right])  # shape (1, n+1)
+        
+        return jnp.vstack([top, bottom]) # (n+1, n+1)
 
 
     def _compute_kernel_precision(self):
