@@ -120,7 +120,7 @@ class gpjaxGP:
     def _update_kernel_precision(self, given: tuple[Array, Array] | GPJaxDataset):
         if isinstance(given, GPJaxDataset):
             Xnew, ynew = given.X, given.y
-            new_dataset = given
+            new_dataset = self.design + given
         elif isinstance(given, tuple):
             Xnew = given[0].reshape(-1, self.design.in_dim)
             ynew = given[1].reshape(-1, 1)
@@ -128,25 +128,30 @@ class gpjaxGP:
         else:
             raise TypeError(f"`given` must be a tuple or gpjax Dataset object. Got {type(given)}")
         
+        # Partitioned matrix inverse updates.
         num_new_points = Xnew.shape[0]
-        if num_new_points != 1:
-            raise ValueError("_update_kernel_precision() currently only supports single point update.")
-
-        # Partitioned matrix inverse update.
         Sigma_inv = self.Sigma_inv.copy()
-        knm = self.gp.prior.kernel.cross_covariance(self.design.X, Xnew)
-        Kinv_knm = (Sigma_inv @ knm).flatten()
-        kn_pred = self.gp.prior.kernel(Xnew) - jnp.dot(Kinv_knm, Kinv_knm)
-        
+        Xcurr = self.design.X.copy()
 
-        num_new_points = Xnew.shape[0]
         for i in range(num_new_points):
-            k_new_old = self.gp.prior.kernel.cross_covariance(self.design.X, Xnew)
-            Sigma_inv = _update_partitioned_matrix_inverse(Sigma_inv, )
+            xnew = Xnew[i]
+            Xcurr = jnp.vstack([Xcurr, xnew])
+            Sigma_inv = self._update_single_point_kernel_precision(Sigma_inv, Xcurr, xnew)
 
-        new_Sigma_inv = None # TODO
+        return Sigma_inv, new_dataset
+    
 
-        return new_Sigma_inv, new_dataset
+    def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
+        knm = self.gp.prior.kernel.cross_covariance(X, xnew)
+        Kinv_knm = (Sigma_inv @ knm).flatten()
+        kappa = self.gp.prior.kernel.gram(xnew) + self.sig2_obs - jnp.dot(Kinv_knm, Kinv_knm)
+
+        top_left= Sigma_inv + Kinv_knm @ Kinv_knm.T / kappa
+        top_right = -Kinv_knm / kappa
+        top = jnp.hstack([top_left, top_right])
+        bottom = jnp.concatenate([knm.flatten(), 1/kappa])
+
+        return jnp.vstack([top, bottom])
 
 
     def _compute_kernel_precision(self):
@@ -156,6 +161,7 @@ class gpjaxGP:
         L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
         Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
         return Sigma_inv
+
 
 
 
