@@ -416,7 +416,7 @@ class VSEMTest:
         xlab, ylab = self.test_grid_info["axis_labels"]
 
         mappable, fig = plot_heatmap(U1, U2, log_post, title="Exact Posterior Log Density", 
-                                 xlabel=xlab, ylabel=ylab)
+                                     xlabel=xlab, ylabel=ylab)
         ax = fig.axes[0]
         ax.plot(*self.inv_prob.likelihood.par_true, "*", color="red", markersize=12)
 
