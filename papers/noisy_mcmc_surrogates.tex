@@ -768,6 +768,36 @@ addressing the difficult question of choosing an appropriate conditioning set.
 Our MCMC method avoids the challenges associated with discretization
 and just-in-time sampling.
 
+\subsection{Random Kernel Metropolis-Hastings}
+To circumvent the challenges posed by the direct sampling algorithm, we present a Metropolis-Hastings (MH)
+MCMC algorithm that produces approximate samples from the EP. We focus on MCMC schemes
+that target the joint distribution $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
+which admits $\postApproxEP$ as a marginal. At a high level, we consider algorithms that alternate between 
+$\Par$ and $\targetTraj$ updates, which update the current MCMC state $(\Par, \targetTraj)$ like
+\begin{align}
+\targetTraj^\prime &\sim \MarkovKerTarget(\targetTraj, \cdot) \label{eq:f-update} \\
+\Par^\prime &\sim \MarkovKerPar(\Par, \cdot \given \targetTraj^\prime), \label{eq:u-update}
+\end{align}
+where $\MarkovKerTarget$ and $\MarkovKerPar$ are Markov kernels defined on $\emSpace$ and $\parSpace$,
+respectively. We refer to algorithms of this form as \textit{random kernel MCMC}, reflecting that \Cref{eq:u-update}
+modifies a typical, surrogate-free update $\MarkovKerPar(\Par, \cdot \given \target)$ with a kernel dependent 
+on a random surrogate trajectory $\targetTraj^\prime$.
+
+Throughout this section we fix $\MarkovKerPar$ to be an MH kernel defined with respect to a 
+proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by first sampling a proposal 
+$\propPar \sim \propDistPar(\Par, \cdot)$. The updated value $\Par^\prime$ is set to $\propPar$ with probability
+\begin{equation}
+\accProbMH_{\Par}(\Par, \propPar)
+= \min\left(1, \frac{\postDens(\propPar; \targetTraj^\prime)}{\postDens(\Par; \targetTraj^\prime)} \cdot 
+\frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right)
+\label{eq:MH-ratio-u},
+\end{equation}
+where $\propDensPar(\Par, \cdot)$ denotes the density of $\propDistPar(\Par, \cdot)$. Otherwise, it is set to 
+the current value $\Par$. Provided the unnormalized density $\postDens(\Par; \targetTraj^\prime)$
+depends on $\targetTraj$ only through $\targetTraj^\prime(\Par)$, then the MH update for $\Par$ only requires 
+realizing the finite-dimensional projection $[\targetTraj^\prime(\Par), \targetTraj^\prime(\propPar)]$ of the 
+function $\targetTraj^\prime$.
+
 \subsection{Approximate Metropolis-within-Gibbs}
 In this section, we present an approximate Metropolis-within-Gibbs (MwG) algorithm that 
 overcomes the limitations of the alternative methods discussed above. We 

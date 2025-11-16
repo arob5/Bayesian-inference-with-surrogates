@@ -124,11 +124,16 @@
 % Proposal distribution.
 \newcommand{\propDens}{q} % Proposal density
 \newcommand{\propDist}{Q} % Proposal distribution (measure)
+\newcommand{\propDistPar}{\propDist_{\Par}}
+\newcommand{\propDensPar}{\propDens_{\Par}}
 \newcommand{\propPar}{\tilde{\Par}} % Proposed parameter value
 \newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory
 
 % Random kernel MCMC
-\newcommand{\randomKer}[1][\targetTraj]{P_{#1}}
+\newcommand{\MarkovKer}{\mathsf{P}}
+\newcommand{\MarkovKerPar}{\MarkovKer_{\Par}}
+\newcommand{\MarkovKerTarget}{\MarkovKer_{\target}}
+\newcommand{\randomKer}[1][\targetTraj]{P_{#1}} % TODO: remove this
 
 % Preconditioned Crank-Nicholson
 \newcommand{\pcnCor}{\rho}
