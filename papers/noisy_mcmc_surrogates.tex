@@ -16,6 +16,12 @@
 \usepackage{fancyvrb} % For writing using verbatim font inline. 
 % \usepackage[demo]{graphicx}
 
+% TODO notes
+\usepackage{xcolor}
+\newcommand\issue[1]{\textcolor{red}{#1}}
+% \renewcommand\issue[1]{} % Uncomment to turn off red highlighting
+\usepackage{todonotes}
+
 % For tables
 \usepackage{array}
 \usepackage{booktabs}
@@ -798,57 +804,58 @@ depends on $\targetTraj$ only through $\targetTraj^\prime(\Par)$, then the MH up
 realizing the finite-dimensional projection $[\targetTraj^\prime(\Par), \targetTraj^\prime(\propPar)]$ of the 
 function $\targetTraj^\prime$.
 
-\subsection{Approximate Metropolis-within-Gibbs}
-In this section, we present an approximate Metropolis-within-Gibbs (MwG) algorithm that 
-overcomes the limitations of the alternative methods discussed above. We 
-target the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits
-$\postApproxEP$ as a marginal. Consider a MwG
-scheme that alternates between $\Par$ and $\targetTraj$ updates. 
-For a fixed $\targetTraj$, the $\Par$ update must leave the distribution 
-$\postDensNorm(\Par; \targetTraj) d\Par$ invariant, which can be achieved 
-with a standard Metropolis-Hastings (MH) step. For a fixed $\Par$, the $\targetTraj$
-update must leave the distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$
-invariant. This step faces two issues: (i.) the fact that $\targetTraj$ is potentially 
-infinite-dimensional, and (ii.) the fact that we cannot compute 
-$\normCst(\targetTraj)$. The former can be addressed by so-called 
-function space MCMC methods \citep{functionSpaceMCMC}. If we utilize an
-MH step with a $\emDist$-reversible proposal distribution 
-$\propDist_{\target}(\targetTraj, \cdot)$, then the MH acceptance probability reduces to
+\subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
+As a concrete starting point, we consider a Metropolis-within-Gibbs (MwG) algorithm to sample from 
+the joint $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$. The MH 
+update for $\Par$ must leave $\postDens(\Par; \targetTraj) d\Par$ invariant, resulting in the MH 
+kernel $\MarkovKerPar$ defined in the previous section. The $\targetTraj$ update must leave 
+ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
+ care due to the fact that $\targetTraj$ may be infinite-dimensional. Proceeding in the spirit of 
+ function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
+a $\emDist$-reversible proposal distribution $\propDistTarget(\targetTraj, \cdot)$, resulting in 
+the acceptance probability 
 \begin{equation}
 \accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
 = \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
 \frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right)
-= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right)
+= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
 \label{eq:MH-ratio-mwg}
 \end{equation}
-where $\tilde{\targetTraj} \sim \propDist_{\target}(\targetTraj, \cdot)$ is the proposed value.
-If $\targetEm \sim \GP(\gpMean, \gpKer)$
+If $\targetEm \sim \GP(\gpMean, \gpKer)$ 
 \footnote{More generally, this applies when $\postEm$ arises as a transformation
-of an underlying Gaussian. The emulator predictive distribution need not be Gaussian.}, 
-then we can take $\propDist_{\target}$ as
-the preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
+of an underlying Gaussian. The emulator predictive distribution need not be Gaussian.}
+then we may take $\propDistTarget(\targetTraj, \cdot)$ to be the 
+preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
 \begin{equation}
 \tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
-\qquad \xi \sim \GP(0, \gpKer).
+\qquad \xi \sim \GP(0, \gpKer). \label{eq:pcn-proposal}
 \end{equation}
-To address the issue regarding the intractable normalizing constant ratio in 
-\Cref{eq:MH-ratio-mwg}, we might try to apply techniques from the doubly 
-intractable MCMC literature \citep{doublyIntractableReview}. However, exact 
-MCMC schemes such as the exchange algorithm \citep{exchangeAlg} require 
+
+If it were possible to compute $\normCst(\targetTraj)$ then this could be turned into a practical
+algorithm. As this is not the case, one option to address the intractable normalizing constant 
+ratio is to apply techniques from the doubly intractable MCMC literature \citep{doublyIntractableReview}.
+However, exact MCMC schemes such as the exchange algorithm \citep{exchangeAlg} require 
 directly sampling $\postDensNorm(\cdot; \tilde{\targetTraj})$,
 which is infeasible in this context. To avoid the challenging task of estimating the 
 normalizing constant ratio, we instead invoke the simple approximation 
 $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$, 
-which is reasonable when the proposal $\tilde{\targetTraj}$ does not differ significantly 
-from the current state $\targetTraj$. This yields \Cref{alg:mwg-ep} [\todo: update alg], 
-where $\targetTraj$ updates follow a random walk.
-We can control the error in the approximation by 
-slowing down the mixing speed of the $\targetTraj$-chain. For the pCN proposal,
-the $\pcnCor$ parameter controls the correlation between $\targetTraj$ and 
-$\tilde{\targetTraj}$. Therefore, choosing $\pcnCor$ close to one ensures that
-$\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. 
+thus removing the accept-reject correction and instead allowing the $\targetTraj$ chain 
+to follow a random walk. This approximation is reasonable when the proposal $\tilde{\targetTraj}$ does 
+not differ significantly  from the current state $\targetTraj$. We can control the error in the approximation by 
+restricting the scale of $\propDistTarget$, thus slowing down the mixing speed of the $\targetTraj$-chain.
+For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
+between $\targetTraj$ and $\tilde{\targetTraj}$. Therefore, choosing $\pcnCor$ close to one ensures 
+that $\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. 
+
+We emphasize that this algorithm can be implemented without discretizing $\targetTraj$ by tracking only the 
+values at the current  and proposed states $(\Par, \propPar)$. As detailed in \issue{algorithm reference}, this is 
+accomplished by ``peeking'' at the proposal $\propPar$ during the $\targetTraj$ update. The algorithm requires
+the ability to condition the surrogate $\targetEm$ on at most a single new point each iteration. This avoids the 
+repeated conditioning required by the direct sampling approach in \Cref{alg:ep}. See the \issue{appendix} for 
+additional details regarding the efficient implementation of this algorithm.
+\todo[inline]{Add section in appendix}
+\todo[inline]{Clarify that the conditioning is done fresh each iteration? i.e., doesn't compound}
+
 
 \subsection{A Correlated Pseudo-Marginal Algorithm}
 The approximate MwG scheme above is derived by invoking the approximation 
