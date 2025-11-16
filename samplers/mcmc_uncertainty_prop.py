@@ -75,7 +75,14 @@ class gpjaxGaussian():
     """
 
     def __init__(self, loc, scale, np_rng: np.random.Generator):
-        self.gpjax_gaussian = GPJaxGaussian(loc=loc, scale=Dense(scale))
+        """ 
+        Note that `scale` should be a gpjax linear operator.
+        """
+        # `loc` must have at least one dimension (zero dimensional array causes issues)
+        if loc.ndim == 0:
+            loc = loc[jnp.newaxis]
+
+        self.gpjax_gaussian = GPJaxGaussian(loc=loc, scale=scale)
         self.np_rng = np_rng
     
     @property
@@ -301,7 +308,7 @@ class RandomKernelPCNSampler(MCMCSampler):
         
         # Extended state space.
         u_dim = u_init.flatten().shape[0]
-        fu_init = gp(u_init.reshape(1,-1)).mean.squeeze()
+        fu_init = gp(u_init.reshape(1,-1)).mean.reshape((1))
         init_state = State(primary={"u": u_init, "fu": fu_init})
 
         def target_log_density(state):
@@ -335,7 +342,7 @@ class RandomKernelPCNSampler(MCMCSampler):
         uv = np.vstack([u, v])
 
         # Just in time sample for f(v)
-        fv = self.gp(v, given=(u, fu)).sample()
+        fv = self.gp(v, given=(u, fu)).sample().reshape(1)
         fuv = np.concatenate([fu, fv])
 
         # f update (always accepted)
@@ -343,10 +350,10 @@ class RandomKernelPCNSampler(MCMCSampler):
         guv = DiscretePCNProposal(mean=fuv_dist.mean, cov=fuv_dist.cov, 
                                   cor_param=self.pcn_cor, rng=self.rng).propose({"fuv": fuv})["fuv"] # [g(u), g(v)]
         gu, gv = guv
-        current_state = current_state.copy_with(primary_updates={"fu": gu}) # {u, g(u)}
+        current_state = current_state.copy_with(primary_updates={"fu": gu.reshape(1)}) # {u, g(u)}
 
         # u update: note that proposal already occurred above
-        candidate = current_state.copy_with(primary_updates={"u": v, "fu": gv}) # {v, g(v)}
+        candidate = current_state.copy_with(primary_updates={"u": v, "fu": gv.reshape(1)}) # {v, g(v)}
         new_state = _mh_accept_reject(self.target, current_state, candidate, self.rng)
 
         return new_state
