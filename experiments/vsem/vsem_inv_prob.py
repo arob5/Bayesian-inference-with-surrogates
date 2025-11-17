@@ -29,6 +29,9 @@ import sys
 sys.path.append("./../linear_Gaussian/")
 from Gaussian import Gaussian
 
+sys.path.append("./../../helpers/")
+from rectified_gaussian import RectifiedGaussian
+
 
 Array = NDArray
 
@@ -354,13 +357,20 @@ class VSEMTest:
         # Prior predictions
         prior_latent = self.gp_posterior.prior.predict(U)
         prior_pred = self.gp_posterior.likelihood(prior_latent)
+        prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
+                                            prior_pred.covariance_matrix,
+                                            rng=self.inv_prob.rng)
 
         # Conditional predictions
         post_latent = self.gp_posterior.predict(U, train_data=self.design)
         post_pred = self.gp_posterior.likelihood(post_latent)
+        post_pred_rect = RectifiedGaussian(post_pred.mean, 
+                                           post_pred.covariance_matrix,
+                                           rng=self.inv_prob.rng)
 
-        self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred}
-        self.gp_post_pred = {"latent": post_latent, "pred": post_pred}
+        self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_rect": prior_pred_rect}
+        self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_rect": post_pred_rect}
+
 
     def construct_design(self):
         x_design = jnp.asarray(self.inv_prob.prior.sample(self.n_design))
@@ -407,24 +417,25 @@ class VSEMTest:
                     "history": history}
         return gp_posterior, opt_info
     
-    def predict(self, u, pred=None):
+    def predict(self, u, pred=None, rectify=True):
         """ Return Gaussian representing predictions (including observation noise) at u """
         if pred is None:
             latent = self.gp_posterior.predict(u, train_data=self.design)
             pred = self.gp_posterior.likelihood(latent)
+            pred = RectifiedGaussian(pred.mean, pred.covariance_matrix, rng=self.inv_prob.rng)
         return pred
 
-    def log_post_approx_mean(self, u, pred=None):
+    def log_post_approx_mean(self, u, pred=None, rectify=True):
         """ Log of plug-in mean approximation of unnormalized posterior density. """
-        pred = self.predict(u, pred)
+        pred = self.predict(u, pred, rectify=rectify)
         return pred.mean
 
-    def log_post_approx_eup(self, u, pred=None):
+    def log_post_approx_eup(self, u, pred=None, rectify=True):
         """ Log of EUP approximation of unnormalized posterior density. """
         pred = self.predict(u, pred)
         return pred.mean + 0.5 * pred.variance ** 2 
 
-    def log_post_approx_ep(self, u, n_mc=10000, pred=None):
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True):
         """ Log of EP approximation of normalized posterior density (approximate).
         The grid of test points is used to approximate the normalizing constants Z(f).
         The expectation with respect to f is estimated via simple Monte Carlo, by 
@@ -456,10 +467,13 @@ class VSEMTest:
         else:
             return normalized_post
 
-    def _mean_approx_grid(self, shape_to_grid=True, log_scale=False):
-        """ Normalized plug-in mean approximation evaluated at test grid """
+    def _mean_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
+        """ Normalized plug-in mean approximation evaluated at test grid 
+        
+        `pred_type` is either 'latent', 'pred', or 'pred_rect'
+        """
         U = self.test_grid_info['U_grid']
-        pred = self.gp_post_pred['pred']
+        pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
         normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
 
@@ -469,10 +483,10 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def _eup_approx_grid(self, shape_to_grid=True, log_scale=False):
+    def _eup_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
         """ Normalized EUP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
-        pred = self.gp_post_pred['pred']
+        pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_eup(U, pred=pred) # (n_grid,)
         normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
 
@@ -482,10 +496,10 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def _ep_approx_grid(self, shape_to_grid=True, log_scale=False):
+    def _ep_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
         """ Normalized EP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
-        pred = self.gp_post_pred['pred']
+        pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
         normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
 
@@ -563,16 +577,17 @@ class VSEMTest:
         return fig, axs
 
 
-    def plot_posterior_comparison(self, markersize=8, shared_scale=True, log_scale=False, **kwargs):
+    def plot_posterior_comparison(self, markersize=8, shared_scale=True, log_scale=False, 
+                                  pred_type='pred_rect', **kwargs):
         """ Plot exact vs plug-in mean vs EUP vs EP normalized densities """
         U1, U2 = self._get_plot_grid()
         n = U1.shape[0]
         xlab, ylab = self.test_grid_info["axis_labels"]
 
         exact = self._exact_post_grid(log_scale=log_scale)
-        mean = self._mean_approx_grid(log_scale=log_scale)
-        eup = self._eup_approx_grid(log_scale=log_scale)
-        ep = self._ep_approx_grid(log_scale=log_scale)
+        mean = self._mean_approx_grid(log_scale=log_scale, pred_type=pred_type)
+        eup = self._eup_approx_grid(log_scale=log_scale, pred_type=pred_type)
+        ep = self._ep_approx_grid(log_scale=log_scale, pred_type=pred_type)
 
         param_list = [U1, U2]
         param_dict = {
