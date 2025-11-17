@@ -85,6 +85,10 @@ class RectifiedGaussian:
         return y
 
     @property
+    def dim(self) -> int:
+        return self.base_cov.shape[0]
+
+    @property
     def mean(self) -> np.ndarray:
         """E[Y] computed per-dimension using univariate marginals (exact).
 
@@ -175,7 +179,7 @@ class RectifiedGaussian:
             out[i] = EY2 - EY[i] ** 2
 
         return out
-    
+
 
 # Validation check
 if __name__ == "__main__":

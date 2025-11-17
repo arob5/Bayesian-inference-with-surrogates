@@ -109,14 +109,33 @@ class Gaussian:
         if self._cov is not None:
             return self._cov
         return self._chol @ self._chol.T
+    
+    @property
+    def variance(self) -> np.ndarray:
+        return np.diag(self.cov)
 
     @property
     def chol(self) -> np.ndarray:
         if self._chol is not None:
             return self._chol
         return cholesky(self._cov, lower=True)
+    
+    @property
+    def logdet(self) -> np.ndarray:
+        """The log of the determinant term in the Gaussian density. 
+        log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)}.
 
-    def set_cov_info(self, cov: np.ndarray = None, chol: np.ndarray = None,
+        This term also represents an upper bound on the log density.
+        """
+        dim_times_two_pi = self.dim * LOG_TWO_PI
+        log_det_cov = self.log_det_chol()
+
+        return -0.5 * (dim_times_two_pi + log_det_cov)
+    
+
+    def set_cov_info(self, 
+                     cov: np.ndarray | None = None, 
+                     chol: np.ndarray | None = None,
                      store: str = "chol") -> None:
 
         if store not in {"chol", "cov", "both"}:
@@ -150,7 +169,7 @@ class Gaussian:
     def dim(self) -> int:
         return self.mean.shape[0]
 
-    def sample(self, num_samp: int = 1, simplify: book = True) -> np.ndarray:
+    def sample(self, num_samp: int = 1, simplify: bool = True) -> np.ndarray:
         """
         Returns (num_samp, dim) array containing `num_samp` iid samples from
         the Gaussian stacked in the rows of the array. If `simplify = True`
@@ -180,10 +199,8 @@ class Gaussian:
         # Quadratic term.
         quad_term = np.sum(z * z, axis=0)
 
-        # Log determinant term.
-        logdet_term = 2 * np.sum(np.log(np.diag(L)))
-
-        return -0.5 * (quad_term + logdet_term + self.dim * LOG_TWO_PI)
+        return self.logdet - 0.5 * quad_term 
+    
 
     def apply_affine_map(self, A: np.ndarray|None = None, b: np.ndarray|None = None,
                          store: str = "chol") -> Gaussian:

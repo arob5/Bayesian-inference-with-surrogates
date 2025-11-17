@@ -189,6 +189,9 @@ class VSEMLikelihood:
         pred_obs = self.par_to_obs_map(x)
         return self._likelihood_rv.log_p(pred_obs)
 
+    def log_density_upper_bound(self, x):
+        return self._likelihood_rv.logdet
+
     def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
         output = self.forward_model(par)
         fig, axs = vsem.plot_vsem_outputs(output[:,burn_in_start:,:], nrows=2)
@@ -222,7 +225,7 @@ class InvProb:
 
     def log_posterior_density(self, x: Array) -> Array:
         return self.prior.log_density(x) + self.likelihood.log_density(x)
-
+    
     def _set_default_sampler(self, proposal_cov: Array | None = None, **kwargs):
         """ Defaults to Metropolis-Hastings. """
         
@@ -352,21 +355,33 @@ class VSEMTest:
         }
 
     def store_gp_pred(self):
+        """
+        Storing predictions as Gaussian distributions. Wrapping in my Gaussian class.
+        """
         U = self.test_grid_info["U_grid"]
+        upper_bound = self.log_post_upper_bound(U)
 
         # Prior predictions
         prior_latent = self.gp_posterior.prior.predict(U)
         prior_pred = self.gp_posterior.likelihood(prior_latent)
         prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
                                             prior_pred.covariance_matrix,
+                                            upper=upper_bound,
                                             rng=self.inv_prob.rng)
-
+        
         # Conditional predictions
         post_latent = self.gp_posterior.predict(U, train_data=self.design)
         post_pred = self.gp_posterior.likelihood(post_latent)
         post_pred_rect = RectifiedGaussian(post_pred.mean, 
                                            post_pred.covariance_matrix,
+                                           upper=upper_bound,
                                            rng=self.inv_prob.rng)
+        
+        # Wrap as `Gaussian`
+        prior_latent = Gaussian(prior_latent.mean, prior_latent.covariance_matrix, rng=self.inv_prob.rng)
+        prior_pred = Gaussian(prior_pred.mean, prior_pred.covariance_matrix, rng=self.inv_prob.rng)
+        post_latent = Gaussian(post_latent.mean, post_latent.covariance_matrix, rng=self.inv_prob.rng)
+        post_pred = Gaussian(post_pred.mean, post_pred.covariance_matrix, rng=self.inv_prob.rng)
 
         self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_rect": prior_pred_rect}
         self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_rect": post_pred_rect}
@@ -422,8 +437,18 @@ class VSEMTest:
         if pred is None:
             latent = self.gp_posterior.predict(u, train_data=self.design)
             pred = self.gp_posterior.likelihood(latent)
-            pred = RectifiedGaussian(pred.mean, pred.covariance_matrix, rng=self.inv_prob.rng)
+
+            if rectify:
+                pred = RectifiedGaussian(pred.mean, pred.covariance_matrix,
+                                         upper=self.log_post_upper_bound(u),
+                                         rng=self.inv_prob.rng)
+            else:
+                pred = Gaussian(pred.mean, pred.covariance_matrix, rng=self.inv_prob.rng)
+
         return pred
+
+    def log_post_upper_bound(self, u: Array) -> Array:
+        return self.inv_prob.likelihood.log_density_upper_bound(u) + self.inv_prob.prior.log_density(u)
 
     def log_post_approx_mean(self, u, pred=None, rectify=True):
         """ Log of plug-in mean approximation of unnormalized posterior density. """
@@ -443,14 +468,10 @@ class VSEMTest:
         Monte Carlo samples to use.
         """
         pred = self.predict(u, pred)
-        n_grid = pred.event_shape[0]
-
-        # Seed JAX PRNG using numpy generator
-        jax_seed_from_np = self.inv_prob.rng.integers(0, 2**32, dtype=np.uint32)
-        jax_key = jr.key(jax_seed_from_np)
+        n_grid = pred.dim
 
         # log_post_samp[i,j] = log pi(u_j; f_i)
-        log_post_samp = pred.sample(jax_key, (n_mc,)) # (n_mc, n_grid)
+        log_post_samp = pred.sample(n_mc) # (n_mc, n_grid)
 
         ep_approx = estimate_ep_grid(log_post_samp)[0]
         return np.log(ep_approx)
@@ -526,20 +547,19 @@ class VSEMTest:
 
         return fig, ax
     
-    def plot_gp_pred(self, conditional=True, latent_pred=False, markersize=8, **kwargs):
-        dist_label = "latent" if latent_pred else "pred"
+    def plot_gp_pred(self, conditional=True, pred_type='pred_rect', markersize=8, **kwargs):
         pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
 
         U1, U2 = self._get_plot_grid()
         n = U1.shape[0]
         xlab, ylab = self.test_grid_info["axis_labels"]
-        means = pred_dist[dist_label].mean.reshape(n,n)
-        stdevs = jnp.sqrt(pred_dist[dist_label].variance).reshape(n,n)
+        means = pred_dist[pred_type].mean.reshape(n,n)
+        stdevs = jnp.sqrt(pred_dist[pred_type].variance).reshape(n,n)
 
         fig, axs, mappables = plot_independent_heatmaps(
             U1, U2,
             Z_list=[means, stdevs],
-            titles=[f"{dist_label} mean", f"{dist_label} std dev"],
+            titles=[f"{pred_type} mean", f"{pred_type} std dev"],
             xlab=xlab, ylab=ylab,
             **kwargs
         )
