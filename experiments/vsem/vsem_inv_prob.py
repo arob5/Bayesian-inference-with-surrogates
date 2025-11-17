@@ -343,7 +343,9 @@ class VSEMTest:
             "U_grid": U_grid,
             "log_post": log_post,
             "log_post_grid": log_post_grid,
-            "axis_labels": par_names
+            "axis_labels": par_names,
+            "n_grid_1d": n_test_grid_1d,
+            "n_grid": U_grid.shape[0]
         }
 
     def store_gp_pred(self):
@@ -442,32 +444,56 @@ class VSEMTest:
         ep_approx = estimate_ep_grid(log_post_samp)[0]
         return np.log(ep_approx)
     
-    def _exact_post_grid(self):
+    def _exact_post_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized exact posterior density evaluated at test grid """
         U = self.test_grid_info['U_grid']
         unnormalized_post = self.test_grid_info['log_post']
-        return _normalize_over_grid(unnormalized_post).flatten()
+        normalized_post = _normalize_over_grid(unnormalized_post, log_scale=log_scale).flatten()
 
-    def _mean_approx_grid(self):
+        if shape_to_grid:
+            n_grid_1d = self.test_grid_info['n_grid_1d']
+            return normalized_post.reshape(n_grid_1d, n_grid_1d)
+        else:
+            return normalized_post
+
+    def _mean_approx_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized plug-in mean approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         pred = self.gp_post_pred['pred']
         unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
-        return _normalize_over_grid(unnormalized_approx).flatten()
+        normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
 
-    def _eup_approx_grid(self):
+        if shape_to_grid:
+            n_grid_1d = self.test_grid_info['n_grid_1d']
+            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+        else:
+            return normalized_approx
+
+    def _eup_approx_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized EUP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         pred = self.gp_post_pred['pred']
         unnormalized_approx = self.log_post_approx_eup(U, pred=pred) # (n_grid,)
-        return _normalize_over_grid(unnormalized_approx).flatten()
+        normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
 
-    def _ep_approx_grid(self):
+        if shape_to_grid:
+            n_grid_1d = self.test_grid_info['n_grid_1d']
+            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+        else:
+            return normalized_approx
+
+    def _ep_approx_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized EP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         pred = self.gp_post_pred['pred']
         unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
-        return _normalize_over_grid(unnormalized_approx).flatten()
+        normalized_approx = _normalize_over_grid(unnormalized_approx, log_scale=log_scale).flatten()
+
+        if shape_to_grid:
+            n_grid_1d = self.test_grid_info['n_grid_1d']
+            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+        else:
+            return normalized_approx
 
     def _get_plot_grid(self):
         grid_info = self.test_grid_info
@@ -533,6 +559,38 @@ class VSEMTest:
         # Add design points
         axs[0].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
         axs[1].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+
+        return fig, axs
+
+
+    def plot_posterior_comparison(self, markersize=8, shared_scale=True, log_scale=False, **kwargs):
+        """ Plot exact vs plug-in mean vs EUP vs EP normalized densities """
+        U1, U2 = self._get_plot_grid()
+        n = U1.shape[0]
+        xlab, ylab = self.test_grid_info["axis_labels"]
+
+        exact = self._exact_post_grid(log_scale=log_scale)
+        mean = self._mean_approx_grid(log_scale=log_scale)
+        eup = self._eup_approx_grid(log_scale=log_scale)
+        ep = self._ep_approx_grid(log_scale=log_scale)
+
+        param_list = [U1, U2]
+        param_dict = {
+            'Z_list': [exact, mean, eup, ep],
+            'titles': ["exact", "mean", "eup", "ep"],
+            'xlab': xlab,
+            'ylab': ylab
+        }
+
+        if shared_scale:
+            param_dict['sharexy'] = True
+            fig, axs, mappables, cbar_obj = plot_shared_scale_heatmaps(*param_list, **param_dict, **kwargs)
+        else:
+            fig, axs, mappables = plot_independent_heatmaps(*param_list, **param_dict, **kwargs)
+
+        # Add design points
+        for i in range(4):
+            axs[i].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
 
         return fig, axs
 
@@ -844,13 +902,14 @@ def _logsumexp(a: np.ndarray, axis: int = -1) -> np.ndarray:
     return np.squeeze(out, axis=axis)
 
 
-def _normalize_over_grid(log_dens, weights=None):
+def _normalize_over_grid(log_dens, weights=None, log_scale=True):
     """ Approximately normalize a density over a a grid of points
 
     `log_dens` represents a discretized unnormalized log density l = (l1, ..., lJ).
-    This function computes l / Z, where Z = sum_{j} w_j exp{lj}, where Z typically 
-    represents a grid-based appriximation of the normalizing constant. The `weights`
-    argument provide the weights (which need not be normalized).
+    This function computes log(l / Z) [log_scale=True] or l / Z [log_scale=False
+    where Z = sum_{j} w_j exp{lj}, where Z typically represents a grid-based appriximation 
+    of the normalizing constant. The `weights` argument provide the weights 
+    (which need not be normalized).
 
     This function is vectorized to operate over the rows of `log_dens`, with each 
     row treated as a separate discretized density. 
@@ -884,7 +943,7 @@ def _normalize_over_grid(log_dens, weights=None):
     # Compute log normalized density: p_{ij} = ell_{ij} + log w_j - logZ_i
     log_dens_norm = logdens_plus_logw - logZ[:, np.newaxis] # (n, m)
 
-    return log_dens_norm
+    return log_dens_norm if log_scale else np.exp(log_dens_norm)
 
 
 def estimate_ep_grid(
@@ -917,7 +976,7 @@ def estimate_ep_grid(
           accumulate sum_p and sum_p2; final mean = sum_p / S_total; var = (sum_p2/(S-1) - S_total/(S-1)*mean^2).
     """
 
-    logp =  _normalize_over_grid(logpi_samples, weights=None)
+    logp =  _normalize_over_grid(logpi_samples, weights=None, log_scale=True)
     S, M = logp.shape
 
     # Monte Carlo estimates: mean and (optionally) standard errors
