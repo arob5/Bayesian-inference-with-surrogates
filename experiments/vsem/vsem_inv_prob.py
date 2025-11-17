@@ -405,6 +405,70 @@ class VSEMTest:
                     "history": history}
         return gp_posterior, opt_info
     
+    def predict(self, u, pred=None):
+        """ Return Gaussian representing predictions (including observation noise) at u """
+        if pred is None:
+            latent = self.gp_posterior.predict(u, train_data=self.design)
+            pred = self.gp_posterior.likelihood(latent)
+        return pred
+
+    def log_post_approx_mean(self, u, pred=None):
+        """ Log of plug-in mean approximation of unnormalized posterior density. """
+        pred = self.predict(u, pred)
+        return pred.mean
+
+    def log_post_approx_eup(self, u, pred=None):
+        """ Log of EUP approximation of unnormalized posterior density. """
+        pred = self.predict(u, pred)
+        return pred.mean + 0.5 * pred.variance ** 2 
+
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None):
+        """ Log of EP approximation of normalized posterior density (approximate).
+        The grid of test points is used to approximate the normalizing constants Z(f).
+        The expectation with respect to f is estimated via simple Monte Carlo, by 
+        sampling discretizations of f at the test points. `n_mc` is the number of 
+        Monte Carlo samples to use.
+        """
+        pred = self.predict(u, pred)
+        n_grid = pred.event_shape[0]
+
+        # Seed JAX PRNG using numpy generator
+        jax_seed_from_np = self.inv_prob.rng.integers(0, 2**32, dtype=np.uint32)
+        jax_key = jr.key(jax_seed_from_np)
+
+        # log_post_samp[i,j] = log pi(u_j; f_i)
+        log_post_samp = pred.sample(jax_key, (n_mc,)) # (n_mc, n_grid)
+
+        ep_approx = estimate_ep_grid(log_post_samp)[0]
+        return np.log(ep_approx)
+    
+    def _exact_post_grid(self):
+        """ Normalized exact posterior density evaluated at test grid """
+        U = self.test_grid_info['U_grid']
+        unnormalized_post = self.test_grid_info['log_post']
+        return _normalize_over_grid(unnormalized_post).flatten()
+
+    def _mean_approx_grid(self):
+        """ Normalized plug-in mean approximation evaluated at test grid """
+        U = self.test_grid_info['U_grid']
+        pred = self.gp_post_pred['pred']
+        unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
+        return _normalize_over_grid(unnormalized_approx).flatten()
+
+    def _eup_approx_grid(self):
+        """ Normalized EUP approximation evaluated at test grid """
+        U = self.test_grid_info['U_grid']
+        pred = self.gp_post_pred['pred']
+        unnormalized_approx = self.log_post_approx_eup(U, pred=pred) # (n_grid,)
+        return _normalize_over_grid(unnormalized_approx).flatten()
+
+    def _ep_approx_grid(self):
+        """ Normalized EP approximation evaluated at test grid """
+        U = self.test_grid_info['U_grid']
+        pred = self.gp_post_pred['pred']
+        unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
+        return _normalize_over_grid(unnormalized_approx).flatten()
+
     def _get_plot_grid(self):
         grid_info = self.test_grid_info
 
@@ -769,3 +833,103 @@ def plot_shared_scale_heatmaps(
     fig.subplots_adjust(bottom=0.18) # extra space for colorbar     
     # leave caller freedom to further adjust (e.g. fig.subplots_adjust(bottom=...))
     return fig, axs_flat[:nplots], mappables, cbar_obj
+
+
+def _logsumexp(a: np.ndarray, axis: int = -1) -> np.ndarray:
+    """Stable log-sum-exp along `axis`. Returns array with `axis` eliminated."""
+    a_max = np.max(a, axis=axis, keepdims=True)
+    # If all entries are -inf, avoid NaN: keep a_max as -inf and sum_exp as 0
+    sum_exp = np.sum(np.exp(a - a_max), axis=axis, keepdims=True)
+    out = a_max + np.log(sum_exp)
+    return np.squeeze(out, axis=axis)
+
+
+def _normalize_over_grid(log_dens, weights=None):
+    """ Approximately normalize a density over a a grid of points
+
+    `log_dens` represents a discretized unnormalized log density l = (l1, ..., lJ).
+    This function computes l / Z, where Z = sum_{j} w_j exp{lj}, where Z typically 
+    represents a grid-based appriximation of the normalizing constant. The `weights`
+    argument provide the weights (which need not be normalized).
+
+    This function is vectorized to operate over the rows of `log_dens`, with each 
+    row treated as a separate discretized density. 
+    """
+
+    if log_dens.ndim < 2:
+        log_dens = log_dens.reshape(1,-1)
+    if log_dens.ndim != 2:
+        raise ValueError("`log_dens` must be a 2D array with shape (n, m).")
+    n, m = log_dens.shape
+
+    if weights is None:
+        weights = np.ones(m, dtype=float)
+    else:
+        weights = np.asarray(weights, dtype=float)
+        if weights.shape != (m,):
+            raise ValueError(f"weights must have shape ({m},), got {weights.shape}")
+    if np.any(weights < 0):
+        raise ValueError("weights must be non-negative.")
+    if np.all(weights == 0):
+        raise ValueError("all weights are zero (no quadrature mass).")
+
+    # log weights (if a weight is zero, log will be -inf, which is correct)
+    logw = np.log(weights)
+
+    # Compute logZ for each row of x:
+    #   logZ_i = logsumexp(ell_i + logw)
+    logdens_plus_logw = log_dens + logw[np.newaxis, :]   # (n, m)
+    logZ = _logsumexp(logdens_plus_logw, axis=1)         # (n,)
+
+    # Compute log normalized density: p_{ij} = ell_{ij} + log w_j - logZ_i
+    log_dens_norm = logdens_plus_logw - logZ[:, np.newaxis] # (n, m)
+
+    return log_dens_norm
+
+
+def estimate_ep_grid(
+    logpi_samples: np.ndarray,
+    weights: np.ndarray | None = None,
+    return_se: bool = True,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """
+    Estimate E_f[ pi(u_j; f) / Z(f) ] at grid nodes using Monte Carlo samples of log-densities.
+
+    Args:
+        logpi_samples: ndarray of shape (S, M). Row s contains [ell_j(f^{(s)})]_{j=1..M},
+                       where ell_j = log pi(u_j; f^{(s)}).
+                       S = number of Monte Carlo samples, M = number of grid nodes.
+        weights: ndarray of shape (M,), quadrature weights w_j >= 0 for approximating the
+                 integral Z(f) ≈ sum_j pi(u_j;f) * w_j. If None, equal weights are used.
+                 Weights must be strictly non-negative and not all zero.
+        return_se: whether to return Monte Carlo standard errors (True by default).
+
+    Returns:
+        mean_p: ndarray of shape (M,), the Monte Carlo estimate of E_f[ pi(u_j;f)/Z(f) ].
+        se_p: ndarray of shape (M,) giving Monte Carlo standard errors (if return_se True),
+              otherwise None.
+
+    Notes:
+        - This function is numerically stable because it computes log Z(f) using log-sum-exp:
+            log Z ≈ logsumexp( ell_j + log w_j ).
+        - After subtracting log Z from ell_j + log w_j we exponentiate to obtain p_j(f) ∈ [0,1].
+        - If memory is a concern (very large S), pass logpi_samples in batches and accumulate:
+          accumulate sum_p and sum_p2; final mean = sum_p / S_total; var = (sum_p2/(S-1) - S_total/(S-1)*mean^2).
+    """
+
+    logp =  _normalize_over_grid(logpi_samples, weights=None)
+    S, M = logp.shape
+
+    # Monte Carlo estimates: mean and (optionally) standard errors
+    log_mean_p = _logsumexp(logp, axis=0) - np.log(S) # (M,)
+    mean_p = np.exp(log_mean_p)                        
+    se_p = None
+    if return_se:
+        if S > 1:
+            # sample standard deviation / sqrt(S)
+            std_p = np.std(np.exp(logp), axis=0, ddof=1) # TODO: improve numerical stability here
+            se_p = std_p / np.sqrt(S)
+        else:
+            se_p = np.full(M, np.nan)
+
+    return mean_p, se_p
