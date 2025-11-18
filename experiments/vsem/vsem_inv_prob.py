@@ -95,11 +95,11 @@ class VSEMPrior:
         def par_names(self):
             return self._par_names
         
-        def sample(self, n=1, rng=None):
+        def sample(self, n=1):
             samp = np.empty((n, self.dim))
             for j in range(self.dim):
                 par_name = self._par_names[j]
-                samp[:,j] = self.dists[par_name].rvs(n, random_state=rng)
+                samp[:,j] = self.dists[par_name].rvs(n, random_state=self.rng)
 
             return samp[0] if n == 1 else samp
 
@@ -530,11 +530,25 @@ class VSEMTest:
         else:
             return normalized_approx
 
+    def compute_metrics(self, pred_type='pred'):
+        log_post_exact = self._exact_post_grid(shape_to_grid=False, log_scale=True)
+        log_post_mean = self._mean_approx_grid(shape_to_grid=False, log_scale=True, pred_type=pred_type)
+        log_post_eup = self._eup_approx_grid(shape_to_grid=False, log_scale=True, pred_type=pred_type)
+        log_post_ep = self._ep_approx_grid(shape_to_grid=False, log_scale=True, pred_type=pred_type)
+
+        mean_kl = kl_grid(log_post_exact, log_post_mean)
+        eup_kl = kl_grid(log_post_exact, log_post_eup)
+        ep_kl = kl_grid(log_post_exact, log_post_ep)
+
+        return {
+            'kl': [mean_kl, eup_kl, ep_kl]
+        }
+
     def _get_plot_grid(self):
         grid_info = self.test_grid_info
 
         return grid_info["U1_grid"], grid_info["U2_grid"]
-    
+
     def plot_exact_log_post(self):
         U1, U2 = self._get_plot_grid()
         log_post = self.test_grid_info["log_post_grid"]
@@ -547,6 +561,25 @@ class VSEMTest:
 
         return fig, ax
     
+    def plot_gp_bias(self, conditional=True, pred_type='pred_rect', markersize=8, **kwargs):
+        pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
+
+        U1, U2 = self._get_plot_grid()
+        n = U1.shape[0]
+        xlab, ylab = self.test_grid_info["axis_labels"]
+        means = pred_dist[pred_type].mean
+        exact = self.test_grid_info["log_post"]
+        biases = (means - exact).reshape(n,n)
+
+        mappable, fig = plot_heatmap(U1, U2, biases, title="Emulator Bias", 
+                                     xlabel=xlab, ylabel=ylab)
+        ax = fig.axes[0]
+        ax.plot(*self.inv_prob.likelihood.par_true, "*", color="red", markersize=12)
+        ax.plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
+
+        return fig, ax
+        
+
     def plot_gp_pred(self, conditional=True, pred_type='pred_rect', markersize=8, **kwargs):
         pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
 
@@ -628,8 +661,7 @@ class VSEMTest:
             axs[i].plot(self.design.X[:,0], self.design.X[:,1], "o", color="red", markersize=markersize)
 
         return fig, axs
-
-
+    
 
 # -----------------------------------------------------------------------------
 # Helper functions
@@ -948,6 +980,8 @@ def _normalize_over_grid(log_dens, weights=None, log_scale=True):
 
     This function is vectorized to operate over the rows of `log_dens`, with each 
     row treated as a separate discretized density. 
+
+    NOTE: assumes equally spaced grid, with equal grid spacing along both axes
     """
 
     if log_dens.ndim < 2:
@@ -1027,3 +1061,17 @@ def estimate_ep_grid(
             se_p = np.full(M, np.nan)
 
     return mean_p, se_p
+
+
+def kl_grid(logp, logq):
+    """
+    KL(p || q) = \int p * (log p - log q) dx.
+    Numerically stable: if q has zeros where p>0, KL is large/infinite; we floor q.
+    Returns KL value (scalar).
+
+    Assumes equally spaced grid in both axes.
+    """
+    p = np.exp(logp)
+    integrand = p * (logp - logq)
+    kl = integrand.mean()
+    return kl
