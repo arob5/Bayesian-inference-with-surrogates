@@ -530,7 +530,7 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def compute_metrics(self, pred_type='pred'):
+    def compute_metrics(self, pred_type='pred', alphas=None):
         log_post_exact = self._exact_post_grid(shape_to_grid=False, log_scale=True)
         log_post_mean = self._mean_approx_grid(shape_to_grid=False, log_scale=True, pred_type=pred_type)
         log_post_eup = self._eup_approx_grid(shape_to_grid=False, log_scale=True, pred_type=pred_type)
@@ -539,9 +539,15 @@ class VSEMTest:
         mean_kl = kl_grid(log_post_exact, log_post_mean)
         eup_kl = kl_grid(log_post_exact, log_post_eup)
         ep_kl = kl_grid(log_post_exact, log_post_ep)
+        
+        alphas, mean_coverage, _ = coverage_curve(log_post_exact, log_post_mean, alphas=alphas)
+        _, eup_coverage, _ = coverage_curve(log_post_exact, log_post_eup, alphas=alphas)
+        _, ep_coverage, _ = coverage_curve(log_post_exact, log_post_ep, alphas=alphas)
 
         return {
-            'kl': [mean_kl, eup_kl, ep_kl]
+            'kl': [mean_kl, eup_kl, ep_kl],
+            'coverage': [mean_coverage, eup_coverage, ep_coverage],
+            'alphas': alphas
         }
 
     def _get_plot_grid(self):
