@@ -1075,3 +1075,48 @@ def kl_grid(logp, logq):
     integrand = p * (logp - logq)
     kl = integrand.mean()
     return kl
+
+
+def hpd_region_mask_from_logp(logp, alpha, dx, dy):
+    """
+    Given logp (normalized log density) on grid, produce boolean mask for HPD region
+    that contains mass alpha (i.e., highest logp until cumulative mass >= alpha).
+    """
+    nx, ny = logp.shape
+    flat_idx = np.argsort(logp.ravel())[::-1]  # indices sorted descending by logp
+    # To accumulate mass, need p (from logp) and dx*dy later
+    return flat_idx  # return ordering for later usage
+
+
+def coverage_curve(logp_true, logp_approx, alphas=None):
+    """
+    Compute coverage curve: for each alpha in alphas, construct approximate HPD region
+    (based on approx logp), and compute mass under true p contained in that region.
+
+    Returns:
+        alphas: array
+        coverage: array same length - true mass inside approx HPD(alpha)
+        calibration_error: mean absolute deviation between coverage and nominal alpha
+    """
+    if alphas is None:
+        alphas = np.linspace(0.01, 0.99, 99)
+
+    logp_t = logp_true
+    logp_a = logp_approx
+    p_t = np.exp(logp_t)
+    p_a = np.exp(logp_a)
+
+    order = np.argsort(logp_a)[::-1]    # descending indices
+    approx_cum = np.cumsum(p_a[order])  # sums to 1
+
+    # For each alpha, find minimal index k where approx_cum[k] >= alpha
+    coverage = []
+    for alpha in alphas:
+        k = np.searchsorted(approx_cum, alpha, side='left')
+        idxs = order[:k+1] if k < order.size else order # indices in the HPD region
+        true_mass = p_t[idxs].sum()
+        coverage.append(true_mass)
+
+    coverage = np.array(coverage)
+    calib_error = np.mean(np.abs(coverage - alphas))
+    return alphas, coverage, calib_error
