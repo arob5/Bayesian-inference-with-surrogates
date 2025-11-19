@@ -989,7 +989,7 @@ in the $V$ basis, with $\postCov = V\Lambda V^\top$ where
 The exact posterior mean $m$ can also be written with respect to this basis as
 \begin{align}
 m &= V\alpha + V_\perp \alpha_\perp \\
-\alpha_j &= \frac{\lambda_j s_j}{\sigma_j} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = 1, \dots, r \\
+\alpha_j &= \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = 1, \dots, r \\
 (\alpha_\perp)_j &= \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = r+1, \dots, d
 \end{align}
 where $r$ is the rank of $G$.
@@ -1015,9 +1015,9 @@ Assume $Q = q^2 I$. Then $\postMeanEUP = V\alpha^{\mathrm{EUP}} + V_\perp \alpha
 $\postMeanEP = V\alpha^{\mathrm{EP}} + V_\perp \alpha_\perp$, where
 \begin{align}
 \alpha_j^{\mathrm{EUP}} 
-&\Def \frac{\lambda_j s_j}{\sigma + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \\
-&= \left[\frac{\lambda_j s_j}{\sigma + q^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \right]
-- \frac{\lambda_j s_j}{\sigma + q^2} \langle r, u_j \rangle \\
+&\Def \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \\
+&= \left[\frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \right]
+- \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle r, u_j \rangle \\
 \alpha_j^{\mathrm{EP}} &\Def \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
 \end{align}
 \end{prop}
