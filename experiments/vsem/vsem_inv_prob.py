@@ -487,7 +487,7 @@ class VSEMTest:
         pred = self.predict(u, pred)
         return pred.mean + 0.5 * pred.variance ** 2 
 
-    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True, jitter=1e-12):
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True):
         """ Log of EP approximation of normalized posterior density (approximate).
         The grid of test points is used to approximate the normalizing constants Z(f).
         The expectation with respect to f is estimated via simple Monte Carlo, by 
@@ -500,8 +500,8 @@ class VSEMTest:
         # log_post_samp[i,j] = log pi(u_j; f_i)
         log_post_samp = pred.sample(n_mc) # (n_mc, n_grid)
 
-        ep_approx = estimate_ep_grid(log_post_samp)[0]
-        return np.log(ep_approx + jitter)
+        _, log_ep_approx, _ = estimate_ep_grid(log_post_samp)
+        return log_ep_approx
     
     def _exact_post_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized exact posterior density evaluated at test grid """
@@ -1052,7 +1052,7 @@ def estimate_ep_grid(
     logpi_samples: np.ndarray,
     weights: np.ndarray | None = None,
     return_se: bool = True,
-) -> tuple[np.ndarray, np.ndarray | None]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     """
     Estimate E_f[ pi(u_j; f) / Z(f) ] at grid nodes using Monte Carlo samples of log-densities.
 
@@ -1067,6 +1067,7 @@ def estimate_ep_grid(
 
     Returns:
         mean_p: ndarray of shape (M,), the Monte Carlo estimate of E_f[ pi(u_j;f)/Z(f) ].
+        log_mean_p: log of mean_p
         se_p: ndarray of shape (M,) giving Monte Carlo standard errors (if return_se True),
               otherwise None.
 
@@ -1093,7 +1094,7 @@ def estimate_ep_grid(
         else:
             se_p = np.full(M, np.nan)
 
-    return mean_p, se_p
+    return mean_p, log_mean_p, se_p
 
 
 def kl_grid(logp, logq):

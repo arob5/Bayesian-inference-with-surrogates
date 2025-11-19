@@ -71,7 +71,73 @@ def plot_coverage(tests: list[VSEMTest],
                   metrics: list, 
                   q_min: float = 0.05, 
                   q_max: float = 0.95, 
-                  ax=None):
+                  figsize=(12, 4)):
+    """
+    The first two arguments are those returned by `run_vsem_experiment()`.
+    Assumes the same coverage probabilities were used for all replications
+    within the experiment.
+    """
+
+    # Assumed constrant across all replications
+    probs = metrics[0]['alphas']
+
+    n_reps = len(tests)
+    n_probs = len(probs)
+    mean_coverage = np.empty((n_reps, n_probs))
+    eup_coverage = np.empty((n_reps, n_probs))
+    ep_coverage = np.empty((n_reps, n_probs))
+
+    # assemble arrays of coverage stats
+    for i, results in enumerate(metrics):
+        mean, eup, ep = results['coverage']
+        mean_coverage[i,:] = mean
+        eup_coverage[i,:] = eup
+        ep_coverage[i,:] = ep
+
+    # summarize distribution over replications
+    mean_m = np.median(mean_coverage, axis=0)
+    eup_m = np.median(eup_coverage, axis=0)
+    ep_m = np.median(ep_coverage, axis=0)
+    mean_q = np.quantile(mean_coverage, q=[q_min, q_max], axis=0)
+    eup_q = np.quantile(eup_coverage, q=[q_min, q_max], axis=0)
+    ep_q = np.quantile(ep_coverage, q=[q_min, q_max], axis=0)
+
+    meds = [mean_m, eup_m, ep_m]
+    qs = [mean_q, eup_q, ep_q]
+    labels = ['mean', 'eup', 'ep']
+    
+    fig, axs = plt.subplots(1, 3, figsize=figsize)
+    axs = axs.reshape(-1)
+    n_plots = len(axs)
+
+    for i in range(n_plots):
+        ax = axs[i]
+        q = qs[i]
+        med = meds[i]
+        label = labels[i]
+
+        ax.fill_between(probs, q[0,:], q[1,:], alpha=0.7)
+        ax.plot(probs, med)
+        ax.set_title(label)
+        ax.set_xlabel('Nominal Coverage')
+        ax.set_ylabel('Actual Coverage')
+
+        # Add line y = x
+        xmin, xmax = ax.get_xlim()
+        x = np.linspace(xmin, xmax, 100)
+        y = x
+        ax.plot(x, y, color="red", linestyle="--")
+        ax.legend()
+
+    plt.close(fig)
+    return fig, axs
+
+
+def plot_coverage_same_plot(tests: list[VSEMTest], 
+                            metrics: list, 
+                            q_min: float = 0.05, 
+                            q_max: float = 0.95, 
+                            ax=None):
     """
     The first two arguments are those returned by `run_vsem_experiment()`.
     Assumes the same coverage probabilities were used for all replications
