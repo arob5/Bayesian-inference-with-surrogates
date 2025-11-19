@@ -66,14 +66,14 @@ def _uniform(lower, upper):
 
 class VSEMPrior:
         _dists = {
-            "kext": _uniform(0.2, 1.0),
+            "kext": _uniform(0.4, 1.0), # _uniform(0.2, 1.0),
             "lar" : _uniform(0.2, 3.0),
             "lue" : _uniform(5e-04, 4e-03),
             "gamma": _uniform(2e-01, 6e-01),
             "tauv": _uniform(5e+02, 3e+03),
             "taus": _uniform(4e+03, 5e+04),
             "taur": _uniform(5e+02, 3e+03), 
-            "av": _uniform(2e-01, 1.0),
+            "av": _uniform(0.4, 1.0), # _uniform(2e-01, 1.0),
             "veg_init": _uniform(0.0, 10.0), 
             "soil_init": _uniform(0.0, 30.0),
             "root_init": _uniform(0.0, 10.0)
@@ -103,7 +103,6 @@ class VSEMPrior:
 
             return samp[0] if n == 1 else samp
 
-
         def log_density(self, x):
             x = np.asarray(x)
             if x.ndim == 1:
@@ -114,11 +113,26 @@ class VSEMPrior:
                 log_dens = log_dens + self.dists[par_name].logpdf(x[:,par_idx])
             
             return log_dens
+        
+        def simulate_ground_truth(self):
+            """
+            Return dictionary representing a sample from all of the parameters, 
+            not just the calibration parameters.
+            """
+            par = {}
+            for par_name, prior in self._dists.items():
+                par[par_name] = prior.rvs(1, random_state=self.rng)[0]
+
+            return par
 
 
 class VSEMLikelihood:
 
-    def __init__(self, rng, n_days, par_names):
+    def __init__(self, rng, n_days, par_names, ground_truth=None):
+        """
+        If provided, `ground_truth` is a dictionary of all VSEM parameters that 
+        will be treated as the ground truth. 
+        """
         self.rng = rng
         self.n_days = n_days
         self.time_steps, self.driver = vsem.get_vsem_driver(self.n_days, self.rng)
@@ -138,19 +152,23 @@ class VSEMLikelihood:
         self.month_midpoints = np.round(0.5 * (self.month_start_idx + self.month_stop_idx))
 
         # Ground truth
-        self._all_par_true = {
-            "kext": 7.92301322e-01,
-            "lar": 1.86523322e+00,
-            "lue": 6.84170991e-04,
-            "gamma": 5.04967614e-01,
-            "tauv": 2.95868049e+03,
-            "taus": 2.58846896e+04,
-            "taur": 1.77011520e+03,
-            "av": 6.88359631e-01,
-            "veg_init": 3.04573410e+00,
-            "soil_init": 2.11415896e+01,
-            "root_init": 5.58376223e+00
-        }
+        if ground_truth is None:
+            self._all_par_true = {
+                "kext": 0.85, # 7.92301322e-01,
+                "lar": 1.86523322e+00,
+                "lue": 6.84170991e-04,
+                "gamma": 5.04967614e-01,
+                "tauv": 2.95868049e+03,
+                "taus": 2.58846896e+04,
+                "taur": 1.77011520e+03,
+                "av": 0.85, # 6.88359631e-01,
+                "veg_init": 3.04573410e+00,
+                "soil_init": 2.11415896e+01,
+                "root_init": 5.58376223e+00
+            }
+        else:
+            self._all_par_true = ground_truth
+
         self.par_true = np.array([self._all_par_true[par] for par in self.par_names])
         
         # VSEM forward model.
@@ -311,12 +329,13 @@ class VSEMTest:
     Note that this class is specialized for an inverse problem with a 2d input space.
     """
     
-    def __init__(self, inv_prob: InvProb, n_design: int, n_test_grid_1d: int = 100):
+    def __init__(self, inv_prob: InvProb, n_design: int, 
+                 n_test_grid_1d: int = 50, store_pred_rect=False):
         self.inv_prob = inv_prob
         self.n_design = n_design
         self.set_test_grid_info(n_test_grid_1d)
         self.set_gp_model()
-        self.store_gp_pred()
+        self.store_gp_pred(store_pred_rect)
 
     def set_gp_model(self):
         self.design = self.construct_design()
@@ -354,36 +373,44 @@ class VSEMTest:
             "n_grid": U_grid.shape[0]
         }
 
-    def store_gp_pred(self):
+    def store_gp_pred(self, store_pred_rect=False):
         """
-        Storing predictions as Gaussian distributions. Wrapping in my Gaussian class.
+        Storing predictions as Gaussian distributions. Wrapping in custom
+        Gaussian class. Optionally store rectified (clipped) Gaussian
+        predictions as well.
         """
         U = self.test_grid_info["U_grid"]
         upper_bound = self.log_post_upper_bound(U)
 
         # Prior predictions
-        prior_latent = self.gp_posterior.prior.predict(U)
-        prior_pred = self.gp_posterior.likelihood(prior_latent)
-        prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
-                                            prior_pred.covariance_matrix,
-                                            upper=upper_bound,
-                                            rng=self.inv_prob.rng)
+        # prior_latent = self.gp_posterior.prior.predict(U)
+        # prior_pred = self.gp_posterior.likelihood(prior_latent)
         
         # Conditional predictions
         post_latent = self.gp_posterior.predict(U, train_data=self.design)
         post_pred = self.gp_posterior.likelihood(post_latent)
-        post_pred_rect = RectifiedGaussian(post_pred.mean, 
-                                           post_pred.covariance_matrix,
-                                           upper=upper_bound,
-                                           rng=self.inv_prob.rng)
         
+        # Optional store rectified Gaussian predictions
+        if store_pred_rect:
+            # prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
+            #                                     prior_pred.covariance_matrix,
+            #                                     upper=upper_bound,
+            #                                     rng=self.inv_prob.rng)
+            post_pred_rect = RectifiedGaussian(post_pred.mean, 
+                                               post_pred.covariance_matrix,
+                                               upper=upper_bound,
+                                               rng=self.inv_prob.rng)
+        else:
+            prior_pred_rect = None
+            post_pred_rect = None
+
         # Wrap as `Gaussian`
-        prior_latent = Gaussian(prior_latent.mean, prior_latent.covariance_matrix, rng=self.inv_prob.rng)
-        prior_pred = Gaussian(prior_pred.mean, prior_pred.covariance_matrix, rng=self.inv_prob.rng)
+        # prior_latent = Gaussian(prior_latent.mean, prior_latent.covariance_matrix, rng=self.inv_prob.rng)
+        # prior_pred = Gaussian(prior_pred.mean, prior_pred.covariance_matrix, rng=self.inv_prob.rng)
         post_latent = Gaussian(post_latent.mean, post_latent.covariance_matrix, rng=self.inv_prob.rng)
         post_pred = Gaussian(post_pred.mean, post_pred.covariance_matrix, rng=self.inv_prob.rng)
 
-        self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_rect": prior_pred_rect}
+        # self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_rect": prior_pred_rect}
         self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_rect": post_pred_rect}
 
 
@@ -460,7 +487,7 @@ class VSEMTest:
         pred = self.predict(u, pred)
         return pred.mean + 0.5 * pred.variance ** 2 
 
-    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True):
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True, jitter=1e-12):
         """ Log of EP approximation of normalized posterior density (approximate).
         The grid of test points is used to approximate the normalizing constants Z(f).
         The expectation with respect to f is estimated via simple Monte Carlo, by 
@@ -474,7 +501,7 @@ class VSEMTest:
         log_post_samp = pred.sample(n_mc) # (n_mc, n_grid)
 
         ep_approx = estimate_ep_grid(log_post_samp)[0]
-        return np.log(ep_approx)
+        return np.log(ep_approx + jitter)
     
     def _exact_post_grid(self, shape_to_grid=True, log_scale=False):
         """ Normalized exact posterior density evaluated at test grid """
@@ -488,7 +515,7 @@ class VSEMTest:
         else:
             return normalized_post
 
-    def _mean_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
+    def _mean_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred'):
         """ Normalized plug-in mean approximation evaluated at test grid 
         
         `pred_type` is either 'latent', 'pred', or 'pred_rect'
@@ -504,7 +531,7 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def _eup_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
+    def _eup_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred'):
         """ Normalized EUP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         pred = self.gp_post_pred[pred_type]
@@ -517,7 +544,7 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def _ep_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred_rect'):
+    def _ep_approx_grid(self, shape_to_grid=True, log_scale=False, pred_type='pred'):
         """ Normalized EP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         pred = self.gp_post_pred[pred_type]
@@ -567,7 +594,7 @@ class VSEMTest:
 
         return fig, ax
     
-    def plot_gp_bias(self, conditional=True, pred_type='pred_rect', markersize=8, **kwargs):
+    def plot_gp_bias(self, conditional=True, pred_type='pred', markersize=8, **kwargs):
         pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
 
         U1, U2 = self._get_plot_grid()
@@ -586,7 +613,7 @@ class VSEMTest:
         return fig, ax
         
 
-    def plot_gp_pred(self, conditional=True, pred_type='pred_rect', markersize=8, **kwargs):
+    def plot_gp_pred(self, conditional=True, pred_type='pred', markersize=8, **kwargs):
         pred_dist = self.gp_post_pred if conditional else self.gp_prior_pred
 
         U1, U2 = self._get_plot_grid()
@@ -637,7 +664,7 @@ class VSEMTest:
 
 
     def plot_posterior_comparison(self, markersize=8, shared_scale=True, log_scale=False, 
-                                  pred_type='pred_rect', **kwargs):
+                                  pred_type='pred', **kwargs):
         """ Plot exact vs plug-in mean vs EUP vs EP normalized densities """
         U1, U2 = self._get_plot_grid()
         n = U1.shape[0]
