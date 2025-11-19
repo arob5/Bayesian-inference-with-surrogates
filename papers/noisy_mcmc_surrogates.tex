@@ -1071,6 +1071,21 @@ Note that the ODE is of the form \ref{ode_ivp}, with the caveat that the dynamic
 time-dependent forcing $\forcing(\Time)$. Given a value of $\Par$, we numerically solve the ODE at a daily time step
 via the basic Euler scheme implemented in the R \verb+BayesianTools+ package \citep{vsem}. 
 
+We consider estimating the parameters $\Par \Def (\KEXT, \alphaV)$ given noisy monthly averages of LAI over a 
+two year period. We assume an additive Gaussian noise model
+\begin{align}
+\obs &= \fwd(\Par) + \noise \label{eq:vsem-inv-prob} \\
+\noise &\sim \Gaussian(0, \sigma^2 I) \nonumber 
+\end{align}
+where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages; i.e., the first entry of $\fwd(\Par)$
+is given by 
+\begin{equation}
+\fwd_{1}(\Par) \Def \frac{\LAR}{30} \sum_{\timeIndex=1}^{30} \state_{\textrm{v},\timeIndex}(\Par),
+\end{equation}
+and the remaining entries simply change the indices of the summation. For simplicity, we fix $\sigma^2$
+and assume independent uniform priors. Synthetic data $\obs$ is simulated
+using \Cref{eq:vsem-inv-prob} with fixed ground truth values $\{\Par_{\star}, \sigma^2_{\star}\}$. 
+
 
 
 
