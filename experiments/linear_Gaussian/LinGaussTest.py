@@ -247,10 +247,14 @@ class LinGaussTest:
 
         return samp_list, labels
 
-    def get_hist_plot(self, n_samp=100000, include=None, plot_kwargs=None):
+    def get_hist_plot(self, n_samp=100000, include=None, idcs=None, plot_kwargs=None):
         samp_list, plot_labs = self.get_sample_list(n_samp, include)
         if plot_kwargs is None:
             plot_kwargs = {}
+
+        # Subset of dimensions in parameter space
+        if idcs is not None:
+            samp_list = [samp[:,idcs] for samp in samp_list]
 
         fig = get_col_hist_grid(*samp_list, plot_labs=plot_labs, col_labs=self.u_names,
                                 density=True, **plot_kwargs)
@@ -310,7 +314,7 @@ class LinGaussTest:
         alg = BlockMCMCSampler(target, initial_state=state, kernels=ker, rng=self.rng)
         return alg
 
-    def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.9):
+    def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.999):
         L_noise = self.noise.chol
 
         # Extended state space. Initialize state via prior sample.

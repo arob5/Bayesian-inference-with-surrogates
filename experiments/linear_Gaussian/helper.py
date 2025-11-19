@@ -39,24 +39,24 @@ def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
         figs: list of matplotlib Figure objects (len=d)
     """
 
-    n_cols = arrays[0].shape[1]
-    if not all(a.shape[1] == n_cols for a in arrays):
+    n_dims = arrays[0].shape[1]
+    if not all(a.shape[1] == n_dims for a in arrays):
         raise ValueError("All arrays must have the same number of columns")
 
     if hist_kwargs is None:
         hist_kwargs = {}
 
     if ncols is None:
-        ncols = int(np.ceil(n_cols / nrows))
+        ncols = int(np.ceil(n_dims / nrows))
 
     if col_labs is None:
-        col_labs = [f"Column {i}" for i in range(n_cols)]
+        col_labs = [f"Column {i}" for i in range(n_dims)]
     if plot_labs is None:
         plot_labs = [f"Array {i+1}" for i in range(len(arrays))]
 
     fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
     axs = np.array(axs).reshape(-1)
-    for col in range(n_cols):
+    for col in range(n_dims):
         ax = axs[col]
         for idx, arr in enumerate(arrays):
             ax.hist(arr[:, col], bins=bins, alpha=0.5, label=plot_labs[idx],
@@ -65,7 +65,7 @@ def get_col_hist_grid(*arrays, bins=30, nrows=1, ncols=None, figsize=(5,4),
         ax.legend()
 
     # Hide unused axes and close figure.
-    for k in range(n_cols, nrows*ncols):
+    for k in range(n_dims, nrows*ncols):
         fig.delaxes(axs[k])
     plt.close(fig)
 

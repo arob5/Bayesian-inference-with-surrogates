@@ -27,6 +27,7 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
 
     n = G.shape[0]
     d = G.shape[1]
+    tests = []
 
     # Default to well-calibrated surrogate
     if Q is None:
@@ -49,6 +50,7 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
         r = Gaussian(cov=Q_true, rng=rng).sample()
 
         test = LinGaussTest(inv_prob, Q, r=r)
+        tests.append(test)
         res = test.calc_coverage(probs=probs)
 
         out["ep_cover_univariate"][i,:,:] = res["ep"]
@@ -59,7 +61,7 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
         out["eup_kl"][i] = test.post.kl(test.eup_post)
         out["ep_expected_kl"][i], out["eup_expected_kl"][i] = test.estimate_expected_kl()
 
-    return inv_prob, test, out, probs
+    return tests, out, probs
 
 
 def plot_coverage(ep_coverage, eup_coverage, probs, q_min=0.05, q_max=0.95, ax=None):
