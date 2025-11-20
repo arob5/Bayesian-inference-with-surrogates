@@ -330,7 +330,7 @@ class VSEMTest:
     """
     
     def __init__(self, inv_prob: InvProb, n_design: int, 
-                 n_test_grid_1d: int = 50, store_pred_rect=False):
+                 n_test_grid_1d: int = 100, store_pred_rect=False):
         self.inv_prob = inv_prob
         self.n_design = n_design
         self.set_test_grid_info(n_test_grid_1d)
@@ -366,7 +366,7 @@ class VSEMTest:
             "u1_grid": u1_grid,
             "u2_grid": u2_grid,
             "grid_spacing": grid_spacing,
-            "grid_cell_area": grid_cell_area,
+            "cell_area": grid_cell_area,
             "U1_grid": U1_grid,
             "U2_grid": U2_grid,
             "U_grid": U_grid,
@@ -581,9 +581,11 @@ class VSEMTest:
         eup_kl = kl_grid(log_post_exact, log_post_eup)
         ep_kl = kl_grid(log_post_exact, log_post_ep)
         
-        alphas, mean_coverage, _ = coverage_curve(log_post_exact, log_post_mean, alphas=alphas)
-        _, eup_coverage, _ = coverage_curve(log_post_exact, log_post_eup, alphas=alphas)
-        _, ep_coverage, _ = coverage_curve(log_post_exact, log_post_ep, alphas=alphas)
+        # Passing cell_area=None since these densities are already normalized and thus should
+        # already be treated as log masses.
+        alphas, mean_coverage = coverage_curve(log_post_exact, log_post_mean, cell_area=None, alphas=alphas)
+        _, eup_coverage = coverage_curve(log_post_exact, log_post_eup, cell_area=None, alphas=alphas)
+        _, ep_coverage = coverage_curve(log_post_exact, log_post_ep, cell_area=None, alphas=alphas)
 
         return {
             'kl': [mean_kl, eup_kl, ep_kl],
@@ -677,17 +679,17 @@ class VSEMTest:
         return fig, axs
 
 
-    def plot_posterior_comparison(self, markersize=8, shared_scale=True, return_log=False, 
+    def plot_posterior_comparison(self, markersize=8, shared_scale=True, log_scale=False, 
                                   pred_type='pred', **kwargs):
         """ Plot exact vs plug-in mean vs EUP vs EP normalized densities """
         U1, U2 = self._get_plot_grid()
         n = U1.shape[0]
         xlab, ylab = self.test_grid_info["axis_labels"]
 
-        exact = self._exact_post_grid(return_log=return_log)
-        mean = self._mean_approx_grid(return_log=return_log, pred_type=pred_type)
-        eup = self._eup_approx_grid(return_log=return_log, pred_type=pred_type)
-        ep = self._ep_approx_grid(return_log=return_log, pred_type=pred_type)
+        exact = self._exact_post_grid(return_log=log_scale)
+        mean = self._mean_approx_grid(return_log=log_scale, pred_type=pred_type)
+        eup = self._eup_approx_grid(return_log=log_scale, pred_type=pred_type)
+        ep = self._ep_approx_grid(return_log=log_scale, pred_type=pred_type)
 
         param_list = [U1, U2]
         param_dict = {
@@ -799,7 +801,7 @@ def plot_independent_heatmaps(X, Y, Z_list, titles=None,
                               xlab=None, ylab=None,
                               nrows=1, ncols=None, figsize=None,
                               cmap='viridis', shading='auto',
-                              sharexy=False):
+                              sharexy=False, **kwargs):
     """
     Plot multiple independent heatmaps (each with its own colorbar).
     Returns (fig, axs, mappables) and does NOT call plt.show().
@@ -886,6 +888,7 @@ def plot_shared_scale_heatmaps(
     cbar: bool = True,
     cbar_kwargs: Optional[dict] = None,
     sharexy: bool = False,
+    **kwargs
 ):
     """
     Plot multiple heatmaps that share a single global color scale (one colorbar).
@@ -1008,41 +1011,68 @@ def plot_shared_scale_heatmaps(
 
 
 def _logsumexp(a: np.ndarray, axis: int = -1) -> np.ndarray:
-    """ log-sum-exp along `axis`. Returns array with `axis` eliminated."""
+    """ log-sum-exp along `axis`.
+
+    Returns an array with `axis` eliminated (i.e. reduced), shape follows numpy reduction rules.
+    Handles the case where all entries along the axis are -inf (returns -inf, not NaN).
+    """
+    a = np.asarray(a)
     a_max = np.max(a, axis=axis, keepdims=True)
-    # If all entries are -inf, avoid NaN: keep a_max as -inf and sum_exp as 0
-    sum_exp = np.sum(np.exp(a - a_max), axis=axis, keepdims=True)
+    # Compute shifted = a - a_max but avoid NaN where a_max is -inf
+    shifted = a - a_max
+    # where a_max is not finite (i.e. -inf), replace shifted with -inf so exp(-inf)=0
+    shifted = np.where(np.isfinite(a_max), shifted, -np.inf)
+    sum_exp = np.sum(np.exp(shifted), axis=axis, keepdims=True)
     out = a_max + np.log(sum_exp)
-    return np.squeeze(out, axis=axis)
+    out = np.squeeze(out, axis=axis)
+    return out
 
 
 def _normalize_over_grid(log_dens, cell_area, *, return_log=True):
     """
     Normalize a discrete density over an equally spaced grid. The argument 
     `log_dens` is the log of the (potentially) unnormalized density in 
-    a flattened representation. `cell_area` is the area of one grid cell 
-    in the grid, assumed constant. Vectorized so that `log_dens` can be
-    (n_densities, n_grid_points), where each row corresponds to a different
-    density over the same grid.
+    a flattened representation (1D) or as rows (2D: n_densities x n_grid_points).
+    `cell_area` is the area of one grid cell in the grid, assumed constant, or
+    None if the inputs are already log-masses.
 
     Returns:
-        tuple, containing:
-            - normalized density or its log, same shape as `log_dens`
-            - normalizing constants, or their logs, of shape (n_densities,)
-    
+        If return_log=True:
+            (log_dens_norm, log_Z)
+            - log_dens_norm : same shape as input `log_dens` (log of normalized mass per cell)
+            - log_Z : shape (n_densities,) or scalar if single density: log normalizing constants
+        If return_log=False:
+            (dens_norm, Z) with same shapes but exponentiated.
     """
-    if cell_area <= 0:
-        raise ValueError("cell_area must be positive")
-    
-    lA = np.log(cell_area)
-    lp_plus_lA = log_dens + lA # log{A * p(x)}, # (n, d)
-    log_Z = _logsumexp(lp_plus_lA) # log normalizing constant, 
-    log_dens_norm = log_dens - log_Z[:,np.newaxis] # (n, d)
+    log_dens = np.asarray(log_dens)
+    single = (log_dens.ndim == 1)
+    log_dens_2d = np.atleast_2d(log_dens)  # shape (n, d) where n=1 if input was 1D
+
+    if cell_area is not None:
+        if not (np.isscalar(cell_area) and cell_area > 0):
+            raise ValueError("cell_area must be a positive scalar or None")
+        lA = np.log(cell_area)
+        lp_plus_lA = log_dens_2d + lA
+    else:
+        # inputs are already log-masses (unnormalized)
+        lp_plus_lA = log_dens_2d
+
+    # compute log normalizer per row (sum over grid points axis=1)
+    log_Z = _logsumexp(lp_plus_lA, axis=1)  # shape (n,)
+
+    # normalize: log mass per cell = lp_plus_lA - log_Z[:, None]
+    log_dens_norm = lp_plus_lA - log_Z[:, np.newaxis]
+
+    if single:
+        log_dens_norm = log_dens_norm.ravel()
+        log_Z = np.squeeze(log_Z)
 
     if return_log:
         return log_dens_norm, log_Z
     else:
-        return np.exp(log_dens_norm), np.exp(log_Z)
+        dens = np.exp(log_dens_norm)
+        Z = np.exp(log_Z)
+        return dens, Z
 
 
 def estimate_ep_grid(
@@ -1074,7 +1104,7 @@ def estimate_ep_grid(
 
 def kl_grid(logp, logq):
     """
-    KL(p || q) = \int p * (log p - log q) dx.
+    KL(p || q) = int p * (log p - log q) dx.
     Numerically stable: if q has zeros where p>0, KL is large/infinite; we floor q.
     Returns KL value (scalar).
 
@@ -1086,46 +1116,176 @@ def kl_grid(logp, logq):
     return kl
 
 
-def hpd_region_mask_from_logp(logp, alpha, dx, dy):
+def coverage_curve(
+    logp_true,
+    logp_approx,
+    cell_area,
+    alphas=None,
+    *,
+    return_masks=False,
+    expand_ties=False,
+):
     """
-    Given logp (normalized log density) on grid, produce boolean mask for HPD region
-    that contains mass alpha (i.e., highest logp until cumulative mass >= alpha).
-    """
-    nx, ny = logp.shape
-    flat_idx = np.argsort(logp.ravel())[::-1]  # indices sorted descending by logp
-    # To accumulate mass, need p (from logp) and dx*dy later
-    return flat_idx  # return ordering for later usage
+    Compute coverage curve on a discrete grid. The grid size has cell area
+    `cell_area`, which is assumed constant across cells.
 
+    NEW OPTIONAL DEBUG ARGUMENTS
+    ----------------------------
+    return_masks : bool (default False)
+        If True, return a list of boolean arrays. For each alpha, the mask[i]
+        indicates which grid cells belong to the approximate HPD(alpha) region.
+        This allows inspection / visualization of the actual HPD set.
 
-def coverage_curve(logp_true, logp_approx, alphas=None):
-    """
-    Compute coverage curve: for each alpha in alphas, construct approximate HPD region
-    (based on approx logp), and compute mass under true p contained in that region.
+    expand_ties : bool (default False)
+        Controls how HPD sets handle ties in the approximate density.
+        Suppose the HPD threshold falls between two cells with equal log prob.
+        Then:
 
-    Returns:
-        alphas: array
-        coverage: array same length - true mass inside approx HPD(alpha)
-        calibration_error: mean absolute deviation between coverage and nominal alpha
+        • If expand_ties = False:
+              The mask includes the minimal number of cells needed to get
+              cumulative probability ≥ alpha. (This may split tied values.)
+
+        • If expand_ties = True:
+              All cells whose logp_approx ≥ threshold are included.
+              This yields a *closed* HPD region and is often a more stable / 
+              interpretable choice on coarse grids.
+
+    PARAMETERS
+    ----------
+    logp_true : array_like
+        Log *density* or log *mass* on the grid.
+    logp_approx : array_like
+        Log density/mass of approximate model on the same grid.
+    cell_area : float
+        If >0, log densities are treated as *densities* and converted to log mass
+        by adding log(cell_area). If you pass *already normalized log-mass values*
+        (for example, from a previous call to _normalize_over_grid),
+        the function detects this automatically and does *not* add log(cell_area)
+        again.
+    alphas : array_like of HPD mass levels
+        Defaults to np.linspace(0.01, 0.99, 99).
+
+    RETURNS
+    -------
+    alphas : array
+    coverage : array
+        True mass inside approximate HPD(alpha) for each alpha.
+    masks : list of boolean arrays (only if return_masks=True)
+        masks[i][j] = True if cell j is included in HPD(alphas[i]).
     """
+
+    import numpy as np
+
     if alphas is None:
         alphas = np.linspace(0.01, 0.99, 99)
+    alphas = np.asarray(alphas)
+    if np.any((alphas < 0) | (alphas > 1)):
+        raise ValueError("alphas must lie in [0,1]")
 
-    logp_t = logp_true
-    logp_a = logp_approx
+    # --- Flatten inputs
+    logp_t = np.asarray(logp_true).reshape(-1)
+    logp_a = np.asarray(logp_approx).reshape(-1)
+    if logp_t.shape != logp_a.shape:
+        raise ValueError("logp_true and logp_approx must be same size")
+
+    # --- Normalize using helper that avoids re-applying log(cell_area)
+    logp_t, logZ_t = _normalize_over_grid(logp_t, cell_area, return_log=True)
+    logp_a, logZ_a = _normalize_over_grid(logp_a, cell_area, return_log=True)
+
+    if not np.isfinite(logZ_t):
+        raise ValueError("true probabilities are all -inf")
+    if not np.isfinite(logZ_a):
+        raise ValueError("approx probabilities are all -inf")
+
     p_t = np.exp(logp_t)
     p_a = np.exp(logp_a)
+    n = len(p_a)
 
-    order = np.argsort(logp_a)[::-1]    # descending indices
-    approx_cum = np.cumsum(p_a[order])  # sums to 1
+    # ==========================================================
+    # HELPER: compute the HPD mask
+    # ==========================================================
+    def _compute_hpd_mask(alpha, *, expand_ties=False):
+        """
+        Returns a boolean mask of length n indicating membership in the HPD(alpha)
+        region determined from logp_a / p_a.
 
-    # For each alpha, find minimal index k where approx_cum[k] >= alpha
-    coverage = []
-    for alpha in alphas:
-        k = np.searchsorted(approx_cum, alpha, side='left')
-        idxs = order[:k+1] if k < order.size else order # indices in the HPD region
-        true_mass = p_t[idxs].sum()
-        coverage.append(true_mass)
+        If expand_ties=True:
+            includes *all* cells whose logp_a >= threshold.
 
-    coverage = np.array(coverage)
-    calib_error = np.mean(np.abs(coverage - alphas))
-    return alphas, coverage, calib_error
+        If expand_ties=False:
+            minimal number of top-ranked cells reaching mass ≥ alpha.
+        """
+        if alpha <= 0:
+            return np.zeros(n, dtype=bool)
+        if alpha >= 1:
+            return np.ones(n, dtype=bool)
+
+        order = np.argsort(logp_a)[::-1]  # descending
+        cum = np.cumsum(p_a[order])
+        k = np.searchsorted(cum, alpha, side="left")
+
+        if not expand_ties:
+            # Minimal set (include cell k)
+            mask = np.zeros(n, dtype=bool)
+            mask[order[:k+1]] = True
+            return mask
+
+        # Expand ties at the threshold
+        if k >= n:
+            return np.ones(n, dtype=bool)
+
+        threshold_lp = logp_a[order[k]]
+        # Include all cells with logp >= that value
+        mask = logp_a >= threshold_lp
+        return mask
+
+    # ==========================================================
+    # MAIN LOOP
+    # ==========================================================
+    coverage = np.empty_like(alphas, dtype=float)
+    masks = [] if return_masks else None
+
+    for i, a in enumerate(alphas):
+        mask = _compute_hpd_mask(a, expand_ties=expand_ties)
+        coverage[i] = float(np.sum(p_t[mask]))
+        if return_masks:
+            masks.append(mask.copy())
+
+    if return_masks:
+        return alphas, coverage, masks
+    return alphas, coverage
+
+
+# =======================================================================
+# Visualization helper for masks
+# =======================================================================
+def plot_hpd_mask(mask, grid_shape, ax=None, title=None):
+    """
+    Visualize an HPD mask returned by `coverage_curve(return_masks=True)`.
+
+    PARAMETERS
+    ----------
+    mask : 1d boolean array
+        Mask returned by coverage_curve.
+    grid_shape : tuple (H, W)
+        Shape of the original 2D grid.
+    ax : matplotlib axis (optional)
+    title : str
+
+    RETURNS
+    -------
+    The matplotlib axis.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    M = np.asarray(mask).reshape(grid_shape)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(4, 4))
+
+    ax.imshow(M, origin="lower", interpolation="none")
+    ax.set_title(title or "HPD mask")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return ax
