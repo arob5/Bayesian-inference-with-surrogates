@@ -975,19 +975,17 @@ the EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, 
 \postCovEUP &= \left(\fwdLin^\top \eupNoiseCov^{-1}\fwdLin + \priorCov^{-1} \right)^{-1} \nonumber
 \end{align}
 and $\eupNoiseCov \Def \noiseCov + \emCov$, $\eupObs \Def \obs - \emBias$.
+\label{eq:lin-gaussi-eup}
 \end{prop}
 
-\subsubsection{SVD Analysis}
-While both the EP and EUP propagate the surrogate uncertainty in this example, their qualitative behavior is markedly 
+\subsubsection{Analytical Analysis}
+While both EP and EUP propagate uncertainty, their qualitative behavior is markedly 
 different as the magnitude of the surrogate variance increases. From \Cref{eq:lin-gaussi-ep}, we see that the EP
-is a mixture of linear Gaussian posteriors, each with covariance $\postCov$. The posterior inflation thus 
-
-The EP represents an infinite Gaussian mixture of linear Gaussian posteriors, each with 
-
-
-while the EUP is the posterior
-of a single linear Gaussian inverse problem with modified data and noise covariance.
-
+is a mixture of linear Gaussian posteriors, each with covariance $\postCov$. The posterior inflation thus arises 
+due to variability in the locations of each Gaussian in the mixture. On the other hand, from 
+\Cref{eq:lin-gaussi-eup} the EUP arises from a data space adjustment of the original inverse problem, where
+where the observed data is shifted by the emulator bias, and the observation covariance is inflated by the 
+surrogate covariance. 
 
 
 \subsubsection{SVD Analysis}
