@@ -21,6 +21,15 @@ def mult_A_Lt(A, L):
 def mult_L_A(A, L):
     return dtrmm(side=0, a=L, b=A, alpha=1.0, trans_a=0, lower=1)
 
+def _make_real_symmetric(A):
+    """
+    Ensure matrix is real symmetric: take real part and symmetrize.
+    """
+    A = np.real_if_close(A)
+    A = np.asarray(A, dtype=float)
+    A = 0.5 * (A + A.T)
+    return A
+
 def squared_mah_dist(X, m, C=None, L=None):
     """
     Computes (x - m)^T C^{-1} (x - m) for each x in X. Returns array of length
@@ -67,6 +76,64 @@ def kl_gauss(m0, m1, C0=None, C1=None, L0=None, L1=None):
     term3 = trace_Ainv_B(L1, L0)
 
     return 0.5 * (term1 + term2 + term3 - d)
+
+
+def _symmetric_root(A):
+    """ A is a symmetric, positive semidefinite matrix """
+    A = _make_real_symmetric(A)
+    eigvals, eigvecs = np.linalg.eigh(A)
+    eigvals = np.maximum(eigvals, 0)
+    root = eigvecs @ np.diag(np.sqrt(eigvals)) @ eigvecs.T
+    return _make_real_symmetric(root)
+
+
+def wasserstein_gauss(mu1, Sigma1, mu2, Sigma2, squared=False):
+    """
+    Compute the 2-Wasserstein distance between two multivariate Gaussians:
+        p = N(mu1, Sigma1), q = N(mu2, Sigma2)
+    Formula:
+        W2^2(p,q) = ||mu1 - mu2||^2 + tr(Sigma1 + Sigma2 - 2*(Sigma1^{1/2} Sigma2 Sigma1^{1/2})^{1/2})
+
+    Parameters
+    ----------
+    mu1, mu2 : array-like, shape (d,)
+        Means.
+    Sigma1, Sigma2 : array-like, shape (d,d)
+        Covariance matrices (should be symmetric positive semidefinite).
+    squared : bool, default False
+        If True, return W2^2; otherwise return W2.
+    Returns
+    -------
+    float
+        W2 (or W2^2 if squared=True)
+    """
+    mu1 = np.asarray(mu1, dtype=float)
+    mu2 = np.asarray(mu2, dtype=float)
+    Sigma1 = np.asarray(Sigma1, dtype=float)
+    Sigma2 = np.asarray(Sigma2, dtype=float)
+
+    d = mu1.shape[0]
+    assert mu2.shape[0] == d
+    assert Sigma1.shape == (d, d)
+    assert Sigma2.shape == (d, d)
+
+    diff = mu1 - mu2
+    mean_term = float(diff.dot(diff))  # ||mu1 - mu2||^2
+
+    # compute sqrt of Sigma1
+    S1_sqrt = _symmetric_root(Sigma1)
+
+    # product = S1_sqrt * Sigma2 * S1_sqrt
+    prod = S1_sqrt @ Sigma2 @ S1_sqrt
+    prod_sqrt = _symmetric_root(prod)
+
+    trace_term = np.trace(Sigma1) + np.trace(Sigma2) - 2.0 * np.trace(prod_sqrt)
+    W2sq = float(max(mean_term + trace_term, 0.0))  # guard small negatives from numeric error
+
+    if squared:
+        return W2sq
+    else:
+        return np.sqrt(W2sq)
 
 
 class Gaussian:
@@ -308,13 +375,21 @@ class Gaussian:
     def squared_mah_dist(self, X):
         return squared_mah_dist(X, m=self.mean, L=self.chol)
 
-    def kl(self, y):
+    def kl(self, y: Gaussian):
         """
         Forward KL divergence between self and another Gaussian y.
         """
         return kl_gauss(m0=self.mean, m1=y.mean, L0=self.chol, L1=y.chol)
+    
+    def wasserstein(self, y: Gaussian, squared=False):
+        """
+        2-Wasserstein distance between self and another Gaussian y.
+        """
+        return wasserstein_gauss(mu1=self.mean, Sigma1=self.cov,
+                                 mu2=y.mean, Sigma2=y.cov, squared=squared)
 
-    def compute_credible_ellipsoid_coverage(self, y, probs=None, n_mc=10000):
+    
+    def compute_credible_ellipsoid_coverage(self, y: Gaussian, probs=None, n_mc=10000):
         """
         Given the current Gaussian N(m, C) (self) and a second Gaussian
         y ~ N(m_y, C_y), estimates

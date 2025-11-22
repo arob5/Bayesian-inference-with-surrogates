@@ -108,6 +108,7 @@ class LinGaussTest:
         # emulator additive bias r is sampled from N(0, Q) (and then fixed).
 
         # Exact inverse problem.
+        self.inv_prob = inv_prob
         self.rng = inv_prob.rng
         self.d = inv_prob.d
         self.n = inv_prob.n
@@ -314,7 +315,7 @@ class LinGaussTest:
         alg = BlockMCMCSampler(target, initial_state=state, kernels=ker, rng=self.rng)
         return alg
 
-    def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.999):
+    def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.99):
         L_noise = self.noise.chol
 
         # Extended state space. Initialize state via prior sample.

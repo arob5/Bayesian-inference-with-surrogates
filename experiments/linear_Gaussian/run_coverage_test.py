@@ -8,7 +8,8 @@ from Gaussian import Gaussian
 from LinGaussTest import LinGaussInvProb, LinGaussTest
 from helper import get_random_corr_mat
 
-def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
+def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None, 
+                      n_mcmc=100_000):
     """
     The quantities (m0, C0, Sig, G, Q) are fixed throughout
     the whole test. This implies the structure of the inverse problem
@@ -36,32 +37,128 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None):
     # Quantiles to compute for coverage metrics
     probs = np.append(np.arange(0.1, 1.0, step=0.1), 0.99)
     n_probs = len(probs)
-    out = {"ep_cover_univariate" : np.empty((n_reps, n_probs, d)),
-           "eup_cover_univariate" : np.empty((n_reps, n_probs, d)),
-           "ep_cover_joint" : np.empty((n_reps, n_probs)),
-           "eup_cover_joint" : np.empty((n_reps, n_probs)),
-           "ep_kl" : np.empty(n_reps),
-           "eup_kl" : np.empty(n_reps),
-           "ep_expected_kl" : np.empty(n_reps),
-           "eup_expected_kl" : np.empty(n_reps)}
+
+    cover = {
+        "ep_cover_univariate" : np.empty((n_reps, n_probs, d)),
+        "eup_cover_univariate" : np.empty((n_reps, n_probs, d)),
+        "ep_cover_joint" : np.empty((n_reps, n_probs)),
+        "eup_cover_joint" : np.empty((n_reps, n_probs))
+    }
+
+    dists = {
+        "ep_kl" : np.empty(n_reps),
+        "eup_kl" : np.empty(n_reps),
+        "ep_w2" : np.empty(n_reps),
+        "eup_w2" : np.empty(n_reps),
+        "ep_expected_kl" : np.empty(n_reps),
+        "eup_expected_kl" : np.empty(n_reps),
+        "ep_eup_kl": np.empty(n_reps),
+        "ep_eup_w2": np.empty(n_reps)
+    }
+
+    mcmc = {
+        "ep_rkpcn99_kl": np.empty(n_reps),
+        "ep_rkpcn99_w2": np.empty(n_reps),
+        "ep_rkpcn95_kl": np.empty(n_reps),
+        "ep_rkpcn95_w2": np.empty(n_reps),
+        "ep_rkpcn90_kl": np.empty(n_reps),
+        "ep_rkpcn90_w2": np.empty(n_reps),
+        "ep_rk_kl": np.empty(n_reps),
+        "ep_rk_w2": np.empty(n_reps)
+    }
+
+    failed_iters = []
 
     for i in range(n_reps):
-        inv_prob = LinGaussInvProb(rng, G, m0, C0, Sig)
-        r = Gaussian(cov=Q_true, rng=rng).sample()
+        print(f'Replication {i+1}')
 
-        test = LinGaussTest(inv_prob, Q, r=r)
-        tests.append(test)
-        res = test.calc_coverage(probs=probs)
+        try:
+            inv_prob = LinGaussInvProb(rng, G, m0, C0, Sig)
+            r = Gaussian(cov=Q_true, rng=rng).sample()
 
-        out["ep_cover_univariate"][i,:,:] = res["ep"]
-        out["eup_cover_univariate"][i,:,:] = res["eup"]
-        out["ep_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.ep_post)
-        out["eup_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.eup_post)
-        out["ep_kl"][i] = test.post.kl(test.ep_post)
-        out["eup_kl"][i] = test.post.kl(test.eup_post)
-        out["ep_expected_kl"][i], out["eup_expected_kl"][i] = test.estimate_expected_kl()
+            test = LinGaussTest(inv_prob, Q, r=r)
+            tests.append(test)
+            res = test.calc_coverage(probs=probs)
 
+            # coverage
+            cover["ep_cover_univariate"][i,:,:] = res["ep"]
+            cover["eup_cover_univariate"][i,:,:] = res["eup"]
+            cover["ep_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.ep_post)
+            cover["eup_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.eup_post)
+            
+            # distances
+            dists["ep_kl"][i] = test.post.kl(test.ep_post)
+            dists["eup_kl"][i] = test.post.kl(test.eup_post)
+            dists["ep_w2"][i] = test.post.wasserstein(test.ep_post)
+            dists["eup_w2"][i] = test.post.wasserstein(test.eup_post)
+            dists["ep_expected_kl"][i], dists["eup_expected_kl"][i] = test.estimate_expected_kl()
+            dists["ep_eup_kl"][i] = test.ep_post.kl(test.eup_post)
+            dists["ep_eup_w2"][i] = test.ep_post.wasserstein(test.eup_post)
+
+            # mcmc
+            mcmc_results = get_mcmc_results(test, n_samp=n_mcmc)
+            mcmc['ep_rkpcn99_kl'][i] = mcmc_results['ep_rkpcn99_kl']
+            mcmc['ep_rkpcn99_w2'][i] = mcmc_results['ep_rkpcn99_w2']
+            mcmc['ep_rkpcn95_kl'][i] = mcmc_results['ep_rkpcn95_kl']
+            mcmc['ep_rkpcn95_w2'][i] = mcmc_results['ep_rkpcn95_w2']
+            mcmc['ep_rkpcn90_kl'][i] = mcmc_results['ep_rkpcn90_kl']
+            mcmc['ep_rkpcn90_w2'][i] = mcmc_results['ep_rkpcn90_w2']
+            mcmc['ep_rk_kl'][i] = mcmc_results['ep_rk_kl']
+            mcmc['ep_rk_w2'][i] = mcmc_results['ep_rk_w2']
+        except Exception as e:
+            print(f'Iteration {i} failed with error: {e}')
+            failed_iters.append(i)
+            tests.append(e) 
+
+    out = {'cover': cover, 'dists': dists, 'mcmc': mcmc}
     return tests, out, probs
+
+
+def get_mcmc_results(test, n_samp=100000):
+    test.reset_samplers()
+
+    # rkpcn (rho = .99)
+    test.samplers['rk-pcn'] = test.get_rk_pcn_sampler(u_prop_scale=0.1, pcn_cor=0.99)
+    samp, _ = test.get_sample_list(n_samp=n_samp, include=['rk-pcn'])
+    rkpcn99_kl, rkpcn99_w2 = _calc_ep_mcmc_metrics(test, samp[0])
+
+    # rkpcn (rho = .95)
+    test.samplers['rk-pcn'] = test.get_rk_pcn_sampler(u_prop_scale=0.1, pcn_cor=0.95)
+    samp, _ = test.get_sample_list(n_samp=n_samp, include=['rk-pcn'])
+    rkpcn95_kl, rkpcn95_w2 = _calc_ep_mcmc_metrics(test, samp[0])
+
+    # rkpcn (rho = .90)
+    test.samplers['rk-pcn'] = test.get_rk_pcn_sampler(u_prop_scale=0.1, pcn_cor=0.90)
+    samp, _ = test.get_sample_list(n_samp=n_samp, include=['rk-pcn'])
+    rkpcn90_kl, rkpcn90_w2 = _calc_ep_mcmc_metrics(test, samp[0])
+
+    # rk
+    test.samplers['rk'] = test.get_rk_sampler(u_prop_scale=0.1)
+    samp, _ = test.get_sample_list(n_samp=n_samp, include=['rk'])
+    rk_kl, rk_w2 = _calc_ep_mcmc_metrics(test, samp[0])
+
+    return {
+        "ep_rkpcn99_kl": rkpcn99_kl,
+        "ep_rkpcn99_w2": rkpcn99_w2,
+        "ep_rkpcn95_kl": rkpcn95_kl,
+        "ep_rkpcn95_w2": rkpcn95_w2,
+        "ep_rkpcn90_kl": rkpcn90_kl,
+        "ep_rkpcn90_w2": rkpcn90_w2,
+        "ep_rk_kl": rk_kl,
+        "ep_rk_w2": rk_w2
+    }
+
+
+def _calc_ep_mcmc_metrics(test, samp):
+    # Fit Gaussian approximation to samples
+    m = np.mean(samp, axis=0)
+    C = np.cov(samp.T)
+    approx = Gaussian(m, C)
+
+    kl = test.ep_post.kl(approx)
+    w2 = test.ep_post.wasserstein(approx)
+
+    return (kl, w2)
 
 
 def plot_coverage(ep_coverage, eup_coverage, probs, q_min=0.05, q_max=0.95, ax=None):
