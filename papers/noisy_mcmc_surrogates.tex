@@ -106,9 +106,9 @@ a variety of applications \citep{FerEmulation,FadikarAgentBased,idealizedGCM,
 trainDynamics,FATES_CES,CLMBayesianCalibration}.
 
 Despite significant advances in surrogate modeling, fitting a 
-highly accurate emulator under a limited computational budget remains a challenging task.
-Given this reality, it is inevitable that emulator errors will propagate to estimates
-of the calibration parameters. Ignoring these errors can lead to overconfident results 
+highly accurate emulator under a limited computational budget remains a challenging task,
+invariably implying the presence of errors in the surrogate-based posterior approximation.
+Ignoring these errors can lead to overconfident results 
 with miscalibrated uncertainties \citep{BilionisBayesSurrogates,BurknerSurrogate}.
 It is thus crucial to acknowledge and propagate this additional source of uncertainty in 
 surrogate-based Bayesian workflows. 
@@ -138,7 +138,7 @@ implementations of the former approach. We then adopt the latter perspective,
 introducing a new approximate MCMC algorithm that is shown to outperform 
 competing approaches.
  
-\subsection{Contributions.}
+\subsection{Contributions}
 \begin{itemize}
 \item We adopt a Bayesian decision theoretic viewpoint to formalize the question of 
 choosing the correct uncertainty propagation method. We show that, with respect 
@@ -159,7 +159,7 @@ GP, we highlight connections with correlated pseudo-marginal and
 preconditioned Crank-Nicholson algorithms. 
 \end{itemize}
 
-\subsection{Outline.}
+\subsection{Outline}
 \Cref{sec:surrogates-intro} introduces the surrogate-based Bayesian workflow.
 In \Cref{sec:EP} we derive the EP as a Bayes' estimator, and discuss connections 
 with the so-called cut posterior distribution. In \Cref{sec:approximating-ep}
@@ -247,7 +247,10 @@ such that $\targetEm(\Par)$ provides a prediction of $\target(\Par)$.
 In order to quantify the uncertainty introduced via this approximation, we consider 
 emulators that provide predictions in the form of a probability distribution; 
 i.e., $\targetEm(\Par)$ is random and thus $\targetEm$ is a random function. 
-Let $\emDist(\cdot \given \Par)$ and $\emDist$ denote their respective distributions,
+The randomness in $\targetEm$ may be derived from any probabilistic
+model (e.g., GPs, BART, Bayesian neural networks, deep ensembles).
+Let $\emDist(\cdot \given \Par)$ and $\emDist$ denote the distributions of 
+$\targetEm(\Par)$ and $\targetEm$, respectively, 
 and $\emE$ the expectation with respect to $\emDist$.
 Using $\targetEm$ as a drop-in replacement for 
 $\target$ implies that $\postDens(\Par; \targetEm)$ and $\normCst(\targetEm)$
@@ -272,12 +275,12 @@ This method consists of fitting a surrogate $\targetEm$ to the design
 $\{(\Par_n, \fwd(\Par_n))\}_{n=1}^{\Ndesign}$ and then using $\targetEm$
 in place of $\fwd$. Much previous work has considered this strategy 
 in the context of the additive noise model in \Cref{eq:additive-noise},
-under the Gaussian assumption $\noise \sim \Gaussian(0, \likPar)$
+under the Gaussian noise assumption $\noise \sim \Gaussian(0, \likPar)$
 \citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,
 Surer2023sequential,VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
 In this special case, the induced (unnormalized) posterior density surrogate takes the form
 \begin{align}
-\postEm(\Par) &= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar). \label{eq:post-em-fwd-Gaussian}
+\postDens(\Par; \targetEm) &= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar). \label{eq:post-em-fwd-Gaussian}
 \end{align}
 \end{ex}
 
@@ -285,7 +288,7 @@ In this special case, the induced (unnormalized) posterior density surrogate tak
 Other lines of research have instead targeted the log-likelihood $\Par \mapsto \log \lik(\target(\Par); \obs)$
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,
-GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP}
+GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}
 or the (unnormalized) log-posterior 
 $\Par \mapsto \log \left\{\priorDens(\Par)\lik(\target(\Par); \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
@@ -296,7 +299,7 @@ log-likelihood case, an emulator $\targetEm$ is fit to a design
 $\{(\Par_n, \log \lik(\target(\Par_n); \obs)\}_{n=1}^{\Ndesign}$
 and induces a posterior density surrogate 
 \begin{align}
-\postEm(\Par) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
+\postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
 \end{align}
 The log-posterior case is quite similar, except that the effect of the prior is also 
 approximated by the emulator, so the induced posterior surrogate simply takes 
@@ -334,8 +337,8 @@ in place of $\target$; this yields
 &= \frac{\postDens(\Par; \targetEm)}{\normCst(\targetEm)},
 &&\normCst(\targetEm) \Def \int_{\parSpace} \postDens(\Par; \targetEm) \d\Par, \label{eq:random-post}
 \end{align}
-which is referred to as the ``sample approximation'' in \citet{StuartTeck1}. We use the succinct
-shorthand $\postEm(\cdot) \Def \postDens(\cdot; \targetEm)$, 
+which is referred to as the ``sample approximation'' in \citet{StuartTeck1}. For brevity, we write
+ $\postEm(\cdot) \Def \postDens(\cdot; \targetEm)$, 
 $\postNormEm(\cdot) \Def \postDensNorm(\cdot; \targetEm)$, and 
 $\normCstEm \Def \normCst(\targetEm)$ when explicit reference to the underlying 
 emulator is not necessary.
@@ -382,7 +385,7 @@ can be understood via the hierarchical model
 \end{align}
 This perspective highlights the interpretation of the EP as a mixture of posteriors,
 with each ensemble member $\postDensNorm(\Par; \targetTraj)$ induced by 
-a particular emulator realization $\targetTraj$ that is weighted according to $\emDist$.
+a particular emulator realization $\targetTraj$.
 We assume throughout that $\targetEm$ is constructed such that 
 trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
 in \Cref{eq:ep-prob-model} is well-defined. See 
@@ -397,22 +400,19 @@ represents the marginal posterior $\Par \given \obs$ under the hierarchical mode
 &\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \cdot)/\normCst(\targetTraj).
 \label{eq:ep-prob-model-fwd}
 \end{align*}
-In this setting, the EP is of the form 
+In this setting, the EP assumes the form 
 \begin{align*}
 &\postApproxEP(\Par) \propto \priorDens(\Par) \likApproxEP(\Par; \obs),
 &&\likApproxEP(\Par; \obs) \Def \int \frac{\lik(\targetTraj(\Par); \obs)}{\normCst(\targetTraj)} \emDist(\d\targetTraj). 
 \label{eq:lik-approx-EP}
 \end{align*}
-We observe that the exact likelihood is replaced with an approximation averaged over $\targetTraj$ and 
+Observe that the exact likelihood is replaced with an approximation averaged over $\targetTraj$ and 
 weighted both by the surrogate predictive distribution and the marginal likelihood $\normCst(\targetTraj)$.
 
 \subsection{Cut Posterior} \label{sec:cut}
-Our above formulation is agnostic to how the emulator is constructed. The 
-randomness in $\targetEm$ may be derived from Bayesian methods 
-(e.g., GPs, BART, Bayesian neural networks) or non-Bayesian alternatives
-(e.g., deep ensembles, epistemic neural networks). In this section, we show 
-that in the former case the EP can be viewed as a cut posterior distribution,
-as defined in the modular Bayes literature 
+In this section, we consider the case where the two-stage surrogate workflow 
+arises as an approximation to a coherent joint Bayesian model, showing
+in this setting the EP can be viewed as a so-called cut posterior distribution
 \citep{PlummerCut,cutInference,moduleModels,cutVar,cutVar2}.
 
 In particular, suppose that the surrogate model is defined by specifying 

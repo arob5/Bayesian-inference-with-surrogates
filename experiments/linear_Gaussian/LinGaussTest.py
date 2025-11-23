@@ -38,7 +38,7 @@ class LinGaussInvProb:
 
         # Observation noise
         if Sig is None:
-            Sig = np.identity(n)
+            Sig = np.identity(self.n)
         self.noise = Gaussian(cov=Sig, rng=rng, store="both")
 
         # Ground truth parameter and observed data
