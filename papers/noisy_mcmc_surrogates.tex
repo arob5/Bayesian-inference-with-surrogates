@@ -569,16 +569,16 @@ $\normCstEm$. The influence of a parameter value will typically increase when
 $\postEm(\Par)$ is large on average, highly variable, and is positively correlated with other 
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
 a GP emulator with a long lengthscale. Based on this logic, we expect the EUP to inflate 
-influential regions and depress non-influential regions, relative to the EP. This can lead 
-the EUP to be more peaked, while the EP is more smooth. The pointwise error in 
+influential regions and depress non-influential regions, relative to the EP. As we will see 
+in experiments, this can manifest as the EUP being highly peaked in regions with 
+significant surrogate uncertainty. The pointwise error in 
 \Cref{prop:ep-eup-pw-err} can be integrated to obtain the following $L_1$ bound 
-between $\postApproxEP$ and $\postApproxEUP$. Multiplying both sides by $1/2$
-yields a total variation bound.
+between $\postApproxEP$ and $\postApproxEUPNorm$.
 
 \begin{prop} \label{prop:ep-eup-TV-err}
 Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
 \begin{equation}
-\norm{\postApproxEP - \postApproxEUP}_{L_1(\parSpace)}
+\norm{\postApproxEP - \postApproxEUPNorm}_{L_1(\parSpace)}
 \leq \emE[\normCstEm] \jgap + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
 \label{eq:ep-eup-TV-err}
 \end{equation}
@@ -589,69 +589,53 @@ Decreasing the variance of $\normCstEm$ will shrink both terms in
 uncertainty in $\targetEm$, the unnormalized posterior $\postDens(\cdot; \targetTraj)$
 is insensitive to $\targetTraj$, or $\normCstEm$ is insensitive to the variability 
 in $\postEm$. In the first case, note that if $\targetEm$ is heavily 
-concentrated around its mean, then both the EP and EUP will bear a close resemblance
-to the plug-in mean approximation in \Cref{eq:mean-approx}.
+concentrated around its mean, then both the EP and EUP will closely resemble
+the plug-in mean approximation in \Cref{eq:mean-approx}.
 In special cases, the two terms in \Cref{eq:ep-eup-TV-err} perfectly balance so that 
 the EP and EUP agree. For example, this occurs when 
 $\postEm(\Par) = \omega g(\Par)$, where $\omega$ is a random constant and 
 $g(\Par)$ a deterministic function. 
 
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
-We now consider the particular example from \Cref{ex:ldens-em},
-where $\postEm(\Par) = \Exp{\targetEm(\Par)}$
-and $\targetEm \sim \GP(\gpMean, \gpKer)$ is a GP emulator; that is, 
+We return to \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$,
+and consider a GP emulator $\targetEm \sim \GP(\gpMean, \gpKer)$. 
+In particular, this implies the pointwise predictions $\targetEm(\Par)$ are Gaussian, with 
 $\E[\targetEm(\Par)] = \gpMean(\Par)$ and 
-$\Cov[\targetEm(\Par),\targetEm(\Par^\prime)] = \gpKer(\Par, \Par^\prime)$ for all 
-$\Par, \Par^\prime \in \parSpace$. We also make use of the shorthand 
-$\gpKer(\Par) \Def \gpKer(\Par, \Par)$. This setup encompasses both the log-likelihood
-and log-posterior emulation settings via suitable definitions of $\gpMean$ and $\gpKer$.
-GP log-density emulators have been used in various studies 
-\citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,ActiveLearningMCMC,FerEmulation,
-StuartTeck1,random_fwd_models,GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP}.
+$\Cov[\targetEm(\Par),\targetEm(\Par^\prime)] = \gpKer(\Par, \Par^\prime)$. We use the shorthand 
+$\gpKer(\Par) \Def \gpKer(\Par, \Par)$ for the predictive variance. This setup,
+encompassing both the log-likelihood and log-posterior emulation settings, has been 
+considered in several applications 
+\citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
+ActiveLearningMCMC,FerEmulation,StuartTeck1,StuartTeck2,random_fwd_models,
+GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}.
 
-In this setting, the pointwise distribution of the induced posterior surrogate is log-normal
-$\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, implying that
+In this setting, $\postEm$ is a log-normal process, implying the pointwise predictive 
+distributions $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, as well as
 \begin{equation}
 \postApproxEUPNorm(\Par) 
 \propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}
 = \postApproxMean(\Par) \Exp{\frac{1}{2}\gpKer(\Par)}.
 \label{eq:EUP-Gaussian-ldens}
 \end{equation} 
-The expression in \Cref{eq:EUP-Gaussian-ldens} shows that the EUP inflates the plug-in mean 
-density in uncertain regions \citep{StuartTeck2,GP_PDE_priors}. In particular, 
- \begin{equation}
- \frac{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)}{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)}
- = \Exp{\frac{1}{2}\left[\gpKer(\Par^\prime) - \gpKer(\Par) \right]},
- \label{eq:unc-infl-factor}
- \end{equation}
-showing that the degree of inflation scales with the emulator variance; that is, if 
-$\postApproxNormMean(\Par)=\postApproxNormMean(\Par^\prime)$, then the EUP will give 
-always give higher weight to the location with higher emulator uncertainty.
 
-Unfortunately, the exponential scaling in \Cref{eq:EUP-Gaussian-ldens} can result in
-undesirable degrees of uncertainty inflation. For example, suppose that 
-the standard deviation of $\targetEm(\Par^\prime)$ is twice that of $\targetEm(\Par)$, so that 
-the expression in \Cref{eq:unc-infl-factor} reduces to $\Exp{\frac{3}{2}\gpKer(\Par)}$.
-If $\gpKer(\Par) = 4$, this means
-$\Exp{\frac{3}{2}\gpKer(\Par)} \approx 400$, vastly magnifying the modest difference 
-in emulator uncertainty. Practically, this can result in $\postApproxEUPNorm$ concentrating 
-on small subsets of $\parSpace$ where emulator uncertainty is the largest.
-With respect to \Cref{eq:ep-eup-pw-err}, this manifests as a large negative covariance 
-between $\postEm(\Par)$ and $\normCstEm$ in uncertain regions, implying 
-$\postApproxEUPNorm(\Par) \gg \postApproxEP(\Par)$. 
-
-Given this extreme sensitivity to emulator uncertainty, we recommend against the use of the EUP
-approximation in this setting. \citet{VehtariParallelGP} reach a similar conclusion, and propose
-the use of an alternative approximation defined via a pointwise quantile of $\postEm(\Par)$.
-This quantile approximation is also considered in \citet{quantileApprox,FATES_CES}.
-While this approximation is more robust, we highlight that the true underlying issue is often 
-a poorly calibrated emulator. For example, many common likelihoods (e.g., Gaussian) 
-have known upper bounds, which are ignored by the GP emulator $\targetEm$. The simple 
-adjustment of enforcing this bound constraint within $\targetEm$ can mitigate the aforementioned issues.
-\citet{quantileApprox} employs such a bound-constrained GP log-density emulator.
+\Cref{eq:EUP-Gaussian-ldens} illustrates that the EUP inflates the plug-in mean approximation 
+in regions with high surrogate uncertainty. At two points where $\gpMean$ is equal, the 
+EUP always assigns higher density to the more uncertain location. Notably, this uncertainty 
+inflation scales with the exponentiated variance of the GP, potentially leading to extreme 
+concentration in the most uncertain regions. For example, if $\gpKer(\Par) = 4$,
+$\gpMean(\Par^\prime) = \gpMean(\Par)$, and 
+$\gpKer(\Par^\prime) = 4 \gpKer(\Par)$, then 
+$\{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)\} / 
+\{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)\} \approx 400$. 
+The $2\times$ difference in surrogate standard deviation translates to a $400\times$ difference in 
+density approximation, relative to the plug-in mean. This undesirable behavior, also noted by 
+\citet{VehtariParallelGP}, can be viewed partially as a consequence \Cref{prop:ep-eup-pw-err}.
+As illustrated in the experiments, the EP tends to be more robust, though not immune, to the 
+sensitivity exhibited by posterior estimates under GP log-density surrogates.
+\todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian} 
-We next return to the setting in \Cref{ex:fwd-em}, where
+We next return to \Cref{ex:fwd-em}, where
 \begin{align}
 &\obs = \fwd(\Par) + \noise, &&\noise \sim \Gaussian(0, \likPar)
 \end{align}

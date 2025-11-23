@@ -63,22 +63,24 @@
 \newcommand{\gpKerBase}{k}
 \newcommand{\gpMeanPrior}{\gpMeanBase_0}
 \newcommand{\gpKerPrior}{\gpKerBase_0}
-\newcommand{\gpMean}[1][\Ndesign]{\gpMeanBase_{#1}}
-\newcommand{\gpKer}[1][\Ndesign]{\gpKerBase_{#1}}
+\newcommand{\gpMean}[1][\star]{\gpMeanBase_{#1}}
+\newcommand{\gpKer}[1][\star]{\gpKerBase_{#1}}
 
 % Surrogate posterior approximations
+\newcommand{\ep}{\mathrm{ep}}
+\newcommand{\eup}{\mathrm{eup}}
 \newcommand{\postEm}{\Em{\postDens}}
 \newcommand{\postNormEm}{\Em{\postDensNorm}}
 \newcommand{\normCstEm}{\Em{\normCst}}
-\newcommand{\postApproxEP}{\Em{\postDensNorm}^{\mathrm{EP}}}
+\newcommand{\postApproxEP}{\Em{\postDensNorm}^{\ep}}
 \newcommand{\postApproxMean}{\Em{\postDens}^{\mathrm{mean}}}
-\newcommand{\postApproxEUP}{\Em{\postDens}^{\mathrm{EUP}}}
-\newcommand{\postApproxEUPNorm}{\Em{\postDensNorm}^{\mathrm{EUP}}}
+\newcommand{\postApproxEUP}{\Em{\postDens}^{\eup}}
+\newcommand{\postApproxEUPNorm}{\Em{\postDensNorm}^{\eup}}
 \newcommand{\postApproxNormMean}{\Em{\postDensNorm}^{\mathrm{mean}}}
 
 % Likelihood approximations.
-\newcommand{\likApproxEP}{\Em{\lik}^{\mathrm{EP}}}
-\newcommand{\likApproxEUP}{\Em{\lik}^{\mathrm{EUP}}}
+\newcommand{\likApproxEP}{\Em{\lik}^{\ep}}
+\newcommand{\likApproxEUP}{\Em{\lik}^{\eup}}
 
 % --------------------------------------------------------------------------------------------------
 % Proofs and Theoretical Sections
@@ -171,10 +173,10 @@
 \newcommand{\noiseCov}{\Sigma}
 \newcommand{\emBias}{r}
 \newcommand{\emCov}{Q}
-\newcommand{\postMeanEP}{\postMean^{\mathrm{EP}}}
-\newcommand{\postMeanEUP}{\postMean^{\mathrm{EUP}}}
-\newcommand{\postCovEP}{\postCov^{\mathrm{EP}}}
-\newcommand{\postCovEUP}{\postCov^{\mathrm{EUP}}}
+\newcommand{\postMeanEP}{\postMean^{\ep}}
+\newcommand{\postMeanEUP}{\postMean^{\eup}}
+\newcommand{\postCovEP}{\postCov^{\ep}}
+\newcommand{\postCovEUP}{\postCov^{\eup}}
 \newcommand{\epGain}{H} % = \postCov \fwdLin^\top \noiseCov^{-1}
 \newcommand{\eupNoiseCov}{\tilde{\noiseCov}} % = \noiseCov + \emCov
 \newcommand{\eupObs}{\tilde{\obs}} % = \obs - \emBias
