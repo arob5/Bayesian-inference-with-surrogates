@@ -691,12 +691,10 @@ villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel
  
 % Approximate Computation for the EP
 \section{Approximate Computation for the Expected Posterior} \label{sec:computation}
-The previous section considered explicitly defining distributions that approximate the EP.
-In this section, we consider a more direct route to EP-based inference through
-the use of approximate computational algorithms. 
-We first clarify the limitations of existing inference methods, 
-and then introduce an efficient MCMC approximation that alleviates 
-these difficulties.
+The previous section explored the EUP as an approximation to the EP, demonstrating when 
+the two distributions may significantly differ. We now seek a more direct route to EP-based
+inference, and introduce an approximate MCMC algorithm towards this end. 
+We start by clarifying the difficulties associated with EP computation.
 
 \subsection{Sampling Trajectories}
 In light of the hierarchical model in \Cref{eq:ep-prob-model}, the following 
@@ -709,7 +707,7 @@ algorithm can in principle be applied to directly sample $\postApproxEP$.
     \Function{sampleEP}{$\postNormEm, \NSample, M$}     
         \For{$\sampleIndex \gets 1, \dots, \NSample$} 
         		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
 	\EndFor
 	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
 	\EndFunction
