@@ -821,16 +821,31 @@ not differ significantly  from the current state $\targetTraj$. We can control t
 restricting the scale of $\propDistTarget$, thus slowing down the mixing speed of the $\targetTraj$-chain.
 For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
 between $\targetTraj$ and $\tilde{\targetTraj}$. Therefore, choosing $\pcnCor$ close to one ensures 
-that $\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. 
+that $\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. We illustrate the effect of this 
+approximation through experiments; a complete theoretical analysis is the subject of concurrent work and is
+beyond the scope of the present paper.
 
-We emphasize that this algorithm can be implemented without discretizing $\targetTraj$ by tracking only the 
-values at the current  and proposed states $(\Par, \propPar)$. As detailed in \issue{algorithm reference}, this is 
-accomplished by ``peeking'' at the proposal $\propPar$ during the $\targetTraj$ update. The algorithm requires
-the ability to condition the surrogate $\targetEm$ on at most a single new point each iteration. This avoids the 
-repeated conditioning required by the direct sampling approach in \Cref{alg:ep}. See the \issue{appendix} for 
-additional details regarding the efficient implementation of this algorithm.
+Though the pCN proposal in \Cref{eq:pcn-proposal} is defined in function space, we emphasize that the 
+algorithm can be implemented exactly without discretizing $\targetTraj$ by tracking only the values 
+values of the surrogate at the current and proposed parameter values $(\Par, \propPar)$. This practical 
+implementation is summarized in \Cref{alg:mwg-ep} and additional implementation details are provided 
+in the appendix.
 \todo[inline]{Add section in appendix}
-\todo[inline]{Clarify that the conditioning is done fresh each iteration? i.e., doesn't compound}
+
+\todo[inline]{LEFT OFF HERE}
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN}
+    \label{alg:rk-pcn}
+    \begin{algorithmic}[1]
+    \Function{RKpCN}{$\postNormEm, \NSample, M$}     
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
+        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
+	\EndFor
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
 
 
 \subsection{A Correlated Pseudo-Marginal Algorithm}
