@@ -525,12 +525,12 @@ the global point estimate $\emE[\normCst(\targetEm)]$. If $\targetEm$ is a forwa
 model emulator, then this difference manifests in the treatment of the marginal likelihood.
 Indeed, in this setting the EUP arises as the marginal posterior 
 $\Par \given \obs$ under the hierarchical model
-\begin{align*}
+\begin{align}
 &\targetTraj  \sim \emDist \\
 &\Par \sim \priorDens \\
 &\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \cdot).
 \label{eq:eup-prob-model}
-\end{align*}
+\end{align}
 This yields 
 \begin{align*}
 &\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \likApproxEUP(\Par; \obs),
@@ -635,51 +635,43 @@ sensitivity exhibited by posterior estimates under GP log-density surrogates.
 \todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
 
 \subsubsection{Gaussian Forward Model Emulation Setting} \label{sec:fwd-Gaussian} 
-We next return to \Cref{ex:fwd-em}, where
-\begin{align}
-&\obs = \fwd(\Par) + \noise, &&\noise \sim \Gaussian(0, \likPar)
-\end{align}
-with prior $\Par \sim \priorDens$ independent of $\noise$. We consider the case 
-where $\fwd$ is replaced with a (potentially multi-output) GP emulator 
-$\targetEm \sim \GP(\gpMean, \gpKer)$. This setup has been considered frequently in various 
-applications \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
+We next return to \Cref{ex:fwd-em}, with surrogate density 
+$\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$ 
+derived from a (potentially multi-output) GP emulator $\targetEm \sim \GP(\gpMean, \gpKer)$
+replacing the true forward model $\fwd$. This setup is commonly considered in the Bayesian 
+inverse problem literature \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
 idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
-
-The unnormalized posterior surrogate takes the form 
-$\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$, implying
+Under these assumptions, the EUP assumes the form
 \begin{equation}
 \postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
 \label{eq:EUP-Gaussian-fwd}
 \end{equation}
-following from the formula for the convolution of two Gaussians [\todo: add to appendix].
-A key observation in this setting is that $\postEm(\Par) \in [0, B_{\likPar}]$, where 
-$B_{\likPar} \Def \sup_{u \in \parSpace} \priorDens(\Par) / \det(2\pi\likPar)^{1/2}$.
-[\todo: need to finish this thought. The conjecture here is that the EUP in this setting is 
-more robust in this setting due to the bound.
-
+following from the formula for the convolution of two Gaussians \todo{add to appendix}.
+In this context, the uncertainty propagation admits a data space interpretation, with
+$\gpKer(\Par)$ inflating the observation covariance.
 Unlike in the Gaussian log-density case, the EUP does not strictly inflate the plug-in 
 mean approximation in regions of larger uncertainty. This is due to the fact that 
 the Gaussian likelihood is bounded above. When $\gpMean(\Par)$ and $\obs$
 are close, then an increase in $\gpKer(\Par)$ may actually deflate the density 
-at $\Par$. The same increase in $\gpKer(\Par)$ will inflate the density at values 
+at $\Par$. The same increase in $\gpKer(\Par)$ may inflate the density at values 
 of $\Par$ where $\gpMean(\Par)$ and $\obs$ are far apart.
- 
+\todo[inline]{Finish this section once experiment 3 is complete}
+
 \paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
 in \citet{BilionisBayesSurrogates}, motivated by the extended parameter space viewpoint
 in \Cref{eq:eup-prob-model}. \citet{StuartTeck2,CES} also note this perspective
-in the particular Gaussian setting of \Cref{eq:post-em-fwd-Gaussian}.
+in the particular Gaussian setting of \Cref{eq:EUP-Gaussian-fwd}.
 In \citet{SinsbeckNowak}, the EUP is justified as the distribution 
 $q$ that minimizes $\emE\left[\norm{\postEm - q}_{L_2(\parSpace)}^2 \right]$.
 \citet{StuartTeck1,StuartTeck2,VehtariParallelGP} also highlight this Bayesian 
 decision theoretic justification. 
 In contrast with the EP, the optimality is only guaranteed for the estimate of the 
 \textit{unnormalized} posterior.
-As shown in \Cref{prop:EP-variational}, the EP is the minimizer when the complete 
-normalized distributions are considered.
-
+As shown in \Cref{prop:EP-variational}, the EP is the minimizer when the loss
+is defined with respect to the normalized distributions.
 The EUP is referred to as the ``marginal'' approximation in 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar},
-in which it is analyzed theoretically for both log-density and forward 
+in which it is analyzed theoretically for both log-likelihood and forward 
 model emulators. \citet{VehtariParallelGP} highlight pathological 
 behavior of the EUP for GP log-density emulators, and recommend 
 against its use in this setting. To our knowledge, \citet{BurknerSurrogate}
@@ -691,7 +683,7 @@ The closed-form EUP expressions in
 noted in a variety of works 
 \citep{StuartTeck1,StuartTeck2,VehtariParallelGP,weightedIVAR,
 GP_PDE_priors,Surer2023sequential,Takhtaganov2018AdaptiveBayesianGP}. 
-The EUP has seen wide 
+The EUP has seen 
 use in various applications involving both forward model 
 and log-density emulators 
 \citep{weightedIVAR,GP_PDE_priors,CES,idealizedGCM,
