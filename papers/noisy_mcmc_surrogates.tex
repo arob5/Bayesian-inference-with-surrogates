@@ -224,37 +224,35 @@ dependence of the likelihood on $\fwd(\Par)$, and in particular on the solver $\
 \subsection{Surrogate Targets for Bayesian Inference} \label{sec:surrogates-Bayes}
 Given the cost of computing $\postDens(\Par)$, we seek to approximate
 the posterior using a small set of queries to the posterior density. 
-Surrogates address this problem by approximating some underlying 
-\textit{target map} $\Par \mapsto \target(\Par) \in \targetRange$, which in turn 
-induces a cheap approximation of $\postDens(\Par)$.
-Different target maps may be emulated in order to
-accelerate Bayesian inference, so long as $\target(\Par)$ is sufficient 
-to compute $\postDens(\Par)$ without requiring additional simulator runs.
-Two common examples are detailed in \Cref{ex:fwd-em, ex:ldens-em}.
-We write $\postDens(\Par; \target)$ and $\normCst(\target)$ to indicate the 
-dependence of the posterior density and normalizing constant on $\target$, 
-with the assumption that $\postDens(\Par; \target)$ is relatively 
-quick to compute once the expensive computation $\target(\Par)$ is
-obtained. In addition, we slightly abuse notation by using $\lik(\target(\Par); \obs)$ 
-to denote the likelihood parameterized as a function of the target quantity. 
+The surrogate modeling approach to this problem consists of constructing 
+a regression-based approximation of the density $\postDens$. This surrogate density is typically 
+induced indirectly by the approximation of some underlying quantity 
+on which $\postDens(\Par)$ depends. To make this explicit, let 
+$\target: \parSpace \to \targetRange$ be the underlying map targeted for emulation. 
+We write $\postDens(\Par; \target)$ and $\normCst(\target)$ to indicate the dependence of the posterior 
+density and normalizing constant on $\target$, and assume throughout that $\postDens(\Par; \target)$ 
+is dependent on $\Par$ only through $\target(\Par)$. In the common case that the target appears 
+only through the likelihood, we similarly write $\lik(\Par; \target, \obs)$.
+Two common classes of target maps are detailed in \Cref{ex:fwd-em, ex:ldens-em}.
 
 In many applications, computational constraints impose a budget of 
 $\Ndesign$ evaluations of $\target$, where 
 $\Ndesign$ is typically much smaller than that required by standard posterior
-inference algorithms. The queries $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$
-are then used to fit a regression model $\targetEm$,
-such that $\targetEm(\Par)$ provides a prediction of $\target(\Par)$.
+inference algorithms. The surrogate approach uses the limited set of queries
+$\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$
+to fit a regression model $\targetEm$ such that 
+$\targetEm(\Par)$ provides a prediction of $\target(\Par)$ at new inputs $\Par$.
 In order to quantify the uncertainty introduced via this approximation, we consider 
 emulators that provide predictions in the form of a probability distribution; 
 i.e., $\targetEm(\Par)$ is random and thus $\targetEm$ is a random function. 
 The randomness in $\targetEm$ may be derived from any probabilistic
-model (e.g., GPs, BART, Bayesian neural networks, deep ensembles).
+model (e.g., Gaussian processes, BART, Bayesian neural networks, deep ensembles).
 Let $\emDist(\cdot \given \Par)$ and $\emDist$ denote the distributions of 
 $\targetEm(\Par)$ and $\targetEm$, respectively, 
 and $\emE$ the expectation with respect to $\emDist$.
 Using $\targetEm$ as a drop-in replacement for 
 $\target$ implies that $\postDens(\Par; \targetEm)$ and $\normCst(\targetEm)$
-are univariate random variables, while $\postDens(\cdot; \targetEm)$ 
+are univariate random variables, while $\postDens(\cdot; \targetEm)$
 is a random function.
 
 The manner in which the uncertainty in $\targetEm$ propagates to 
@@ -262,9 +260,12 @@ $\postDens(\cdot; \targetEm)$ depends on the target $\target$,
 the predictive distribution $\emDist$, and the particular form of the 
 density $\postDens$. Below, we highlight two general choices 
 of $\target$ common in the literature. This categorization has also 
-been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}. See
-\citet{reviewPaper} for a discussion of practical considerations in choosing 
-the emulator target. 
+been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}. 
+
+% TODO: add this back in when review paper is ready
+% See
+% \citet{reviewPaper} for a discussion of practical considerations in choosing 
+% the emulator target. 
 
 \begin{ex} \label{ex:fwd-em}
 In the Bayesian inverse problem setting in \Cref{sec:bip},
@@ -285,18 +286,19 @@ In this special case, the induced (unnormalized) posterior density surrogate tak
 \end{ex}
 
 \begin{ex} \label{ex:ldens-em}
-Other lines of research have instead targeted the log-likelihood $\Par \mapsto \log \lik(\target(\Par); \obs)$
+Other lines of research instead choose $\target$ to be the map induced by the log-likelihood
+$\Par \mapsto \log \lik(\Par; \obs)$
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}
-or the (unnormalized) log-posterior 
-$\Par \mapsto \log \left\{\priorDens(\Par)\lik(\target(\Par); \obs)\right\}$
+or (unnormalized) log-posterior
+$\Par \mapsto \log \left\{\priorDens(\Par)\lik(\Par; \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
 landslideCalibration}.
 
 We collectively refer to these strategies as \textit{log-density emulation}. In the 
 log-likelihood case, an emulator $\targetEm$ is fit to a design 
-$\{(\Par_n, \log \lik(\target(\Par_n); \obs)\}_{n=1}^{\Ndesign}$
+$\{(\Par_n, \log \lik(\Par_n; \obs)\}_{n=1}^{\Ndesign}$
 and induces a posterior density surrogate 
 \begin{align}
 \postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
@@ -383,29 +385,27 @@ can be understood via the hierarchical model
 &&\Par \given \targetTraj \sim \postDensNorm(\cdot; \targetTraj).
 \label{eq:ep-prob-model}
 \end{align}
-This perspective highlights the interpretation of the EP as a mixture of posteriors,
-with each ensemble member $\postDensNorm(\Par; \targetTraj)$ induced by 
-a particular emulator realization $\targetTraj$.
+This perspective highlights the interpretation of the EP as a $\emDist$-weighted mixture of posteriors 
+$\postDensNorm(\Par; \targetTraj)$, each induced by a particular emulator realization $\targetTraj$.
 We assume throughout that $\targetEm$ is constructed such that 
 trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
 in \Cref{eq:ep-prob-model} is well-defined. See 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for additional
 technical conditions ensuring existence.
 
-In the case that $\targetEm$ is a forward model emulator (\Cref{ex:fwd-em}), the EP 
-represents the marginal posterior $\Par \given \obs$ under the hierarchical model 
-\begin{align*}
-&\targetTraj  \sim \emDist \\
-&\Par \sim \priorDens \\
-&\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \cdot)/\normCst(\targetTraj).
-\label{eq:ep-prob-model-fwd}
-\end{align*}
-In this setting, the EP assumes the form 
-\begin{align*}
+The EP also admits a marginal likelihood interpretation under the hierarchical model
+\begin{equation}
+ \targetTraj  \sim \emDist, \qquad \Par \sim \priorDens, \qquad 
+\obs \given \targetTraj, \Par \sim \lik(\Par; \targetTraj, \d\obs)/\normCst(\targetTraj),
+\end{equation}
+yielding the equivalent characterization
+\footnote{For clarity of exposition, we assume here that the prior $\priorDens$ is not part of the surrogate model.
+A slight modification generalizes this expression to the general case, which encompasses log-posterior emulators.}
+\begin{align}
 &\postApproxEP(\Par) \propto \priorDens(\Par) \likApproxEP(\Par; \obs),
 &&\likApproxEP(\Par; \obs) \Def \int \frac{\lik(\targetTraj(\Par); \obs)}{\normCst(\targetTraj)} \emDist(\d\targetTraj). 
 \label{eq:lik-approx-EP}
-\end{align*}
+\end{align}
 Observe that the exact likelihood is replaced with an approximation averaged over $\targetTraj$ and 
 weighted both by the surrogate predictive distribution and the marginal likelihood $\normCst(\targetTraj)$.
 
@@ -416,16 +416,16 @@ in this setting the EP can be viewed as a so-called cut posterior distribution
 \citep{PlummerCut,cutInference,moduleModels,cutVar,cutVar2}.
 
 In particular, suppose that the surrogate model is defined by specifying 
-a prior $\targetTraj \sim \emDistPrior$ and likelihood $\lik(\targetTraj; \emObs)$,
+a prior $\targetTraj \sim \emDistPrior$ and likelihood $\emLik(\targetTraj; \emObs)$,
 where $\emObs \Def \{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ denotes
 the emulator training data. The common example of a conjugate GP model 
 corresponds to $\emDistPrior = \GP(\gpMean[0], \gpKer[0])$ and 
-$\lik(\targetTraj; \emObs) = \Gaussian(\target(\Par_{1:\Ndesign}) \given \targetTraj(\Par_{1:\Ndesign}), \tau^2 I)$.
+$\emLik(\targetTraj; \emObs) = \Gaussian(\target(\Par_{1:\Ndesign}) \given \targetTraj(\Par_{1:\Ndesign}), \tau^2 I)$.
 This setup encompasses standard parametric Bayesian models as well.
 We can thus consider the joint Bayesian model 
 \begin{equation}
 \jointKOH(\d\Par, \d\targetTraj, \d\obs, \d\emObs) \Def
-\priorDens(\Par) \lik(\targetTraj(\Par); \obs) \lik(\targetTraj; \emObs) 
+\priorDens(\Par) \lik(\Par; \targetTraj, \obs) \emLik(\targetTraj; \emObs) 
 \emDistPrior(\d\targetTraj) \, \d\Par \, \d\obs \, \d\emObs
 \label{eq:koh-joint}
 \end{equation}
@@ -441,7 +441,7 @@ subject to the constraint that $\obs$ is not allowed to inform $\targetTraj$.
 Let $\postKOH$ denote the distribution of $(\Par, \targetTraj)$
 given $(\obs, \emObs)$ under the joint $\jointKOH$. Also, let $\emDist$ denote 
 the distribution of $\targetTraj$ given $\emObs$ under the joint 
-$\emDistPrior(\d\targetTraj) \lik(\targetTraj; \emObs) \d\emObs$. Then, 
+$\emDistPrior(\d\targetTraj) \emLik(\targetTraj; \emObs) \d\emObs$. Then, 
 \begin{equation}
 \emDist(\d\targetTraj) \postDensNorm(\Par; \targetTraj)\d\Par
 = \argmin_{\qMeas \in \qSpaceCut}} \KL{\qMeas}{\postKOH},
@@ -521,24 +521,29 @@ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)] 
 As compared to the analogous EP joint
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \normCst(\targetTraj) d\Par$,
 we see that the EUP replaces the normalizing function $\normCst(\targetTraj)$ with
-the global point estimate $\emE[\normCst(\targetEm)]$. If $\targetEm$ is a forward 
-model emulator, then this difference manifests in the treatment of the marginal likelihood.
-Indeed, in this setting the EUP arises as the marginal posterior 
-$\Par \given \obs$ under the hierarchical model
-\begin{align}
-&\targetTraj  \sim \emDist \\
-&\Par \sim \priorDens \\
-&\obs \given \targetTraj, \Par \sim \lik(\targetTraj(\Par); \cdot).
+the global point estimate $\emE[\normCst(\targetEm)]$. Like the EP, the EUP admits
+both posterior mixture and marginal likelihood interpretations. Starting with the latter, 
+the EUP arises as the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
+\begin{equation}
+\targetTraj  \sim \emDist, \qquad 
+\Par \sim \priorDens, \qquad
+\obs \given \targetTraj, \Par \sim \lik(\Par; \targetTraj, \d\obs).
 \label{eq:eup-prob-model}
-\end{align}
+\end{equation}
 This yields 
 \begin{align*}
 &\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \likApproxEUP(\Par; \obs),
-&&\likApproxEUP(\Par; \obs) \Def \int \lik(\targetTraj(\Par); \obs) \emDist(\d\targetTraj). 
+&&\likApproxEUP(\Par; \obs) \Def \int \lik(\targetTraj(\Par); \obs) \emDist(\d\targetTraj), 
 \end{align*}
-In contrast with \Cref{eq:lik-approx-EP}, the EUP likelihood approximation 
-weights only by the surrogate predictive distribution, ignoring the marginal 
-likelihood $\normCst(\targetTraj)$.
+providing an analog to the EP characterization in \Cref{eq:lik-approx-EP}. In contrast
+with $\likApproxEP(\Par; \obs)$, the EUP marginal likelihood does not include 
+$\normCst(\targetTraj)$ in the integrand. Analogous to \Cref{eq:ep-approx}, the EUP can also be 
+written as the posterior mixture
+\begin{equation}
+\postApproxEUPNorm(\Par) = \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj \given \obs),
+\label{eq:eup-mixture} 
+\end{equation}
+where $\emDist(d\targetTraj \given \obs) \propto \normCst(\targetTraj) \emDist(d\targetTraj)$.
 
 \subsection{Comparison of the EP and EUP}
 Notice in \Cref{eq:post-approx-EUP} that the EUP is a ratio estimator, and differs from 
@@ -630,6 +635,7 @@ $\{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)\} /
 The $2\times$ difference in surrogate standard deviation translates to a $400\times$ difference in 
 density approximation, relative to the plug-in mean. This undesirable behavior, also noted by 
 \citet{VehtariParallelGP}, can be viewed partially as a consequence \Cref{prop:ep-eup-pw-err}.
+\todo{Need to clarify this point}
 As illustrated in the experiments, the EP tends to be more robust, though not immune, to the 
 sensitivity exhibited by posterior estimates under GP log-density surrogates.
 \todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
