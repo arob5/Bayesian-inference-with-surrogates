@@ -750,8 +750,8 @@ and repeated just-in-time sampling.
 
 \subsection{Random Kernel Metropolis-Hastings}
 To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
-MCMC algorithm that produces approximate EP samples. We focus on MCMC schemes
-that target the joint distribution $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
+MCMC algorithm that produces approximate EP samples. The sampler targets the joint distribution 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
 which admits $\postApproxEP$ as a marginal. At a high level, we consider algorithms that alternate between 
 $\Par$ and $\targetTraj$ updates, which update the current MCMC state $(\Par, \targetTraj)$ like
 \begin{align}
@@ -763,16 +763,17 @@ We refer to algorithms of this form as \textit{random kernel MCMC}, motivated by
 $\MarkovKerPar(\Par, \cdot \given \targetEm)$ as a random surrogate-based approximation 
 of its exact analog $\MarkovKerPar(\Par, \cdot \given \target)$.
 Throughout this section we fix $\MarkovKerPar$ to be an MH kernel defined with respect to a 
-proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by first sampling a proposal 
-$\propPar \sim \propDistPar(\Par, \cdot)$. The next state $\Par^\prime$ is set to $\propPar$ with probability
+proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by sampling a proposal 
+$\propPar \sim \propDistPar(\Par, \cdot)$ and setting the next state $\Par^\prime$ to $\propPar$
+with probability 
 \begin{equation}
 \accProbMH_{\Par}(\Par, \propPar)
 = \min\left(1, \frac{\postDens(\propPar; \targetTraj^\prime)}{\postDens(\Par; \targetTraj^\prime)} \cdot 
-\frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right)
-\label{eq:MH-ratio-u},
+\frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right);
+\label{eq:MH-ratio-u}
 \end{equation}
-where $\propDensPar(\Par, \cdot)$ denotes the density of $\propDistPar(\Par, \cdot)$; otherwise, it is set to 
-the current value $\Par$. Provided the unnormalized density $\postDens(\Par; \targetTraj^\prime)$
+otherwise $\Par^\prime$ is assigned the current state $\Par$. Here $\propDensPar(\Par, \cdot)$ denotes the density of 
+$\propDistPar(\Par, \cdot)$. Provided the unnormalized density $\postDens(\Par; \targetTraj^\prime)$
 depends on $\targetTraj^\prime$ only through $\targetTraj^\prime(\Par)$, then the MH update for $\Par$ only requires 
 realizing the finite-dimensional projection $[\targetTraj^\prime(\Par), \targetTraj^\prime(\propPar)]$ of the 
 function $\targetTraj^\prime$.
@@ -780,10 +781,12 @@ function $\targetTraj^\prime$.
 \todo[inline]{This is a bit awkward; don't want to cause confusion with derivative of $\targetTraj$}
 
 \subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
-As a concrete starting point, we consider a Metropolis-within-Gibbs (MwG) algorithm to sample from 
-the joint $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$. The MH 
-update for $\Par$ must leave $\postDens(\Par; \targetTraj) d\Par$ invariant, resulting in the MH 
-kernel $\MarkovKerPar(\Par, \cdot; \targetTraj)$ defined in the previous section. The $\targetTraj$ update must leave 
+Having established the MH update for $\Par$, we now focus on specifying the kernel $\MarkovKerTarget$
+in \Cref{eq:f-update}. To motivate our choice, first consider the requirements for an exact
+Metropolis-within-Gibbs scheme targeting the joint 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$. The $\Par$ update
+must leave $\postDens(\Par; \targetTraj) d\Par$ invariant, which is accomplished via the MH 
+kernel $\MarkovKerPar(\Par, \cdot \given \targetTraj)$ specified above. The $\targetTraj$ update must leave 
  $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
  care due to the fact that $\targetTraj$ may be infinite-dimensional. Proceeding in the spirit of 
  function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
@@ -797,8 +800,8 @@ the acceptance probability
 \label{eq:MH-ratio-mwg}
 \end{equation}
 If $\targetEm \sim \GP(\gpMean, \gpKer)$ 
-\footnote{More generally, this applies when $\postEm$ arises as a transformation
-of an underlying Gaussian. The emulator predictive distribution need not be Gaussian.}
+\footnote{More generally, this applies when the random density $\postEm$ arises as a transformation
+of an underlying Gaussian measure. The emulator predictive distribution itself need not be Gaussian.}
 then we may define $\propDistTarget(\targetTraj, \cdot)$ via the
 preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
 \begin{equation}
@@ -827,7 +830,7 @@ beyond the scope of the present paper.
 
 As currently stated, the pCN update in \Cref{eq:pcn-proposal} is practically implementable only when 
 $\targetEm$ admits a finite-dimensional representation. However, the algorithm can still be implemented
-exactly (i.e., without discretization) even when $\targetEm$ is function-valued by tracking only the 
+exactly (i.e., without discretization) when $\targetEm$ is function-valued by tracking only the 
 bivariate projections of the surrogate at the current and proposed parameter values $(\Par, \propPar)$.
 \Cref{alg:rk-pcn-finite} summarizes the conceptual implementation, which is realizable in the finite-dimensional
 setting. \Cref{alg:rk-pcn-infinite} states the practical implementation for infinite-dimensional surrogates.
