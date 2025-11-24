@@ -832,18 +832,36 @@ implementation is summarized in \Cref{alg:mwg-ep} and additional implementation 
 in the appendix.
 \todo[inline]{Add section in appendix}
 
-\todo[inline]{LEFT OFF HERE}
 \begin{algorithm}[H]
-    \caption{Random Kernel pCN}
+    \caption{Random Kernel pCN, Finite Dimensional (single iteration)}
     \label{alg:rk-pcn}
     \begin{algorithmic}[1]
-    \Function{RKpCN}{$\postNormEm, \NSample, M$}     
-        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
-        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
-	\EndFor
-	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
-	\EndFunction
+    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
+    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime)$
+    \State $\xi \sim \Gaussian(0, \gpKer)$
+    \State $\targetTraj^\prime \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \targetTraj^\prime) / \postDens(\Par; \targetTraj^\prime) \right\}$
+    \State $\Par^\prime \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN, Infinite Dimensional  (single iteration)}
+    \label{alg:rk-pcn-gp}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
+    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime_{\Par^\prime})$
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
+    \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
+    \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
+    \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
+    \State $(\targetTraj^\prime_{\Par}, \targetTraj^\prime_{\propPar})^\top \gets 
+    	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \targetTraj^\prime) / \postDens(\Par; \targetTraj^\prime) \right\}$ 
+    	\Comment{Compute using $\targetTraj^\prime_{\Par}, \targetTraj^\prime_{\propPar}$}
+    \State $\Par^\prime \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \State $\targetTraj^{\prime}_{\Par^\prime} \gets \targetTraj^\prime_{\propPar} \indicator{v \leq \alpha_{\Par}} + \targetTraj^\prime_{\Par} \indicator{v > \alpha_{\Par}}$
     \end{algorithmic}
 \end{algorithm}
 
