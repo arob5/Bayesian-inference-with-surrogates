@@ -617,9 +617,9 @@ distributions $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, as well as
 \end{equation} 
 
 \Cref{eq:EUP-Gaussian-ldens} illustrates that the EUP inflates the plug-in mean approximation 
-in regions with high surrogate uncertainty. At two points where $\gpMean$ is equal, the 
-EUP always assigns higher density to the more uncertain location. Notably, this uncertainty 
-inflation scales with the exponentiated variance of the GP, potentially leading to extreme 
+in regions with high surrogate uncertainty. At two points with equal predictive mean $\gpMean$, the 
+EUP always assigns higher density to the more uncertain location. Notably, the magnitude of the
+uncertainty inflation scales with the exponentiated variance of the GP, potentially leading to extreme 
 concentration in the most uncertain regions. For example, if $\gpKer(\Par) = 4$,
 $\gpMean(\Par^\prime) = \gpMean(\Par)$, and 
 $\gpKer(\Par^\prime) = 4 \gpKer(\Par)$, then 
@@ -627,9 +627,10 @@ $\{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)\} /
 \{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)\} \approx 400$. 
 The $2\times$ difference in surrogate standard deviation translates to a $400\times$ difference in 
 density approximation, relative to the plug-in mean. This undesirable behavior, also noted by 
-\citet{VehtariParallelGP}, can be viewed partially as a consequence \Cref{prop:ep-eup-pw-err}.
-\todo{Need to clarify this point}
-As illustrated in the experiments, the EP tends to be more robust, though not immune, to the 
+\citet{VehtariParallelGP}, can be viewed partially as a consequence of the dominating effect
+of the second term in \Cref{eq:ep-eup-pw-err} at points where the distribution of 
+$\postEm(\Par)$ is heavy tailed.
+As illustrated in the experiment in \Cref{sec:vsem}, the EP tends to be more robust, though not immune, to the 
 sensitivity exhibited by posterior estimates under GP log-density surrogates.
 \todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
 
@@ -1035,7 +1036,7 @@ with directions that are well-informed by the data.
 % In the regime $r > 0$ and $q \to 0$ we have 
 
 % Ecosystem Model Calibration
-\subsection{Ecosystem Model Calibration}
+\subsection{Ecosystem Model Calibration} \label{sec:vsem}
 Our next example is motivated by the problem of producing near-term forecasts of the 
 terrestrial carbon cycle \citep{nearTermForecasts,FerEmulation}. In this setting, both model parameters 
 and initial conditions are typically unknown and must be learned from observational data. Performing 
