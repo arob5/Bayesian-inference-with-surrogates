@@ -482,26 +482,20 @@ contexts other than modular inference, including for robustness to model
 misspecification \citep{BayesBag,BayesBag2}.
 
 \section{Approximating the Expected Posterior} \label{sec:approximating-ep}
-Having justified the EP as the baseline target distribution for uncertainty 
+Having justified the EP as the baseline target distribution for modular uncertainty 
 propagation, we now turn to the practical question of conducting EP-based
 inference. While exact inference is typically infeasible, two 
 natural strategies are to
-(1) target a distribution that approximates the EP but is more amenable
+(1) target an alternative distribution that approximates the EP but is more amenable
 to standard inference algorithms, and (2) employ an approximate 
-inference algorithm (see \Cref{sec:computation} for the latter). We re-interpret 
-alternative posterior approximations proposed in the literature 
-as instances of the former approach. Previous work commonly
-eschews the EP in favor of approximations of the \textit{unnormalized}
-density surrogate $\postEm$ \citep{StuartTeck1,StuartTeck2,VehtariParallelGP}.
-However, these works stop short of studying how such alternative approximations 
-relate to the EP. 
-
-In this section, we introduce the most popular of these approximations, the 
-\textit{expected unnormalized posterior (EUP)}, and demonstrate 
-how the EUP can be viewed as an approximation to the EP.
-We analyze when this approximation is reasonable, and when the EUP may 
-deviate significantly from the EP baseline. We then show how these results map 
-onto the popular GP settings from \Cref{ex:fwd-em, ex:ldens-em}.
+inference algorithm directly targeting the EP (see \Cref{sec:computation} for the latter). 
+Previous studies have adopted the former approach, eschewing the EP in favor 
+of approximations of the \textit{unnormalized} density surrogate $\postEm$
+\citep{StuartTeck1,StuartTeck2,VehtariParallelGP}.
+However, these works stop short of studying how this approximation
+relates to the EP. In this section we build an understanding of this approximation,
+termed the \textit{expected unnormalized posterior (EUP)}, and provide analytical results 
+illustrating how the EP and EUP can differ.
 
 \subsection{The Expected Unnormalized Posterior} \label{sec:eup}
 Notice that, unlike $\postNormEm(\Par)$, the unnormalized density surrogate

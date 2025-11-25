@@ -6,11 +6,9 @@ import matplotlib.pyplot as plt
 
 from Gaussian import Gaussian
 from LinGaussTest import LinGaussInvProb, LinGaussTest
-from helper import get_random_corr_mat
-
 
 def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None, 
-                      n_mcmc=100_000):
+                      include_mcmc=True, n_mcmc=100_000):
     """
     The quantities (m0, C0, Sig, G, Q) are fixed throughout
     the whole test. This implies the structure of the inverse problem
@@ -25,6 +23,10 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
     r fixed. If Q = Q_true then the surrogate is "calibrated", in the
     sense that Q correctly quantifies the uncertainty in the surrogate
     bias r.
+
+    The experiment is run using a well-specified model (i.e., the
+    observations are generated from the true likelihood). If `include_mcmc=True`
+    then MCMC algorithms are also run to evaluate the MCMC-based EP approximation.
     """
 
     n = G.shape[0]
@@ -42,13 +44,16 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
     cover = {
         "ep_cover_univariate" : np.empty((n_reps, n_probs, d)),
         "eup_cover_univariate" : np.empty((n_reps, n_probs, d)),
+        "mean_cover_joint" : np.empty((n_reps, n_probs)),
         "ep_cover_joint" : np.empty((n_reps, n_probs)),
         "eup_cover_joint" : np.empty((n_reps, n_probs))
     }
 
     dists = {
+        "mean_kl" : np.empty(n_reps),
         "ep_kl" : np.empty(n_reps),
         "eup_kl" : np.empty(n_reps),
+        "mean_w2" : np.empty(n_reps),
         "ep_w2" : np.empty(n_reps),
         "eup_w2" : np.empty(n_reps),
         "ep_expected_kl" : np.empty(n_reps),
@@ -57,16 +62,19 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
         "ep_eup_w2": np.empty(n_reps)
     }
 
-    mcmc = {
-        "ep_rkpcn99_kl": np.empty(n_reps),
-        "ep_rkpcn99_w2": np.empty(n_reps),
-        "ep_rkpcn95_kl": np.empty(n_reps),
-        "ep_rkpcn95_w2": np.empty(n_reps),
-        "ep_rkpcn90_kl": np.empty(n_reps),
-        "ep_rkpcn90_w2": np.empty(n_reps),
-        "ep_rk_kl": np.empty(n_reps),
-        "ep_rk_w2": np.empty(n_reps)
-    }
+    if include_mcmc:
+        mcmc = {
+            "ep_rkpcn99_kl": np.empty(n_reps),
+            "ep_rkpcn99_w2": np.empty(n_reps),
+            "ep_rkpcn95_kl": np.empty(n_reps),
+            "ep_rkpcn95_w2": np.empty(n_reps),
+            "ep_rkpcn90_kl": np.empty(n_reps),
+            "ep_rkpcn90_w2": np.empty(n_reps),
+            "ep_rk_kl": np.empty(n_reps),
+            "ep_rk_w2": np.empty(n_reps)
+        }
+    else:
+        mcmc = None
 
     failed_iters = []
 
@@ -84,12 +92,15 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
             # coverage
             cover["ep_cover_univariate"][i,:,:] = res["ep"]
             cover["eup_cover_univariate"][i,:,:] = res["eup"]
-            cover["ep_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.ep_post)
+            cover["mean_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.mean_post)
             cover["eup_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.eup_post)
-            
+            cover["ep_cover_joint"][i,:] = test.post.compute_credible_ellipsoid_coverage(test.ep_post)
+
             # distances
             dists["ep_kl"][i] = test.post.kl(test.ep_post)
             dists["eup_kl"][i] = test.post.kl(test.eup_post)
+            dists["mean_kl"][i] = test.post.kl(test.mean_post)
+            dists["mean_w2"][i] = test.post.kl(test.mean_post)
             dists["ep_w2"][i] = test.post.wasserstein(test.ep_post)
             dists["eup_w2"][i] = test.post.wasserstein(test.eup_post)
             dists["ep_expected_kl"][i], dists["eup_expected_kl"][i] = test.estimate_expected_kl()
@@ -97,15 +108,16 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
             dists["ep_eup_w2"][i] = test.ep_post.wasserstein(test.eup_post)
 
             # mcmc
-            mcmc_results = get_mcmc_results(test, n_samp=n_mcmc)
-            mcmc['ep_rkpcn99_kl'][i] = mcmc_results['ep_rkpcn99_kl']
-            mcmc['ep_rkpcn99_w2'][i] = mcmc_results['ep_rkpcn99_w2']
-            mcmc['ep_rkpcn95_kl'][i] = mcmc_results['ep_rkpcn95_kl']
-            mcmc['ep_rkpcn95_w2'][i] = mcmc_results['ep_rkpcn95_w2']
-            mcmc['ep_rkpcn90_kl'][i] = mcmc_results['ep_rkpcn90_kl']
-            mcmc['ep_rkpcn90_w2'][i] = mcmc_results['ep_rkpcn90_w2']
-            mcmc['ep_rk_kl'][i] = mcmc_results['ep_rk_kl']
-            mcmc['ep_rk_w2'][i] = mcmc_results['ep_rk_w2']
+            if include_mcmc:
+                mcmc_results = get_mcmc_results(test, n_samp=n_mcmc)
+                mcmc['ep_rkpcn99_kl'][i] = mcmc_results['ep_rkpcn99_kl']
+                mcmc['ep_rkpcn99_w2'][i] = mcmc_results['ep_rkpcn99_w2']
+                mcmc['ep_rkpcn95_kl'][i] = mcmc_results['ep_rkpcn95_kl']
+                mcmc['ep_rkpcn95_w2'][i] = mcmc_results['ep_rkpcn95_w2']
+                mcmc['ep_rkpcn90_kl'][i] = mcmc_results['ep_rkpcn90_kl']
+                mcmc['ep_rkpcn90_w2'][i] = mcmc_results['ep_rkpcn90_w2']
+                mcmc['ep_rk_kl'][i] = mcmc_results['ep_rk_kl']
+                mcmc['ep_rk_w2'][i] = mcmc_results['ep_rk_w2']
         except Exception as e:
             print(f'Iteration {i} failed with error: {e}')
             failed_iters.append(i)
