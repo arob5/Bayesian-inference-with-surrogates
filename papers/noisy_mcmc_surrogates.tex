@@ -268,7 +268,7 @@ been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}.
 % the emulator target. 
 
 \begin{ex} \label{ex:fwd-em}
-In the Bayesian inverse problem setting in \Cref{sec:bip},
+In the Bayesian inverse problem setting from \Cref{sec:bip},
 a natural approach is to target the underlying forward model 
 $\Par \mapsto \fwd(\Par)$ (i.e., choose $\target \Def \fwd$), a strategy 
 we refer to as \textit{forward model emulation}.
@@ -382,7 +382,7 @@ joint distribution $\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par
 can be understood via the hierarchical model 
 \begin{align}
 &\targetTraj  \sim \emDist, 
-&&\Par \given \targetTraj \sim \postDensNorm(\cdot; \targetTraj).
+&&\Par \given \targetTraj \sim \postDensNorm(\d\Par; \targetTraj).
 \label{eq:ep-prob-model}
 \end{align}
 This perspective highlights the interpretation of the EP as a $\emDist$-weighted mixture of posteriors 
@@ -403,7 +403,7 @@ yielding the equivalent characterization
 A slight modification generalizes this expression to the general case, which encompasses log-posterior emulators.}
 \begin{align}
 &\postApproxEP(\Par) \propto \priorDens(\Par) \likApproxEP(\Par; \obs),
-&&\likApproxEP(\Par; \obs) \Def \int \frac{\lik(\targetTraj(\Par); \obs)}{\normCst(\targetTraj)} \emDist(\d\targetTraj). 
+&&\likApproxEP(\Par; \obs) \Def \int \frac{\lik(\Par; \targetTraj, \obs)}{\normCst(\targetTraj)} \emDist(\d\targetTraj). 
 \label{eq:lik-approx-EP}
 \end{align}
 Observe that the exact likelihood is replaced with an approximation averaged over $\targetTraj$ and 
@@ -411,10 +411,9 @@ weighted both by the surrogate predictive distribution and the marginal likeliho
 
 \subsection{Cut Posterior} \label{sec:cut}
 In this section, we consider the case where the two-stage surrogate workflow 
-arises as an approximation to a coherent joint Bayesian model, showing
-in this setting the EP can be viewed as a so-called cut posterior distribution
+arises as an approximation to a coherent joint Bayesian model, in which case
+ the EP can be viewed as a so-called cut posterior distribution
 \citep{PlummerCut,cutInference,moduleModels,cutVar,cutVar2}.
-
 In particular, suppose that the surrogate model is defined by specifying 
 a prior $\targetTraj \sim \emDistPrior$ and likelihood $\emLik(\targetTraj; \emObs)$,
 where $\emObs \Def \{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ denotes
@@ -430,10 +429,10 @@ We can thus consider the joint Bayesian model
 \label{eq:koh-joint}
 \end{equation}
 over all unknowns $(\targetTraj, \Par)$. This fully Bayesian (non-modular) model 
-is akin to the framework proposed in the seminal work of \citet{KOH}. Subsequent 
-studies showed that allowing the observational data $\obs$ to indirectly inform 
-the emulator can produce counterintuitive results, contributing to adoption of 
-the modular framework \citep{modularization}. The following result shows that 
+is akin to the framework proposed in the seminal work of \citet{KOH}. Unfortunately, the joint model 
+can produce counterintuitive results when $\lik(\Par; \target, \obs)$ is misspecified, stemming from 
+the fact that both the simulated $\emObs$ and observational data $\obs$ inform inference
+for the emulator \citep{modularization}. The following result shows that 
 the EP can be viewed as an optimal approximation to the fully Bayesian model, 
 subject to the constraint that $\obs$ is not allowed to inform $\targetTraj$.
 
@@ -468,7 +467,7 @@ sample surrogate trajectories $\targetTraj \sim \emDist$. On the other hand,
 finite-dimensional surrogate models for which sampling trajectories is straightforward.
 See \Cref{sec:computation} for additional computational details.
 
-In the Bayesian modularization literature, there is a wide body of work 
+In the modular Bayes literature, there is a wide body of work 
 on the cut posterior, which is equivalent to the EP 
 when a fully Bayesian reference model is considered (\Cref{sec:cut})
 \citep{PlummerCut,cutInference,moduleModels}.

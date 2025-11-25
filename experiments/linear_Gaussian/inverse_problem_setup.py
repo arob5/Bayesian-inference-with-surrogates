@@ -8,9 +8,11 @@ from scipy.linalg import toeplitz
 import matplotlib.pyplot as plt
 
 from LinGaussTest import LinGaussInvProb
+from Gaussian import Gaussian
 
 
-def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, jitter=1e-8):
+def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, 
+                         jitter=1e-8, G_scale=1.0):
     grid = np.arange(d)
 
     # Prior distribution
@@ -26,7 +28,7 @@ def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, jitter=1
     n = len(idx_obs)
     H = np.zeros((n, d), dtype=int)
     H[np.arange(n), idx_obs] = 1
-    G = H @ G_conv
+    G = G_scale * H @ G_conv
 
     # Noise covariance
     variances = np.sqrt(noise_sd)**2 * np.ones(n)
@@ -37,54 +39,6 @@ def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, jitter=1
     g_conv_true = G_conv @ inv_prob.u_true
     
     return inv_prob, g_conv_true, grid, idx_obs
-
-
-def plot_exact_post(inv_prob, grid, idx_obs, g_conv_true=None):
-    post_sd = np.sqrt(np.diag(inv_prob.post.cov))
-    ci_lower = inv_prob.post.mean - 2 * post_sd
-    ci_upper = inv_prob.post.mean + 2 * post_sd
-
-    plt.fill_between(grid, ci_lower, ci_upper, color='blue', alpha=0.1, label="+/- 2 post sd")
-    plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
-    if g_conv_true is not None:
-        plt.plot(grid, g_conv_true, color="orange", label="g_true")
-    plt.plot(idx_obs, inv_prob.y, "o", color="red", label="y")
-    plt.plot(grid, inv_prob.post.mean, color="blue", label="post mean")
-    plt.legend()
-    plt.show()
-
-
-def plot_approx_post(test, grid, idx_obs, post_name):
-    if post_name == "exact":
-        post_rv = test.post
-    elif post_name == "eup":
-        post_rv = test.eup_post
-    elif post_name == "ep":
-        post_rv = test.ep_post
-    else:
-        raise ValueError(f"Invalid post_name {post_name}")
-
-    post_sd = np.sqrt(np.diag(post_rv.cov))
-    ci_lower = post_rv.mean - 2 * post_sd
-    ci_upper = post_rv.mean + 2 * post_sd
-
-    plt.fill_between(grid, ci_lower, ci_upper, color='blue', alpha=0.1, label="+/- 2 post sd")
-    # plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
-    # plt.plot(grid, g_conv_true, color="orange", label="g_true")
-    plt.plot(idx_obs, test.y, "o", color="red", label="y")
-    plt.plot(grid, post_rv.mean, color="blue", label="post mean")
-    plt.legend()
-    plt.show()
-
-
-
-
-
-
-
-
-
-
 
 
 def gaussian_kernel(x, lengthscale):
@@ -156,5 +110,119 @@ def construct_noise_cov(G, variances):
 
     return C_eps
     
+# ---------------------------------------------------------------------
+# Plotting helpers
+# ---------------------------------------------------------------------
+
+def plot_exact_post(inv_prob, grid, idx_obs, g_conv_true=None, title=None):
+    post_sd = np.sqrt(np.diag(inv_prob.post.cov))
+    ci_lower = inv_prob.post.mean - 2 * post_sd
+    ci_upper = inv_prob.post.mean + 2 * post_sd
+
+    title = 'exact_posterior' if title is None else title
+
+    plt.fill_between(grid, ci_lower, ci_upper, color='blue', alpha=0.1, label="+/- 2 post sd")
+
+    if inv_prob.u_true is not None:
+        plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
+    if g_conv_true is not None:
+        plt.plot(grid, g_conv_true, color="orange", label="g_true")
+
+    plt.plot(idx_obs, inv_prob.y, "o", color="red", label="y")
+    plt.plot(grid, inv_prob.post.mean, color="blue", label="post mean")
+    plt.title(title)
+    plt.legend()
+    plt.show()
 
 
+def plot_surrogate(inv_prob, test, grid, idx_obs, g_conv_true=None):
+    plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
+    if g_conv_true is not None:
+        plt.plot(grid, g_conv_true, color="orange", label="g_true")
+
+    surrogate_mean = test.G @ inv_prob.u_true + test.e.mean
+    surrogate = Gaussian(mean=surrogate_mean, cov=test.e.cov)
+    surrogate_sd = np.sqrt(np.diag(surrogate.cov))
+    ci_lower = surrogate.mean - 2 * surrogate_sd
+    ci_upper = surrogate.mean + 2 * surrogate_sd
+    plt.fill_between(idx_obs, ci_lower, ci_upper, color='green', alpha=0.1, label="+/- 2 surrogate sd")
+    plt.plot(idx_obs, surrogate.mean, "o", color="green", label="surrogate mean")
+
+    plt.title('surrogate predictive distribution')
+    plt.legend()
+    plt.show()
+
+
+def plot_approx_post(test, grid, idx_obs, post_name):
+    if post_name == "exact":
+        post_rv = test.post
+    elif post_name == "eup":
+        post_rv = test.eup_post
+    elif post_name == "ep":
+        post_rv = test.ep_post
+    elif post_name == "mean":
+        post_rv = test.mean_post
+    else:
+        raise ValueError(f"Invalid post_name {post_name}")
+
+    post_sd = np.sqrt(np.diag(post_rv.cov))
+    ci_lower = post_rv.mean - 2 * post_sd
+    ci_upper = post_rv.mean + 2 * post_sd
+
+    plt.fill_between(grid, ci_lower, ci_upper, color='blue', alpha=0.1, label="+/- 2 post sd")
+    plt.plot(idx_obs, test.y, "o", color="red", label="y")
+    plt.plot(grid, post_rv.mean, color="blue", label="post mean")
+    plt.title('exact posterior')
+    plt.legend()
+    plt.show()
+
+
+def plot_approx_post_comparison(inv_prob, test, grid, idx_obs, post_name):
+    """
+    Plot approximate posterior overlaid on exact posterior. Note that the
+    exact posterior is taken from `inv_prob`, not `test.inv_prob`. This
+    allows plotting with respect to different baseline posteriors.
+    """
+    if post_name == "eup":
+        approx_rv = test.eup_post
+    elif post_name == "ep":
+        approx_rv = test.ep_post
+    elif post_name == "mean":
+        approx_rv = test.mean_post
+    elif post_name == "misspecified":
+        approx_rv = test.inv_prob.post
+    else:
+        raise ValueError(f"Invalid post_name {post_name}")
+
+    # Baseline exact
+    exact_rv = inv_prob.post
+    exact_sd = np.sqrt(np.diag(exact_rv.cov))
+    ci_lower_exact = exact_rv.mean - 2 * exact_sd
+    ci_upper_exact = exact_rv.mean + 2 * exact_sd
+    plt.fill_between(grid, ci_lower_exact, ci_upper_exact, color='blue', alpha=0.1, label="+/- 2 exact post sd")
+    plt.plot(grid, exact_rv.mean, color="blue", label="exact post mean")
+
+    # Approximation
+    approx_sd = np.sqrt(np.diag(approx_rv.cov))
+    ci_lower_approx = approx_rv.mean - 2 * approx_sd
+    ci_upper_approx = approx_rv.mean + 2 * approx_sd
+    plt.fill_between(grid, ci_lower_approx, ci_upper_approx, color='green', alpha=0.1, label="+/- 2 approx post sd")
+    plt.plot(grid, approx_rv.mean, color="green", label="approx post mean")
+
+    plt.plot(idx_obs, test.y, "o", color="red", label="y")
+    plt.title(f'Posterior Comparison: Exact vs. {post_name}')
+    plt.legend()
+    plt.show()
+
+
+def summarize_setup(inv_prob, test, grid, idx_obs, g_conv_true=None):
+    """
+    `inv_prob` should be true data generating process. `test` is a LinGaussTest
+    (which may be based on a misspecified inverse problem model).
+    """
+    plot_exact_post(inv_prob, grid, idx_obs, g_conv_true, title='correct model')
+    plot_approx_post_comparison(inv_prob, test, grid, idx_obs, post_name='misspecified')
+    plot_surrogate(inv_prob, test, grid, idx_obs, g_conv_true)
+    plot_approx_post_comparison(inv_prob, test, grid, idx_obs, post_name='mean')
+    plot_approx_post_comparison(inv_prob, test, grid, idx_obs, post_name='eup')
+    plot_approx_post_comparison(inv_prob, test, grid, idx_obs, post_name='ep')

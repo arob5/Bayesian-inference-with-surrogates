@@ -20,7 +20,7 @@ from modmcmc.kernels import (
 class LinGaussInvProb:
     # Exact (no surrogate) linear Gaussian inverse problem.
 
-    def __init__(self, rng, G, m0=None, C0=None, Sig=None):
+    def __init__(self, rng, G, m0=None, C0=None, Sig=None, y=None):
         self.rng = rng
         self.n = G.shape[0]
         self.d = G.shape[1]
@@ -42,14 +42,21 @@ class LinGaussInvProb:
         self.noise = Gaussian(cov=Sig, rng=rng, store="both")
 
         # Ground truth parameter and observed data
-        self.u_true = self.prior.sample()
-        self.noise_realization = self.noise.sample()
-        self.g_true = self.G @ self.u_true
-        self.y = self.g_true + self.noise_realization
+        if y is None:
+            self.u_true = self.prior.sample()
+            self.noise_realization = self.noise.sample()
+            self.g_true = self.G @ self.u_true
+            self.y = self.g_true + self.noise_realization
+        else:
+            self.y = y
+            self.u_true = None
+            self.noise_realization = None
+            self.g_true = None
 
         # Exact posterior
         self.post = self.prior.invert_affine_Gaussian(self.y, A=self.G,
                                                       cov_noise=self.noise.cov)
+
 
     def plot_marginals(self, nrows=1, ncols=None, figsize=(5,4)):
         # Plot marginal Gaussian prior and posterior densities.
@@ -128,6 +135,7 @@ class LinGaussTest:
         # Surrogate-based inversion.
         self.ep_post = self.get_ep_rv()
         self.eup_post = self.get_eup_rv()
+        self.mean_post = self.get_plugin_mean_rv()
 
         # MCMC samplers.
         self.samplers = {"mwg-eup": self.get_mwg_eup_sampler(),
@@ -146,6 +154,11 @@ class LinGaussTest:
         eup = self.prior.invert_affine_Gaussian(self.y, A=self.G, b=self.e.mean,
                                                 cov_noise=self.noise.cov + self.e.cov)
         return eup
+    
+    def get_plugin_mean_rv(self):
+        plugin = self.prior.invert_affine_Gaussian(self.y, A=self.G, b=self.e.mean,
+                                                   cov_noise=self.noise.cov)
+        return plugin
 
     def sample_surrogate_posterior(self):
         """
