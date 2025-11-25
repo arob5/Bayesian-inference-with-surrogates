@@ -526,7 +526,7 @@ the EUP arises as the marginal posterior $p(\Par \given \obs)$ under the hierarc
 This yields 
 \begin{align*}
 &\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \likApproxEUP(\Par; \obs),
-&&\likApproxEUP(\Par; \obs) \Def \int \lik(\targetTraj(\Par); \obs) \emDist(\d\targetTraj), 
+&&\likApproxEUP(\Par; \obs) \Def \int \lik(\Par; \targetTraj, \obs) \emDist(\d\targetTraj), 
 \end{align*}
 providing an analog to the EP characterization in \Cref{eq:lik-approx-EP}. In contrast
 with $\likApproxEP(\Par; \obs)$, the EUP marginal likelihood does not include 
@@ -562,7 +562,7 @@ $\Par$-independent positive bias in the difference between EP and EUP, modulated
 $\emE[\postEm(\Par)]$. Since both distributions integrate to one, any positive 
 biases must be balanced by negative biases at other values of $\Par$.
 The second term in \Cref{eq:ep-eup-pw-err} will be negative for ``influential'' $\Par$ values, 
-meaning that larger realizations of $\postEm(\Par)$ correspond to larger values of 
+those with larger realizations of $\postEm(\Par)$ highly correlated with larger values of 
 $\normCstEm$. The influence of a parameter value will typically increase when 
 $\postEm(\Par)$ is large on average, highly variable, and is positively correlated with other 
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
@@ -577,7 +577,7 @@ between $\postApproxEP$ and $\postApproxEUPNorm$.
 Let $\jgap$ be defined as in \Cref{prop:ep-eup-pw-err}. Then,
 \begin{equation}
 \norm{\postApproxEP - \postApproxEUPNorm}_{L_1(\parSpace)}
-\leq \emE[\normCstEm] \jgap + \int \Cov[\postEm(\Par), \normCstEm^{-1}] d\Par
+\leq \emE[\normCstEm] \jgap + \int \abs{\Cov[\postEm(\Par), \normCstEm^{-1}]} d\Par
 \label{eq:ep-eup-TV-err}
 \end{equation}
 \end{prop}
@@ -1188,10 +1188,10 @@ Applying this identity, we have
 = \emE[\postEm(\Par)] \emE[\normCstEm^{-1}] + \Cov(\postEm(\Par), \normCstEm^{-1}).
 \end{equation*} 
 Subtracting $\postApproxEUPNorm(\Par) = \emE[\postEm(\Par)] / \emE[\normCstEm]$
-and grouping terms completes the derivation. The integrated error follows from integrating 
-over $\parSpace$ and applying Tonelli's theorem, which gives
+and grouping terms completes the derivation. The integrated error follows from applying the 
+triangle inequality, integrating over $\parSpace$, and applying Tonelli's theorem, which gives
 \begin{equation*}
-\int \emE[\postEm(\Par)] \refMeas(\d\Par) = \emE \int \postEm(\Par) \refMean(\d\Par) = \emE[\normCstEm]
+\int \emE[\postEm(\Par)] \refMeas(\d\Par) = \emE \int \postEm(\Par) \refMeas(\d\Par) = \emE[\normCstEm]
 \qquad \blacksquare
 \end{equation*} 
  

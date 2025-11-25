@@ -174,7 +174,8 @@ def _calc_ep_mcmc_metrics(test, samp):
     return (kl, w2)
 
 
-def plot_coverage(ep_coverage, eup_coverage, probs, q_min=0.05, q_max=0.95, ax=None):
+def plot_coverage(coverage_list, probs, q_min=0.05, q_max=0.95, 
+                  labels=None, colors=None, alpha=0.3, ax=None):
     """
     The first two arguments are shape (n_reps, n_probs), giving the nominal
     coverage for each replicate at each coverage probability level.
@@ -185,15 +186,18 @@ def plot_coverage(ep_coverage, eup_coverage, probs, q_min=0.05, q_max=0.95, ax=N
     else:
         fig = ax.figure
 
-    ep_m = np.median(ep_coverage, axis=0)
-    eup_m = np.median(eup_coverage, axis=0)
-    ep_q = np.quantile(ep_coverage, q=[q_min, q_max], axis=0)
-    eup_q = np.quantile(eup_coverage, q=[q_min, q_max], axis=0)
+    n_plots = len(coverage_list)
+    if labels is None:
+        labels = [f'samp{i+1}' for i in range(n_plots)]
 
-    ax.fill_between(probs, ep_q[0,:], ep_q[1,:], color='blue', alpha=0.3, label='ep')
-    ax.fill_between(probs, eup_q[0,:], eup_q[1,:], color='red', alpha=0.3, label='eup')
-    ax.plot(probs, ep_m, color='blue', label='ep')
-    ax.plot(probs, eup_m, color='red', label='eup')
+    medians = [np.median(cover, axis=0) for cover in coverage_list]
+    quantiles = [np.quantile(cover, q=[q_min, q_max], axis=0) for cover in coverage_list]
+
+    for i in range(n_plots):
+        m = medians[i]
+        q = quantiles[i]
+        ax.fill_between(probs, q[0,:], q[1,:], alpha=alpha, label=labels[i])
+        
     ax.set_xlabel("Nominal Coverage")
     ax.set_ylabel("Actual Coverage")
 
