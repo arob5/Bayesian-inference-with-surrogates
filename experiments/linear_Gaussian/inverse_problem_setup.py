@@ -12,7 +12,7 @@ from Gaussian import Gaussian
 
 
 def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, 
-                         jitter=1e-8, G_scale=1.0):
+                         jitter=1e-8, G_scale=1.0, s=4):
     grid = np.arange(d)
 
     # Prior distribution
@@ -20,15 +20,7 @@ def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale,
     C0 = gaussian_cov_mat(d, lengthscale=5, scale=1) + jitter * np.identity(d)
 
     # Forward model (convolution with sampling)
-    s = 4 # every sth spatial index is observed
-    ker_grid = gaussian_kernel_grid(ker_length, ker_lengthscale)
-    G_conv = construct_toeplitz_forward_model(d, ker_grid)
-
-    idx_obs = np.arange(0, d, s)
-    n = len(idx_obs)
-    H = np.zeros((n, d), dtype=int)
-    H[np.arange(n), idx_obs] = 1
-    G = G_scale * H @ G_conv
+    G, G_conv, H, idx_obs, n = get_forward_model(d, ker_length, ker_lengthscale, s, G_scale)
 
     # Noise covariance
     variances = np.sqrt(noise_sd)**2 * np.ones(n)
@@ -39,6 +31,20 @@ def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale,
     g_conv_true = G_conv @ inv_prob.u_true
     
     return inv_prob, g_conv_true, grid, idx_obs
+
+
+def get_forward_model(d, ker_length, ker_lengthscale, s, G_scale):
+    s = 4 # every sth spatial index is observed
+    ker_grid = gaussian_kernel_grid(ker_length, ker_lengthscale)
+    G_conv = construct_toeplitz_forward_model(d, ker_grid)
+
+    idx_obs = np.arange(0, d, s)
+    n = len(idx_obs)
+    H = np.zeros((n, d), dtype=int)
+    H[np.arange(n), idx_obs] = 1
+    G = G_scale * H @ G_conv
+
+    return G, G_conv, H, idx_obs, n
 
 
 def gaussian_kernel(x, lengthscale):
