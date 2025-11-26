@@ -916,7 +916,6 @@ Additional implementation details are provided in the appendix.
     \end{algorithmic}
 \end{algorithm}
 
-
 \subsection{A Correlated Pseudo-Marginal Algorithm}
 The approximate MwG scheme above is derived by invoking the approximation 
 $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$.
@@ -933,7 +932,6 @@ See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
 for background on pseudo-marginal MCMC.
  
 \todo[inline]{Move to appendix?}
-
 
 \paragraph{Related work.}
 The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
@@ -964,13 +962,15 @@ We opt to avoid normalizing constant estimation and instead slow down the mixing
 $\targetTraj$-chain to control the approximation error.
 
 \section{Numerical Experiments} \label{sec:experiments}
+We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
+plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
+quality of the rk-pcn approximation to the EP.
 
 % Linear Gaussian Example
 \subsection{Linear Gaussian Example}
 We start with a toy linear Gaussian model in which the exact posterior, EP, and EUP are all 
 Gaussian and available in closed-form. A similar example is considered in
-\citet{garegnani2021NoisyMCMC}.
-Consider the linear Gaussian inverse problem
+\citet{garegnani2021NoisyMCMC}. Consider the linear Gaussian inverse problem
 \begin{align}
 \obs &= \fwdLin \Par + \noise
 &&\noise \sim \Gaussian(0, \noiseCov) \label{eq:lin-Gauss-inv-prob} \\
@@ -987,7 +987,7 @@ We consider a forward model emulator of the form
 \end{align}
 corresponding to an additive Gaussian shift of the true model, with bias $\emBias$.
 The covariance $\emCov$ quantifies the surrogate uncertainty regarding the magnitude of the bias.
-In this toy example, the surrogate randomness is independent of $\Par$, in contrast to the 
+In this toy example, the surrogate randomness does not vary with $\Par$, in contrast to the 
 emulators considered in the following more realistic experiments.
 The following results characterize the EP and EUP in this setting. See the appendix for derivations.
 
@@ -1023,6 +1023,47 @@ due to variability in the locations of each Gaussian in the mixture. On the othe
 \Cref{eq:lin-gaussi-eup} the EUP arises from a data space adjustment of the original inverse problem, where
 where the observed data is shifted by the emulator bias, and the observation covariance is inflated by the 
 surrogate covariance. 
+
+Let $G = USV^\top$ denote the singular value decomposition of $G$, with the singular values $(s_j)$ sorted
+in descending order. The right singular vectors $v_j$ associated with large $s_j$ correspond to directions in 
+parameter space that are well-informed by the data. We investigate the posterior mean and covariance of 
+the EUP and EP in the $V$ basis to understand the influence of the surrogate noise. To simplify matters, consider
+the special case $\noiseCov = \sigma^2 I$, $\priorCov = c_0^2 I$, $\emCov = qI$. The following results give
+the expressions for the exact, EUP, and EP posterior moments in the $V$ basis.
+\begin{prop}
+Under the above assumptions $\postCov$, $\postCovEUP$, and $\postCovEP$ are diagonalized in the 
+$V$ basis, with respective eigenvalues given by 
+\begin{align}
+\lambda_j = \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2}}, \qquad
+\lambda_j^{\eup} = \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2 + q^2}}, \qquad
+\lambda_j^{\ep} = \lambda_j + \frac{q^2 s_j^2 c_0^4}{\sigma^4}.
+\end{align}
+Moreover, the posterior means of each distribution can be written as linear combination of the $v_j$. The 
+coefficients in these linear combinations in directions with $s_j \neq 0$ are given by
+\begin{align*}
+&\alpha_j = \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, 
+&&\alpha_j^{\eup} = \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \\
+&\alpha_j^{\ep} = \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
+\end{align*}
+\end{prop}
+\todo[inline]{fix formatting}
+The behavior of the EUP and EP as the surrogate uncertainty increases is markedly different. As $q \to \infty$, the EUP 
+reverts to the $\Gaussian(\priorMean, \priorCov)$ prior, while the EP tends toward a flat distribution centered
+on $\postMeanEP$.
+
+Note that these eigenvalues correspond to the posterior variance along the respective $v_j$ directions.
+We see that as $q \to \infty$, $\lambda_j^{\mathrm{EUP}} \to c_0^2$ and $\lambda_j^{\mathrm{EP}} \to \infty$.
+In words, the EUP posterior variance is bounded by the prior while the EP variance is unbounded.
+In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and $\postMeanEP$
+mosts significantly along directions well-informed by the data ($v_j$ with $s_j$ large). 
+
+The uncertainty inflation is small for both EP and EUP in poorly informed directions in parameter space 
+($v_j$ with $s_j \approx 0$). The inflation may be quite large in well-informed directions. 
+
+
+
+\subsubsection{A Deconvolution Problem}
+
 
 
 \subsubsection{SVD Analysis}
