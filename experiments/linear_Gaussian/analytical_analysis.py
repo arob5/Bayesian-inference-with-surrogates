@@ -20,6 +20,7 @@ def plot_eigenvalue_comparison(G, q_vals=None, c0=1.0, sig=1.0,
     eig_ep_norm = eig_ep / eig_exact
 
     fig, axs = plt.subplots(1, 2, figsize=(8,4))
+
     q_over_sigma = q_vals / sig
 
     # eup
@@ -35,11 +36,10 @@ def plot_eigenvalue_comparison(G, q_vals=None, c0=1.0, sig=1.0,
     ax.set_title(f'ep lambdas, sigma={sig}')
     ax.set_xlabel('q / sigma')
     ax.set_ylabel('lambda ep / lambda')
-    ax.legend(ep_eig_plot, s_idcs)
+    ax.legend(ep_eig_plot, s_idcs, title='svd direction')
 
     plt.close()
-    return fig, ax
-
+    return fig, axs
 
 def plot_mean_comparison(G, y, r, q_vals=None, c0=1.0, sig=1.0,
                          s_idcs=None):
@@ -53,8 +53,8 @@ def plot_mean_comparison(G, y, r, q_vals=None, c0=1.0, sig=1.0,
     alphas_exact = alpha_exact(s=s, y=y, U=U, c0=c0, sig=sig)
     alphas_eup = alpha_eup(s=s, y=y, U=U, r=r, q=q_vals, c0=c0, sig=sig)
     alphas_ep = alpha_ep(s=s, y=y, U=U, r=r, q=q_vals, c0=c0, sig=sig)
-    alphas_eup_norm = alphas_eup - alphas_exact
-    alphas_ep_norm = alphas_ep - alphas_exact
+    alphas_eup_norm = (alphas_eup - alphas_exact) / alphas_exact
+    alphas_ep_norm = (alphas_ep - alphas_exact) / alphas_exact
 
     fig, axs = plt.subplots(1, 2, figsize=(8,4))
     q_over_sigma = q_vals / sig
@@ -63,18 +63,19 @@ def plot_mean_comparison(G, y, r, q_vals=None, c0=1.0, sig=1.0,
     ax = axs[0]
     eup_mean_plot = ax.plot(q_over_sigma, alphas_eup_norm[:,s_idcs])
     ax.set_title(f'eup alphas, r = {r}, sigma={sig}')
-    ax.set_xlabel('q')
-    ax.set_ylabel('alpha_eup - alpha_exact')
+    ax.set_xlabel('q / sigma')
+    ax.set_ylabel('relative bias')
 
     # ep
     ax = axs[1]
     ep_mean_plot = ax.plot(q_vals, alphas_ep_norm[:,s_idcs])
     ax.set_title(f'ep alphas, r = {r}, sigma={sig}')
-    ax.set_xlabel('q')
-    ax.set_ylabel('alpha_ep - alpha_exact')
+    ax.set_xlabel('q / sigma')
+    ax.set_ylabel('relative bias')
     ax.legend(ep_mean_plot, s_idcs)
 
-    return fig, ax
+    plt.close()
+    return fig, axs
 
 
 def lambda_exact(s, c0=1., sig=1.):

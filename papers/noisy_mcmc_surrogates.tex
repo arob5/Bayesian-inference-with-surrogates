@@ -989,41 +989,29 @@ corresponding to an additive Gaussian shift of the true model, with bias $\emBia
 The covariance $\emCov$ quantifies the surrogate uncertainty regarding the magnitude of the bias.
 In this toy example, the surrogate randomness does not vary with $\Par$, in contrast to the 
 emulators considered in the following more realistic experiments.
-The following results characterize the EP and EUP in this setting. See the appendix for derivations.
+The following result characterizes the EP and EUP in this setting. See the appendix for derivations.
 
 \begin{prop}
 Under the linear Gaussian model \Cref{eq:lin-Gauss-inv-prob} with the emulator \Cref{eq:lin-Gauss-em},
 the EP is given by $\postApproxEP(\Par) = \Gaussian(\Par \given \postMeanEP, \postCovEP)$, where
-\begin{align*}
+\begin{align}
 \postMeanEP &= \postMean - \epGain \emBias,
 &&\postCovEP = \postCov + \epGain \emCov \epGain^\top,
-\end{align*}
+\label{eq:lin-gauss-ep}
+\end{align}
 and $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$. The quantities $\postMean, \postCov$ are the 
-exact posterior moments given in \Cref{eq:lin-Gauss-post-moments}.
-\label{eq:lin-gaussi-ep}
-\end{prop}
-
-\begin{prop}
-Under the linear Gaussian model \Cref{eq:lin-Gauss-inv-prob} with the emulator \Cref{eq:lin-Gauss-em},
-the EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, \postCovEUP)$, where
+exact posterior moments given in \Cref{eq:lin-Gauss-post-moments}. Under the same setup, the 
+EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, \postCovEUP)$, where
 \begin{align}
-\postMeanEUP &= \postCovEUP \left(\fwdLin^\top \eupNoiseCov^{-1}\eupObs + \priorCov^{-1}\priorMean \right) 
-\label{eq:lin-Gauss-post-moments} \\
-\postCovEUP &= \left(\fwdLin^\top \eupNoiseCov^{-1}\fwdLin + \priorCov^{-1} \right)^{-1} \nonumber
+&\postMeanEUP = \postCovEUP \left(\fwdLin^\top \eupNoiseCov^{-1}\eupObs + \priorCov^{-1}\priorMean \right),
+&&\postCovEUP = \left(\fwdLin^\top \eupNoiseCov^{-1}\fwdLin + \priorCov^{-1} \right)^{-1}
+\label{eq:lin-gauss-eup}
 \end{align}
 and $\eupNoiseCov \Def \noiseCov + \emCov$, $\eupObs \Def \obs - \emBias$.
-\label{eq:lin-gaussi-eup}
+\label{eq:lin-gauss-posts}
 \end{prop}
 
 \subsubsection{Analytical Analysis}
-While both EP and EUP propagate uncertainty, their qualitative behavior is markedly 
-different as the magnitude of the surrogate variance increases. From \Cref{eq:lin-gaussi-ep}, we see that the EP
-is a mixture of linear Gaussian posteriors, each with covariance $\postCov$. The posterior inflation thus arises 
-due to variability in the locations of each Gaussian in the mixture. On the other hand, from 
-\Cref{eq:lin-gaussi-eup} the EUP arises from a data space adjustment of the original inverse problem, where
-where the observed data is shifted by the emulator bias, and the observation covariance is inflated by the 
-surrogate covariance. 
-
 Let $G = USV^\top$ denote the singular value decomposition of $G$, with the singular values $(s_j)$ sorted
 in descending order. The right singular vectors $v_j$ associated with large $s_j$ correspond to directions in 
 parameter space that are well-informed by the data. We investigate the posterior mean and covariance of 
@@ -1049,18 +1037,8 @@ coefficients in these linear combinations in directions with $s_j \neq 0$ are gi
 \todo[inline]{fix formatting}
 The behavior of the EUP and EP as the surrogate uncertainty increases is markedly different. As $q \to \infty$, the EUP 
 reverts to the $\Gaussian(\priorMean, \priorCov)$ prior, while the EP tends toward a flat distribution centered
-on $\postMeanEP$.
-
-Note that these eigenvalues correspond to the posterior variance along the respective $v_j$ directions.
-We see that as $q \to \infty$, $\lambda_j^{\mathrm{EUP}} \to c_0^2$ and $\lambda_j^{\mathrm{EP}} \to \infty$.
-In words, the EUP posterior variance is bounded by the prior while the EP variance is unbounded.
-In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and $\postMeanEP$
-mosts significantly along directions well-informed by the data ($v_j$ with $s_j$ large). 
-
-The uncertainty inflation is small for both EP and EUP in poorly informed directions in parameter space 
-($v_j$ with $s_j \approx 0$). The inflation may be quite large in well-informed directions. 
-
-
+on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and 
+$\postMeanEP$ most significantly along directions well-informed by the data ($v_j$ with $s_j$ large).
 
 \subsubsection{A Deconvolution Problem}
 
