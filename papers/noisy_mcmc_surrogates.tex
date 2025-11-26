@@ -39,6 +39,9 @@
 % Tables. 
 \usepackage{multirow}
 
+% Boxes
+\usepackage[most]{tcolorbox}
+
 % Local custom commands. 
 \include{latex_macros_general}
 \include{latex_macros_unc_prop}
@@ -63,13 +66,23 @@
 \newtheorem{rmk}{Remark}
 
 \newtheorem{ex}{Example}
-\crefname{ex}{example}{examples}
-\Crefname{ex}{Example}{Examples}
+
+% \newtheorem{ex}{Example}
+% \crefname{ex}{example}{examples}
+% \Crefname{ex}{Example}{Examples}
+
+\newenvironment{examplebox}[1]{%
+  \begin{tcolorbox}[title={#1}, colback=blue!5!white, colframe=blue!80!black]
+  \begin{ex}
+}{%
+  \end{ex}
+  \end{tcolorbox}
+}
 
 % Ensure cleverref knows how to handle citing of multiple subsubsections
-\crefname{subsubsection}{section}{sections}
+\crefname{subsubsection}{Section}{Sections}
 \Crefname{subsubsection}{Section}{Sections}
-\crefname{ex}{example}{examples}
+\crefname{ex}{Example}{Examples}
 \Crefname{ex}{Example}{Examples}
 
 % Title and author
@@ -267,11 +280,12 @@ been explored in \citet{StuartTeck1,StuartTeck2,GP_PDE_priors}.
 % \citet{reviewPaper} for a discussion of practical considerations in choosing 
 % the emulator target. 
 
-\begin{ex} \label{ex:fwd-em}
+\begin{examplebox}{Forward Model GP Surrogate}
+\label{ex:fwd-em}
 In the Bayesian inverse problem setting from \Cref{sec:bip},
 a natural approach is to target the underlying forward model 
 $\Par \mapsto \fwd(\Par)$ (i.e., choose $\target \Def \fwd$), a strategy 
-we refer to as \textit{forward model emulation}.
+we refer to as \textbf{forward model emulation}.
 This method consists of fitting a surrogate $\targetEm$ to the design 
 $\{(\Par_n, \fwd(\Par_n))\}_{n=1}^{\Ndesign}$ and then using $\targetEm$
 in place of $\fwd$. Much previous work has considered this strategy 
@@ -283,10 +297,11 @@ In this special case, the induced (unnormalized) posterior density surrogate tak
 \begin{align}
 \postDens(\Par; \targetEm) &= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar). \label{eq:post-em-fwd-Gaussian}
 \end{align}
-\end{ex}
+\end{examplebox}
 
-\begin{ex} \label{ex:ldens-em}
-Other lines of research instead choose $\target$ to be the map induced by the log-likelihood
+\begin{examplebox}{Log-Density GP Surrogate}
+\label{ex:ldens-em}
+Another popular strategy is to choose $\target$ as the map induced by the log-likelihood
 $\Par \mapsto \log \lik(\Par; \obs)$
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,random_fwd_models,
@@ -296,17 +311,17 @@ $\Par \mapsto \log \left\{\priorDens(\Par)\lik(\Par; \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
 landslideCalibration}.
 
-We collectively refer to these strategies as \textit{log-density emulation}. In the 
+We collectively refer to these strategies as \textbf{log-density emulation}. In the 
 log-likelihood case, an emulator $\targetEm$ is fit to a design 
 $\{(\Par_n, \log \lik(\Par_n; \obs)\}_{n=1}^{\Ndesign}$
 and induces a posterior density surrogate 
 \begin{align}
 \postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
 \end{align}
-The log-posterior case is quite similar, except that the effect of the prior is also 
-approximated by the emulator, so the induced posterior surrogate simply takes 
+The log-posterior case is similar, except that the effect of the prior is also 
+approximated by the emulator, so the induced posterior surrogate takes 
 the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
-\end{ex}
+\end{examplebox}
 
 % The Expected Posterior
 \section{The Expected Posterior} \label{sec:EP}
@@ -450,6 +465,7 @@ where
 \begin{equation}
 \qSpaceCut \Def 
 \left\{\qMeas(\d\Par, \d\targetTraj) : \int \qMeas(\d\Par, \cdot) = \emDist(\cdot) \right\}.
+\label{eq:cut-dists}
 \end{equation}
 \end{prop} 
 The optimum in \Cref{eq:kl-cut-opt} is precisely the joint distribution noted in the previous 
@@ -514,7 +530,13 @@ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)] 
 As compared to the analogous EP joint
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \normCst(\targetTraj) d\Par$,
 we see that the EUP replaces the normalizing function $\normCst(\targetTraj)$ with
-the global point estimate $\emE[\normCst(\targetEm)]$. Like the EP, the EUP admits
+the global point estimate $\emE[\normCst(\targetEm)]$. The $\targetTraj$-marginal of
+this joint is proportional to $\emDist(\d\targetTraj) \normCst(\targetTraj)$, implying the
+joint is not an element of $\qSpaceCut$, the space of cut distributions defined in \Cref{eq:cut-dists}.
+In other words, the EUP allows the observational data $\obs$ to inform the manner in which 
+the surrogate uncertainty is propagated.
+
+Like the EP, the EUP admits
 both posterior mixture and marginal likelihood interpretations. Starting with the latter, 
 the EUP arises as the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
 \begin{equation}
@@ -531,7 +553,7 @@ This yields
 providing an analog to the EP characterization in \Cref{eq:lik-approx-EP}. In contrast
 with $\likApproxEP(\Par; \obs)$, the EUP marginal likelihood does not include 
 $\normCst(\targetTraj)$ in the integrand. Analogous to \Cref{eq:ep-approx}, the EUP can also be 
-written as the posterior mixture
+written as a posterior mixture
 \begin{equation}
 \postApproxEUPNorm(\Par) = \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj \given \obs),
 \label{eq:eup-mixture} 
@@ -594,6 +616,21 @@ the EP and EUP agree. For example, this occurs when
 $\postEm(\Par) = \omega g(\Par)$, where $\omega$ is a random constant and 
 $g(\Par)$ a deterministic function. 
 
+\subsubsection{Conceptual Considerations} \label{sec:conceptual}
+It should be emphasized that the correct choice of uncertainty propagation method  
+may be problem-dependent. We view the variational justification for the EP provided by
+\Cref{prop:EP-variational} as a general guide, but particular conceptual considerations
+may take precedence in certain situations. The EUP is a natural choice when $\targetEm$
+is viewed as a latent variable that forms part of the data-generating process for the observational
+data $\obs$, leading to the hierarchical model in \Cref{eq:eup-prob-model}. Our focus is 
+on situations where the randomness in $\targetEm$ is primarily epistemic---in principle it could be 
+reduced via further evaluations of the simulator. The EP effectively follows from the view that this 
+epistemic uncertainty is external to the data-generating process. Another important consideration
+is that the EP is a true cut posterior distribution, while the EUP incorporates the data $\obs$ into
+the uncertainty propagation method. This is perhaps most clearly illustrated by the posterior 
+mixture formulations in \Cref{eq:ep-mixture,eq:eup-mixture}, where we see that the EUP mixture 
+weights depend on $\obs$.
+
 \subsubsection{Gaussian Log-Density Emulation Setting} \label{sec:ldens-Gaussian}
 We return to \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$,
 and consider a GP emulator $\targetEm \sim \GP(\gpMean, \gpKer)$. 
@@ -646,7 +683,7 @@ Under these assumptions, the EUP assumes the form
 \postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
 \label{eq:EUP-Gaussian-fwd}
 \end{equation}
-following from the formula for the convolution of two Gaussians \todo{add to appendix}.
+following from the formula for the convolution of two Gaussians \citep{StuartTeck2}.
 In this context, the uncertainty propagation admits a data space interpretation, with
 $\gpKer(\Par)$ inflating the observation covariance.
 Unlike in the Gaussian log-density case, the EUP does not strictly inflate the plug-in 
