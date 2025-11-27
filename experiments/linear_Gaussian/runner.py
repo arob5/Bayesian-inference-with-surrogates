@@ -174,8 +174,8 @@ def _calc_ep_mcmc_metrics(test, samp):
     return (kl, w2)
 
 
-def plot_coverage(coverage_list, probs, q_min=0.05, q_max=0.95, 
-                  labels=None, colors=None, alpha=0.3, ax=None):
+def plot_coverage(coverage_list, probs, labels, colors,  
+                  q_min=0.05, q_max=0.95, alpha=0.3, ax=None):
     """
     The first two arguments are shape (n_reps, n_probs), giving the nominal
     coverage for each replicate at each coverage probability level.
@@ -187,16 +187,14 @@ def plot_coverage(coverage_list, probs, q_min=0.05, q_max=0.95,
         fig = ax.figure
 
     n_plots = len(coverage_list)
-    if labels is None:
-        labels = [f'samp{i+1}' for i in range(n_plots)]
-
     medians = [np.median(cover, axis=0) for cover in coverage_list]
     quantiles = [np.quantile(cover, q=[q_min, q_max], axis=0) for cover in coverage_list]
 
     for i in range(n_plots):
         m = medians[i]
         q = quantiles[i]
-        ax.fill_between(probs, q[0,:], q[1,:], alpha=alpha, label=labels[i])
+        lbl = labels[i]
+        ax.fill_between(probs, q[0,:], q[1,:], alpha=alpha, color=colors[lbl], label=lbl)
         
     ax.set_xlabel("Nominal Coverage")
     ax.set_ylabel("Actual Coverage")
@@ -205,7 +203,7 @@ def plot_coverage(coverage_list, probs, q_min=0.05, q_max=0.95,
     xmin, xmax = ax.get_xlim()
     x = np.linspace(xmin, xmax, 100)
     y = x
-    ax.plot(x, y, color="red", linestyle="--")
+    ax.plot(x, y, color=colors['aux'], linestyle="--")
     ax.legend()
     plt.close(fig)
 

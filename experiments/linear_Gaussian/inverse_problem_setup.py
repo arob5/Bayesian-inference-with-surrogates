@@ -120,28 +120,42 @@ def construct_noise_cov(G, variances):
 # Plotting helpers
 # ---------------------------------------------------------------------
 
-def plot_exact_post(inv_prob, grid, idx_obs, g_conv_true=None, title=None):
+def plot_exact_post(inv_prob, grid, idx_obs, colors, g_conv_true=None, 
+                    title=None, alpha_prior=0.1, alpha_post=0.3):
+
+    fig, ax = plt.subplots()
+
+    # prior intervals
+    prior_sd = np.sqrt(np.diag(inv_prob.prior.cov))
+    ci_lower_prior = inv_prob.prior.mean - 2 * prior_sd
+    ci_upper_prior = inv_prob.prior.mean + 2 * prior_sd
+
+    # posterior intervals
     post_sd = np.sqrt(np.diag(inv_prob.post.cov))
     ci_lower = inv_prob.post.mean - 2 * post_sd
     ci_upper = inv_prob.post.mean + 2 * post_sd
 
     title = 'exact_posterior' if title is None else title
 
-    plt.fill_between(grid, ci_lower, ci_upper, color='blue', alpha=0.1, label="+/- 2 post sd")
+    ax.fill_between(grid, ci_lower_prior, ci_upper_prior, color=colors['aux'], 
+                    alpha=alpha_prior, label="+/- 2 prior sd")
+    ax.fill_between(grid, ci_lower, ci_upper, color=colors['exact'], 
+                    alpha=alpha_post, label="+/- 2 post sd")
 
     if inv_prob.u_true is not None:
-        plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
+        ax.plot(grid, inv_prob.u_true, color="black", label="u_true")
     if g_conv_true is not None:
-        plt.plot(grid, g_conv_true, color="orange", label="g_true")
+        ax.plot(grid, g_conv_true, color="orange", label="g_true")
 
-    plt.plot(idx_obs, inv_prob.y, "o", color="red", label="y")
-    plt.plot(grid, inv_prob.post.mean, color="blue", label="post mean")
-    plt.title(title)
-    plt.legend()
-    plt.show()
+    ax.plot(idx_obs, inv_prob.y, "o", color="red", label="y")
+    ax.plot(grid, inv_prob.post.mean, color=colors['exact'], label="post mean")
+    ax.legend()
+
+    return fig, ax
 
 
 def plot_surrogate(inv_prob, test, grid, idx_obs, g_conv_true=None):
+
     plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
     if g_conv_true is not None:
         plt.plot(grid, g_conv_true, color="orange", label="g_true")
