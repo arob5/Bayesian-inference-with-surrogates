@@ -12,9 +12,11 @@
 \usepackage{cleveref}
 \usepackage{natbib}
 \usepackage{bbm}
-\usepackage{caption, subcaption} % Captions and sub-figures. 
 \usepackage{fancyvrb} % For writing using verbatim font inline. 
 % \usepackage[demo]{graphicx}
+
+% Figures
+\usepackage{caption, subcaption} % Captions and sub-figures. 
 
 % TODO notes
 \usepackage{xcolor}
@@ -992,7 +994,7 @@ emulators considered in the following more realistic experiments.
 The following result characterizes the EP and EUP in this setting. See the appendix for derivations.
 
 \begin{prop}
-Under the linear Gaussian model \Cref{eq:lin-Gauss-inv-prob} with the emulator \Cref{eq:lin-Gauss-em},
+Under the linear Gaussian model in \Cref{eq:lin-Gauss-inv-prob} with the emulator in \Cref{eq:lin-Gauss-em},
 the EP is given by $\postApproxEP(\Par) = \Gaussian(\Par \given \postMeanEP, \postCovEP)$, where
 \begin{align}
 \postMeanEP &= \postMean - \epGain \emBias,
@@ -1016,7 +1018,7 @@ Let $G = USV^\top$ denote the singular value decomposition of $G$, with the sing
 in descending order. The right singular vectors $v_j$ associated with large $s_j$ correspond to directions in 
 parameter space that are well-informed by the data. We investigate the posterior mean and covariance of 
 the EUP and EP in the $V$ basis to understand the influence of the surrogate noise. To simplify matters, consider
-the special case $\noiseCov = \sigma^2 I$, $\priorCov = c_0^2 I$, $\emCov = qI$. The following results give
+the special case $\noiseCov = \sigma^2 I$, $\priorCov = c_0^2 I$, $\emCov = q^2 I$. The following results give
 the expressions for the exact, EUP, and EP posterior moments in the $V$ basis.
 \begin{prop}
 Under the above assumptions $\postCov$, $\postCovEUP$, and $\postCovEP$ are diagonalized in the 
@@ -1035,70 +1037,48 @@ coefficients in these linear combinations in directions with $s_j \neq 0$ are gi
 \end{align*}
 \end{prop}
 \todo[inline]{fix formatting}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
+        \label{fig:plot1a}
+    \end{subfigure}
+
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
+        \label{fig:plot1b}
+    \end{subfigure}
+    \vspace{0.5em}
+
+    \caption{Scaling behavior as a function of $q / \sigma$, with $c_0 = 1.0$, $\sigma=1.0$, $r = (2.5, \dots, 2.5)^\top$.
+    The forward model $G$ is the convolution operator used in \Cref{sec:deconvolution}, with parameter and 
+    data dimensions $\dimPar = 100$, $\dimObs = 25$.
+    The plots show the variance and mean coordinates along certain $v_j$ directions (smaller $j$ indicating directions better informed by data),
+    relative to the exact (no surrogate) posterior analogs. Starting from the top-left in clockwise
+    order, the plots display $\lambda_j^{\eup} / \lambda_j$, $\lambda_j^{\ep} / \lambda_j$, 
+    $\alpha_j^{\eup} - \alpha_j$, and $\alpha_j^{\ep} - \alpha_j$ as a function of $q / \sigma$.}
+    \label{fig:lin-gauss-svd-plots}
+\end{figure}
+
 The behavior of the EUP and EP as the surrogate uncertainty increases is markedly different. As $q \to \infty$, the EUP 
 reverts to the $\Gaussian(\priorMean, \priorCov)$ prior, while the EP tends toward a flat distribution centered
 on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and 
-$\postMeanEP$ most significantly along directions well-informed by the data ($v_j$ with $s_j$ large).
+$\postMeanEP$ most significantly along directions well-informed by the data ($v_j$ with $s_j$ large). These 
+trends are illustrated for a concrete numerical example in \Cref{fig:lin-gauss-svd-plots}. Note that $\postMeanEP$
+is independent of $\emCov$ and thus does not vary with the level of surrogate uncertainty.
 
-\subsubsection{A Deconvolution Problem}
-
-
-
-\subsubsection{SVD Analysis}
-Consider the SVD $G = U S V^\top$ with singular values $s_j$ and consider the special case 
-$\priorCov = c_0^2 I$, $\noiseCov = \sigma^2 I$. The exact posterior covariance $\postCov$ is diagonalized
-in the $V$ basis, with $\postCov = V\Lambda V^\top$ where 
-\begin{equation}
-\lambda_j = \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2}}.
-\end{equation}
-The exact posterior mean $m$ can also be written with respect to this basis as
-\begin{align}
-m &= V\alpha + V_\perp \alpha_\perp \\
-\alpha_j &= \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = 1, \dots, r \\
-(\alpha_\perp)_j &= \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \qquad j = r+1, \dots, d
-\end{align}
-where $r$ is the rank of $G$.
-
-\paragraph{Case 1: $Q = q^2 I$}
-
-\begin{prop}
-Assume $Q = q^2 I$. Then both $\postCovEUP$ and $\postCovEP$ are diagonalized in the $V$ basis,
-with eigenvalues
-\begin{align}
-&\lambda_j^{\mathrm{EUP}} \Def \frac{c_0^2}{1 + \frac{c_0^2 s_j^2}{\sigma^2 + q^2}},
-&&\lambda_j^{\mathrm{EP}} \Def \lambda_j + \frac{q^2 s_j^2 c_0^4}{\sigma^4}.
-\end{align}
-\end{prop}
-Note that these eigenvalues correspond to the posterior variance along the respective $v_j$ directions.
-We see that as $q \to \infty$, $\lambda_j^{\mathrm{EUP}} \to c_0^2$ and $\lambda_j^{\mathrm{EP}} \to \infty$.
-In words, the EUP posterior variance is bounded by the prior while the EP variance is unbounded.
-The uncertainty inflation is small for both EP and EUP in poorly informed directions in parameter space 
-($v_j$ with $s_j \approx 0$). The inflation may be quite large in well-informed directions. 
-
-\begin{prop}
-Assume $Q = q^2 I$. Then $\postMeanEUP = V\alpha^{\mathrm{EUP}} + V_\perp \alpha_\perp $ and 
-$\postMeanEP = V\alpha^{\mathrm{EP}} + V_\perp \alpha_\perp$, where
-\begin{align}
-\alpha_j^{\mathrm{EUP}} 
-&\Def \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, \\
-&= \left[\frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \right]
-- \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle r, u_j \rangle \\
-\alpha_j^{\mathrm{EP}} &\Def \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
-\end{align}
-\end{prop}
-
-If the emulator bias $r$ is zero, then $\postMeanEP = \postMean$. This is not the case with the EUP, in which 
-case $\postMeanEUP$ will still be tugged towards $m_0$. Combining this with the covariance results, it follows that 
-in the regime $r = 0$ and $q \to \infty$,
-\begin{align}
-&\postApproxEUPNorm \to \Gaussian(\priorMean, \priorCov), &&\postApproxEP\to \Gaussian(\postMean, \infty).
-\end{align}
-
-The bias in $\postMeanEP$ depends only on $r$, not $q$. On the other hand, the bias in $\postMeanEUP$ depends 
-both on $q$ and $r$. In both cases, the posterior mean will be more biased when the emulator bias $r$ is aligned
-with directions that are well-informed by the data. 
-
-% In the regime $r > 0$ and $q \to 0$ we have 
+\subsubsection{A Deconvolution Problem} \label{sec:deconvolution}
+We now consider a concrete instantiation of the linear Gaussian inverse problem, representing
+deconvolution for a one-dimensional signal. The parameter $\Par \in \R^{100}$ of interest is 
+a discretized signal over the domain $\parSpace = [0,100]$. The forward operator $G$ is the composition
+of a linear convolution with a Gaussian kernel, with an observation operator that selects every 
+fourth point. The data space is thus of dimension $\dimObs=25$. We consider $\Sigma = \sigma^2 I$
+with $\sigma = 0.2$ and define $\priorCov$ as a Gaussian kernel matrix, encoding a smoothness 
+assumption for the signal. Finally, we consider a surrogate with $\emCov = G \priorCov G^\top$, 
+which assumes the surrogate bias follows the same smoothness as the underlying signal.
 
 % Ecosystem Model Calibration
 \subsection{Ecosystem Model Calibration} \label{sec:vsem}

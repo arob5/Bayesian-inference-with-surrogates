@@ -26,16 +26,16 @@ def plot_eigenvalue_comparison(G, q_vals=None, c0=1.0, sig=1.0,
     # eup
     ax = axs[0]
     eup_eig_plot = ax.plot(q_over_sigma, eig_eup_norm[:,s_idcs])
-    ax.set_title(f'eup lambdas, sigma={sig}')
+    ax.set_title('eup')
     ax.set_xlabel('q / sigma')
-    ax.set_ylabel('lambda eup / lambda')
+    ax.set_ylabel('lambda approx / lambda exact')
 
     # ep
     ax = axs[1]
     ep_eig_plot = ax.plot(q_over_sigma, eig_ep_norm[:,s_idcs])
-    ax.set_title(f'ep lambdas, sigma={sig}')
+    ax.set_title('ep')
     ax.set_xlabel('q / sigma')
-    ax.set_ylabel('lambda ep / lambda')
+    ax.set_ylabel(None)
     ax.legend(ep_eig_plot, s_idcs, title='svd direction')
 
     plt.close()
@@ -62,17 +62,17 @@ def plot_mean_comparison(G, y, r, q_vals=None, c0=1.0, sig=1.0,
     # eup
     ax = axs[0]
     eup_mean_plot = ax.plot(q_over_sigma, alphas_eup_norm[:,s_idcs])
-    ax.set_title(f'eup alphas, r = {r}, sigma={sig}')
+    ax.set_title('eup')
     ax.set_xlabel('q / sigma')
-    ax.set_ylabel('relative bias')
+    ax.set_ylabel('alpha approx - alpha exact')
 
     # ep
     ax = axs[1]
     ep_mean_plot = ax.plot(q_vals, alphas_ep_norm[:,s_idcs])
-    ax.set_title(f'ep alphas, r = {r}, sigma={sig}')
+    ax.set_title('ep')
     ax.set_xlabel('q / sigma')
-    ax.set_ylabel('relative bias')
-    ax.legend(ep_mean_plot, s_idcs)
+    ax.set_ylabel(None)
+    ax.legend(ep_mean_plot, s_idcs, title='svd direction')
 
     plt.close()
     return fig, axs
