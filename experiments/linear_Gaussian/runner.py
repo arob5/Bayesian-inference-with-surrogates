@@ -1,5 +1,6 @@
 # experiments/linear_Gaussian/run_coverage_test.py
 import os
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,7 +9,8 @@ from Gaussian import Gaussian
 from LinGaussTest import LinGaussInvProb, LinGaussTest
 
 def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None, 
-                      include_mcmc=True, n_mcmc=100_000):
+                      include_mcmc=True, n_mcmc=100_000,
+                      backup_frequency=10, out_dir='out'):
     """
     The quantities (m0, C0, Sig, G, Q) are fixed throughout
     the whole test. This implies the structure of the inverse problem
@@ -121,10 +123,49 @@ def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None,
         except Exception as e:
             print(f'Iteration {i} failed with error: {e}')
             failed_iters.append(i)
-            tests.append(e) 
+            tests.append(e)
+        finally:
+            if i % backup_frequency == 0:
+                print(f'Writing to output directory: {out_dir}')
+                save_results(cover, dists, probs, failed_iters, mcmc=mcmc, out_dir=out_dir)
 
+    print(f'Writing final results to directory: {out_dir}')
+    save_results(cover, dists, probs, failed_iters, mcmc=mcmc, out_dir=out_dir)
     out = {'cover': cover, 'dists': dists, 'mcmc': mcmc}
     return tests, out, probs
+
+
+def save_results(cover, dists, probs, failed_iters, mcmc=None, out_dir='out'):
+    out_dir = Path(out_dir)
+
+    cover['probs'] = probs
+    np.savez(out_dir / 'coverage_results.npz', **cover)
+    np.savez(out_dir / 'distance_metric_results.npz', **dists)
+    np.savez(out_dir / 'failed_iters.npz', failed_iters=failed_iters)
+
+    if mcmc is not None:
+        np.savez(out_dir / 'mcmc_results.npz', **mcmc)
+
+
+def read_results(out_dir='out'):
+    out_dir = Path(out_dir)
+    cover_path = out_dir / 'coverage_results.npz'
+    dist_path = out_dir / 'distance_metric_results.npz'
+    failed_iters_path = out_dir / 'failed_iters.npz'
+    mcmc_path = out_dir / 'mcmc_results.npz'
+
+    cover = np.load(cover_path)
+    dists = np.load(dist_path)
+    failed_iters = np.load(failed_iters_path)
+    if mcmc_path.exists():
+        mcmc = np.load(mcmc_path)
+    else:
+        mcmc = None
+
+    return {'cover': cover, 
+            'dists': dists, 
+            'failed_iters': failed_iters,
+            'mcmc': mcmc}
 
 
 def get_mcmc_results(test, n_samp=100000):
@@ -282,11 +323,11 @@ if __name__ == "__main__":
 
     # Well-specified inverse problem
     inv_prob_info = make_inverse_problem(rng=rng, 
-                                        d=d, 
-                                        noise_sd=sig, 
-                                        ker_length=ker_length, 
-                                        ker_lengthscale=ker_lengthscale,
-                                        s=s)
+                                         d=d, 
+                                         noise_sd=sig, 
+                                         ker_length=ker_length, 
+                                         ker_lengthscale=ker_lengthscale,
+                                         s=s)
     inv_prob, g_conv_true, grid, idx_obs = inv_prob_info
 
     # Calibrated surrogate model
@@ -297,7 +338,4 @@ if __name__ == "__main__":
     tests, res, probs = run_coverage_test(rng, n_reps, m0=inv_prob.prior.mean, 
                                           C0=inv_prob.prior.cov, Sig=inv_prob.noise.cov, 
                                           G=inv_prob.G, Q_true=Q, Q=Q, include_mcmc=True)
-
-    with open('out/experiment_results.pkl', 'wb') as f:
-        pickle.dump((res, probs), f)
 

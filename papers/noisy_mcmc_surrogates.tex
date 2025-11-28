@@ -102,7 +102,7 @@ conclusions, it is essential to acknowledge the surrogate approximation by propa
 its uncertainty. However, at present there is no standard method for uncertainty 
 propagation in this context. To fill this gap, we propose a particular uncertainty-aware 
 posterior approximation as the baseline, which is justified by Bayesian decision theoretic
-arguments. [\todo: unfinished]
+arguments. \todo{unfinished}
 \end{abstract}
 
 \section{Introduction}
@@ -154,6 +154,7 @@ introducing a new approximate MCMC algorithm that is shown to outperform
 competing approaches.
  
 \subsection{Contributions}
+\todo[inline]{update this section; maybe remove bullets to save space}
 \begin{itemize}
 \item We adopt a Bayesian decision theoretic viewpoint to formalize the question of 
 choosing the correct uncertainty propagation method. We show that, with respect 
@@ -856,7 +857,7 @@ preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
 \tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
 \qquad \xi \sim \GP(0, \gpKer). \label{eq:pcn-proposal}
 \end{equation}
-This MwG algorithm generally cannot be practically implemented due to the intractable normalizing 
+This Metropolis-within-Gibbs algorithm generally cannot be practically implemented due to the intractable normalizing 
 constant ratio $\normCst(\targetTraj)/\normCst(\tilde{\targetTraj})$ in \Cref{eq:MH-ratio-mwg}. 
 At first glance, it appears that techniques from the doubly intractable MCMC literature 
 \citet{doublyIntractableReview,exchangeAlg} may circumvent this issue, but such methods
@@ -935,7 +936,7 @@ for background on pseudo-marginal MCMC.
  
 \todo[inline]{Move to appendix?}
 
-\paragraph{Related work.}
+\paragraph{Related work.} \todo{update this section to align with new notation}
 The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
 in depth in \citep{garegnani2021NoisyMCMC}. \citet{BurknerSurrogate} propose targeting the 
 distribution proportional to $\hat{\postDens}^M(\Par; \targetTraj_{1:M})$, where $\targetTraj_{1:M}$
@@ -952,13 +953,13 @@ for EP-based inference. They appear to implicitly assume the use of finite-dimen
 as difficulties related to sampling trajectories are not addressed. There has been interest in the 
 modular Bayes community in designing approximate MCMC schemes as an alternative to
 MwMC for cut posterior inference. \citet{PlummerCut} describes the implementation of such 
-an algorithm in the WinBUGS software [\todo: cite], referred to as the \textit{naive cut algorithm}.
+an algorithm in the WinBUGS software \todo{cite}, referred to as the \textit{naive cut algorithm}.
 The author shows that this algorithm does not admit the cut posterior as an invariant
 distribution, and moreover that the implicit target distribution depends on the particular Markov kernels
 chosen to perform the updates. The paper proposes a solution to improve the approximation 
 using tempered transitions. Subsequent work has considered more sophisticated algorithms
 that seek to explicitly estimate the intractable normalizing constant ratios
-\citep{SAACut} [\todo: add Yves' paper here]. 
+\citep{SAACut} \todo{add Yves' paper here} 
 Our MwG algorithm can be viewed as a version of the naive cut algorithm operating in function space.
 We opt to avoid normalizing constant estimation and instead slow down the mixing of the 
 $\targetTraj$-chain to control the approximation error.
@@ -1117,7 +1118,7 @@ We consider estimating the parameters $\Par \Def (\KEXT, \alphaV)$ given noisy m
 two year period. We assume an additive Gaussian noise model
 \begin{align*}
 &\obs = \fwd(\Par) + \noise,
-&&\noise &\sim \Gaussian(0, \sigma^2 I) 
+&&\noise \sim \Gaussian(0, \sigma^2 I) 
 \end{align*}
 where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages. For simplicity, we fix $\sigma^2$
 and assume independent uniform priors on $\Par$. Synthetic data $\obs$ is simulated
@@ -1133,7 +1134,8 @@ using \Cref{eq:vsem-inv-prob} with fixed ground truth values $\{\Par_{\star}, \s
 For the below proofs we use the following measure-theoretic setup.
 Let $\refMeas$ be a reference measure (e.g., Lebesgue) on $(\parSpace, \BorelSig)$,
 and $\emDist$ a probability measure on $(\emSpace, \emSig)$. Assume that 
-the map $(\Par, \targetTraj) \mapsto \postDens(\Par; \targetTraj)$ is measurable
+the map $(\Par, \targetTraj) \mapsto \postDens(\Par; \targetTraj)$ from $\parSpace \times \emSpace$
+to $\R_{\geq 0}$ is measurable
 and $\normCst(\targetTraj) \Def \int \postDens(\Par; \targetTraj) \emDist(\d\targetTraj) \in (0,\infty)$
 $\emDist$-almost surely. Let $\postDensNorm(\Par; \targetTraj) \Def \postDens(\Par; \targetTraj) / \normCst(\targetTraj)$
 and define the joint distribution 
@@ -1170,7 +1172,7 @@ Finally,
 \log \frac{\postApproxEP(\Par)}{\qDens(\Par)} \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj) \refMeas(\d\Par) \\
 &= \int_{\parSpace} \log \frac{\postApproxEP(\Par)}{\qDens(\Par)} 
  \postApproxEP(\Par) \refMeas(\d\Par) \\
-&= \KL{\postApproxEP}{\qMeas}.
+&= \KL{\postApproxEP}{\qMeas},
 \end{align*} 
 where we have used $\proptoAdd$ to absorb additive constants with respect to $\qMeas$. The result follows 
 from the fact that $\KL{\postApproxEP}{\qMeas}$ is uniquely minimized at $\qMeas = \postApproxEP$. $\qquad \blacksquare$
@@ -1187,7 +1189,7 @@ $\qDens(\Par) = \E_{\emDist}[\postDensNorm(\Par; \targetTraj)] = \postApproxEP(\
 \subsection{Proof of \Cref{prop:kl-cut-op}}
 Recall the joint distribution 
 $\jointKOH(\d\Par, \d\targetTraj, \d\obs, \d\emObs) =
-\priorDens(\Par) \lik(\targetTraj(\Par); \obs) \lik(\targetTraj; \emObs) 
+\priorDens(\Par) \lik(\Par; \targetTraj, \obs) \emLik(\targetTraj; \emObs) 
 \emDistPrior(\d\targetTraj) \, \d\Par \, \d\obs \, \d\emObs$
 with conditional $\postKOH(\d\Par, \d\targetTraj)$.
 Let $\postKOH_{\targetTraj}(\d\Par)$ denote the $\targetTraj$-marginal of this conditional.
@@ -1196,7 +1198,7 @@ $\Par$ given $(\obs,\targetTraj)$.
 By the disintegration theorem, any $\qMeas \in \qSpaceCut$ can be written as 
 $\qMeas(\d\Par, \d\targetTraj) = \emDist(\d\targetTraj) \qCond(\targetTraj, \d\Par)$ since 
 $\qSpaceCut$ restricts the $\targetTraj$-marginal of $\qMeas$ to equal $\emDist$.
-Subject to regularity conditions [\todo: be precise here], it follows that
+Subject to regularity conditions \todo{be precise here}, it follows that
 \begin{equation}
 \frac{\d\qMeas}{\d\postKOH}(\Par, \targetTraj) =
 \frac{\d\emDist}{\postKOH_{\targetTraj}(\d\Par)}(\targetTraj)

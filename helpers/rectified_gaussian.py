@@ -200,4 +200,3 @@ if __name__ == "__main__":
     print(f"Mean difference: {np.abs(mc_mean - y.mean)}")
     print(f"SD difference: {np.abs(np.sqrt(mc_var) - np.sqrt(y.variance))}")
 
-
