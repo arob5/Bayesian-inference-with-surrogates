@@ -248,138 +248,56 @@ def plot_coverage_by_dim(ep_coverage, eup_coverage, probs, q_min=0.05,
         plt.close(fig)
         return fig
 
-#
-# TEMP
-#
-
-"""
-# Re-run the experiment with smaller Monte Carlo sample to avoid timeouts.
-import numpy as np
-import pandas as pd
-import scipy.linalg as la
-from scipy.stats import chi2
-np.random.seed(1)
-
-def kl_gauss(m0,C0,m1,C1):
-    d = C0.shape[0]
-    invC1 = la.inv(C1)
-    term1 = np.trace(invC1 @ C0)
-    diff = m1 - m0
-    term2 = diff.T @ invC1 @ diff
-    term3 = -d
-    sign1, logdet1 = np.linalg.slogdet(C1)
-    sign0, logdet0 = np.linalg.slogdet(C0)
-    term4 = logdet1 - logdet0
-    return 0.5*(term1 + term2 + term3 + term4)
-
-d = 3
-p = 5
-G = np.random.randn(p,d)
-Sigma = np.diag(0.5 + np.random.rand(p))
-C0 = np.eye(d) * 2.0
-m0 = np.zeros(d)
-u_true = np.array([0.5, -0.3, 0.8])
-r = np.array([0.2, -0.1, 0.0, 0.05, -0.05])
-
-Qs = [0.01, 0.2, 1.0]
-results = []
-mc_N = 50000
-
-for q_scalar in Qs:
-    Q = np.eye(p) * q_scalar
-    e_true = np.random.multivariate_normal(np.zeros(p), Q)
-    eps = np.random.multivariate_normal(np.zeros(p), Sigma)
-    y = G @ u_true + r + e_true + eps
-
-    C = la.inv(G.T @ la.inv(Sigma) @ G + la.inv(C0))
-    m = C @ (G.T @ la.inv(Sigma) @ y + la.inv(C0) @ m0)
-
-    Sigma_tilde = Sigma + Q
-    y_tilde = y - r
-    C1 = la.inv(G.T @ la.inv(Sigma_tilde) @ G + la.inv(C0))
-    m1 = C1 @ (G.T @ la.inv(Sigma_tilde) @ y_tilde + la.inv(C0) @ m0)
-
-    H = C @ G.T @ la.inv(Sigma)
-    m2 = m - H @ r
-    C2 = C + H @ Q @ H.T
-
-    eigs_C = np.linalg.eigvalsh(C)
-    eigs_C1 = np.linalg.eigvalsh(C1)
-    eigs_C2 = np.linalg.eigvalsh(C2)
-
-    kl_1 = kl_gauss(m, C, m1, C1)
-    kl_2 = kl_gauss(m, C, m2, C2)
-
-    us = np.random.multivariate_normal(m, C, size=mc_N)
-    invC1 = la.inv(C1)
-    invC2 = la.inv(C2)
-    qs1 = np.einsum('ni,ij,nj->n', us - m1, invC1, us - m1)
-    qs2 = np.einsum('ni,ij,nj->n', us - m2, invC2, us - m2)
-    alpha = 0.95
-    thresh = chi2.ppf(alpha, df=d)
-
-    cover1 = np.mean(qs1 <= thresh)
-    cover2 = np.mean(qs2 <= thresh)
-
-    results.append({
-        'q_scalar': q_scalar,
-        'eig_C': eigs_C,
-        'eig_C1': eigs_C1,
-        'eig_C2': eigs_C2,
-        'kl_pi_pi1': kl_1,
-        'kl_pi_pi2': kl_2,
-        'coverage_pi1': cover1,
-        'coverage_pi2': cover2,
-        'm_diff_norm_pi1': np.linalg.norm(m - m1),
-        'm_diff_norm_pi2': np.linalg.norm(m - m2)
-    })
-
-rows = []
-for rdict in results:
-    rows.append({
-        'q': rdict['q_scalar'],
-        'kl(pi||pi1)': rdict['kl_pi_pi1'],
-        'kl(pi||pi2)': rdict['kl_pi_pi2'],
-        'coverage(pi1)@95%': rdict['coverage_pi1'],
-        'coverage(pi2)@95%': rdict['coverage_pi2'],
-        '||m-m1||': rdict['m_diff_norm_pi1'],
-        '||m-m2||': rdict['m_diff_norm_pi2'],
-        'minEig(C)': np.min(rdict['eig_C']),
-        'minEig(C1)': np.min(rdict['eig_C1']),
-        'minEig(C2)': np.min(rdict['eig_C2']),
-        'maxEig(C)': np.max(rdict['eig_C']),
-        'maxEig(C1)': np.max(rdict['eig_C1']),
-        'maxEig(C2)': np.max(rdict['eig_C2']),
-    })
-
-df = pd.DataFrame(rows).set_index('q')
-
-import caas_jupyter_tools as tools; tools.display_dataframe_to_user("Comparison: KL, coverage, eigenvalues", df)
-
-# Also print the detailed eigenvalues in the notebook output
-df_eigs = pd.DataFrame([{
-    'q': r['q_scalar'],
-    'eig_C': r['eig_C'],
-    'eig_C1': r['eig_C1'],
-    'eig_C2': r['eig_C2'],
-} for r in results])
-df_eigs
-
-"""
-
 
 if __name__ == "__main__":
+    import numpy as np
+    import pickle
+    import matplotlib.pyplot as plt
+
+    from inverse_problem_setup import make_inverse_problem, summarize_setup, get_forward_model
+    from Gaussian import Gaussian
+    from LinGaussTest import LinGaussInvProb, LinGaussTest
+
     rng = np.random.default_rng(532124)
-    d = 3  # Parameter dimension
-    n = 20 # Observation dimension
+
+    #
+    # Setup
+    #
+
+    # inverse problem
+    d = 100
+    ker_length = 21
+    ker_lengthscale = 20
+    sig = 0.2
+    s = 4 # every sth index is observed
+
+    # misspecified model
+    ker_lengthscale_mispec = 2
+
+    # surrogate
+    Q_scale_factor = 1.0
+
+    # experiment
     n_reps = 100
 
-    out_dir = "/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper/" \
-              "experiments/linear_Gaussian/out/coverage"
+    # Well-specified inverse problem
+    inv_prob_info = make_inverse_problem(rng=rng, 
+                                        d=d, 
+                                        noise_sd=sig, 
+                                        ker_length=ker_length, 
+                                        ker_lengthscale=ker_lengthscale,
+                                        s=s)
+    inv_prob, g_conv_true, grid, idx_obs = inv_prob_info
 
-    inv_prob, ep_coverage, eup_coverage, probs = run_coverage_test(rng, n_reps, d, n,
-                                                         Q_scale=1.0, C0_scale=1.0,
-                                                         Sig_scale=1.0)
+    # Calibrated surrogate model
+    Q = Q_scale_factor * inv_prob.G @ inv_prob.prior.cov @ inv_prob.G.T
+    test = LinGaussTest(inv_prob, Q)
 
-    ep_coverage.save(os.path.join(out_dir, "ep_data.npy"))
-    eup_coverage.save(os.path.join(out_dir, "eup_data.npy"))
+    # Run test
+    tests, res, probs = run_coverage_test(rng, n_reps, m0=inv_prob.prior.mean, 
+                                          C0=inv_prob.prior.cov, Sig=inv_prob.noise.cov, 
+                                          G=inv_prob.G, Q_true=Q, Q=Q, include_mcmc=True)
+
+    with open('out/experiment_results.pkl', 'wb') as f:
+        pickle.dump((res, probs), f)
+

@@ -154,23 +154,33 @@ def plot_exact_post(inv_prob, grid, idx_obs, colors, g_conv_true=None,
     return fig, ax
 
 
-def plot_surrogate(inv_prob, test, grid, idx_obs, g_conv_true=None):
+def plot_surrogate(inv_prob, test, grid, idx_obs, colors, include_u_true=False):
 
-    plt.plot(grid, inv_prob.u_true, color="black", label="u_true")
-    if g_conv_true is not None:
-        plt.plot(grid, g_conv_true, color="orange", label="g_true")
+    fig, ax = plt.subplots()
 
-    surrogate_mean = test.G @ inv_prob.u_true + test.e.mean
+    # true values
+    u_true = inv_prob.u_true
+    g_true = inv_prob.G @ u_true
+
+    if include_u_true:
+        ax.plot(grid, inv_prob.u_true, color='black', label="u true")
+    ax.plot(idx_obs, g_true, color=colors['exact'], label="Gu true")
+ 
+    # surrogate values
+    surrogate_mean = test.G @ u_true + test.e.mean
     surrogate = Gaussian(mean=surrogate_mean, cov=test.e.cov)
     surrogate_sd = np.sqrt(np.diag(surrogate.cov))
     ci_lower = surrogate.mean - 2 * surrogate_sd
     ci_upper = surrogate.mean + 2 * surrogate_sd
-    plt.fill_between(idx_obs, ci_lower, ci_upper, color='green', alpha=0.1, label="+/- 2 surrogate sd")
-    plt.plot(idx_obs, surrogate.mean, "o", color="green", label="surrogate mean")
+    ax.fill_between(idx_obs, ci_lower, ci_upper, color=colors['mean'], alpha=0.1, 
+                     label="+/- 2 surrogate sd")
+    ax.plot(idx_obs, surrogate.mean, color=colors['mean'], label="surrogate mean")
 
-    plt.title('surrogate predictive distribution')
-    plt.legend()
-    plt.show()
+    ax.set_title('surrogate predictive distribution')
+    ax.legend()
+    plt.close()
+
+    return fig, ax
 
 
 def plot_approx_post(test, grid, idx_obs, post_name):
