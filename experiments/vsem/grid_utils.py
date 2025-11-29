@@ -5,18 +5,43 @@ Utilities for normalizing densities and computing coverage metrics over 2d grid.
 from __future__ import annotations
 
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from collections.abc import Sequence
 
-def _logsumexp(vec):
-    vec = np.asarray(vec, dtype=float)
-    if vec.size == 0:
-        return -np.inf
-    m = np.max(vec)
-    if not np.isfinite(m):
-        return -np.inf
-    s = np.sum(np.exp(vec - m))
-    return m + np.log(s)
+Array = np.typing.NDArray
 
-def _logcumsumexp_1d(logx):
+
+def logsumexp(x: Array):
+    """
+    Vectorized: applies logsumexp to each row of `x`.
+    Returns -np.inf for rows with inf/nan max or empty.
+    Return shape is (n,) for x with n rows.
+    """
+    x = np.asarray(x, dtype=float)
+    if x.ndim > 2:
+        raise ValueError('logsumexp() requires x.ndim <= 2.')
+    if x.ndim < 2:
+        x = x.reshape(1, -1)
+    
+    num_rows = x.shape[0]
+    # If there are any empty rows
+    if x.size == 0 or x.shape[1] == 0:
+        return np.full(num_rows, -np.inf)
+    
+    max_by_row = np.max(x, axis=1)
+    is_finite = np.isfinite(max_by_row)
+    out = np.full(num_rows, -np.inf)
+
+    # only process finite rows
+    if np.any(is_finite):
+        s = np.sum(np.exp(x[is_finite] - max_by_row[is_finite, np.newaxis]), axis=1)
+        out[is_finite] = max_by_row[is_finite] + np.log(s)
+    return out
+
+
+def logcumsumexp_1d(logx):
     logx = np.asarray(logx, dtype=float)
     n = logx.size
     out = np.empty(n, dtype=float)
@@ -34,29 +59,33 @@ def _logcumsumexp_1d(logx):
     return out
 
 
-def log_probs_are_normalized(logp, tol_log: float = 1e-10) -> tuple[bool, float]:
+def log_probs_are_normalized(logp, tol_log: float = 1e-10) -> tuple[Array, Array]:
     """ Check whether density is (approximately) normalized.
 
     Given an array of log density values, test whether the exponentiated values
     are normalized; i.e., whether they sum to one. Note that this treats the 
     values as point masses - no correction is made for grid cell size.
 
+    Vectorized to operate over the rows of logp.
+
     Returns:
         tuple, with values:
-            is_normalized: bool 
-            logZ: the log of the sum of the density values
+            is_normalized: boolean array
+            logZ: arrays of log sum of the density values for each density
     """
     logp = np.asarray(logp, dtype=float)
-    logZ = _logsumexp(logp)
-    if not np.isfinite(logZ):
-        return False, logZ
+    logZ = logsumexp(logp)
+
+    n = logZ.shape[0]
+    is_normalized = np.tile(False, n)
+    is_finite = np.isfinite(logZ)
+    is_normalized[is_finite] = (abs(logZ[is_finite]) <= tol_log)
     
-    is_normalized = (abs(logZ) <= tol_log)
     return is_normalized, logZ
 
 
 def normalize_over_grid(log_dens, cell_area: float | None = None, *, 
-                        return_log: bool = True):
+                        return_log: bool = True) -> tuple[Array, Array]:
     """ Normalize density over equally-spaced 2d grid
 
     If `cell_area` is `None` then `log_dens` is interpreted as an array
@@ -73,63 +102,109 @@ def normalize_over_grid(log_dens, cell_area: float | None = None, *,
           - (log) normalized version of `log_dens`
           - (log) normalizing constants
         Returns values on log scale if `return_log` is True. Tuple values are
-        floats if `log_dens` is 1d, else they are arrays.
+        arrays of shape (n,), where n is the number of rows of log_dens
+        (1 if log_dens is flat array).
     """
     log_dens = np.asarray(log_dens, dtype=float)
-    single = (log_dens.ndim == 1)
-    log2d = np.atleast_2d(log_dens)
+    if log_dens.ndim > 2:
+        raise ValueError('normalize_over_grid() requires log_dens.ndim <= 2')
+    log_dens = np.atleast_2d(log_dens)
 
     # convert from densities to masses
     if cell_area is not None:
         if not (np.isscalar(cell_area) and cell_area > 0):
-            raise ValueError("cell_area must be a positive scalar or None")
-        lp = log2d + np.log(cell_area)
+            raise ValueError('cell_area must be a positive scalar or None')
+        log_prob = log_dens + np.log(cell_area)
     else:
-        lp = log2d
+        log_prob = log_dens
 
     # row-wise logZ
-    logZ_list = np.array([_logsumexp(row) for row in lp])
+    logZ = logsumexp(log_prob)
 
     with np.errstate(invalid='ignore'): # may be all -Inf
-        log_norm = lp - logZ_list[:, np.newaxis]
-    if single:
-        if return_log:
-            return (log_norm.ravel(), logZ_list.item())
-        else:
-            return np.exp(log_norm.ravel()), np.exp(logZ_list.item())
+        log_prob_norm = log_prob - logZ[:, np.newaxis]
+
+    if return_log:
+        return (log_prob_norm, logZ)
     else:
-        if return_log:
-            return (log_norm, logZ_list)
-        else:
-            return (np.exp(log_norm), np.exp(logZ_list))
+        return (np.exp(log_prob_norm), np.exp(logZ))
 
 
 def coverage_curve_grid(
-    logp_true,
-    logp_approx,
-    cell_area=None,
-    probs=None,
+    logp_true: Array,
+    logp_approx: Array,
+    cell_area: float | None = None,
+    probs: Array | None = None,
     *,
-    return_masks=True,
-    return_weights=True,
-    tie_break='fractional',
-    normalized_log_tol=1e-10,
+    return_masks: bool = True,
+    return_weights: bool = True,
+    tie_break: str = 'fractional',
+    normalized_log_tol: float = 1e-10,
     rng=None
 ):
-    """ Compute coverage curve over 2d grid with robust log-space normalization and tie handling.
+    """
+    Compute HPD coverage curve on a discrete grid using robust log-space arithmetic.
 
-    tie_break:
-      - 'fractional' : if threshold falls in a level set, include a fractional portion
-                       of that level set so the approx mass equals prob exactly.
-      - 'random'     : break ties by random shuffling of equal-valued cells.
-      - 'expand'     : include the whole level set.
+    This function compares an *approximate* distribution (logp_approx) to a
+    *reference/true* distribution (logp_true) defined on the same discrete, evenly-spaced grid.
+    All inputs are provided as log-values (unnormalized log-densities). The code
+    normalizes in log-space, sorts the approximate distribution to produce HPD sets, 
+    and computes the mass of the *true* distribution inside those HPD sets.
+
+    Ties (level sets) are handled robustly: by default a **fractional**
+    inclusion of the last level-set is used so the approximating distribution's
+    HPD mass equals the probability level exactly (avoiding systematic 
+    integer-selection bias). Optionally supports other tie breaking methods
+    'random' (shuffle equal values) or 'expand' (include whole level set).
+
+    The densities are by default (`cell_area = None`) treated as log masses. If 
+    `cell_area` is a positive float, then `cell_area` is multiplied by the densities
+    to convert to cell masses. 
+
+    Args:
+        logp_true : array_like
+            1D array of log-weights for the *true* distribution (length n = H*W)
+        logp_approx : array_like
+            1D array of log-weights for the *approximate* distribution (same length)
+        cell_area : float or None
+            Area of each grid cell. If provided it's applied as +log(cell_area) before normalization.
+        probvs : array_like or None
+            Array of target HPD masses (in (0,1)). If None, defaults to np.linspace(0.01,0.99,99).
+        return_masks : bool
+            If True, also return boolean masks (per-prob) of fully included cells.
+        return_weights : bool
+            If True (default), also return a 2D array `weights` shaped (len(probs), n)
+            with fractional inclusion weights in [0,1] for every cell and prob. This
+            encodes partial inclusion of the level-set block: 1.0 = fully included,
+            0.0 = excluded, intermediate values indicate partial inclusion.
+        tie_break : {'fractional','random','expand'}
+            - 'fractional' (default): include fractional part of the level set so that
+            the approximating mass equals the prob exactly (deterministic).
+            - 'random': randomly shuffle equal-valued runs and take integer selection
+            (Monte Carlo unbiased if averaged over repeats).
+            - 'expand': include entire level-set (may overshoot prob).
+        normalized_log_tol : float
+            Tolerance in log-space for deciding whether an input is already normalized
+            (i.e., |logZ| <= normalized_log_tol implies normalized).
+        rng : numpy.random.Generator or None
+            Optional RNG to control random tie-breaking.
 
     Returns:
-        tuple, containing:
-            - probs: the `probs` argument containing the array of probability levels
-            - log_coverage
-            - calib_error_log
-            - [masks]: 
+        tuple (probs, log_coverage, masks, weights)
+
+    Where
+    - probs : array of requested probability values (same as input or default)
+    - log_coverage : array of log(true_mass(HPD_approx(prob))) for each prob
+    - masks : list of boolean arrays (only fully-included cells) if return_masks True. Else None.
+    - weights : a float ndarray with shape (len(probs), n) with fractional weights in [0,1]
+                if return_weights is True. Else None.
+
+    Notes:
+        - `masks` show which cells were fully included deterministically. For fractional
+        inclusion, `weights` should be used to compute true coverage or visualization.
+        - The function computes true coverage via a weighted sum over the true mass:
+            true_mass = sum_i weights[prob_idx, i] * p_true[i],
+        where p_true = exp(logp_true_normalized).
     """
     if probs is None:
         probs = np.linspace(0.1, 0.99, 10)
@@ -150,6 +225,8 @@ def coverage_curve_grid(
         logZ_t = 0.0
     else:
         logp_t_norm, logZ_t = normalize_over_grid(logp_t, cell_area, return_log=True)
+        logp_t_norm = logp_t_norm.item()
+        logZ_t = logZ_t.item()
 
     is_norm_a, logZ_a_guess = log_probs_are_normalized(logp_a, tol_log=normalized_log_tol)
     if is_norm_a:
@@ -157,6 +234,8 @@ def coverage_curve_grid(
         logZ_a = 0.0
     else:
         logp_a_norm, logZ_a = normalize_over_grid(logp_a, cell_area, return_log=True)
+        logp_a_norm = logp_a_norm.item()
+        logZ_a = logZ_a.item()
 
     if not np.isfinite(logZ_t):
         raise ValueError("true log-probabilities are all -inf or non-finite")
@@ -191,7 +270,7 @@ def coverage_curve_grid(
                 order[run_idx] = order[perm]
             i = j
 
-    log_cum = _logcumsumexp_1d(logp_a_sorted)  # log of cumulative approx mass in sorted order
+    log_cum = logcumsumexp_1d(logp_a_sorted)  # log of cumulative approx mass in sorted order
 
     log_coverage = np.empty_like(probs, dtype=float)
     masks = [] if return_masks else None
@@ -208,7 +287,7 @@ def coverage_curve_grid(
 
         if prob >= 1:
             mask_full = np.ones(n, dtype=bool)
-            log_cov_full = _logsumexp(logp_t_norm)  # should be 0 if normalized
+            log_cov_full = logsumexp(logp_t_norm)  # should be 0 if normalized
             log_coverage[prob_idx] = log_cov_full
             if return_masks:
                 masks.append(mask_full)
@@ -230,7 +309,7 @@ def coverage_curve_grid(
         # due to numerical error; fallback to include all
         if k is None:
             mask_full = np.ones(n_grid, dtype=bool)
-            log_cov = _logsumexp(logp_t_norm[mask_full])
+            log_cov = logsumexp(logp_t_norm[mask_full])
             log_coverage[prob_idx] = log_cov
             if return_masks:
                 masks.append(mask_full)
@@ -256,7 +335,7 @@ def coverage_curve_grid(
             if return_weights:
                 weights[prob_idx, :] = 0.0
                 weights[prob_idx, order[: (right_idx + 1)]] = 1.0
-            log_cov = _logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
+            log_cov = logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
 
         elif tie_break == 'random':
             sel_sorted_indices = np.arange(0, k + 1)
@@ -265,7 +344,7 @@ def coverage_curve_grid(
             if return_weights:
                 weights[prob_idx, :] = 0.0
                 weights[prob_idx, order[: (k + 1)]] = 1.0
-            log_cov = _logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
+            log_cov = logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
 
         else:  # tie_break == 'fractional'
             # compute cumulative mass before the block
@@ -275,14 +354,14 @@ def coverage_curve_grid(
                 log_cum_before = log_cum[left_idx - 1]
                 cum_before = float(np.exp(log_cum_before))
 
-            block_log_mass = _logsumexp(logp_a_sorted[left_idx: right_idx + 1])
+            block_log_mass = logsumexp(logp_a_sorted[left_idx: right_idx + 1])
             block_mass = float(np.exp(block_log_mass))
 
             if block_mass <= 0:
                 f = 0.0
             else:
                 f = float((prob - cum_before) / block_mass)
-                f = max(0.0, min(1.0, f))
+                f = np.clip(f, 0.0, 1.0)
 
             # build weights: 1 for fully included before the block, f for block, 0 otherwise
             if return_weights:
@@ -312,15 +391,140 @@ def coverage_curve_grid(
                 log_cov = np.log(total_true)
 
             # build boolean mask of fully-included cells (before block)
-            mask = np.zeros(n, dtype=bool)
-            if left > 0:
-                mask[order[:left]] = True
+            mask = np.zeros(n_grid, dtype=bool)
+            if left_idx > 0:
+                mask[order[:left_idx]] = True
 
         log_coverage[prob_idx] = log_cov
-        calib_error_log[prob_idx] = (log_cov - np.log(prob)) if np.isfinite(log_cov) else np.nan
         if return_masks:
             masks.append(mask.copy())
 
-    if return_masks:
-        return probs, log_coverage, masks
-    return probs, log_coverage
+    return probs, log_coverage, masks, weights
+
+
+def plot_hpd_weights_grid(
+    weights: Array,
+    grid_shape: tuple[int, int],
+    probs: Sequence[float] | None = None,
+    *,
+    ncols: int | None = None,
+    cmap: str | plt.Colormap = "viridis",
+    vmin: float = 0.0,
+    vmax: float = 1.0,
+    figsize_per_panel: tuple[float, float] = (4.0, 4.0),
+    title_fmt: str = "prob={:.3f}",
+    show_colorbar: bool = True,
+    suptitle: str | None = None
+) -> tuple[Figure, Array]:
+    """
+    Plot multiple HPD weight maps (one subplot per prob) on a 2D grid.
+
+    This helper expects `weights` to encode fractional inclusion per grid cell,
+    values in [0,1]. It supports weights shaped either (m, n) where n == H*W,
+    or (m, H, W). Each row (index) corresponds to one prob.
+
+    Args:
+        weights: np.ndarray
+            Array of fractional weights. Shape should be (m, n) or (m, H, W).
+        grid_shape: (H, W)
+            Height and width of the 2D grid.
+        probs: Optional[Sequence[float]]
+            Sequence of length m with the prob values. If None, simple indices
+            will be used for titles.
+        ncols: Optional[int]
+            Number of columns in the figure layout. If None, chosen automatically
+            (<= 4 columns).
+        cmap: str or Colormap
+            Colormap used for plotting fractional weights.
+        vmin: float
+            Minimum color scale (default 0.0).
+        vmax: float
+            Maximum color scale (default 1.0).
+        figsize_per_panel: (w, h)
+            Size of each subplot in inches; figure size = panels * this.
+        title_fmt: str
+            Python format string used to build subplot titles from prob values.
+            Example default: "prob={:.3f}".
+        show_colorbar: bool
+            Whether to include a single shared colorbar for all panels.
+        suptitle: Optional[str]
+            Optional overall figure title.
+
+    Returns:
+        (fig, axes) :
+            - fig: matplotlib.figure.Figure containing the subplots.
+            - axes: 2D numpy array of Axes objects with shape (nrows, ncols_used).
+    """
+    weights = np.asarray(weights, dtype=float)
+    H, W = grid_shape
+    n_cells = H * W
+
+    # Normalize weights shape -> (m, H, W)
+    if weights.ndim == 2:
+        m, n = weights.shape
+        if n != n_cells:
+            raise ValueError("weights shape (m,n) but n != H*W")
+        weights_reshaped = weights.reshape((m, H, W))
+    elif weights.ndim == 3:
+        m, h, w = weights.shape
+        if (h, w) != (H, W):
+            raise ValueError("weights shape (m,H,W) does not match grid_shape")
+        weights_reshaped = weights
+    else:
+        raise ValueError("weights must have ndim 2 or 3: (m,n) or (m,H,W)")
+
+    # probs labels
+    if probs is not None:
+        if len(probs) != m:
+            raise ValueError("length of probs must equal number of weight maps")
+        prob_labels = [title_fmt.format(a) for a in probs]
+    else:
+        prob_labels = [title_fmt.format(i) for i in range(m)]
+
+    # layout: columns
+    if ncols is None:
+        ncols = min(4, m) if m > 0 else 1
+    ncols = int(max(1, ncols))
+    nrows = np.ceil(m / ncols)
+
+    fig_w = figsize_per_panel[0] * ncols
+    fig_h = figsize_per_panel[1] * nrows
+    fig, axes_flat = plt.subplots(nrows=nrows, ncols=ncols, figsize=(fig_w, fig_h),
+                                  squeeze=False)
+
+    # flatten to iterate, but keep 2D axes for return
+    axes_iter = axes_flat.ravel()
+    im = None
+
+    # plot each weights map
+    for idx in range(nrows * ncols):
+        ax = axes_iter[idx]
+        if idx < m:
+            arr = weights_reshaped[idx]
+            # validate range
+            if np.nanmin(arr) < -1e-12 or np.nanmax(arr) > 1.0 + 1e-12:
+                raise ValueError(f"Weights at index {idx} not in [0,1]. min={arr.min()}, max={arr.max()}")
+            im = ax.imshow(arr, origin='lower', interpolation='none', cmap=cmap, vmin=vmin, vmax=vmax)
+            ax.set_title(prob_labels[idx])
+        else:
+            # empty panel
+            ax.axis('off')
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    # colorbar
+    if show_colorbar and im is not None:
+        # place a single colorbar on the right side of the entire grid
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        # position colorbar next to the last used axes
+        last_ax = axes_iter[min(m - 1, len(axes_iter) - 1)]
+        divider = make_axes_locatable(last_ax)
+        cax = divider.append_axes("right", size="5%", pad=0.08)
+        fig.colorbar(im, cax=cax)
+
+    if suptitle:
+        fig.suptitle(suptitle)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96] if suptitle else None)
+    return fig, axes_flat

@@ -1,12 +1,12 @@
-# experiments/test/linear_Gaussian/LinGaussTest.py
+# experiments/test/linear_Gaussian/surrogate.py
 from __future__ import annotations
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Iterable, List, Optional, Tuple
+
+from collections.abc import Iterable
 from numpy.typing import NDArray
-from typing import Protocol
-from scipy.stats import uniform
+from typing import Protocol, Optional
 from math import ceil
 
 import jax.numpy as jnp
@@ -15,15 +15,7 @@ import gpjax as gpx
 from flax import nnx
 
 from inverse_problem import InvProb
-
-from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
-from modmcmc.kernels import (
-    MarkovKernel, 
-    GaussMetropolisKernel, 
-    DiscretePCNKernel, 
-    UncalibratedDiscretePCNKernel, 
-    mvn_logpdf
-)
+from grid_utils import normalize_over_grid, logsumexp
 
 import sys
 sys.path.append("./../linear_Gaussian/")
@@ -226,8 +218,8 @@ class VSEMTest:
         U = self.test_grid_info['U_grid']
         unnormalized_post = self.test_grid_info['log_post']
         cell_area = self.test_grid_info['cell_area']
-        normalized_post, _ = _normalize_over_grid(unnormalized_post, cell_area, 
-                                                  return_log=return_log)
+        normalized_post, _ = normalize_over_grid(unnormalized_post, cell_area, 
+                                                 return_log=return_log)
         normalized_post = normalized_post.flatten()
 
         if shape_to_grid:
@@ -245,7 +237,7 @@ class VSEMTest:
         cell_area = self.test_grid_info['cell_area']
         pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
-        normalized_approx, _ = _normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
@@ -260,7 +252,7 @@ class VSEMTest:
         cell_area = self.test_grid_info['cell_area']
         pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_eup(U, pred=pred) # (n_grid,)
-        normalized_approx, _ = _normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
@@ -275,7 +267,7 @@ class VSEMTest:
         cell_area = self.test_grid_info['cell_area']
         pred = self.gp_post_pred[pred_type]
         unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
-        normalized_approx, _ = _normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
@@ -593,7 +585,7 @@ def plot_shared_scale_heatmaps(
     ylab: Optional[str] = None,
     nrows: int = 1,
     ncols: Optional[int] = None,
-    figsize: Optional[Tuple[float, float]] = None,
+    figsize: Optional[tuple[float, float]] = None,
     cmap: str = 'viridis',
     shading: str = 'auto',
     vmin: Optional[float] = None,
@@ -642,7 +634,7 @@ def plot_shared_scale_heatmaps(
     axs_flat : array-like of Axes (length == nplots)
         Flat array of axes corresponding to each plot (in row-major order).
     mappables : list
-        List of QuadMesh objects returned by pcolormesh for each subplot.
+        list of QuadMesh objects returned by pcolormesh for each subplot.
     cbar_obj : matplotlib.colorbar.Colorbar or None
         The shared colorbar object (None if cbar=False).
     """
@@ -723,75 +715,7 @@ def plot_shared_scale_heatmaps(
     return fig, axs_flat[:nplots], mappables, cbar_obj
 
 
-def _logsumexp(a: np.ndarray, axis: int = -1) -> np.ndarray:
-    """ log-sum-exp along `axis`.
-
-    Returns an array with `axis` eliminated (i.e. reduced), shape follows numpy reduction rules.
-    Handles the case where all entries along the axis are -inf (returns -inf, not NaN).
-    """
-    a = np.asarray(a)
-    a_max = np.max(a, axis=axis, keepdims=True)
-    # Compute shifted = a - a_max but avoid NaN where a_max is -inf
-    shifted = a - a_max
-    # where a_max is not finite (i.e. -inf), replace shifted with -inf so exp(-inf)=0
-    shifted = np.where(np.isfinite(a_max), shifted, -np.inf)
-    sum_exp = np.sum(np.exp(shifted), axis=axis, keepdims=True)
-    out = a_max + np.log(sum_exp)
-    out = np.squeeze(out, axis=axis)
-    return out
-
-
-def _normalize_over_grid(log_dens, cell_area, *, return_log=True):
-    """
-    Normalize a discrete density over an equally spaced grid. The argument 
-    `log_dens` is the log of the (potentially) unnormalized density in 
-    a flattened representation (1D) or as rows (2D: n_densities x n_grid_points).
-    `cell_area` is the area of one grid cell in the grid, assumed constant, or
-    None if the inputs are already log-masses.
-
-    Returns:
-        If return_log=True:
-            (log_dens_norm, log_Z)
-            - log_dens_norm : same shape as input `log_dens` (log of normalized mass per cell)
-            - log_Z : shape (n_densities,) or scalar if single density: log normalizing constants
-        If return_log=False:
-            (dens_norm, Z) with same shapes but exponentiated.
-    """
-    log_dens = np.asarray(log_dens)
-    single = (log_dens.ndim == 1)
-    log_dens_2d = np.atleast_2d(log_dens)  # shape (n, d) where n=1 if input was 1D
-
-    if cell_area is not None:
-        if not (np.isscalar(cell_area) and cell_area > 0):
-            raise ValueError("cell_area must be a positive scalar or None")
-        lA = np.log(cell_area)
-        lp_plus_lA = log_dens_2d + lA
-    else:
-        # inputs are already log-masses (unnormalized)
-        lp_plus_lA = log_dens_2d
-
-    # compute log normalizer per row (sum over grid points axis=1)
-    log_Z = _logsumexp(lp_plus_lA, axis=1)  # shape (n,)
-
-    # normalize: log mass per cell = lp_plus_lA - log_Z[:, None]
-    log_dens_norm = lp_plus_lA - log_Z[:, np.newaxis]
-
-    if single:
-        log_dens_norm = log_dens_norm.ravel()
-        log_Z = np.squeeze(log_Z)
-
-    if return_log:
-        return log_dens_norm, log_Z
-    else:
-        dens = np.exp(log_dens_norm)
-        Z = np.exp(log_Z)
-        return dens, Z
-
-
-def estimate_ep_grid(
-    logpi_samples: np.ndarray,
-    cell_area: float
-) -> tuple[np.ndarray, np.ndarray]:
+def estimate_ep_grid(logpi_samples: Array, cell_area: float) -> tuple[Array, Array]:
     """
     Estimate E_f[ pi(u_j; f) / Z(f) ] at grid nodes using Monte Carlo samples of log-densities.
 
@@ -805,12 +729,11 @@ def estimate_ep_grid(
         ep: ndarray of shape (M,), the Monte Carlo estimate of E_f[ pi(u_j;f)/Z(f) ].
         log_mean_p: log of ep
     """
-
-    logp, logZ = _normalize_over_grid(logpi_samples, cell_area, return_log=True)
-    S, M = logp.shape
+    logp, logZ = normalize_over_grid(logpi_samples, cell_area, return_log=True)
+    n_densities, _ = logp.shape
 
     # log of normalized ep density 
-    log_ep = _logsumexp(logp, axis=0) - np.log(S) # (M,)
+    log_ep = logsumexp(logp) - np.log(n_densities) # (M,)
 
     return np.exp(log_ep), log_ep
 
