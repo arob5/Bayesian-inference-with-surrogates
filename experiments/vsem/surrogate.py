@@ -15,7 +15,12 @@ import gpjax as gpx
 from flax import nnx
 
 from inverse_problem import InvProb
-from grid_utils import normalize_over_grid, logsumexp
+from grid_utils import (
+    normalize_over_grid,
+    coverage_curve_grid, 
+    logsumexp, 
+    kl_grid,
+)
 
 import sys
 sys.path.append("./../linear_Gaussian/")
@@ -276,7 +281,7 @@ class VSEMTest:
         else:
             return normalized_approx
 
-    def compute_metrics(self, pred_type='pred', alphas=None):
+    def compute_metrics(self, pred_type='pred', probs=None):
         log_post_exact = self._exact_post_grid(shape_to_grid=False, return_log=True)
         log_post_mean = self._mean_approx_grid(shape_to_grid=False, return_log=True, pred_type=pred_type)
         log_post_eup = self._eup_approx_grid(shape_to_grid=False, return_log=True, pred_type=pred_type)
@@ -285,17 +290,30 @@ class VSEMTest:
         mean_kl = kl_grid(log_post_exact, log_post_mean)
         eup_kl = kl_grid(log_post_exact, log_post_eup)
         ep_kl = kl_grid(log_post_exact, log_post_ep)
+
+        if probs is None:
+            probs = np.linspace(0.1, 0.99, 99)
+
+        def get_coverage(approx):
+            res = coverage_curve_grid(
+                log_post_exact,
+                approx,
+                probs=probs,
+                cell_area=None, # since densities are already normalized
+                return_masks=False,
+                return_weights=False,
+                tie_break='expand'
+            )
+            return np.exp(res[1])
         
-        # Passing cell_area=None since these densities are already normalized and thus should
-        # already be treated as log masses.
-        alphas, mean_coverage = coverage_curve(log_post_exact, log_post_mean, cell_area=None, alphas=alphas)
-        _, eup_coverage = coverage_curve(log_post_exact, log_post_eup, cell_area=None, alphas=alphas)
-        _, ep_coverage = coverage_curve(log_post_exact, log_post_ep, cell_area=None, alphas=alphas)
+        cover_list = [get_coverage(approx) for approx in (log_post_mean, log_post_eup, log_post_ep)]
+        labels = ['mean', 'eup', 'ep']
 
         return {
             'kl': [mean_kl, eup_kl, ep_kl],
-            'coverage': [mean_coverage, eup_coverage, ep_coverage],
-            'alphas': alphas
+            'coverage': cover_list,
+            'probs': probs,
+            'labels': labels
         }
 
     def _get_plot_grid(self):
@@ -736,192 +754,3 @@ def estimate_ep_grid(logpi_samples: Array, cell_area: float) -> tuple[Array, Arr
     log_ep = logsumexp(logp.T) - np.log(n_densities) # (n_densities,)
 
     return np.exp(log_ep), log_ep
-
-
-def kl_grid(logp, logq):
-    """
-    KL(p || q) = int p * (log p - log q) dx.
-    Numerically stable: if q has zeros where p>0, KL is large/infinite; we floor q.
-    Returns KL value (scalar).
-
-    Assumes equally spaced grid in both axes.
-    """
-    p = np.exp(logp)
-    integrand = p * (logp - logq)
-    kl = integrand.mean()
-    return kl
-
-
-def coverage_curve(
-    logp_true,
-    logp_approx,
-    cell_area,
-    alphas=None,
-    *,
-    return_masks=False,
-    expand_ties=False,
-):
-    """
-    Compute coverage curve on a discrete grid. The grid size has cell area
-    `cell_area`, which is assumed constant across cells.
-
-    NEW OPTIONAL DEBUG ARGUMENTS
-    ----------------------------
-    return_masks : bool (default False)
-        If True, return a list of boolean arrays. For each alpha, the mask[i]
-        indicates which grid cells belong to the approximate HPD(alpha) region.
-        This allows inspection / visualization of the actual HPD set.
-
-    expand_ties : bool (default False)
-        Controls how HPD sets handle ties in the approximate density.
-        Suppose the HPD threshold falls between two cells with equal log prob.
-        Then:
-
-        • If expand_ties = False:
-              The mask includes the minimal number of cells needed to get
-              cumulative probability ≥ alpha. (This may split tied values.)
-
-        • If expand_ties = True:
-              All cells whose logp_approx ≥ threshold are included.
-              This yields a *closed* HPD region and is often a more stable / 
-              interpretable choice on coarse grids.
-
-    PARAMETERS
-    ----------
-    logp_true : array_like
-        Log *density* or log *mass* on the grid.
-    logp_approx : array_like
-        Log density/mass of approximate model on the same grid.
-    cell_area : float
-        If >0, log densities are treated as *densities* and converted to log mass
-        by adding log(cell_area). If you pass *already normalized log-mass values*
-        (for example, from a previous call to _normalize_over_grid),
-        the function detects this automatically and does *not* add log(cell_area)
-        again.
-    alphas : array_like of HPD mass levels
-        Defaults to np.linspace(0.01, 0.99, 99).
-
-    RETURNS
-    -------
-    alphas : array
-    coverage : array
-        True mass inside approximate HPD(alpha) for each alpha.
-    masks : list of boolean arrays (only if return_masks=True)
-        masks[i][j] = True if cell j is included in HPD(alphas[i]).
-    """
-
-    import numpy as np
-
-    if alphas is None:
-        alphas = np.linspace(0.01, 0.99, 99)
-    alphas = np.asarray(alphas)
-    if np.any((alphas < 0) | (alphas > 1)):
-        raise ValueError("alphas must lie in [0,1]")
-
-    # --- Flatten inputs
-    logp_t = np.asarray(logp_true).reshape(-1)
-    logp_a = np.asarray(logp_approx).reshape(-1)
-    if logp_t.shape != logp_a.shape:
-        raise ValueError("logp_true and logp_approx must be same size")
-
-    # --- Normalize using helper that avoids re-applying log(cell_area)
-    logp_t, logZ_t = _normalize_over_grid(logp_t, cell_area, return_log=True)
-    logp_a, logZ_a = _normalize_over_grid(logp_a, cell_area, return_log=True)
-
-    if not np.isfinite(logZ_t):
-        raise ValueError("true probabilities are all -inf")
-    if not np.isfinite(logZ_a):
-        raise ValueError("approx probabilities are all -inf")
-
-    p_t = np.exp(logp_t)
-    p_a = np.exp(logp_a)
-    n = len(p_a)
-
-    # ==========================================================
-    # HELPER: compute the HPD mask
-    # ==========================================================
-    def _compute_hpd_mask(alpha, *, expand_ties=False):
-        """
-        Returns a boolean mask of length n indicating membership in the HPD(alpha)
-        region determined from logp_a / p_a.
-
-        If expand_ties=True:
-            includes *all* cells whose logp_a >= threshold.
-
-        If expand_ties=False:
-            minimal number of top-ranked cells reaching mass ≥ alpha.
-        """
-        if alpha <= 0:
-            return np.zeros(n, dtype=bool)
-        if alpha >= 1:
-            return np.ones(n, dtype=bool)
-
-        order = np.argsort(logp_a)[::-1]  # descending
-        cum = np.cumsum(p_a[order])
-        k = np.searchsorted(cum, alpha, side="left")
-
-        if not expand_ties:
-            # Minimal set (include cell k)
-            mask = np.zeros(n, dtype=bool)
-            mask[order[:k+1]] = True
-            return mask
-
-        # Expand ties at the threshold
-        if k >= n:
-            return np.ones(n, dtype=bool)
-
-        threshold_lp = logp_a[order[k]]
-        # Include all cells with logp >= that value
-        mask = logp_a >= threshold_lp
-        return mask
-
-    # ==========================================================
-    # MAIN LOOP
-    # ==========================================================
-    coverage = np.empty_like(alphas, dtype=float)
-    masks = [] if return_masks else None
-
-    for i, a in enumerate(alphas):
-        mask = _compute_hpd_mask(a, expand_ties=expand_ties)
-        coverage[i] = float(np.sum(p_t[mask]))
-        if return_masks:
-            masks.append(mask.copy())
-
-    if return_masks:
-        return alphas, coverage, masks
-    return alphas, coverage
-
-
-# =======================================================================
-# Visualization helper for masks
-# =======================================================================
-def plot_hpd_mask(mask, grid_shape, ax=None, title=None):
-    """
-    Visualize an HPD mask returned by `coverage_curve(return_masks=True)`.
-
-    PARAMETERS
-    ----------
-    mask : 1d boolean array
-        Mask returned by coverage_curve.
-    grid_shape : tuple (H, W)
-        Shape of the original 2D grid.
-    ax : matplotlib axis (optional)
-    title : str
-
-    RETURNS
-    -------
-    The matplotlib axis.
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-    M = np.asarray(mask).reshape(grid_shape)
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(4, 4))
-
-    ax.imshow(M, origin="lower", interpolation="none")
-    ax.set_title(title or "HPD mask")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    return ax
