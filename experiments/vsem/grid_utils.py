@@ -123,11 +123,37 @@ def normalize_over_grid(log_dens, cell_area: float | None = None, *,
 
     with np.errstate(invalid='ignore'): # may be all -Inf
         log_prob_norm = log_prob - logZ[:, np.newaxis]
+    logZ = logZ.ravel()
 
     if return_log:
         return (log_prob_norm, logZ)
     else:
         return (np.exp(log_prob_norm), np.exp(logZ))
+
+
+def normalize_if_not(logp: Array, 
+                     cell_area: float | None = None, 
+                     tol_log: float = 1e-10) -> tuple[Array, Array]:
+    """ Check if normalized - normalize if not.
+
+    Wrapper around `normalize_over_grid` that first checks whether `logp` represents
+    a normalized set of point masses, up to some numerical tolerance. If not, 
+    normalizes them (potentially converting densities to masses using `cell_area`).
+
+    Vectorized to operate over rows of `logp`.
+    """
+    is_norm, logZ_guess = log_probs_are_normalized(logp, tol_log=tol_log)
+    logp = np.atleast_2d(logp)
+
+    logp_norm = logp.copy()
+    logZ = logZ_guess.copy()
+
+    logp_norm[~is_norm], logZ[~is_norm] = normalize_over_grid(logp[~is_norm], 
+                                                              cell_area=cell_area,
+                                                              return_log=True)
+    logZ[is_norm] = 0.0
+
+    return logp_norm, logZ
 
 
 def coverage_curve_grid(
@@ -219,23 +245,14 @@ def coverage_curve_grid(
     n_grid = logp_t.size
 
     # normalize log probs, potentially converting densities to cell masses
-    is_norm_t, logZ_t_guess = log_probs_are_normalized(logp_t, tol_log=normalized_log_tol)
-    if is_norm_t:
-        logp_t_norm = logp_t.copy()
-        logZ_t = 0.0
-    else:
-        logp_t_norm, logZ_t = normalize_over_grid(logp_t, cell_area, return_log=True)
-        logp_t_norm = logp_t_norm.item()
-        logZ_t = logZ_t.item()
-
-    is_norm_a, logZ_a_guess = log_probs_are_normalized(logp_a, tol_log=normalized_log_tol)
-    if is_norm_a:
-        logp_a_norm = logp_a.copy()
-        logZ_a = 0.0
-    else:
-        logp_a_norm, logZ_a = normalize_over_grid(logp_a, cell_area, return_log=True)
-        logp_a_norm = logp_a_norm.item()
-        logZ_a = logZ_a.item()
+    logp_t_norm, logZ_t = normalize_if_not(logp_t, cell_area, 
+                                           tol_log=normalized_log_tol)
+    logp_a_norm, logZ_a = normalize_if_not(logp_a, cell_area, 
+                                           tol_log=normalized_log_tol)
+    logp_t_norm = logp_t_norm.ravel()
+    logp_a_norm = logp_a_norm.ravel()
+    logZ_t = logZ_t.item()
+    logZ_a = logZ_a.item()
 
     if not np.isfinite(logZ_t):
         raise ValueError("true log-probabilities are all -inf or non-finite")
@@ -286,7 +303,7 @@ def coverage_curve_grid(
             continue
 
         if prob >= 1:
-            mask_full = np.ones(n, dtype=bool)
+            mask_full = np.ones(n_grid, dtype=bool)
             log_cov_full = logsumexp(logp_t_norm)  # should be 0 if normalized
             log_coverage[prob_idx] = log_cov_full
             if return_masks:
@@ -485,7 +502,7 @@ def plot_hpd_weights_grid(
     if ncols is None:
         ncols = min(4, m) if m > 0 else 1
     ncols = int(max(1, ncols))
-    nrows = np.ceil(m / ncols)
+    nrows = int(np.ceil(m / ncols))
 
     fig_w = figsize_per_panel[0] * ncols
     fig_h = figsize_per_panel[1] * nrows
@@ -528,3 +545,28 @@ def plot_hpd_weights_grid(
 
     plt.tight_layout(rect=[0, 0, 1, 0.96] if suptitle else None)
     return fig, axes_flat
+
+
+def plot_coverage(probs, coverage_list, *, labels=None, figsize=(5,4)):
+    fig, ax = plt.subplots(figsize=figsize)
+    n_curves = len(coverage_list)
+    if labels is None:
+        labels = [f"Plot {i}" for i in range(n_curves)]
+
+    for j in range(n_curves):
+        ax.plot(probs, coverage_list[j], label=labels[j])
+
+    ax.set_title("Coverage")
+    ax.set_xlabel("Nominal Coverage")
+    ax.set_ylabel("Actual Coverage")
+
+    # Add line y = x
+    xmin, xmax = ax.get_xlim()
+    x = np.linspace(xmin, xmax, 100)
+    y = x
+    ax.plot(x, y, color="red", linestyle="--")
+    ax.legend()
+
+    # Close figure
+    plt.close(fig)
+    return fig

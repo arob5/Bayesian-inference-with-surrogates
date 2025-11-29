@@ -190,26 +190,3 @@ def plot_coverage_same_plot(tests: list[VSEMTest],
     return fig, ax
 
 
-def plot_coverage_single_rep(probs, coverage_list, *, labels=None, figsize=(5,4)):
-    fig, ax = plt.subplots(figsize=figsize)
-    n_curves = len(coverage_list)
-    if labels is None:
-        labels = [f"Plot {i}" for i in range(n_curves)]
-
-    for j in range(n_curves):
-        ax.plot(probs, coverage_list[j], label=labels[j])
-
-    ax.set_title("Coverage")
-    ax.set_xlabel("Nominal Coverage")
-    ax.set_ylabel("Actual Coverage")
-
-    # Add line y = x
-    xmin, xmax = ax.get_xlim()
-    x = np.linspace(xmin, xmax, 100)
-    y = x
-    ax.plot(x, y, color="red", linestyle="--")
-    ax.legend()
-
-    # Close figure
-    plt.close(fig)
-    return fig
