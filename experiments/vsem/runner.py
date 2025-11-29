@@ -3,12 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import vsem_jax as vsem
-from vsem_inv_prob import (
-    InvProb, 
-    VSEMPrior, 
-    VSEMLikelihood,
-    VSEMTest
-)
+from inverse_problem import InvProb, VSEMPrior, VSEMLikelihood
+from surrogate import VSEMTest
 
 
 def run_vsem_experiment(rng: np.random.Generator,

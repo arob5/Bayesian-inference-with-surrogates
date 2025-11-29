@@ -729,11 +729,11 @@ def estimate_ep_grid(logpi_samples: Array, cell_area: float) -> tuple[Array, Arr
         ep: ndarray of shape (M,), the Monte Carlo estimate of E_f[ pi(u_j;f)/Z(f) ].
         log_mean_p: log of ep
     """
-    logp, logZ = normalize_over_grid(logpi_samples, cell_area, return_log=True)
+    logp, _ = normalize_over_grid(logpi_samples, cell_area, return_log=True)
     n_densities, _ = logp.shape
 
     # log of normalized ep density 
-    log_ep = logsumexp(logp) - np.log(n_densities) # (M,)
+    log_ep = logsumexp(logp.T) - np.log(n_densities) # (n_densities,)
 
     return np.exp(log_ep), log_ep
 
