@@ -1128,15 +1128,15 @@ on average.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_mcmc.png}
-    \caption{The 2-Wasserstein distance between various approximations to the EP. For the EUP this is computed
+    \caption{The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
+    		 variability over the 100 replicates. For the EUP the distance is computed
     		 in closed-form, as both distributions are Gaussian. The remaining approximations include the rk-pcn
 		 algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
 		 For these algorithms,
 		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
-		 which is then used in the closed-form formula.}
+		 which is then used in the closed-form distance formula.}
     \label{fig:lin-gauss-mcmc}
 \end{figure}
-
 
 
 % Ecosystem Model Calibration
@@ -1180,8 +1180,14 @@ two year period. We assume an additive Gaussian noise model
 \end{align*}
 where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages. For simplicity, we fix $\sigma^2$
 and assume independent uniform priors on $\Par$. Synthetic data $\obs$ is simulated
-using \Cref{eq:vsem-inv-prob} with fixed ground truth values $\{\Par_{\star}, \sigma_{\star}^2\}$.
+using this model with fixed ground truth values $\{\Par_{\circ}, \sigma_{\circ}^2\}$.
 \todo[inline]{state the specific values/priors here}
+
+We consider a GP emulator of the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) p(\obs \given \Par)\}$.
+The GP prior is defined via a constant mean function and a Gaussian kernel. The training (i.e., design) data
+$\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of points from the prior and then 
+evaluating the exact log-posterior density at these points. The GP mean constant and kernel hyperparameters are 
+optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \todo{cite}. 
 
 \section{Conclusion} \label{sec:conclusion}
 

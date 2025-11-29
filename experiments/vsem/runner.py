@@ -13,6 +13,7 @@ from vsem_inv_prob import (
 
 def run_vsem_experiment(rng: np.random.Generator,
                         n_design: int,
+                        n_test_grid_1d: int, 
                         n_reps: int) -> tuple[list[VSEMTest], list, list]:
     """ Run VSEM experiment for paper
 
@@ -38,7 +39,7 @@ def run_vsem_experiment(rng: np.random.Generator,
 
         try:
             inv_prob = get_vsem_inv_prob(rng)
-            vsem_test = VSEMTest(inv_prob, n_design=n_design)
+            vsem_test = VSEMTest(inv_prob, n_design=n_design, n_test_grid_1d=n_test_grid_1d)
             metrics = vsem_test.compute_metrics(pred_type='pred')
             test_list.append(vsem_test)
             metrics_list.append(metrics)

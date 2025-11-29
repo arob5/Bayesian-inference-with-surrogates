@@ -229,7 +229,6 @@ class VSEMLikelihood:
         return fig
 
 
-
 class InvProb:
 
     def __init__(self, rng, prior: Prior, likelihood: Likelihood, sampler=None, **sampler_kwargs):
