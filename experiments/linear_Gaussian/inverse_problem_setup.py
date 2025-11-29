@@ -135,20 +135,22 @@ def plot_exact_post(inv_prob, grid, idx_obs, colors, g_conv_true=None,
     ci_lower = inv_prob.post.mean - 2 * post_sd
     ci_upper = inv_prob.post.mean + 2 * post_sd
 
-    title = 'exact_posterior' if title is None else title
+    title = 'Exact Posterior' if title is None else title
 
     ax.fill_between(grid, ci_lower_prior, ci_upper_prior, color=colors['aux'], 
-                    alpha=alpha_prior, label="+/- 2 prior sd")
+                    alpha=alpha_prior, label="prior")
     ax.fill_between(grid, ci_lower, ci_upper, color=colors['exact'], 
-                    alpha=alpha_post, label="+/- 2 post sd")
+                    alpha=alpha_post)
 
     if inv_prob.u_true is not None:
-        ax.plot(grid, inv_prob.u_true, color="black", label="u_true")
+        ax.plot(grid, inv_prob.u_true, color="black", label="true u")
     if g_conv_true is not None:
-        ax.plot(grid, g_conv_true, color="orange", label="g_true")
+        ax.plot(grid, g_conv_true, color="orange", label="g true")
 
-    ax.plot(idx_obs, inv_prob.y, "o", color="red", label="y")
-    ax.plot(grid, inv_prob.post.mean, color=colors['exact'], label="post mean")
+    ax.plot(idx_obs, inv_prob.y, "o", color="red")
+    ax.plot(grid, inv_prob.post.mean, color=colors['exact'], label="posterior mean")
+
+    ax.set_title(title)
     ax.legend()
 
     return fig, ax
@@ -164,7 +166,7 @@ def plot_surrogate(inv_prob, test, grid, idx_obs, colors, include_u_true=False):
 
     if include_u_true:
         ax.plot(grid, inv_prob.u_true, color='black', label="u true")
-    ax.plot(idx_obs, g_true, color=colors['exact'], label="Gu true")
+    ax.plot(idx_obs, g_true, 'o-', color=colors['exact'], label="true")
  
     # surrogate values
     surrogate_mean = test.G @ u_true + test.e.mean
@@ -172,10 +174,10 @@ def plot_surrogate(inv_prob, test, grid, idx_obs, colors, include_u_true=False):
     surrogate_sd = np.sqrt(np.diag(surrogate.cov))
     ci_lower = surrogate.mean - 2 * surrogate_sd
     ci_upper = surrogate.mean + 2 * surrogate_sd
-    ax.fill_between(idx_obs, ci_lower, ci_upper, color=colors['mean'], alpha=0.1, 
-                     label="+/- 2 surrogate sd")
-    ax.plot(idx_obs, surrogate.mean, color=colors['mean'], label="surrogate mean")
+    ax.fill_between(idx_obs, ci_lower, ci_upper, color=colors['mean'], alpha=0.1)
+    ax.plot(idx_obs, surrogate.mean, 'o-',color=colors['mean'], label="surrogate")
 
+    ax.set_xlabel('u')
     ax.set_title('surrogate predictive distribution')
     ax.legend()
     plt.close()

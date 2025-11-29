@@ -967,7 +967,13 @@ $\targetTraj$-chain to control the approximation error.
 \section{Numerical Experiments} \label{sec:experiments}
 We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
 plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
-quality of the rk-pcn approximation to the EP.
+quality of the rk-pcn approximation to the EP. For the latter, we evaluate the rk-pcn algorithms in
+\Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the correlation parameter $\pcnCor$. 
+We compare these MCMC approximations against the EUP as well as the naive cut algorithm 
+described in \citet{PlummerCut}. We note that there is a growing literature on approximate algorithms 
+for cut posterior inference, but our focus in the present paper is on evaluating the rk-pcn algorithm in 
+the surrogate modeling setting.
+\todo[inline]{cite a few papers here}
 
 % Linear Gaussian Example
 \subsection{Linear Gaussian Example}
@@ -1076,10 +1082,62 @@ We now consider a concrete instantiation of the linear Gaussian inverse problem,
 deconvolution for a one-dimensional signal. The parameter $\Par \in \R^{100}$ of interest is 
 a discretized signal over the domain $\parSpace = [0,100]$. The forward operator $G$ is the composition
 of a linear convolution with a Gaussian kernel, with an observation operator that selects every 
-fourth point. The data space is thus of dimension $\dimObs=25$. We consider $\Sigma = \sigma^2 I$
+fourth grid point. The data space is thus of dimension $\dimObs=25$. We consider $\Sigma = \sigma^2 I$
 with $\sigma = 0.2$ and define $\priorCov$ as a Gaussian kernel matrix, encoding a smoothness 
 assumption for the signal. Finally, we consider a surrogate with $\emCov = G \priorCov G^\top$, 
 which assumes the surrogate bias follows the same smoothness as the underlying signal.
+We run one hundred replicate experiments with this setup, with each replicate sampling a 
+ground truth parameter $\Par_{\circ}$ from the prior, generating synthetic data using this parameter, and 
+sampling the emulator bias $r$ from $\Gaussian(0, \emCov)$. Thus, each surrogate replicate is 
+biased but well-calibrated on average. \Cref{fig:lin-gauss-replicate-summary} displays the marginal 
+distributions for the exact posterior and surrogate predictive distribution for a single replicate.
+
+\begin{figure}[ht]
+    \centering
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{./../experiments/linear_Gaussian/out/experiment1_exact_post.png}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{./../experiments/linear_Gaussian/out/experiment1_surrogate.png}
+    \end{subfigure}
+    \caption{Summary of the exact posterior and surrogate marginal distributions for a single replicate in the experiment.
+    \textit{(Left)} The true posterior mean, $\pm 2$ standard deviations (shaded blue), $\pm 2$ prior standard deviations, and observations (red).
+    \textit{(Right)} Marginal distributions of $\targetEm(\Par_{\circ})$, the surrogate evaluated at the ground truth parameter. The shaded region
+    encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the observation locations.}
+    \label{fig:lin-gauss-replicate-summary}
+\end{figure}
+
+
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_coverage.png}
+    \caption{Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
+    		 The shaded regions summarize the middle 90\% of the replicates. Joint coverage is defined 
+		  via the Gaussian coverage ellipsoids at the different probability levels.}
+    \label{fig:lin-gauss-coverage}
+\end{figure}
+\Cref{fig:lin-gauss-coverage} summarizes the calibration of the three surrogate-based posterior approximations
+at different coverage levels. As the surrogate is biased, the plug-in mean posterior systematically fails to cover
+the true posterior. By propagating the surrogate uncertainty, both the EP and EUP achieve reasonable coverage 
+on average.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_mcmc.png}
+    \caption{The 2-Wasserstein distance between various approximations to the EP. For the EUP this is computed
+    		 in closed-form, as both distributions are Gaussian. The remaining approximations include the rk-pcn
+		 algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
+		 For these algorithms,
+		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
+		 which is then used in the closed-form formula.}
+    \label{fig:lin-gauss-mcmc}
+\end{figure}
+
+
 
 % Ecosystem Model Calibration
 \subsection{Ecosystem Model Calibration} \label{sec:vsem}
