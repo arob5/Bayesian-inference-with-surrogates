@@ -28,7 +28,7 @@ sys.path.append("./../linear_Gaussian/")
 from Gaussian import Gaussian
 
 sys.path.append("./../../helpers/")
-from rectified_gaussian import RectifiedGaussian
+from distribution_utils import ClippedGaussian
 
 
 Array = NDArray
@@ -41,13 +41,13 @@ class VSEMTest:
     """
     
     def __init__(self, inv_prob: InvProb, n_design: int, 
-                 n_test_grid_1d: int = 100, store_pred_rect=True,
+                 n_test_grid_1d: int = 100, store_pred_clipped=True,
                  design_method='lhc'):
         self.inv_prob = inv_prob
         self.n_design = n_design
         self.set_test_grid_info(n_test_grid_1d)
         self.set_gp_model(design_method)
-        self.store_gp_pred(store_pred_rect=store_pred_rect)
+        self.store_gp_pred(store_pred_clipped=store_pred_clipped)
 
     def set_gp_model(self, design_method):
         self.design = self.construct_design(design_method)
@@ -73,6 +73,7 @@ class VSEMTest:
         U_grid= np.stack([U1_grid.ravel(), U2_grid.ravel()], axis=1)
         log_post = self.inv_prob.log_posterior_density(U_grid)
         log_post_grid = log_post.reshape(U1_grid.shape)
+        log_post_upper_bound = self.log_post_upper_bound(U_grid)
 
         self.test_grid_info = {
             "u1_grid": u1_grid,
@@ -84,15 +85,16 @@ class VSEMTest:
             "U_grid": U_grid,
             "log_post": log_post,
             "log_post_grid": log_post_grid,
+            "log_post_upper_bound": log_post_upper_bound,
             "axis_labels": par_names,
             "n_grid_1d": n_test_grid_1d,
             "n_grid": U_grid.shape[0]
         }
 
-    def store_gp_pred(self, store_pred_prior=False, store_pred_rect=False):
+    def store_gp_pred(self, store_pred_prior=False, store_pred_clipped=False):
         """
         Storing predictions as Gaussian distributions. Wrapping in custom
-        Gaussian class. Optionally store rectified (clipped) Gaussian
+        Gaussian class. Optionally store clipped Gaussian
         predictions as well.
         """
         U = self.test_grid_info["U_grid"]
@@ -110,22 +112,22 @@ class VSEMTest:
         post_latent = self.gp_posterior.predict(U, train_data=self.design)
         post_pred = self.gp_posterior.likelihood(post_latent)
         
-        # Optionally store rectified Gaussian predictions
-        if store_pred_rect:
+        # Optionally store Clipped Gaussian predictions
+        if store_pred_clipped:
             if store_pred_prior:
-                prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
+                prior_pred_clip = ClippedGaussian(prior_pred.mean, 
                                                     prior_pred.covariance_matrix,
                                                     upper=upper_bound,
                                                     rng=self.inv_prob.rng)
             else:
-                prior_pred_rect = None
-            post_pred_rect = RectifiedGaussian(post_pred.mean, 
+                prior_pred_clip = None
+            post_pred_clip = ClippedGaussian(post_pred.mean, 
                                                post_pred.covariance_matrix,
                                                upper=upper_bound,
                                                rng=self.inv_prob.rng)
         else:
-            prior_pred_rect = None
-            post_pred_rect = None
+            prior_pred_clip = None
+            post_pred_clip = None
 
         # Wrap as `Gaussian`
         if store_pred_prior:
@@ -134,8 +136,58 @@ class VSEMTest:
         post_latent = Gaussian(post_latent.mean, post_latent.covariance_matrix, rng=self.inv_prob.rng)
         post_pred = Gaussian(post_pred.mean, post_pred.covariance_matrix, rng=self.inv_prob.rng)
 
-        # self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_rect": prior_pred_rect}
-        self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_rect": post_pred_rect}
+        # self.gp_prior_pred = {"latent": prior_latent, "pred": prior_pred, "pred_clip": prior_pred_clip}
+        self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_clip": post_pred_clip}
+
+    def store_posterior_estimates(self, store_pred_clipped=True):
+        """
+        Store log normalized and unnormalized posterior estimates at grid points.
+        """
+
+        # Exact
+        log_post_exact_norm, log_post_exact = self._exact_post_grid(shape_to_grid=False, return_log=True)
+        
+        # Plug-in mean
+        log_post_mean_norm, log_post_mean = self._mean_approx_grid(shape_to_grid=False, return_log=True, pred_type='pred')
+        if store_pred_clipped:
+            log_post_mean_norm_clip, log_post_mean_clip = self._mean_approx_grid(shape_to_grid=False, 
+                                                                                 return_log=True, 
+                                                                                 pred_type='pred_clip')
+        else:
+            log_post_mean_norm_clip = log_post_mean_clip = None
+        
+        # eup
+        log_post_eup_norm, log_post_eup = self._eup_approx_grid(shape_to_grid=False, return_log=True, pred_type='pred')
+        if store_pred_clipped:
+            log_post_eup_norm_clip, log_post_eup_clip = self._eup_approx_grid(shape_to_grid=False, 
+                                                                               return_log=True, 
+                                                                               pred_type='pred_clip')
+        else:
+            log_post_eup_norm_clip = log_post_eup_clip = None
+        
+        # ep
+        log_post_ep_norm, log_post_ep = self._ep_approx_grid(shape_to_grid=False, return_log=True, pred_type='pred')
+        if store_pred_clipped:
+            log_post_ep_norm_clip, log_post_ep_clip = self._ep_approx_grid(shape_to_grid=False, return_log=True, pred_type='pred_clip')
+        else:
+            log_post_ep_norm_clip = log_post_ep_clip = None
+
+        exact = {'log_norm': log_post_exact_norm, 
+                 'log_unnorm': log_post_exact}
+        mean = {'log_norm': log_post_mean_norm,
+                'log_unnorm': log_post_mean,
+                'log_norm_clip': log_post_mean_norm_clip,
+                'log_unnorm_clip': log_post_mean_clip}
+        eup = {'log_norm': log_post_eup_norm,
+               'log_unnorm': log_post_eup,
+               'log_norm_clip': log_post_eup_norm_clip,
+               'log_unnorm_clip': log_post_eup_clip}
+        ep = {'log_norm': log_post_ep_norm,
+              'log_unnorm': log_post_ep,
+              'log_norm_clip': log_post_ep_norm_clip,
+              'log_unnorm_clip': log_post_ep_clip}
+        
+        self.posterior_estimates = {'exact': exact, 'mean': mean, 'eup': eup, 'ep': ep}
 
 
     def construct_design(self, design_method):
@@ -192,17 +244,17 @@ class VSEMTest:
                     "history": history}
         return gp_posterior, opt_info
     
-    def predict(self, u, pred=None, rectify=False):
+    def predict(self, u, pred=None, clip=False):
         """ 
-        Return Gaussian or rectified Gaussian representing predictions 
+        Return Gaussian or Clipped Gaussian representing predictions 
         (including observation noise) at u 
         """
         if pred is None:
             latent = self.gp_posterior.predict(u, train_data=self.design)
             pred = self.gp_posterior.likelihood(latent)
 
-            if rectify:
-                pred = RectifiedGaussian(pred.mean, pred.covariance_matrix,
+            if clip:
+                pred = ClippedGaussian(pred.mean, pred.covariance_matrix,
                                          upper=self.log_post_upper_bound(u),
                                          rng=self.inv_prob.rng)
             else:
@@ -213,30 +265,30 @@ class VSEMTest:
     def log_post_upper_bound(self, u: Array) -> Array:
         return self.inv_prob.likelihood.log_density_upper_bound(u) + self.inv_prob.prior.log_density(u)
 
-    def log_post_approx_mean(self, u, pred=None, rectify=False):
+    def log_post_approx_mean(self, u, pred=None, clip=False):
         """ Log of plug-in mean approximation of unnormalized posterior density. """
-        pred = self.predict(u, pred, rectify=rectify)
+        pred = self.predict(u, pred, clip=clip)
         return pred.mean
 
-    def log_post_approx_eup(self, u, pred=None, rectify=False):
+    def log_post_approx_eup(self, u, pred=None, clip=False):
         """ Log of EUP approximation of unnormalized posterior density. """
-        pred = self.predict(u, pred, rectify=False)
+        pred = self.predict(u, pred, clip=False)
          
-        if rectify:
+        if clip:
             upper_bound = self.log_post_upper_bound(u)
             return log_mean_capped_lognormal(pred.mean, pred.variance, b=upper_bound)
         else:
             log_ln_mean = pred.mean + 0.5 * pred.variance ** 2
             return log_ln_mean
 
-    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=False):
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None, clip=False):
         """ Log of EP approximation of normalized posterior density (approximate).
         The grid of test points is used to approximate the normalizing constants Z(f).
         The expectation with respect to f is estimated via simple Monte Carlo, by 
         sampling discretizations of f at the test points. `n_mc` is the number of 
         Monte Carlo samples to use.
         """
-        pred = self.predict(u, pred, rectify=rectify)
+        pred = self.predict(u, pred, clip=clip)
         n_grid = pred.dim
 
         # log_post_samp[i,j] = log pi(u_j; f_i)
@@ -247,37 +299,46 @@ class VSEMTest:
         return log_ep_approx
     
     def _exact_post_grid(self, shape_to_grid=True, return_log=False):
-        """ Normalized exact posterior density evaluated at test grid """
+        """ Exact posterior density evaluated at test grid 
+        
+        Returns tuple, with:
+            - normalized posterior (log scale if `return_log` is True)
+            - log unnormalized posterior (always on log scale)
+        """
         U = self.test_grid_info['U_grid']
-        unnormalized_post = self.test_grid_info['log_post']
+        log_unnormalized_post = self.test_grid_info['log_post']
         cell_area = self.test_grid_info['cell_area']
-        normalized_post, _ = normalize_over_grid(unnormalized_post, cell_area, 
+        normalized_post, _ = normalize_over_grid(log_unnormalized_post, cell_area, 
                                                  return_log=return_log)
         normalized_post = normalized_post.flatten()
 
         if shape_to_grid:
             n_grid_1d = self.test_grid_info['n_grid_1d']
-            return normalized_post.reshape(n_grid_1d, n_grid_1d)
+            normalized_post = normalized_post.reshape(n_grid_1d, n_grid_1d)
+            log_unnormalized_post = log_unnormalized_post.reshape(n_grid_1d, n_grid_1d)
+            return normalized_post, log_unnormalized_post
         else:
-            return normalized_post
+            return normalized_post, log_unnormalized_post
 
     def _mean_approx_grid(self, shape_to_grid=True, return_log=False, pred_type='pred'):
         """ Normalized plug-in mean approximation evaluated at test grid 
         
-        `pred_type` is either 'latent', 'pred', or 'pred_rect'
+        `pred_type` is either 'latent', 'pred', or 'pred_clip'
         """
         U = self.test_grid_info['U_grid']
         cell_area = self.test_grid_info['cell_area']
         pred = self.gp_post_pred[pred_type]
-        unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
-        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        log_unnormalized_approx = self.log_post_approx_mean(U, pred=pred) # (n_grid,)
+        normalized_approx, _ = normalize_over_grid(log_unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
             n_grid_1d = self.test_grid_info['n_grid_1d']
-            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            normalized_approx = normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            log_unnormalized_approx = log_unnormalized_approx.reshape(n_grid_1d, n_grid_1d)
+            return normalized_approx, log_unnormalized_approx
         else:
-            return normalized_approx
+            return normalized_approx, log_unnormalized_approx
 
     def _eup_approx_grid(self, shape_to_grid=True, return_log=False, pred_type='pred'):
         """ Normalized EUP approximation evaluated at test grid """
@@ -286,38 +347,43 @@ class VSEMTest:
 
         # log_post_approx_eup requires `pred` to be Gaussian; handles transform internally
         pred = self.gp_post_pred['pred']
-        rectify = True if pred_type=='pred_rect' else False 
+        clip = True if pred_type=='pred_clip' else False 
 
-        unnormalized_approx = self.log_post_approx_eup(U, pred=pred, rectify=rectify) # (n_grid,)
-        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        log_unnormalized_approx = self.log_post_approx_eup(U, pred=pred, clip=clip) # (n_grid,)
+        normalized_approx, _ = normalize_over_grid(log_unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
             n_grid_1d = self.test_grid_info['n_grid_1d']
-            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            normalized_approx = normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            log_unnormalized_approx = log_unnormalized_approx.reshape(n_grid_1d, n_grid_1d)
+            return normalized_approx, log_unnormalized_approx
         else:
-            return normalized_approx
+            return normalized_approx, log_unnormalized_approx
 
     def _ep_approx_grid(self, shape_to_grid=True, return_log=False, pred_type='pred'):
         """ Normalized EP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         cell_area = self.test_grid_info['cell_area']
         pred = self.gp_post_pred[pred_type]
-        unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
-        normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
+        log_unnormalized_approx = self.log_post_approx_ep(U, pred=pred) # (n_grid,)
+        normalized_approx, _ = normalize_over_grid(log_unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
         if shape_to_grid:
             n_grid_1d = self.test_grid_info['n_grid_1d']
-            return normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            normalized_approx = normalized_approx.reshape(n_grid_1d, n_grid_1d)
+            log_unnormalized_approx = log_unnormalized_approx.reshape(n_grid_1d, n_grid_1d)
+            return normalized_approx, log_unnormalized_approx
         else:
-            return normalized_approx
+            return normalized_approx, log_unnormalized_approx
 
     def compute_metrics(self, pred_type='pred', probs=None):
-        log_post_exact = self._exact_post_grid(shape_to_grid=False, return_log=True)
-        log_post_mean = self._mean_approx_grid(shape_to_grid=False, return_log=True, pred_type=pred_type)
-        log_post_eup = self._eup_approx_grid(shape_to_grid=False, return_log=True, pred_type=pred_type)
-        log_post_ep = self._ep_approx_grid(shape_to_grid=False, return_log=True, pred_type=pred_type)
+        tag = 'log_norm_clip' if pred_type=='pred_clip' else 'log_norm'
+        log_post_exact = self.posterior_estimates['exact']['log_norm']
+        log_post_mean = self.posterior_estimates['mean'][tag]
+        log_post_eup = self.posterior_estimates['eup'][tag]
+        log_post_ep = self.posterior_estimates['ep'][tag]
 
         mean_kl = kl_grid(log_post_exact, log_post_mean)
         eup_kl = kl_grid(log_post_exact, log_post_eup)
@@ -359,11 +425,34 @@ class VSEMTest:
             'cover': cover
         }
 
+        log_approx_metrics = self.compute_log_approx_metrics()
+
         return {
             'kl': kl_metrics,
-            'coverage': cover_metrics
+            'coverage': cover_metrics,
+            'log_approx': log_approx_metrics
         }
 
+    def compute_log_approx_metrics(self, pred_type='pred'):
+        """
+        Average pointwise error between log normalized density approximation
+        and true log normalized posterior.
+        """
+
+        tag = 'log_norm_clip' if pred_type=='pred_clip' else 'log_norm'
+        log_post_exact = self.posterior_estimates['exact']['log_norm']
+        log_post_mean = self.posterior_estimates['mean'][tag]
+        log_post_eup = self.posterior_estimates['eup'][tag]
+        log_post_ep = self.posterior_estimates['ep'][tag]
+
+        return {
+            'mae_prior_mean': _calc_mae(log_post_exact, log_post_mean),
+            'mae_prior_eup': _calc_mae(log_post_exact, log_post_eup),
+            'mae_prior_ep': _calc_mae(log_post_exact, log_post_ep),
+            'mae_post_mean': _calc_mae(log_post_exact, log_post_mean, log_wt=log_post_exact),
+            'mae_post_eup': _calc_mae(log_post_exact, log_post_eup, log_wt=log_post_exact),
+            'mae_post_ep': _calc_mae(log_post_exact, log_post_ep, log_wt=log_post_exact)
+        }
 
     def _get_plot_grid(self):
         grid_info = self.test_grid_info
@@ -458,10 +547,10 @@ class VSEMTest:
         n = U1.shape[0]
         xlab, ylab = self.test_grid_info["axis_labels"]
 
-        exact = self._exact_post_grid(return_log=log_scale)
-        mean = self._mean_approx_grid(return_log=log_scale, pred_type=pred_type)
-        eup = self._eup_approx_grid(return_log=log_scale, pred_type=pred_type)
-        ep = self._ep_approx_grid(return_log=log_scale, pred_type=pred_type)
+        exact, _ = self._exact_post_grid(return_log=log_scale)
+        mean, _ = self._mean_approx_grid(return_log=log_scale, pred_type=pred_type)
+        eup, _ = self._eup_approx_grid(return_log=log_scale, pred_type=pred_type)
+        ep, _ = self._ep_approx_grid(return_log=log_scale, pred_type=pred_type)
 
         param_list = [U1, U2]
         param_dict = {
@@ -487,6 +576,29 @@ class VSEMTest:
 # -----------------------------------------------------------------------------
 # Helper functions
 # -----------------------------------------------------------------------------
+
+def _calc_mae(x, y, log_wt=None):
+    """
+    Compute mean absolute error between x and y, optionally weighted
+    by `np.exp(log_wt)`. Note that the log of the weights must be passed.
+    """
+    x = np.asarray(x).ravel()
+    y = np.asarray(y).ravel()
+
+    n = x.shape[0]
+    if y.shape[0] != n:
+        raise ValueError('_calc_mae() requires x,y to have equal length.')
+
+    if log_wt is None:
+        # default to equal weights 1/n
+        log_wt = np.full(n, -np.log(n))
+
+    abs_diff = np.abs(x - y)
+    log_summands = np.log(abs_diff) + log_wt
+    log_mae = logsumexp(log_summands).item()
+
+    return np.exp(log_mae)
+
 
 def average_pairwise_distance(x):
     """ x: (n, d) array. 
