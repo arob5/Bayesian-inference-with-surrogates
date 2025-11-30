@@ -1,11 +1,12 @@
 from __future__ import annotations
 import numpy as np
 from scipy.stats import multivariate_normal, norm
-from typing import Tuple
+from typing import Tuple, Union
 import math
 
+ArrayLike = Union[np.ndarray, float, int]
 
-class RectifiedGaussian:
+class ClippedGaussian:
     """Distribution of Y = min(X, upper) where X ~ N(mean, cov) and min is elementwise.
 
     The transform is elementwise: y_i = min(x_i, upper_i). This produces a mixed
@@ -38,7 +39,7 @@ class RectifiedGaussian:
         upper: np.ndarray,
         rng: np.random.Generator | None = None,
     ) -> None:
-        """Construct a RectifiedGaussian.
+        """Construct a ClippedGaussian.
 
         Parameters
         ----------
@@ -181,6 +182,131 @@ class RectifiedGaussian:
         return out
 
 
+def logscore_clipped_gaussian(
+    y: ArrayLike,
+    m: ArrayLike,
+    s: ArrayLike,
+    b: ArrayLike,
+    atol_b: float = 0.0
+) -> np.ndarray:
+    """
+    Vectorized log score for X' = min(X, b) with X ~ N(m, s^2).
+
+    Args:
+        y: Observations (scalar or array-like).
+        m: Forecast mean (scalar or array-like; broadcasts with y).
+        s: Forecast standard deviation (scalar or array-like; must be > 0).
+        b: Clipping threshold (scalar or array-like; broadcasts with y).
+        atol_b: Absolute tolerance for treating y as equal to b (default 0.0).
+                If > 0, values with |y - b| <= atol_b are treated as `y == b`.
+
+    Returns:
+        An ndarray of the same broadcasted shape as the inputs containing
+        the log predictive probabilities (log score). Values with y > b get -inf.
+
+    Raises:
+        ValueError: if any s <= 0 after broadcasting.
+    """
+    y_a, m_a, s_a, b_a = np.broadcast_arrays(np.asarray(y), np.asarray(m),
+                                             np.asarray(s), np.asarray(b))
+    if np.any(s_a <= 0):
+        raise ValueError("All s must be positive.")
+
+    # masks: continuous (y < b), mass (y == b within tolerance), impossible (y > b)
+    if atol_b > 0:
+        is_mass = np.abs(y_a - b_a) <= atol_b
+    else:
+        is_mass = y_a == b_a
+
+    is_cont = (y_a < b_a) & (~is_mass)
+    is_impossible = y_a > b_a
+
+    out = np.empty_like(y_a, dtype=float)
+
+    # continuous part: log pdf
+    out[is_cont] = norm.logpdf(y_a[is_cont], loc=m_a[is_cont], scale=s_a[is_cont])
+
+    # mass at b: log(1 - Phi((b-m)/s)) computed with logsf for numerical stability
+    if np.any(is_mass):
+        z = (b_a[is_mass] - m_a[is_mass]) / s_a[is_mass]
+        out[is_mass] = norm.logsf(z)   # numerically stable
+
+    # impossible: log prob = -inf
+    if np.any(is_impossible):
+        out[is_impossible] = -np.inf
+
+    return out
+
+
+def logscore_clipped_lognormal(
+    logy: ArrayLike,
+    m: ArrayLike,
+    s: ArrayLike,
+    b: ArrayLike,
+    atol_b: float = 0.0
+) -> np.ndarray:
+    """
+    Vectorized log score for the clipped log-normal predictive distribution
+    defined by:
+        X' = min(exp(X), exp(b)),  where X ~ N(m, s^2).
+
+    This version accepts 'logy' = log(observation), so that the user does not
+    need to compute y = exp(logy) explicitly.
+
+    Args:
+        logy: Observed log-values (scalar or array-like). If logy <= -inf
+              (i.e., invalid), the predictive probability is zero.
+        m: Mean of X (scalar or array-like; broadcasts).
+        s: Std. dev. of X (must be > 0; broadcasts).
+        b: Log-space clipping threshold (scalar or array-like).
+           The point mass is located at logy == b (within tolerance).
+        atol_b: Absolute tolerance for treating logy as equal to b.
+
+    Returns:
+        ndarray of log predictive probabilities (log scores).
+    """
+    # Broadcast everything
+    logy_a, m_a, s_a, b_a = np.broadcast_arrays(
+        np.asarray(logy), np.asarray(m), np.asarray(s), np.asarray(b)
+    )
+
+    if np.any(s_a <= 0):
+        raise ValueError("All s must be positive.")
+
+    # Initialize output with -inf (default: impossible)
+    out = np.full_like(logy_a, -np.inf, dtype=float)
+
+    # Valid observations: logy > -inf => y > 0
+    valid = np.isfinite(logy_a)
+    if not np.any(valid):
+        return out
+
+    # Masks for continuous part and mass part
+    if atol_b > 0.0:
+        is_mass = valid & (np.abs(logy_a - b_a) <= atol_b)
+    else:
+        is_mass = valid & (logy_a == b_a)
+
+    is_cont = valid & (logy_a < b_a) & (~is_mass)
+
+    # Continuous part: 0 < y < exp(b)
+    # p(y) = Normal(logy | m, s) * 1/exp(logy)
+    # log p(y) = logpdf(logy) - logy
+    if np.any(is_cont):
+        idx = is_cont
+        lp = norm.logpdf(logy_a[idx], loc=m_a[idx], scale=s_a[idx])
+        out[idx] = lp - logy_a[idx]   # subtract log(y)
+
+    # Mass at exp(b): p = P(X >= b)
+    if np.any(is_mass):
+        idx = is_mass
+        z = (b_a[idx] - m_a[idx]) / s_a[idx]
+        out[idx] = norm.logsf(z)   # numerically stable
+
+    # Invalid or logy > b remain -inf by default
+    return out
+
+
 # Validation check
 if __name__ == "__main__":
     m = np.array([1., 2.])
@@ -190,7 +316,7 @@ if __name__ == "__main__":
     rng = np.random.default_rng(62435)
 
     x = multivariate_normal(m, C)
-    y = RectifiedGaussian(m, C, upper=upper, rng=rng)
+    y = ClippedGaussian(m, C, upper=upper, rng=rng)
 
     x_samp = x.rvs(size=n_mc)
     y_samp = np.minimum(x_samp, upper)
