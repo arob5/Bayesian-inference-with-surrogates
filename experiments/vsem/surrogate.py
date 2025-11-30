@@ -48,6 +48,7 @@ class VSEMTest:
         self.set_test_grid_info(n_test_grid_1d)
         self.set_gp_model(design_method)
         self.store_gp_pred(store_pred_clipped=store_pred_clipped)
+        self.store_posterior_estimates(store_pred_clipped=store_pred_clipped)
 
     def set_gp_model(self, design_method):
         self.design = self.construct_design(design_method)
@@ -425,7 +426,7 @@ class VSEMTest:
             'cover': cover
         }
 
-        log_approx_metrics = self.compute_log_approx_metrics()
+        log_approx_metrics = self.compute_log_approx_metrics(pred_type=pred_type)
 
         return {
             'kl': kl_metrics,

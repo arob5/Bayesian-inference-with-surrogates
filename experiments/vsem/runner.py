@@ -9,8 +9,10 @@ from surrogate import VSEMTest
 
 def run_vsem_experiment(rng: np.random.Generator,
                         n_design: int,
+                        design_method: str,
                         n_test_grid_1d: int, 
-                        n_reps: int) -> tuple[list[VSEMTest], list, list]:
+                        n_reps: int,
+                        store_pred_clipped: bool = True) -> tuple[list[VSEMTest], list, list, list]:
     """ Run VSEM experiment for paper
 
     The structure of the inverse problem and surrogate model are fixed
@@ -28,6 +30,7 @@ def run_vsem_experiment(rng: np.random.Generator,
     
     test_list = []
     metrics_list = []
+    metrics_clip_list = []
     failed_iters = []
 
     for i in range(n_reps):
@@ -35,18 +38,29 @@ def run_vsem_experiment(rng: np.random.Generator,
 
         try:
             inv_prob = get_vsem_inv_prob(rng)
-            vsem_test = VSEMTest(inv_prob, n_design=n_design, n_test_grid_1d=n_test_grid_1d)
+            vsem_test = VSEMTest(inv_prob=inv_prob, 
+                                 n_design=n_design, 
+                                 n_test_grid_1d=n_test_grid_1d,
+                                 store_pred_clipped=store_pred_clipped,
+                                 design_method=design_method)
+            
             metrics = vsem_test.compute_metrics(pred_type='pred')
-            test_list.append(vsem_test)
             metrics_list.append(metrics)
+            test_list.append(vsem_test)
+
+            if store_pred_clipped:
+                metrics_clip = vsem_test.compute_metrics(pred_type='pred_clip')
+                metrics_clip_list.append(metrics_clip)
         except Exception as e:
             print(f'Iteration {i} failed with error: {e}')
             failed_iters.append(i)
             test_list.append(e)
             metrics_list.append(e)
+            if store_pred_clipped:
+                metrics_clip_list.append(e)
 
     print(f'Number of failed iterations: {len(failed_iters)}')
-    return test_list, metrics_list, failed_iters
+    return test_list, metrics_list, metrics_clip_list, failed_iters
 
 
 def get_vsem_inv_prob(rng: np.random.Generator) -> InvProb:
