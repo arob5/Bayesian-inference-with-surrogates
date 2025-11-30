@@ -214,77 +214,76 @@ class gpjaxGP:
 # -----------------------------------------------------------------------------
 
 
-def get_mwg_eup_sampler(self, u_prop_scale=0.1, pcn_cor=0.99):
-    """
-    Exactly targets the EUP.
-    """
-    L_noise = self.noise.chol
+# def get_mwg_eup_sampler(self, u_prop_scale=0.1, pcn_cor=0.99):
+#     """
+#     Exactly targets the EUP.
+#     """
+#     L_noise = self.noise.chol
 
-    # Extended state space. Initialize state via prior sample.
-    state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
+#     # Extended state space. Initialize state via prior sample.
+#     state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
 
-    # Target density.
-    def ldens_post(state):
-        fwd = self.G @ state.primary["u"] + state.primary["e"]
-        return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+#     # Target density.
+#     def ldens_post(state):
+#         fwd = self.G @ state.primary["u"] + state.primary["e"]
+#         return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
 
-    target = TargetDensity(LogDensityTerm("post", ldens_post))
+#     target = TargetDensity(LogDensityTerm("post", ldens_post))
 
-    # u and e updates.
-    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
-                                    term_subset="post", block_vars="u", rng=self.rng)
-    ker_e = DiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
-                                cor_param=pcn_cor, term_subset="post",
-                                block_vars="e", rng=self.rng)
+#     # u and e updates.
+#     ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
+#                                     term_subset="post", block_vars="u", rng=self.rng)
+#     ker_e = DiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
+#                                 cor_param=pcn_cor, term_subset="post",
+#                                 block_vars="e", rng=self.rng)
 
-    # Sampler
-    alg = BlockMCMCSampler(target, initial_state=state,
-                            kernels=[ker_u, ker_e], rng=self.rng)
-    return alg
+#     # Sampler
+#     alg = BlockMCMCSampler(target, initial_state=state,
+#                             kernels=[ker_u, ker_e], rng=self.rng)
+#     return alg
+
+# def get_rk_sampler(inv_prob, u_prop_scale=0.1):
+#     L_noise = self.noise.chol
+
+#     # Initialize state via prior sample.
+#     state = State(primary={"u": self.prior.sample()})
+
+#     # Noisy target density.
+#     def ldens_post_noisy(state):
+#         fwd = self.G @ state.primary["u"] + self.e.sample()
+#         return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+
+#     target = TargetDensity(LogDensityTerm("post", ldens_post_noisy), use_cache=False)
+
+#     # Metropolis-Hastings updates.
+#     ker = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov, rng=self.rng)
+
+#     # Sampler
+#     alg = BlockMCMCSampler(target, initial_state=state, kernels=ker, rng=self.rng)
+#     return alg
 
 
-def get_rk_sampler(inv_prob, u_prop_scale=0.1):
-    L_noise = self.noise.chol
+# def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.9):
+#     L_noise = self.noise.chol
 
-    # Initialize state via prior sample.
-    state = State(primary={"u": self.prior.sample()})
+#     # Extended state space. Initialize state via prior sample.
+#     state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
 
-    # Noisy target density.
-    def ldens_post_noisy(state):
-        fwd = self.G @ state.primary["u"] + self.e.sample()
-        return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+#     # Target density.
+#     def ldens_post(state):
+#         fwd = self.G @ state.primary["u"] + state.primary["e"]
+#         return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
+#     target = TargetDensity(LogDensityTerm("post", ldens_post))
 
-    target = TargetDensity(LogDensityTerm("post", ldens_post_noisy), use_cache=False)
+#     # u and e updates.
+#     ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
+#                                   term_subset="post", block_vars="u", rng=self.rng)
+#     ker_e = UncalibratedDiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
+#                                           cor_param=pcn_cor, block_vars="e", rng=self.rng)
 
-    # Metropolis-Hastings updates.
-    ker = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov, rng=self.rng)
-
-    # Sampler
-    alg = BlockMCMCSampler(target, initial_state=state, kernels=ker, rng=self.rng)
-    return alg
-
-
-def get_rk_pcn_sampler(self, u_prop_scale=0.1, pcn_cor=0.9):
-    L_noise = self.noise.chol
-
-    # Extended state space. Initialize state via prior sample.
-    state = State(primary={"u": self.prior.sample(), "e": self.e.sample()})
-
-    # Target density.
-    def ldens_post(state):
-        fwd = self.G @ state.primary["u"] + state.primary["e"]
-        return mvn_logpdf(self.y, mean=fwd, L=L_noise) + self.prior.log_p(state.primary["u"])
-    target = TargetDensity(LogDensityTerm("post", ldens_post))
-
-    # u and e updates.
-    ker_u = GaussMetropolisKernel(target, proposal_cov=u_prop_scale*self.prior.cov,
-                                  term_subset="post", block_vars="u", rng=self.rng)
-    ker_e = UncalibratedDiscretePCNKernel(target, mean_Gauss=self.e.mean, cov_Gauss=self.e.cov,
-                                          cor_param=pcn_cor, block_vars="e", rng=self.rng)
-
-    # Sampler
-    alg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e], rng=self.rng)
-    return alg
+#     # Sampler
+#     alg = BlockMCMCSampler(target, initial_state=state, kernels=[ker_u, ker_e], rng=self.rng)
+#     return alg
 
 
 class RandomKernelPCNSampler(MCMCSampler):

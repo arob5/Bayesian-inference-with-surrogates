@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
 from typing import Protocol
-from scipy.stats import uniform
+from scipy.stats import uniform, qmc
 
 import vsem_jax as vsem
 
@@ -80,6 +80,13 @@ class VSEMPrior:
         def par_names(self):
             return self._par_names
         
+        @property
+        def support_bounds(self):
+            dists = [self.dists[nm] for nm in self.par_names]
+            lower = [dist.support()[0] for dist in dists]
+            upper = [dist.support()[1] for dist in dists]
+            return lower, upper
+        
         def sample(self, n=1):
             samp = np.empty((n, self.dim))
             for j in range(self.dim):
@@ -87,6 +94,19 @@ class VSEMPrior:
                 samp[:,j] = self.dists[par_name].rvs(n, random_state=self.rng)
 
             return samp[0] if n == 1 else samp
+
+        def sample_lhc(self, n=1):
+            """ Latin hypercube sampling """
+            lhc = qmc.LatinHypercube(d=self.dim)
+
+            # Samples unit hypercube [0, 1)^d
+            samp = lhc.random(n=n)
+
+            # Scale based on prior bounds
+            l, u = self.support_bounds
+            samp = qmc.scale(samp, l, u)
+
+            return samp
 
         def log_density(self, x):
             x = np.asarray(x)

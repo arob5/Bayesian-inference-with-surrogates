@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from collections.abc import Iterable
 from numpy.typing import NDArray
 from typing import Protocol, Optional
+from scipy.stats import norm
 from math import ceil
 
 import jax.numpy as jnp
@@ -40,15 +41,16 @@ class VSEMTest:
     """
     
     def __init__(self, inv_prob: InvProb, n_design: int, 
-                 n_test_grid_1d: int = 100, store_pred_rect=False):
+                 n_test_grid_1d: int = 100, store_pred_rect=True,
+                 design_method='lhc'):
         self.inv_prob = inv_prob
         self.n_design = n_design
         self.set_test_grid_info(n_test_grid_1d)
-        self.set_gp_model()
-        self.store_gp_pred(store_pred_rect)
+        self.set_gp_model(design_method)
+        self.store_gp_pred(store_pred_rect=store_pred_rect)
 
-    def set_gp_model(self):
-        self.design = self.construct_design()
+    def set_gp_model(self, design_method):
+        self.design = self.construct_design(design_method)
         self.gp_prior = self.construct_gp_prior()
         self.gp_likelihood = self.construct_gp_likelihood()
         self.gp_untuned_posterior = self.gp_prior * self.gp_likelihood
@@ -87,7 +89,7 @@ class VSEMTest:
             "n_grid": U_grid.shape[0]
         }
 
-    def store_gp_pred(self, store_pred_rect=False):
+    def store_gp_pred(self, store_pred_prior=False, store_pred_rect=False):
         """
         Storing predictions as Gaussian distributions. Wrapping in custom
         Gaussian class. Optionally store rectified (clipped) Gaussian
@@ -97,19 +99,26 @@ class VSEMTest:
         upper_bound = self.log_post_upper_bound(U)
 
         # Prior predictions
-        # prior_latent = self.gp_posterior.prior.predict(U)
-        # prior_pred = self.gp_posterior.likelihood(prior_latent)
+        if store_pred_prior:
+            prior_latent = self.gp_posterior.prior.predict(U)
+            prior_pred = self.gp_posterior.likelihood(prior_latent)
+        else:
+            prior_latent = None
+            prior_pred = None
         
         # Conditional predictions
         post_latent = self.gp_posterior.predict(U, train_data=self.design)
         post_pred = self.gp_posterior.likelihood(post_latent)
         
-        # Optional store rectified Gaussian predictions
+        # Optionally store rectified Gaussian predictions
         if store_pred_rect:
-            # prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
-            #                                     prior_pred.covariance_matrix,
-            #                                     upper=upper_bound,
-            #                                     rng=self.inv_prob.rng)
+            if store_pred_prior:
+                prior_pred_rect = RectifiedGaussian(prior_pred.mean, 
+                                                    prior_pred.covariance_matrix,
+                                                    upper=upper_bound,
+                                                    rng=self.inv_prob.rng)
+            else:
+                prior_pred_rect = None
             post_pred_rect = RectifiedGaussian(post_pred.mean, 
                                                post_pred.covariance_matrix,
                                                upper=upper_bound,
@@ -119,8 +128,9 @@ class VSEMTest:
             post_pred_rect = None
 
         # Wrap as `Gaussian`
-        # prior_latent = Gaussian(prior_latent.mean, prior_latent.covariance_matrix, rng=self.inv_prob.rng)
-        # prior_pred = Gaussian(prior_pred.mean, prior_pred.covariance_matrix, rng=self.inv_prob.rng)
+        if store_pred_prior:
+            prior_latent = Gaussian(prior_latent.mean, prior_latent.covariance_matrix, rng=self.inv_prob.rng)
+            prior_pred = Gaussian(prior_pred.mean, prior_pred.covariance_matrix, rng=self.inv_prob.rng)
         post_latent = Gaussian(post_latent.mean, post_latent.covariance_matrix, rng=self.inv_prob.rng)
         post_pred = Gaussian(post_pred.mean, post_pred.covariance_matrix, rng=self.inv_prob.rng)
 
@@ -128,8 +138,17 @@ class VSEMTest:
         self.gp_post_pred = {"latent": post_latent, "pred": post_pred, "pred_rect": post_pred_rect}
 
 
-    def construct_design(self):
-        x_design = jnp.asarray(self.inv_prob.prior.sample(self.n_design))
+    def construct_design(self, design_method):
+        prior = self.inv_prob.prior
+
+        if design_method == 'lhc':
+            x_design = prior.sample_lhc(self.n_design)
+        elif design_method == 'uniform':
+            x_design = prior.sample(self.n_design)
+        else:
+            raise ValueError(f'Invalid design method {design_method}')
+
+        x_design = jnp.asarray(x_design)
         y_design = jnp.asarray(self.inv_prob.log_posterior_density(x_design)).reshape((-1,1))
         return gpx.Dataset(X=x_design, y=y_design)
 
@@ -173,8 +192,11 @@ class VSEMTest:
                     "history": history}
         return gp_posterior, opt_info
     
-    def predict(self, u, pred=None, rectify=True):
-        """ Return Gaussian representing predictions (including observation noise) at u """
+    def predict(self, u, pred=None, rectify=False):
+        """ 
+        Return Gaussian or rectified Gaussian representing predictions 
+        (including observation noise) at u 
+        """
         if pred is None:
             latent = self.gp_posterior.predict(u, train_data=self.design)
             pred = self.gp_posterior.likelihood(latent)
@@ -191,24 +213,30 @@ class VSEMTest:
     def log_post_upper_bound(self, u: Array) -> Array:
         return self.inv_prob.likelihood.log_density_upper_bound(u) + self.inv_prob.prior.log_density(u)
 
-    def log_post_approx_mean(self, u, pred=None, rectify=True):
+    def log_post_approx_mean(self, u, pred=None, rectify=False):
         """ Log of plug-in mean approximation of unnormalized posterior density. """
         pred = self.predict(u, pred, rectify=rectify)
         return pred.mean
 
-    def log_post_approx_eup(self, u, pred=None, rectify=True):
+    def log_post_approx_eup(self, u, pred=None, rectify=False):
         """ Log of EUP approximation of unnormalized posterior density. """
-        pred = self.predict(u, pred)
-        return pred.mean + 0.5 * pred.variance ** 2 
+        pred = self.predict(u, pred, rectify=False)
+         
+        if rectify:
+            upper_bound = self.log_post_upper_bound(u)
+            return log_mean_capped_lognormal(pred.mean, pred.variance, b=upper_bound)
+        else:
+            log_ln_mean = pred.mean + 0.5 * pred.variance ** 2
+            return log_ln_mean
 
-    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=True):
+    def log_post_approx_ep(self, u, n_mc=10000, pred=None, rectify=False):
         """ Log of EP approximation of normalized posterior density (approximate).
         The grid of test points is used to approximate the normalizing constants Z(f).
         The expectation with respect to f is estimated via simple Monte Carlo, by 
         sampling discretizations of f at the test points. `n_mc` is the number of 
         Monte Carlo samples to use.
         """
-        pred = self.predict(u, pred)
+        pred = self.predict(u, pred, rectify=rectify)
         n_grid = pred.dim
 
         # log_post_samp[i,j] = log pi(u_j; f_i)
@@ -255,8 +283,12 @@ class VSEMTest:
         """ Normalized EUP approximation evaluated at test grid """
         U = self.test_grid_info['U_grid']
         cell_area = self.test_grid_info['cell_area']
-        pred = self.gp_post_pred[pred_type]
-        unnormalized_approx = self.log_post_approx_eup(U, pred=pred) # (n_grid,)
+
+        # log_post_approx_eup requires `pred` to be Gaussian; handles transform internally
+        pred = self.gp_post_pred['pred']
+        rectify = True if pred_type=='pred_rect' else False 
+
+        unnormalized_approx = self.log_post_approx_eup(U, pred=pred, rectify=rectify) # (n_grid,)
         normalized_approx, _ = normalize_over_grid(unnormalized_approx, cell_area, return_log=return_log)
         normalized_approx = normalized_approx.flatten()
 
@@ -290,6 +322,8 @@ class VSEMTest:
         mean_kl = kl_grid(log_post_exact, log_post_mean)
         eup_kl = kl_grid(log_post_exact, log_post_eup)
         ep_kl = kl_grid(log_post_exact, log_post_ep)
+        ep_eup_kl = kl_grid(log_post_ep, log_post_eup)
+        ep_mean_kl = kl_grid(log_post_ep, log_post_mean)
 
         if probs is None:
             probs = np.linspace(0.1, 0.99, 99)
@@ -306,15 +340,30 @@ class VSEMTest:
             )
             return np.exp(res[1])
         
-        cover_list = [get_coverage(approx) for approx in (log_post_mean, log_post_eup, log_post_ep)]
-        labels = ['mean', 'eup', 'ep']
+        cover = np.empty((3, len(probs)))
+        for i,approx in enumerate([log_post_mean, log_post_eup, log_post_ep]):
+            cover[i] = get_coverage(approx)
+        cover_labels = ['mean', 'eup', 'ep']
+
+        kl_metrics = {
+            'exact_mean': mean_kl,
+            'exact_eup': eup_kl,
+            'exact_ep': ep_kl,
+            'ep_eup': ep_eup_kl,
+            'ep_mean': ep_mean_kl
+        }
+
+        cover_metrics = {
+            'labels': cover_labels,
+            'probs': probs,
+            'cover': cover
+        }
 
         return {
-            'kl': [mean_kl, eup_kl, ep_kl],
-            'coverage': cover_list,
-            'probs': probs,
-            'labels': labels
+            'kl': kl_metrics,
+            'coverage': cover_metrics
         }
+
 
     def _get_plot_grid(self):
         grid_info = self.test_grid_info
@@ -754,3 +803,48 @@ def estimate_ep_grid(logpi_samples: Array, cell_area: float) -> tuple[Array, Arr
     log_ep = logsumexp(logp.T) - np.log(n_densities) # (n_densities,)
 
     return np.exp(log_ep), log_ep
+
+
+def log_mean_capped_lognormal(m, s2, b):
+    """
+    Compute log E[min(exp(X), exp(b))] for X ~ N(m, s^2).
+
+    Parameters
+    ----------
+    m : array_like
+        Means of the normal distribution.
+    s2 : array_like
+        Variances of the normal distribution.
+    b : array_like
+        Log-cap values: y = min(exp(x), exp(b)).
+
+    Returns
+    -------
+    log_Ey : ndarray
+        log( E[min(exp(X), exp(b))] ), elementwise.
+    """
+    m = np.asarray(m)
+    s2 = np.asarray(s2)
+    b = np.asarray(b)
+
+    s = np.sqrt(s2)
+
+    # z1 = (b - (m + s^2)) / s
+    z1 = (b - (m + s2)) / s
+
+    # z2 = (b - m) / s
+    z2 = (b - m) / s
+
+    # Log of the two contributions:
+    # T1 = exp(m + s^2/2) * Phi(z1)
+    logT1 = (m + 0.5 * s2) + norm.logcdf(z1)
+
+    # T2 = exp(b) * (1 - Phi(z2)) = exp(b) * SF(z2)
+    logT2 = b + norm.logsf(z2)
+
+    # log(E[y]) = logsumexp(logT1, logT2)
+    # logsumexp for two terms:
+    M = np.maximum(logT1, logT2)
+    log_Ey = M + np.log(np.exp(logT1 - M) + np.exp(logT2 - M))
+
+    return log_Ey
