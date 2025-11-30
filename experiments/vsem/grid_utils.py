@@ -588,7 +588,8 @@ def plot_coverage(probs, coverage_list, *, labels=None, figsize=(5,4)):
 
 # TODO: update this
 def plot_coverage_distribution(tests: list[VSEMTest], 
-                               metrics: list, 
+                               metrics: list,
+                               labels: list,
                                q_min: float = 0.05, 
                                q_max: float = 0.95, 
                                figsize=(12, 4)):
@@ -599,20 +600,23 @@ def plot_coverage_distribution(tests: list[VSEMTest],
     """
 
     # Assumed constrant across all replications
-    probs = metrics[0]['alphas']
+    probs = metrics[0]['coverage']['probs']
 
     n_reps = len(tests)
     n_probs = len(probs)
     mean_coverage = np.empty((n_reps, n_probs))
     eup_coverage = np.empty((n_reps, n_probs))
     ep_coverage = np.empty((n_reps, n_probs))
+    mean_idx = labels.index('mean')
+    eup_idx = labels.index('eup')
+    ep_idx = labels.index('ep')
 
     # assemble arrays of coverage stats
     for i, results in enumerate(metrics):
-        mean, eup, ep = results['coverage']
-        mean_coverage[i,:] = mean
-        eup_coverage[i,:] = eup
-        ep_coverage[i,:] = ep
+        cover = results['coverage']['cover']
+        mean_coverage[i,:] = cover[mean_idx]
+        eup_coverage[i,:] = cover[eup_idx]
+        ep_coverage[i,:] = cover[ep_idx]
 
     # summarize distribution over replications
     mean_m = np.median(mean_coverage, axis=0)
@@ -652,6 +656,7 @@ def plot_coverage_distribution(tests: list[VSEMTest],
     plt.close(fig)
     return fig, axs
 
+
 # TODO: update this
 def plot_coverage_same_plot(tests: list[VSEMTest], 
                             metrics: list, 
@@ -665,7 +670,7 @@ def plot_coverage_same_plot(tests: list[VSEMTest],
     """
 
     # Assumed constrant across all replications
-    probs = metrics[0]['alphas']
+    probs = metrics[0]['coverage']['probs']
 
     n_reps = len(tests)
     n_probs = len(probs)
