@@ -56,7 +56,7 @@ class Distribution(ABC):
         raise NotImplementedError('variance not implemented for distribution object.')
 
     @property
-    def sdtdev(self) -> Array:
+    def stdev(self) -> Array:
         """ Return marginal standard deviations of shape (d,) """
         return jnp.sqrt(self.variance)
 
