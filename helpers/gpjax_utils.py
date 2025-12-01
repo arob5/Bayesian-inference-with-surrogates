@@ -15,7 +15,7 @@ from gpjax.parameters import PositiveReal  # Parameter helper class
 from gpjax.likelihoods import Gaussian
 from gpjax.mean_functions import Constant
 from gpjax.kernels import RBF
-import optax
+import optax as ox
 
 
 def make_interval_bijector(low, high):
@@ -87,8 +87,8 @@ def average_pairwise_distance_per_dim(x):
 # -----------------------------------------------------------------------------
 
 import typing as tp 
-import optax as ox
 from jax.flatten_util import ravel_pytree
+from jax.tree_util import tree_flatten_with_path
 from scipy.optimize import minimize
 from gpjax.objectives import Objective
 from numpyro.distributions.transforms import Transform
@@ -226,6 +226,9 @@ def custom_fit_scipy(  # noqa: PLR0913
         params,
         is_leaf=lambda x: isinstance(x, (nnx.VariableState, Parameter)),
     )
+
+    # Store structure of the tree so can be recreated later
+    param_template = tree_flatten_with_path(params, is_leaf = lambda x: isinstance(x, Parameter))
     #### Ending modifications
 
     # Parameters bijection to unconstrained space
@@ -238,15 +241,13 @@ def custom_fit_scipy(  # noqa: PLR0913
         return objective(model, train_data)
 
     # convert to numpy for interface with scipy
-    print(params)
     x0, scipy_to_jnp = ravel_pytree(params)
-    print("Unravel:")
-    unraveled = scipy_to_jnp(x0)
-    print(unraveled)
 
     @jax.jit
     def scipy_wrapper(x0):
-        value, grads = jax.value_and_grad(loss)(scipy_to_jnp(jnp.array(x0)))
+        ### MODIFICATION: replacing scipy_to_jnp(jnp.array(x0)) with call to _scipy_to_nnx_state
+        param_state = _scipy_to_nnx_state(jnp.array(x0), scipy_to_jnp, param_template)
+        value, grads = jax.value_and_grad(loss)(param_state)
         scipy_grads = ravel_pytree(grads)[0]
         return value, scipy_grads
 
@@ -261,7 +262,7 @@ def custom_fit_scipy(  # noqa: PLR0913
     history = jnp.array(history)
 
     # convert back to nnx.State with JAX arrays
-    params = scipy_to_jnp(result.x)
+    params = _scipy_to_nnx_state(result.x, scipy_to_jnp, param_template)
 
     # Parameters bijection to constrained space
     print('unconstrained:')
@@ -276,15 +277,32 @@ def custom_fit_scipy(  # noqa: PLR0913
     return model, history
 
 
+def _scipy_to_nnx_state(x, scipy_to_jnp, param_template):
+    """
+    Addressing issue that scipy_to_jnp strips the Parameter class from the 
+    tree, which means that tranform() does not recognize the values as
+    parameters and defaults to identity transform.
+    """
+    leaf_template, treedef_template = param_template
+    tree = scipy_to_jnp(x)
+    leaves, treedef = jax.tree_util.tree_flatten_with_path(tree)
+    leaf_template_keys = [l[0] for l in leaf_template]
+
+    updated_leaves = []
+    for leaf_info in leaves:
+        key, val = leaf_info
+        idx = leaf_template_keys.index(key)
+        target_structure = leaf_template[idx][1]
+        updated_leaf = _wrap_as_parameter(val, target_structure)
+        updated_leaves.append(updated_leaf)
+
+    updated_pytree = jax.tree_util.tree_unflatten(treedef, updated_leaves)
+    return nnx.State(updated_pytree)
 
 
-
-
-
-
-
-
-
+def _wrap_as_parameter(val, target_structure):
+    cls = type(target_structure)
+    return cls(value=val, tag=target_structure.tag)
 
 
 if __name__ == '__main__':
