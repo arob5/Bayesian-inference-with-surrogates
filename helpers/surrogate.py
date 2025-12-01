@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Protocol, TypeAlias
 from jax.typing import ArrayLike
 import jax.numpy as jnp
 
 from inverse_problem import Distribution
 
-Array = jnp.ndarray
+Array: TypeAlias = jnp.ndarray
+
+# predictive distribution of a surrogate at set of inputs
+PredDist: TypeAlias = Distribution
 
 
 class Surrogate(ABC):
@@ -26,7 +29,7 @@ class Surrogate(ABC):
     """
 
     @abstractmethod
-    def __call__(self, input: ArrayLike) -> Distribution:
+    def __call__(self, input: ArrayLike) -> PredDist:
         pass
 
     def mean(self, input: ArrayLike) -> Array:
@@ -43,4 +46,62 @@ class Surrogate(ABC):
     
 
 class RandomDistribution(ABC):
+
+    def log_density(self, input: ArrayLike) -> Distribution:
+        raise NotImplementedError
+    
+    def deterministic_approx(self, method: str) -> Distribution:
+        raise NotImplementedError
+    
+    def expected_posterior(self) -> Distribution:
+        raise NotImplementedError
+
+    def expected_unnormalized_posterior(self) -> Distribution:
+        raise NotImplementedError
+
+    def expected_
+
+
+class SurrogateDistribution(ABC):
+    """
+    This class represents a random probability distribution, where the
+    randomness stems from a Surrogate. A typical example is a
+    surrogate-based approximation to an underlying forward model or 
+    the log-density, which induces a random distribution.
+    """
+
+    @property
+    @abstractmethod
+    def surrogate(self) -> Surrogate:
+        pass
+
+    @surrogate.setter
+    @abstractmethod
+    def surrogate(self, value: Surrogate):
+        pass
+
+    def log_density(self, input: ArrayLike | PredDist) -> PredDist:
+        """
+        Returns Distribution representing the surrogate-based prediction
+        of the log-density at the input points `input`. If `input` is 
+        itself a Distribution, then it should be interpreted as the 
+        surrogate predictive distribution at those points, which prevents
+        re-computing the predictions if they have already been computed.
+        """
+        raise NotImplementedError
+        
+    def expected_surrogate_approx(self) -> Distribution:
+        raise NotImplementedError
+    
+    def expected_log_density_approx(self) -> Distribution:
+        raise NotImplementedError
+
+    def expected_normalized_density_approx(self) -> Distribution:
+        raise NotImplementedError
+    
+    def expected_density_approx(self) -> Distribution:
+        raise NotImplementedError
+
+
+class RandomDistributionExpectation(Distribution):
     pass
