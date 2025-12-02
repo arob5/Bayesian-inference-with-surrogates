@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Protocol, runtime_checkable, TypeAlias
 from jax.typing import ArrayLike
 import jax.numpy as jnp
 
@@ -9,7 +9,7 @@ Array = jnp.ndarray
 
 class Distribution(ABC):
     """
-    A lightweight distribution class that is sufficient for the experiments in
+    A minimal distribution class that is sufficient for the experiments in
     this paper. Uses basic shape/batch semantics: 
         - the event shape of the distribution is always a flat array, so is defined 
           by a single number, the dimension d (number of scalar elements in one value)
@@ -23,12 +23,12 @@ class Distribution(ABC):
 
     @property
     @abstractmethod
-    def support(self) -> tuple[tuple, tuple]:
+    def support(self) -> tuple[tuple, tuple] | None:
         """
         Should return tuple of the form lower, upper where lower and upper
         are each tuples of length `dim` giving the dimension-by-dimension
         lower and upper bounds, respectively. Should be `-jnp.inf` or 
-        `jnp.inf` for unbounded dimensions.
+        `jnp.inf` for unbounded dimensions. None is interpreted as unconstrained.
         """
         pass
 
@@ -59,7 +59,50 @@ class Distribution(ABC):
     def stdev(self) -> Array:
         """ Return marginal standard deviations of shape (d,) """
         return jnp.sqrt(self.variance)
+    
 
+@runtime_checkable
+class LogDensity(Protocol):
+    def __call__(self, x: ArrayLike) -> Array:
+        """ In: (n,d), Out: (n,)"""
+        pass
+
+
+class DistributionFromDensity(Distribution):
+    """
+    Convenience class for constructing a Distribution given its (unnormalized)
+    log density.
+    """
+    def __init__(self, 
+                 log_dens: LogDensity, 
+                 dim: int, 
+                 support: tuple[tuple, tuple] | None = None):
+        
+        if not isinstance(log_dens, LogDensity):
+            raise ValueError(f'DistributionFromDensity expects LogDensity, got {type(log_dens)}')
+        if not isinstance(dim, int):
+            raise ValueError(f'DistributionFromDensity expects integer dimension, got {type(dim)}')
+        
+        self._dim = dim
+        self._support = support
+        self._log_density = log_dens
+
+    def log_density(self, x: ArrayLike) -> Array:
+        return self._log_density(x)
+    
+    @property
+    def dim(self):
+        return self._dim
+
+    @property
+    def support(self):
+        return self._support
+
+
+# -----------------------------------------------------------------------------
+# Light wrappers around Distribution classes for high-level Bayesian
+# inverse problem API
+# -----------------------------------------------------------------------------
 
 class Prior(Distribution):
     """
@@ -73,15 +116,7 @@ class Prior(Distribution):
         """ Returns list of parameter names of length `self.dim` """
         pass
 
-class Likelihood(ABC):
-    @abstractmethod
-    def log_density(self, x: ArrayLike) -> Array:
-        """ In: (n,d), Out: (n,)"""
-        pass
-
-    def __call__(self, x: ArrayLike) -> Array:
-        return self.log_density(x)
-
+LogLikelihood: TypeAlias = LogDensity
 
 class Posterior(Distribution):
     """
@@ -89,25 +124,22 @@ class Posterior(Distribution):
     problem, defined by specifying a Prior and Likelihood.
     """
 
+    def __init__(self, prior: Prior, likelihood: LogLikelihood):
+        if not isinstance(prior, Prior):
+            raise ValueError(f'prior must be Prior, got {type(prior)}')
+        if not isinstance(likelihood, LogLikelihood):
+            raise ValueError(f'likelihood must be LogLikelihood/LogDensity, got {type(likelihood)}')
+
+        self.prior = prior
+        self.likelihood = likelihood
+
     def log_density(self, x: ArrayLike):
         return self.prior.log_density(x) + self.likelihood(x)
-
+    
     @property
-    @abstractmethod
-    def prior(self) -> Prior:
-        pass
-
+    def dim(self):
+        return self.prior.dim
+    
     @property
-    @abstractmethod
-    def likelihood(self) -> Likelihood:
-        pass
-
-    @prior.setter
-    @abstractmethod
-    def prior(self, value):
-        pass
-
-    @prior.setter
-    @abstractmethod
-    def prior(self, value):
-        pass
+    def support(self):
+        return self.prior.support

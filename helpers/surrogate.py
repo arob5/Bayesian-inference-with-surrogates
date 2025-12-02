@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Protocol, TypeAlias
+from collections.abc import Callable
 from jax.typing import ArrayLike
 import jax.numpy as jnp
 
-from inverse_problem import Distribution
+from inverse_problem import (
+    Distribution,
+    DistributionFromDensity,
+)
 
 Array: TypeAlias = jnp.ndarray
 
@@ -32,6 +36,19 @@ class Surrogate(ABC):
     def __call__(self, input: ArrayLike) -> PredDist:
         pass
 
+    @property
+    @abstractmethod
+    def input_dim(self) -> int:
+        pass
+
+    def sample_trajectory(self) -> Callable[[ArrayLike], Array]:
+        """ Returns a function representing a trajectory of the surrogate 
+        
+        The function should be vectorized so that it can be evaluated at (n,d)
+        input batches, giving the values of the surrogate trajectory at the n points.  
+        """
+        raise NotImplementedError('sample_trajectory() not implemented by Surrogate object.')
+
     def mean(self, input: ArrayLike) -> Array:
         return self(input).mean
     
@@ -44,30 +61,19 @@ class Surrogate(ABC):
     def stdev(self, input: ArrayLike) -> Array:
         return self(input).stdev
     
-
-class RandomDistribution(ABC):
-
-    def log_density(self, input: ArrayLike) -> Distribution:
-        raise NotImplementedError
     
-    def deterministic_approx(self, method: str) -> Distribution:
-        raise NotImplementedError
-    
-    def expected_posterior(self) -> Distribution:
-        raise NotImplementedError
-
-    def expected_unnormalized_posterior(self) -> Distribution:
-        raise NotImplementedError
-
-    def expected_
-
-
 class SurrogateDistribution(ABC):
     """
     This class represents a random probability distribution, where the
     randomness stems from a Surrogate. A typical example is a
     surrogate-based approximation to an underlying forward model or 
     the log-density, which induces a random distribution.
+
+    More formally, this class represents the random distribution:
+        pi(u; f) = p(u; f) / Z(f), Z(f) = int_u p(u; f) du
+    where f is a (random) surrogate. Therefore, the p(u; f), Z(f),
+    and pi(u; f) represent the random unnormalized density, random
+    normalizing constant, and random normalized density, respectively.
     """
 
     @property
@@ -75,9 +81,14 @@ class SurrogateDistribution(ABC):
     def surrogate(self) -> Surrogate:
         pass
 
-    @surrogate.setter
+    @property
     @abstractmethod
-    def surrogate(self, value: Surrogate):
+    def dim(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def support(self) -> tuple[tuple, tuple] | None:
         pass
 
     def log_density(self, input: ArrayLike | PredDist) -> PredDist:
@@ -90,18 +101,81 @@ class SurrogateDistribution(ABC):
         """
         raise NotImplementedError
         
+
+    def sample_trajectory(self) -> Distribution:
+        """ Returns a Distribution representing a trajectory of the random distribution 
+        
+        Since a SurrogateDistribution is a random distribution, a trajectory of a 
+        SurrogateDistribution is a deterministic Distribution. Subclasses will often 
+        implement this by sampling a log density trajectory and then returning a 
+        DistributionFromDensity. However, there may be other cases.
+        """
+        raise NotImplementedError('sample_trajectory() not implemented by SurrogateDistribution object.')
+
     def expected_surrogate_approx(self) -> Distribution:
         raise NotImplementedError
     
     def expected_log_density_approx(self) -> Distribution:
         raise NotImplementedError
-
-    def expected_normalized_density_approx(self) -> Distribution:
-        raise NotImplementedError
     
     def expected_density_approx(self) -> Distribution:
         raise NotImplementedError
+    
+    def expected_normalized_density_approx(self, method, **method_kwargs) -> Distribution:
+        raise NotImplementedError
+    
+    def _expected_normalized_imputation(self, 
+                                        n_trajectory: int = 100, 
+                                        n_samp_per_trajectory: int = 1):
+        # TODO: rewrite this in more efficient and JAX-friendly way.
+        # TODO: write DistributionFromSamples
+        raise NotImplementedError
 
 
-class RandomDistributionExpectation(Distribution):
-    pass
+class LogDensGPSurrogate(SurrogateDistribution):
+    """
+    A SurrogateDistribution defined by a Gaussian log-density surrogate.
+    Concretely, the random distribution is:
+        pi(u; f) = exp{f(u)} / Z(f), Z(f) = int_u exp{f(u)} du, where f(u) ~ N(m(u), C(u))
+
+    That is, f is a Gaussian process.
+    """
+
+    def __init__(self, log_dens: Surrogate):
+        if not isinstance(log_dens, Surrogate):
+            raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a Surrogate, got {type(log_dens)}')
+        self._surrogate = log_dens
+
+    @property
+    def surrogate(self):
+        return self._surrogate
+
+
+    def log_density(self, input: ArrayLike | PredDist) -> PredDist:
+        """ Surrogate predictions are log-density predictions """
+        if isinstance(input, PredDist):
+            return input
+        return self.surrogate(input)
+    
+
+    def expected_surrogate_approx(self) -> DistributionFromDensity:
+        """ Plug-in surrogate mean as log-density approximation. """
+        surrogate_mean = lambda x: self.surrogate.mean(x)
+
+        return DistributionFromDensity(log_dens=surrogate_mean,
+                                       dim=self.surrogate.input_dim)
+    
+
+    def expected_log_density_approx(self) -> DistributionFromDensity:
+        """ Surrogate is the log-density, so these two methods are equivalent. """
+        return self.expected_surrogate_approx()
+    
+
+    def expected_density_approx(self) -> Distribution:
+        """ Density surrogate exp{f(u)} is log-normal, so expectation is log-normal mean """
+        def log_expected_dens(x):
+            pred = self.surrogate(x)
+            return pred.mean + 0.5 * pred.variance
+        
+        return DistributionFromDensity(log_dens=log_expected_dens,
+                                       dim=self.surrogate.input_dim)
