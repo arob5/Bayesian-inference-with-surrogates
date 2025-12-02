@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bip-surrogates-paper"
 version = "0.1.0"
@@ -22,3 +26,8 @@ dependencies = [
 
 [project.urls]
 Source = "https://github.com/arob5/Bayesian-inference-with-surrogates.git"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["probpipe*",]
+exclude = ["tests*", "docs*", "papers*"]
