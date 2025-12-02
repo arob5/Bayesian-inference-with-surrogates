@@ -5,6 +5,7 @@ Defines the Bayesian inverse problem for the VSEM experiment.
 from __future__ import annotations
 
 import jax.numpy as jnp
+import jax.random as jr
 import matplotlib.pyplot as plt
 from typing import Protocol
 from numpyro.distributions import Uniform, MultivariateNormal
@@ -18,10 +19,6 @@ from uncprop.core.inverse_problem import (
     Array,
     PRNGKey,
 )
-
-import sys
-sys.path.append("./../linear_Gaussian/")
-from Gaussian import Gaussian
 
 
 # def sample_lhc(self, n=1):
@@ -63,8 +60,8 @@ class VSEMPrior(Prior):
     def __init__(self, par_names: list[str] | None = None):
         """ par_names defines the set of calibration parameters. """
         self._par_names = par_names or vsem.get_vsem_par_names()
-        low = jnp.array([dist.low for dist in self.dists])
-        high = jnp.array([dist.high for dist in self.dists])
+        low = jnp.array([dist.low for dist in self.dists.values()])
+        high = jnp.array([dist.high for dist in self.dists.values()])
         self._prior_rv = Uniform(low, high)
 
     @property
@@ -80,7 +77,7 @@ class VSEMPrior(Prior):
         return self._par_names
     
     @property
-    def support_bounds(self):
+    def support(self):
         return self._prior_rv.low, self._prior_rv.high
     
     def sample(self, key: PRNGKey, n: int = 1):
@@ -136,8 +133,8 @@ class VSEMLikelihood:
         self.lai_idx = vsem.get_vsem_output_names().index("lai")
         self.month_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
         month_stop_idx = jnp.empty_like(self.month_start_idx)
-        month_stop_idx[:-1] = self.month_start_idx[1:]
-        month_stop_idx[-1] = self.n_days - 1
+        month_stop_idx = month_stop_idx.at[:-1].set(self.month_start_idx[1:])
+        month_stop_idx = month_stop_idx.at[-1].set(self.n_days - 1)
         self.month_stop_idx = month_stop_idx
         self.month_midpoints = jnp.round(0.5 * (self.month_start_idx + self.month_stop_idx))
 
@@ -173,6 +170,9 @@ class VSEMLikelihood:
         self.y = self.observable_true + self.noise.sample(key_noise)
         self._likelihood_rv = MultivariateNormal(loc=self.y, covariance_matrix=self.noise.covariance_matrix)
         
+    def __call__(self, x):
+        return self.log_density(x)
+
     def plot_driver(self):
         plt.plot(self.time_steps, self.driver, "o")
         plt.xlabel("days")
@@ -186,7 +186,7 @@ class VSEMLikelihood:
     def obs_op(self, vsem_output):
         """ Observation operator: monthly averages of LAI """
         lai_output = vsem_output[:,:,self.lai_idx]
-        monthly_lai_averages = np.array(
+        monthly_lai_averages = jnp.array(
             [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.month_start_idx, self.month_stop_idx)]
         )        
 
@@ -194,10 +194,18 @@ class VSEMLikelihood:
     
     def log_density(self, x):
         pred_obs = self.par_to_obs_map(x)
-        return self._likelihood_rv.log_p(pred_obs)
-
+        return self._likelihood_rv.log_prob(pred_obs)
+    
     def log_density_upper_bound(self, x):
-        return self._likelihood_rv.logdet
+        """The log of the determinant term in the Gaussian density. 
+        log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)}.
+
+        This term also represents an upper bound on the log density.
+        """
+        dim_times_two_pi = self.n * jnp.log(2.0 * jnp.pi)
+        L = self._likelihood_rv.scale_tril
+        log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
+        return -0.5 * (dim_times_two_pi + log_det_cov)
 
     def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
         output = self.forward_model(par)
@@ -216,96 +224,5 @@ class VSEMLikelihood:
         lai_ax.plot(self.month_midpoints, self.y, "o", color="red")
 
         return fig
-
-
-class InvProb:
-
-    def __init__(self, rng, prior: Prior, likelihood: Likelihood, sampler=None, **sampler_kwargs):
-        self.rng = rng
-        self.prior = prior
-        self.likelihood = likelihood
-        self.dim = int(self.prior.dim)
-        self.par_names = prior.par_names
-        self.sampler = self._set_default_sampler(**sampler_kwargs) if sampler is None else sampler
-        self.posterior = None 
-
-    def log_posterior_density(self, x: Array) -> Array:
-        return self.prior.log_density(x) + self.likelihood.log_density(x)
     
-    def _set_default_sampler(self, proposal_cov: Array | None = None, **kwargs):
-        """ Defaults to Metropolis-Hastings. """
-        
-        if proposal_cov is None:
-            proposal_cov = np.identity(self.dim)
-
-        # Extended state space. Initialize state via prior sample.
-        state = State(primary={"u": self.prior.sample()})
-
-        # Target density.
-        post_log_dens = lambda state: self.log_posterior_density(state.primary["u"])
-        target = TargetDensity(LogDensityTerm("post", post_log_dens))
-
-        # Metropolis-Hastings kernel with Gaussian proposal.
-        mh_kernel = GaussMetropolisKernel(target, proposal_cov=proposal_cov, rng=self.rng)
-
-        # Sampler
-        sampler = BlockMCMCSampler(target, initial_state=state, kernels=mh_kernel, rng=self.rng)
-        return sampler
     
-
-    def sample_posterior(self, n_step: int, burn_in_start: int | None = None, 
-                         sampler_kwargs=None, plot_kwargs=None):
-        """
-        Runs MCMC sampler, collects samples, and drops burn-in. Returns
-        `n_samp` samples after burn-in. Default burn-in is to take second
-        half of samples.
-        """
-        if sampler_kwargs is None:
-            sampler_kwargs = {}
-        if plot_kwargs is None:
-            plot_kwargs = {}
-
-        self.sampler.sample(num_steps=n_step, **sampler_kwargs)
-
-        # Store samples in array.
-        burn_in_start = burn_in_start or round(n_step / 2)
-        itr_range = np.arange(burn_in_start, len(self.sampler.trace))
-        n_samp = len(itr_range)
-        samp = np.empty((n_samp, self.dim))
-
-        for samp_idx, trace_idx in enumerate(itr_range):
-            samp[samp_idx,:] = self.sampler.trace[trace_idx].primary["u"]
-
-        return samp, self.get_trace_plot(samp, **plot_kwargs)
-
-    def reset_sampler(self):
-        self.sampler.reset()
-
-    def get_trace_plot(self, samp, nrows=1, ncols=None, col_labs=None, figsize=(5,4), plot_kwargs=None):
-        n_itr, n_cols = samp.shape
-        x = np.arange(n_itr)
-
-        if plot_kwargs is None:
-            plot_kwargs = {}
-
-        if ncols is None:
-            ncols = int(np.ceil(n_cols / nrows))
-
-        if col_labs is None:
-            col_labs = self.par_names
-
-        fig, axs = plt.subplots(nrows, ncols, figsize=(figsize[0]*ncols, figsize[1]*nrows))
-        axs = np.array(axs).reshape(-1)
-        for col in range(n_cols):
-            ax = axs[col]
-            ax.plot(x, samp[:,col], **plot_kwargs)
-            ax.set_title(col_labs[col])
-            ax.set_xlabel("Iteration")
-            ax.set_ylabel("Value")
-
-        # Hide unused axes and close figure.
-        for k in range(n_cols, nrows*ncols):
-            fig.delaxes(axs[k])
-        plt.close(fig)
-
-        return fig
