@@ -7,7 +7,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from typing import Protocol
-from numpyro.distributions import Uniform
+from numpyro.distributions import Uniform, MultivariateNormal
 from scipy.stats import qmc
 
 from uncprop.models.vsem import vsem_jax as vsem
@@ -112,14 +112,20 @@ class VSEMLikelihood:
     Defined to conform to the LogDensity protocol. 
     """
 
-    def __init__(self, rng, n_days, par_names, ground_truth=None):
+    def __init__(self,
+                 key: PRNGKey,
+                 n_days: int, 
+                 par_names: list[str], 
+                 ground_truth: dict[str, float] | None = None):
         """
         If provided, `ground_truth` is a dictionary of all VSEM parameters that 
         will be treated as the ground truth. 
         """
-        self.rng = rng
+        # independent subkeys for simulating driver / sampling noise realization
+        key_driver, key_noise = jr.split(key, 2)
+
         self.n_days = n_days
-        self.time_steps, self.driver = vsem.get_vsem_driver(self.n_days, self.rng)
+        self.time_steps, self.driver = vsem.simulate_vsem_driver(key_driver, self.n_days)
         self.par_names = par_names
         self.d = len(par_names)
 
@@ -128,24 +134,24 @@ class VSEMLikelihood:
 
         # Observation operator defined as monthly averages of LAI.
         self.lai_idx = vsem.get_vsem_output_names().index("lai")
-        self.month_start_idx = np.arange(start=0, stop=self.n_days, step=31)
-        month_stop_idx = np.empty_like(self.month_start_idx)
+        self.month_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
+        month_stop_idx = jnp.empty_like(self.month_start_idx)
         month_stop_idx[:-1] = self.month_start_idx[1:]
         month_stop_idx[-1] = self.n_days - 1
         self.month_stop_idx = month_stop_idx
-        self.month_midpoints = np.round(0.5 * (self.month_start_idx + self.month_stop_idx))
+        self.month_midpoints = jnp.round(0.5 * (self.month_start_idx + self.month_stop_idx))
 
         # Ground truth
         if ground_truth is None:
             self._all_par_true = {
-                "kext": 0.85, # 7.92301322e-01,
+                "kext": 0.85,
                 "lar": 1.86523322e+00,
                 "lue": 6.84170991e-04,
                 "gamma": 5.04967614e-01,
                 "tauv": 2.95868049e+03,
                 "taus": 2.58846896e+04,
                 "taur": 1.77011520e+03,
-                "av": 0.85, # 6.88359631e-01,
+                "av": 0.85,
                 "veg_init": 3.04573410e+00,
                 "soil_init": 2.11415896e+01,
                 "root_init": 5.58376223e+00
@@ -153,20 +159,19 @@ class VSEMLikelihood:
         else:
             self._all_par_true = ground_truth
 
-        self.par_true = np.array([self._all_par_true[par] for par in self.par_names])
+        self.par_true = jnp.array([self._all_par_true[par] for par in self.par_names])
         
         # VSEM forward model.
         self.forward_model = vsem.build_vectorized_partial_forward_model(self.driver, self.par_names,
                                                                          par_default=self._all_par_true)
 
-        # self.par_true = vsem.DefaultVSEMPrior(rng=self.rng).sample().flatten()
         self.vsem_output_true = self.forward_model(self.par_true)
         self.observable_true = self.obs_op(self.vsem_output_true).flatten()
-        self.n = self.observable_true.size
-        self._sigma = 0.1 * np.std(self.observable_true)
-        self.noise = Gaussian(cov=self._sigma * np.identity(self.n))
-        self.y = self.observable_true + self.noise.sample()
-        self._likelihood_rv = Gaussian(mean=self.y, cov=self.noise.cov)
+        self.n = self.observable_true.shape[0]
+        self._sigma = 0.1 * jnp.std(self.observable_true)
+        self.noise = MultivariateNormal(covariance_matrix=(self._sigma**2) * jnp.identity(self.n))
+        self.y = self.observable_true + self.noise.sample(key_noise)
+        self._likelihood_rv = MultivariateNormal(loc=self.y, covariance_matrix=self.noise.covariance_matrix)
         
     def plot_driver(self):
         plt.plot(self.time_steps, self.driver, "o")

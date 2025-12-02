@@ -14,10 +14,11 @@ from collections.abc import Sequence, Callable, Mapping
 import numpy as np
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 from jax import tree_util, lax
 import matplotlib.pyplot as plt
 
-Array = jnp.ndarray
+Array = jnp.ndarray | jax.Array
 
 # -----------------------------------------------------------------------------
 # Canonical parameter / output names
@@ -422,18 +423,16 @@ def get_default_prior_bounds() -> dict[str, tuple[float, float]]:
     }
 
 
-def get_vsem_driver(n_days, rng=None):
-    # Generates a synthetic time series at a daily time step that is supposed to
-    # emulate photosynthetically active radiation (PAR) data. This time series is
-    # intended for use as the model driver/forcing term of the VSEM ODE.
-    # rng is a Numpy Random Generator object.
-
-    if rng is None:
-        rng = np.random.default_rng()
-
-    time_steps = np.arange(n_days)
-    PAR = 10 * np.abs(np.sin(time_steps/365 * np.pi) + 0.25 * rng.normal(size=n_days))
-    return time_steps, PAR
+def simulate_vsem_driver(key, n_days: int) -> tuple[Array, Array]:
+    """     
+    Generates a synthetic time series at a daily time step that is supposed to
+    emulate photosynthetically active radiation (PAR) data. This time series is
+    intended for use as the model driver/forcing term of the VSEM ODE.
+    rng is a Numpy Random Generator object. 
+    """
+    time_steps = jnp.arange(n_days)
+    driver = 10 * jnp.abs(jnp.sin(time_steps/365 * jnp.pi) + 0.25 * jr.normal(key, n_days))
+    return time_steps, driver
 
 
 # -----------------------------------------------------------------------------
