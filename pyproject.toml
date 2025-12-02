@@ -27,6 +27,11 @@ dependencies = [
 [project.urls]
 Source = "https://github.com/arob5/Bayesian-inference-with-surrogates.git"
 
+[project.optional-dependencies]
+docs = [
+    "ipykernel>=7.1.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["uncprop*",]

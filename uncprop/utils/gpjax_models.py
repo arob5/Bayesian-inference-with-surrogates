@@ -1,4 +1,11 @@
 # gpjax_models.py
+"""
+Convenience functions for constructing the Gaussian process (GP) models used
+in experiments. These functions set reasonable bounds on hyperparameters based
+on the design data, deviating from gpjax defaults. This guards against 
+pathological behavior during hyperparameter optimization; e.g., setting really
+small or large lengthscales that are not informed by the data.
+"""
 from __future__ import annotations
 
 import jax.numpy as jnp
@@ -37,6 +44,9 @@ def construct_design(design_method, n_design, prior, f):
 
 
 def construct_gp(design, set_bounds=True):
+    """
+    Returns GP conjugate posterior object. Does not perform hyperparameter tuning.
+    """
 
     # prior mean
     constant_param = gpx.parameters.Real(value=design.y.mean())
@@ -64,24 +74,37 @@ def construct_gp(design, set_bounds=True):
     return gp_posterior, bijection
 
 
-def train_gp_hyperpars(self):
-    starting_mll = -gpx.objectives.conjugate_mll(self.gp_untuned_posterior, self.design)
+def train_gp_hyperpars(model, bijection, design, max_iters: int = 400):
+    """ Returns updated gp object with optimized hyperparameters, and optimization info. """
 
-    gp_posterior, history = gpx.fit_scipy(
-        model=self.gp_untuned_posterior,
-        objective=lambda p, d: -gpx.objectives.conjugate_mll(p, d),
-        train_data=self.design,
-        trainable=gpx.parameters.Parameter,
-    )
+    starting_loss = -gpx.objectives.conjugate_mll(model, design)
 
-    ending_mll = -gpx.objectives.conjugate_mll(gp_posterior, self.design)
-    opt_info = {"starting_mll": starting_mll,
-                "ending_mll": ending_mll,
-                "history": history}
-    return gp_posterior, opt_info
+    model, final_loss = gpx.fit_lbfgs(
+                            model=model,
+                            objective=lambda p, d: -gpx.objectives.conjugate_mll(p, d),
+                            train_data=design,
+                            params_bijection=bijection,
+                            trainable=Parameter,
+                            max_iters=max_iters,
+                            safe=True
+                        )
     
+    ending_mll = -gpx.objectives.conjugate_mll(model, design)
+    print(ending_mll)
+    opt_info = {'starting_loss': starting_loss,
+                'final_loss': final_loss}
 
+    return model, opt_info
+
+    
 def _set_bound_constraints(model, design):
+    """
+    Places interval bounds on kernel lengthscales and variance, and likelihood
+    standard deviation. These represent fairly conservative bounds based on 
+    the design points to avoid pathological optimized values that are not
+    informed by the data.
+    """
+
     X_stats = _get_distance_stats_from_design(design)
     y_sd = design.y.std()
     
@@ -92,16 +115,34 @@ def _set_bound_constraints(model, design):
     }
 
     # hard-coding this for now, but this should be automated with validation
-    model.likelihood.obs_stddev.tag = 'likelihood_std_dev'
-    model.prior.kernel.lengthscale.tag = 'kernel_lengthscale'
-    model.prior.kernel.variance.tag = 'kernel_variance'
+    model.likelihood.obs_stddev.set_metadata(tag='likelihood_std_dev')
+    model.prior.kernel.lengthscale.set_metadata(tag='kernel_lengthscale')
+    model.prior.kernel.variance.set_metadata(tag='kernel_variance')
 
     noise_sd_low = model.prior.jitter
     noise_sd_high = jnp.maximum(0.01 * y_sd, noise_sd_low * 2)
-
     likelihood_std_dev_bij= _make_interval_bijector(noise_sd_low, noise_sd_high)
-    kernel_lengthscale_bij = _make_interval_bijector(X_stats['min'], X_stats['max'])
-    kernel_variance_bij = _make_interval_bijector((0.1 * y_sd)**2, (2 * y_sd)**2)
+
+    l_low, l_high = X_stats['min'], X_stats['max']
+    kernel_lengthscale_bij = _make_interval_bijector(l_low, l_high)
+
+    var_low, var_high = (0.1 * y_sd)**2, (2 * y_sd)**2
+    kernel_variance_bij = _make_interval_bijector(var_low, var_high)
+
+    # ensure that initial values satisfy bounds. Only explicitly doing this for 
+    # likelihood std dev; the defaults in train_gp_hyperpars
+    noise_sd = model.likelihood.obs_stddev.get_value()
+    if jnp.any(jnp.less_equal(noise_sd, noise_sd_low)) or jnp.any(jnp.greater_equal(noise_sd, noise_sd_high)):
+        noise_sd = 0.5 * (noise_sd_low + noise_sd_high)
+        model.likelihood.obs_stddev.set_value(noise_sd)
+    
+    ls = model.prior.kernel.lengthscale.get_value()
+    if jnp.any(jnp.less_equal(ls, l_low)) or jnp.any(jnp.greater_equal(ls, l_high)):
+        raise ValueError('initial lengthscale value(s) fall outside of bounds.')
+
+    ker_var = model.prior.kernel.variance.get_value()
+    if jnp.any(jnp.less_equal(ker_var, var_low)) or jnp.any(jnp.greater_equal(ker_var, var_high)):
+        raise ValueError('initial kernel variance value falls outside of bounds.')
 
     # create updated bijection
     bijection = dict(DEFAULT_BIJECTION)
