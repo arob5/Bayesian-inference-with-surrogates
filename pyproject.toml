@@ -29,5 +29,5 @@ Source = "https://github.com/arob5/Bayesian-inference-with-surrogates.git"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["probpipe*",]
-exclude = ["tests*", "docs*", "papers*"]
+include = ["uncprop*",]
+exclude = ["tests*", "docs*", "papers*", "experiments*", "output*", "scripts*",]

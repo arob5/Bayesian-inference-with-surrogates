@@ -31,4 +31,6 @@ figures/
 ## Jupyter
 **.ipynb_checkpoints**
 
+## Python packaging
+*.egg-info/
 
