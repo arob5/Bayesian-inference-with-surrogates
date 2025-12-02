@@ -1,137 +1,116 @@
-# experiments/vsem/inverse_problem.py
+# uncprob/models/vsem/inverse_problem.py
+"""
+Defines the Bayesian inverse problem for the VSEM experiment.
+"""
 from __future__ import annotations
 
-import numpy as np
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from numpy.typing import NDArray
 from typing import Protocol
-from scipy.stats import uniform, qmc
+from numpyro.distributions import Uniform
+from scipy.stats import qmc
 
-import vsem_jax as vsem
-
-from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
-from modmcmc.kernels import GaussMetropolisKernel
-
+from uncprop.models.vsem import vsem_jax as vsem
+from uncprop.core.inverse_problem import (
+    Prior,
+    LogLikelihood,
+    Posterior,
+    Array,
+    PRNGKey,
+)
 
 import sys
 sys.path.append("./../linear_Gaussian/")
 from Gaussian import Gaussian
 
 
-Array = NDArray
+# def sample_lhc(self, n=1):
+#     """ Latin hypercube sampling """
+#     lhc = qmc.LatinHypercube(d=self.dim)
 
-class Prior(Protocol):
-    rng: np.random.Generator
+#     # Samples unit hypercube [0, 1)^d
+#     samp = lhc.random(n=n)
+
+#     # Scale based on prior bounds
+#     l, u = self.support_bounds
+#     samp = qmc.scale(samp, l, u)
+
+#     return samp
+
+
+class VSEMPrior(Prior):
+    """
+    The VSEM prior primarily represents the prior distribution over the VSEM 
+    parameters that will be calibrated in the experiment. However, it also stores
+    `_dists`, which defines the prior over all VSEM parameters. Additional methods
+    beyond the standard Prior interface provide access to this extended prior.
+    """
+
+    _dists = {
+        "kext": Uniform(0.4, 1.0),
+        "lar" : Uniform(0.2, 3.0),
+        "lue" : Uniform(5e-04, 4e-03),
+        "gamma": Uniform(2e-01, 6e-01),
+        "tauv": Uniform(5e+02, 3e+03),
+        "taus": Uniform(4e+03, 5e+04),
+        "taur": Uniform(5e+02, 3e+03), 
+        "av": Uniform(0.4, 1.0),
+        "veg_init": Uniform(0.0, 10.0), 
+        "soil_init": Uniform(0.0, 30.0),
+        "root_init": Uniform(0.0, 10.0)
+    }
+
+    def __init__(self, par_names: list[str] | None = None):
+        """ par_names defines the set of calibration parameters. """
+        self._par_names = par_names or vsem.get_vsem_par_names()
+        low = jnp.array([dist.low for dist in self.dists])
+        high = jnp.array([dist.high for dist in self.dists])
+        self._prior_rv = Uniform(low, high)
 
     @property
-    def dim(self) -> int:
-        ...
+    def dists(self):
+        return {par: self._dists[par] for par in self._par_names}
 
-    def sample(self, n: int = 1) -> Array:
-        """ Out: (n,d)"""
-        ...
+    @property
+    def dim(self):
+        return len(self._par_names)
+    
+    @property
+    def par_names(self):
+        return self._par_names
+    
+    @property
+    def support_bounds(self):
+        return self._prior_rv.low, self._prior_rv.high
+    
+    def sample(self, key: PRNGKey, n: int = 1):
+        return self._prior_rv.sample(key, sample_shape=(n,))
 
-    def log_density(self, x: Array) -> Array:
-        """ In: (n,d), Out: (n,)"""
-        ...
-
-class Likelihood(Protocol):
-    def log_density(self, x: Array) -> Array:
-        """ In: (n,d), Out: (n,)"""
-        ...
-
-
-def _uniform(lower, upper):
-    """
-    Wrapper for scipy.stats.Uniform that parameterizes in terms of lower and
-    upper bounds instead of (loc, scale).
-    """
-    return uniform(loc=lower, scale=upper-lower)
-
-
-class VSEMPrior:
-        _dists = {
-            "kext": _uniform(0.4, 1.0), # _uniform(0.2, 1.0),
-            "lar" : _uniform(0.2, 3.0),
-            "lue" : _uniform(5e-04, 4e-03),
-            "gamma": _uniform(2e-01, 6e-01),
-            "tauv": _uniform(5e+02, 3e+03),
-            "taus": _uniform(4e+03, 5e+04),
-            "taur": _uniform(5e+02, 3e+03), 
-            "av": _uniform(0.4, 1.0), # _uniform(2e-01, 1.0),
-            "veg_init": _uniform(0.0, 10.0), 
-            "soil_init": _uniform(0.0, 30.0),
-            "root_init": _uniform(0.0, 10.0)
-        }
-
-        def __init__(self, par_names=None, rng=None):
-            self.rng = rng or np.random.default_rng()
-            self._par_names = par_names or vsem.get_vsem_par_names()
-
-        @property
-        def dists(self):
-            return {par: self._dists[par] for par in self._par_names}
-
-        @property
-        def dim(self):
-            return len(self._par_names)
+    def log_density(self, x):
+        # TODO: Uniform doesnt throw error or return -Inf if value is outside of support.
+        #       should maybe manually check for this case.
         
-        @property
-        def par_names(self):
-            return self._par_names
-        
-        @property
-        def support_bounds(self):
-            dists = [self.dists[nm] for nm in self.par_names]
-            lower = [dist.support()[0] for dist in dists]
-            upper = [dist.support()[1] for dist in dists]
-            return lower, upper
-        
-        def sample(self, n=1):
-            samp = np.empty((n, self.dim))
-            for j in range(self.dim):
-                par_name = self._par_names[j]
-                samp[:,j] = self.dists[par_name].rvs(n, random_state=self.rng)
+        l = self._prior_rv.log_prob(x)
 
-            return samp[0] if n == 1 else samp
+        # sum over batch axis
+        return jnp.sum(l, axis=tuple(range(-1, 0)))
+    
+    def sample_all_vsem_params(self, key: PRNGKey):
+        """
+        Return dictionary representing a single sample from all of the parameters, 
+        not just the calibration parameters.
+        """
+        samp = {}
+        for par_name, prior in self._dists.items():
+            samp[par_name] = prior.sample(key)
 
-        def sample_lhc(self, n=1):
-            """ Latin hypercube sampling """
-            lhc = qmc.LatinHypercube(d=self.dim)
-
-            # Samples unit hypercube [0, 1)^d
-            samp = lhc.random(n=n)
-
-            # Scale based on prior bounds
-            l, u = self.support_bounds
-            samp = qmc.scale(samp, l, u)
-
-            return samp
-
-        def log_density(self, x):
-            x = np.asarray(x)
-            if x.ndim == 1:
-                x = x.reshape(1, -1)
-
-            log_dens = np.zeros(x.shape[0])
-            for par_idx, par_name in enumerate(self._par_names):
-                log_dens = log_dens + self.dists[par_name].logpdf(x[:,par_idx])
-            
-            return log_dens
-        
-        def simulate_ground_truth(self):
-            """
-            Return dictionary representing a sample from all of the parameters, 
-            not just the calibration parameters.
-            """
-            par = {}
-            for par_name, prior in self._dists.items():
-                par[par_name] = prior.rvs(1, random_state=self.rng)[0]
-
-            return par
+        return samp
 
 
 class VSEMLikelihood:
+    """
+    Defined to conform to the LogDensity protocol. 
+    """
 
     def __init__(self, rng, n_days, par_names, ground_truth=None):
         """

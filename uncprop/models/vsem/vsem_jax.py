@@ -1,11 +1,15 @@
 """
 vsem_jax.py
 JAX implementation of the Very Simple Ecosystem Model (VSEM).
+
+See BayesianTools R package:
+    https://search.r-project.org/CRAN/refmans/BayesianTools/html/VSEM.html
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Sequence, Callable, Mapping, Any
+from typing import Any
+from collections.abc import Sequence, Callable, Mapping
 
 import numpy as np
 import jax

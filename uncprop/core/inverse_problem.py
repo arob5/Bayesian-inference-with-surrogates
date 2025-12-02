@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable, TypeAlias
+from typing import Protocol, runtime_checkable, TypeAlias, Any
 from jax.typing import ArrayLike
 import jax.numpy as jnp
 
 Array = jnp.ndarray
+PRNGKey = Any
 
 class Distribution(ABC):
     """
@@ -32,7 +33,7 @@ class Distribution(ABC):
         """
         pass
 
-    def sample(self, n: int = 1) -> Array:
+    def sample(self, key: PRNGKey, n: int = 1) -> Array:
         """ Out: (n,d)"""
         raise NotImplementedError('sample() not implemented for distribution object.')
 
