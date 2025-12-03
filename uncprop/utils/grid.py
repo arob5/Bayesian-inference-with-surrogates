@@ -14,13 +14,112 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable
 
 from jax.scipy.special import logsumexp
 from jax.lax import cumlogsumexp
 
 from jax.typing import ArrayLike
 Array = jnp.ndarray
+
+
+class Grid:
+
+    def __init__(self,
+                 low: ArrayLike,
+                 high: ArrayLike,
+                 n_points_per_dim: ArrayLike,
+                 dim_names: list[str] | None):
+        low = jnp.asarray(low).ravel()
+        high = jnp.asarray(high).ravel()
+        n_points_per_dim = jnp.asarray(n_points_per_dim, dtype=int).ravel()
+
+        n_dims = len(low)
+        if (len(high) != n_dims) or (len(n_points_per_dim) != n_dims):
+            raise ValueError('low, high, and n_points_per_dim must have equal length.')
+        
+        if dim_names is None:
+            dim_names = [f'x{i}' for i in range(n_dims)]
+        else:
+            if len(dim_names) != n_dims:
+                raise ValueError(f'dim_names must have length equal to n_dims = f{n_dims}')
+
+        # list of coordinates for each dimension
+        coords = [
+            jnp.linspace(l, h, n) for (l, h, n) in zip(low, high, n_points_per_dim)
+        ]
+
+        # two grid representations
+        grid_arrays = jnp.meshgrid(*coords, indexing='xy')
+        flat_grid = jnp.stack([a.ravel() for a in grid_arrays], axis=-1)
+
+        # grid spacing
+        dx = (high - low) / (n_points_per_dim - 1)
+
+        self.low = low
+        self.high = high
+        self.n_points_per_dim = n_points_per_dim
+        self.dx = dx
+        self.dim_names = dim_names
+        self.grid_arrays = grid_arrays
+        self.flat_grid = flat_grid
+
+    @property
+    def cell_area(self):
+        return jnp.prod(self.dx)
+    
+    @property
+    def n_points(self):
+        return jnp.prod(self.n_points_per_dim)
+    
+    @property
+    def n_dims(self):
+        return len(self.n_points_per_dim)
+    
+    def plot(self, 
+             f: Callable | None = None,
+             z: ArrayLike | None = None):
+        """
+        Visualize function values at grid points. Values must either be specified 
+        directly via `z`, or a function `f` must be supplied and the values 
+        obtained via `f(flat_grid)`.
+        """
+        
+        if not ((f is None) ^ (z is None)):
+            raise ValueError('Exactly one of f and z must be provided.')
+        if z is None:
+            z = f(self.flat_grid)
+
+        # Ensure that z is a flat array of length equal to grid length
+        z = jnp.asarray(z).ravel()
+        if z.shape[0] != self.n_points:
+            raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
+
+        if self.n_dims == 2:
+            return self._plot_2d(z)
+        else:
+            raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
+        
+    def _plot_2d(self, z):
+        assert self.n_dims == 2
+
+        X, Y = self.grid_arrays
+        Z = z.reshape(X.shape)
+        fig, ax = plot_2d_heatmap(X, Y, Z, self.dim_names)
+
+        return fig, ax
+
+
+def plot_2d_heatmap(X, Y, Z, dim_names):
+    fig, ax = plt.subplots()
+
+    # pcolormesh expects X, Y, Z of shape (ny, nx)
+    pcm = ax.pcolormesh(X, Y, Z, shading='auto')
+    fig.colorbar(pcm, ax=ax)
+    ax.set_xlabel(dim_names[0])
+    ax.set_ylabel(dim_names[1])
+
+    return fig, ax
 
 
 def normalize_density_over_grid(logp: Array, 
