@@ -1,37 +1,58 @@
-# experiments/test/linear_Gaussian/surrogate.py
+# uncprop/models/vsem/surrogate.py
 from __future__ import annotations
 
-import numpy as np
-import matplotlib.pyplot as plt
-
-from collections.abc import Iterable
-from numpy.typing import NDArray
-from typing import Protocol, Optional
-from scipy.stats import norm
-from math import ceil
-
 import jax.numpy as jnp
-import jax.random as jr
-import gpjax as gpx
-from flax import nnx
+from gpjax import Dataset
+from numpyro.distributions import MultivariateNormal
 
-from inverse_problem import InvProb
-from grid_utils import (
-    normalize_over_grid,
-    coverage_curve_grid, 
-    logsumexp, 
-    kl_grid,
-)
-
-import sys
-sys.path.append("./../linear_Gaussian/")
-from Gaussian import Gaussian
-
-sys.path.append("./../../helpers/")
-from distribution_utils import ClippedGaussian
+from uncprop.core.surrogate import Surrogate, PredDist
+from uncprop.core.inverse_problem import Posterior, ArrayLike
+from uncprop.utils.gpjax_models import construct_gp, train_gp_hyperpars
 
 
-Array = NDArray
+class VSEMSurrogate(Surrogate):
+
+    def __init__(self, 
+                 design: Dataset,
+                 exact_posterior: Posterior,
+                 gp_train_args: dict | None = None):
+        
+        if design.in_dim != exact_posterior.dim:
+            raise ValueError(f'Design and posterior dim mismatch: {design.in_dim } vs {exact_posterior.dim}')
+        if gp_train_args is None:
+            gp_train_args = {}
+        
+        gp_untuned, bijection = construct_gp(design, set_bounds=True)
+        gp, opt_info = train_gp_hyperpars(gp_untuned, bijection, design, **gp_train_args)
+
+        self.design = design
+        self.gp = gp
+        self._gp_untuned = gp_untuned
+        self._opt_info = opt_info
+        self._input_dim = exact_posterior.dim
+
+    def __call__(self, input: ArrayLike) -> PredDist:
+        """ Convert gpjax Gaussian to a pure numpyro Gaussian """
+        pred_latent = self.gp(input, train_data=self.design)
+        pred = self.gp.likelihood(pred_latent)
+        return pred
+
+    @property
+    def input_dim(self) -> int:
+        return self._input_dim
+    
+    def summarize_fit(self):
+        start_loss = self._opt_info['starting_loss']
+        end_loss = self._opt_info['final_loss']
+        gp_scale = jnp.sqrt(self.gp.prior.kernel.variance.get_value())
+        gp_ls = self.gp.prior.kernel.lengthscale.get_value()
+        gp_noise_sd = self.gp.likelihood.obs_stddev.get_value()
+
+        print(f'Initial loss {start_loss}')
+        print(f'Final loss {end_loss}')
+        print(f'gp scale: {gp_scale}')
+        print(f'gp lengthscales: {gp_ls}')
+        print(f'gp noise std dev: {gp_noise_sd}')
 
 
 class VSEMTest:

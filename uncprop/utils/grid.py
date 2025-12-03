@@ -78,7 +78,8 @@ class Grid:
     
     def plot(self, 
              f: Callable | None = None,
-             z: ArrayLike | None = None):
+             z: ArrayLike | None = None,
+             title: str | None = None):
         """
         Visualize function values at grid points. Values must either be specified 
         directly via `z`, or a function `f` must be supplied and the values 
@@ -96,21 +97,23 @@ class Grid:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
         if self.n_dims == 2:
-            return self._plot_2d(z)
+            return self._plot_2d(z, title=title)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
-    def _plot_2d(self, z):
+    def _plot_2d(self, z, title=None):
         assert self.n_dims == 2
 
         X, Y = self.grid_arrays
         Z = z.reshape(X.shape)
-        fig, ax = plot_2d_heatmap(X, Y, Z, self.dim_names)
+        fig, ax = plot_2d_heatmap(X, Y, Z, 
+                                  dim_names=self.dim_names,
+                                  title=title)
 
         return fig, ax
 
 
-def plot_2d_heatmap(X, Y, Z, dim_names):
+def plot_2d_heatmap(X, Y, Z, dim_names, title=None):
     fig, ax = plt.subplots()
 
     # pcolormesh expects X, Y, Z of shape (ny, nx)
@@ -118,6 +121,7 @@ def plot_2d_heatmap(X, Y, Z, dim_names):
     fig.colorbar(pcm, ax=ax)
     ax.set_xlabel(dim_names[0])
     ax.set_ylabel(dim_names[1])
+    ax.set_title(title)
 
     return fig, ax
 

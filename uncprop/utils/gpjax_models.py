@@ -13,34 +13,13 @@ import jax.random as jr
 import gpjax as gpx
 from flax import nnx
 import numpyro.distributions.transforms as npt
+from collections.abc import Callable
 
 from gpjax.parameters import (
     Parameter,
     transform,
     DEFAULT_BIJECTION,
 )
-
-
-def construct_design(design_method, n_design, prior, f):
-    """
-    Sample design inputs from prior, then evaluate target function f to
-    construct design outputs. Return design as gpjax Dataset object.
-    """
-
-    if design_method == 'lhc':
-        x_design = prior.sample_lhc(n_design)
-    elif design_method == 'uniform':
-        x_design = prior.sample(n_design)
-    else:
-        raise ValueError(f'Invalid design method {design_method}')
-
-    x_design = jnp.asarray(x_design)
-    y_design = jnp.asarray(f(x_design))
-
-    if y_design.ndim < 2:
-        y_design = y_design.reshape(-1, 1)
-
-    return gpx.Dataset(X=x_design, y=y_design)
 
 
 def construct_gp(design, set_bounds=True):
@@ -90,7 +69,6 @@ def train_gp_hyperpars(model, bijection, design, max_iters: int = 400):
                         )
     
     ending_mll = -gpx.objectives.conjugate_mll(model, design)
-    print(ending_mll)
     opt_info = {'starting_loss': starting_loss,
                 'final_loss': final_loss}
 

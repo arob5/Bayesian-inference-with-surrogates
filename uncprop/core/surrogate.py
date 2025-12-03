@@ -5,16 +5,47 @@ from typing import Protocol, TypeAlias
 from collections.abc import Callable
 from jax.typing import ArrayLike
 import jax.numpy as jnp
+from gpjax import Dataset
+from numpyro.distributions import Distribution as NumpyroDistribution
 
-from inverse_problem import (
+from uncprop.core.inverse_problem import (
     Distribution,
     DistributionFromDensity,
+    Prior,
+    PRNGKey
 )
 
 Array: TypeAlias = jnp.ndarray
 
 # predictive distribution of a surrogate at set of inputs
-PredDist: TypeAlias = Distribution
+PredDist: TypeAlias = Distribution | NumpyroDistribution
+
+
+def construct_design(key: PRNGKey,
+                     design_method: str, 
+                     n_design: int, 
+                     prior: Prior, 
+                     f: Callable) -> Dataset:
+    """ Construct design (training) data for training a surrogate
+
+    Sample design inputs from prior, then evaluate target function f to
+    construct design outputs. Return design as gpjax Dataset object.
+    """
+
+    if design_method == 'lhc':
+        x_design = prior.sample_lhc(key, n_design)
+    elif design_method == 'uniform':
+        x_design = prior.sample(key, n_design)
+    else:
+        raise ValueError(f'Invalid design method {design_method}')
+
+    x_design = jnp.asarray(x_design)
+    y_design = jnp.asarray(f(x_design))
+
+    if y_design.ndim < 2:
+        y_design = y_design.reshape(-1, 1)
+
+    return Dataset(X=x_design, y=y_design)
 
 
 class Surrogate(ABC):

@@ -4,6 +4,7 @@ Defines the Bayesian inverse problem for the VSEM experiment.
 """
 from __future__ import annotations
 
+import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
@@ -19,20 +20,6 @@ from uncprop.core.inverse_problem import (
     Array,
     PRNGKey,
 )
-
-
-# def sample_lhc(self, n=1):
-#     """ Latin hypercube sampling """
-#     lhc = qmc.LatinHypercube(d=self.dim)
-
-#     # Samples unit hypercube [0, 1)^d
-#     samp = lhc.random(n=n)
-
-#     # Scale based on prior bounds
-#     l, u = self.support_bounds
-#     samp = qmc.scale(samp, l, u)
-
-#     return samp
 
 
 class VSEMPrior(Prior):
@@ -102,6 +89,21 @@ class VSEMPrior(Prior):
             samp[par_name] = prior.sample(key)
 
         return samp
+    
+    def sample_lhc(self, key: PRNGKey, n: int = 1):
+        """ Latin hypercube sampling """
+        rng_key = _numpy_rng_seed_from_jax_key(key)
+        rng = np.random.default_rng(seed=rng_key)
+        lhc = qmc.LatinHypercube(d=self.dim, rng=rng)
+
+        # Samples unit hypercube [0, 1)^d
+        samp = lhc.random(n=n)
+
+        # Scale based on prior bounds
+        l, u = self.support
+        samp = qmc.scale(samp, l, u)
+
+        return jnp.asarray(samp)
 
 
 class VSEMLikelihood:
@@ -226,3 +228,5 @@ class VSEMLikelihood:
         return fig
     
     
+def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
+    return int(jr.randint(key, (), 0, 2**63 - 1))
