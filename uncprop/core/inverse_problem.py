@@ -2,8 +2,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable, TypeAlias, Any
+from collections.abc import Callable
 from jax.typing import ArrayLike
 import jax.numpy as jnp
+import jax.random as jr
+
+from uncprop.core.samplers import (
+    init_nuts_kernel,
+    mcmc_loop,
+    stack_dict_arrays,
+)
 
 Array = jnp.ndarray
 PRNGKey = Any
@@ -144,3 +152,23 @@ class Posterior(Distribution):
     @property
     def support(self):
         return self.prior.support
+    
+    def _get_log_density_function(self) -> Callable:
+        """
+        Returns a callable JAX-compatible log-density, suitable for passing 
+        to blackbox sampling algorithms. Note that the default implmentation 
+        simply returns `self.log_density`. Subclasses will often want to override 
+        to apply change of variables adjustment to transform to unconstrained space.
+        """
+        return lambda x: self.log_density(x)
+    
+    def sample(self, key: PRNGKey, n: int = 1, **kwargs) -> Array:
+        """ Default sampling method: NUTS """
+        key_init_position, key_init_kernel, key_sample = jr.split(key, 3)
+        logdensity = self._get_log_density_function()
+        initial_position = self.prior.sample(key_init_position).ravel()
+        initial_position = dict(zip(initial_position, self.prior.par_names))
+        init_state, kernel = init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs)
+        states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
+
+        return stack_dict_arrays(states.position)

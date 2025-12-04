@@ -75,8 +75,10 @@ class Experiment:
         """Top-level execution of the experiment
         
         Typically will iterate over each replicate and call `run_replicate()`.
+        May write to file/return results, or Replicate may be in charge of I/O.
         """
         pass
             
 
-class PosteriorComparison:
+class PosteriorComparison(Replicate):
+    pass
