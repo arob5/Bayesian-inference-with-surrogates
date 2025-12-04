@@ -18,7 +18,7 @@ import jax.random as jr
 from jax import tree_util, lax
 import matplotlib.pyplot as plt
 
-Array = jnp.ndarray | jax.Array
+from uncprop.custom_types import Array
 
 # -----------------------------------------------------------------------------
 # Canonical parameter / output names

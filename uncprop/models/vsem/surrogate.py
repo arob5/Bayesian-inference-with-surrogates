@@ -5,8 +5,9 @@ import jax.numpy as jnp
 from gpjax import Dataset
 from numpyro.distributions import MultivariateNormal
 
+from uncprop.custom_types import ArrayLike
 from uncprop.core.surrogate import Surrogate, PredDist
-from uncprop.core.inverse_problem import Posterior, ArrayLike
+from uncprop.core.inverse_problem import Posterior
 from uncprop.utils.gpjax_models import construct_gp, train_gp_hyperpars
 
 

@@ -15,11 +15,7 @@ from blackjax.base import (
     Info,
 )
 
-from uncprop.core.inverse_problem import (
-    PRNGKey, 
-    Array,
-    ArrayLike,
-)
+from uncprop.custom_types import Array, PRNGKey, ArrayLike
 
 
 def mcmc_loop(key: PRNGKey, 

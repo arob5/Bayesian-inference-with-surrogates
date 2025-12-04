@@ -10,10 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import jax.random as jr
-
-from uncprop.core.inverse_problem import (
-    PRNGKey
-)
+from uncprop.custom_types import PRNGKey
 
 
 class Replicate:

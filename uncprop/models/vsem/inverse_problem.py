@@ -3,6 +3,8 @@
 Defines the Bayesian inverse problem for the VSEM experiment.
 """
 from __future__ import annotations
+from dataclasses import dataclass
+from collections.abc import Callable
 
 import numpy as np
 import jax.numpy as jnp
@@ -12,14 +14,107 @@ from typing import Protocol
 from numpyro.distributions import Uniform, MultivariateNormal
 from scipy.stats import qmc
 
+from uncprop.custom_types import Array, PRNGKey
 from uncprop.models.vsem import vsem_jax as vsem
 from uncprop.core.inverse_problem import (
     Prior,
     LogLikelihood,
     Posterior,
-    Array,
-    PRNGKey,
 )
+
+
+@dataclass
+class VSEMLikelihoodInfo:
+    driver: Array
+    par_names: list[str]
+    window_mask: Array
+    window_lens: Array
+    output_idx: int
+    noise_cov: Array
+
+@dataclass
+class VSEMGroundTruth:
+    driver: Array
+    all_params: dict[str, float]
+    vsem_output: Array
+    observable: Array
+
+@dataclass
+class VSEMObservedData:
+    obs_noise_key: PRNGKey
+    obs: Array
+
+
+     # calibration parameters
+   #  all_param_names = vsem.get_vsem_par_names()
+   #  param_idx = [all_param_names.index(par) for par in par_names]   
+
+
+def obs_op(vsem_output: Array, lik_info: VSEMLikelihoodInfo):
+    """ Observation operator: window averages of LAI """
+    output_idx = lik_info.output_idx
+    mask = lik_info.window_mask
+    window_lens = lik_info.window_lens
+
+    lai_output = vsem_output[:,:,output_idx].T # (n_days, n_ensemble)
+    lai_window_sums = mask @ lai_output # (n_windows, n_ensemble)
+    lai_window_means = lai_window_sums.T / window_lens # (n_ensemble, n_windows) 
+
+    return lai_window_means
+
+
+def define_vsem_likelihood(driver: Array,
+                           par_names: list[str],
+                           noise_cov: Array,
+                           window_len: int = 30):
+    """
+    Returns data defining the likelihood model. The likelihood is assumed
+    to be of the form N(y | G(u), noise_cov), where G is the composition
+    of the VSEM forward model with an observation operator. The observation
+    operator maps to window means of leaf area index (LAI) (default montly means).
+    """
+    
+    # create windows for averaging
+    n_days = len(driver)
+    window_start_idx = jnp.arange(0, n_days, window_len)
+    window_stop_idx = window_start_idx + window_len
+    n_windows = len(window_start_idx)
+
+    if window_stop_idx[-1] != n_days:
+        raise ValueError('last entry of window_stop_idx should equal n_days.')
+    if len(window_start_idx) != noise_cov.shape[0]:
+        raise ValueError('noise_cov dimension should equal number of windows')
+
+    # mask of shape (n_windows, n_days); ones mark days in window
+    window_mask = jnp.vstack(
+        [jnp.concatenate([jnp.zeros(start), jnp.ones(end-start+1), jnp.zeros(n_days-(end+1))])
+         for start, end in zip(window_start_idx, window_stop_idx)]
+    )
+    window_lens = jnp.sum(window_mask, axis=1)
+
+    # Observation operator defined as windowly averages of LAI.
+    vsem_output_idx = vsem.get_vsem_output_names().index('lai')
+
+    return VSEMLikelihoodInfo(driver=driver,
+                              par_names=par_names,
+                              window_mask=window_mask,
+                              window_lens=window_lens,
+                              output_idx=vsem_output_idx,
+                              noise_cov=noise_cov)
+
+
+# def simulate_observations_with_intermediates(key: PRNGKey,
+#                                              param: Array,
+#                                              forward_model: Callable,
+#                                              obs_op: Callable,
+#                                              driver: Array,
+#                                              noise_cov_tril: Array):
+#     param = jnp.asarray(param).ravel()
+#     vsem_output = forward_model(param)
+#     observable = obs_op(vsem_output)
+#     noise_realization = jr.normal(key, shape=())
+
+#     observations = noise_cov_tril.
 
 
 class VSEMPrior(Prior):
@@ -113,7 +208,8 @@ class VSEMLikelihood:
 
     def __init__(self,
                  key: PRNGKey,
-                 n_days: int, 
+                 time_steps: Array,
+                 driver: Array, 
                  par_names: list[str], 
                  ground_truth: dict[str, float] | None = None):
         """
@@ -123,22 +219,32 @@ class VSEMLikelihood:
         # independent subkeys for simulating driver / sampling noise realization
         key_driver, key_noise = jr.split(key, 2)
 
-        self.n_days = n_days
+        time_steps = jnp.asarray(time_steps).ravel()
+        driver = jnp.asarray(driver).ravel()
+    
+        n_days = time_steps.shape[0]
+        if driver.shape[0] != n_days:
+            raise ValueError(f'time_steps and driver length mismatch: {time_steps[0]} vs {driver[0]}')
+
         self.time_steps, self.driver = vsem.simulate_vsem_driver(key_driver, self.n_days)
+
+        self.n_days = n_days
+        self.driver = driver
+        self.time_steps = time_steps
         self.par_names = par_names
         self.d = len(par_names)
 
         all_par_names = vsem.get_vsem_par_names()
         self._par_idx = [all_par_names.index(par) for par in self.par_names]
 
-        # Observation operator defined as monthly averages of LAI.
+        # Observation operator defined as windowly averages of LAI.
         self.lai_idx = vsem.get_vsem_output_names().index("lai")
-        self.month_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
-        month_stop_idx = jnp.empty_like(self.month_start_idx)
-        month_stop_idx = month_stop_idx.at[:-1].set(self.month_start_idx[1:])
-        month_stop_idx = month_stop_idx.at[-1].set(self.n_days - 1)
-        self.month_stop_idx = month_stop_idx
-        self.month_midpoints = jnp.round(0.5 * (self.month_start_idx + self.month_stop_idx))
+        self.window_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
+        window_stop_idx = jnp.empty_like(self.window_start_idx)
+        window_stop_idx = window_stop_idx.at[:-1].set(self.window_start_idx[1:])
+        window_stop_idx = window_stop_idx.at[-1].set(self.n_days - 1)
+        self.window_stop_idx = window_stop_idx
+        self.window_midpoints = jnp.round(0.5 * (self.window_start_idx + self.window_stop_idx))
 
         # Ground truth
         if ground_truth is None:
@@ -186,13 +292,13 @@ class VSEMLikelihood:
         return self.obs_op(vsem_output)
 
     def obs_op(self, vsem_output):
-        """ Observation operator: monthly averages of LAI """
+        """ Observation operator: windowly averages of LAI """
         lai_output = vsem_output[:,:,self.lai_idx]
-        monthly_lai_averages = jnp.array(
-            [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.month_start_idx, self.month_stop_idx)]
+        windowly_lai_averages = jnp.array(
+            [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.window_start_idx, self.window_stop_idx)]
         )        
 
-        return monthly_lai_averages.T
+        return windowly_lai_averages.T
     
     def log_density(self, x):
         pred_obs = self.par_to_obs_map(x)
@@ -215,7 +321,7 @@ class VSEMLikelihood:
 
         if include_predicted_obs:
             pred_obs = self.obs_op(output)
-            axs[self.lai_idx].plot(self.month_midpoints, pred_obs.T, "o", color="red")
+            axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, "o", color="red")
 
         return fig
     
@@ -223,7 +329,7 @@ class VSEMLikelihood:
         fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
 
         lai_ax = axs[self.lai_idx]
-        lai_ax.plot(self.month_midpoints, self.y, "o", color="red")
+        lai_ax.plot(self.window_midpoints, self.y, "o", color="red")
 
         return fig
     

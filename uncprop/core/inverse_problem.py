@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable, TypeAlias, Any
 from collections.abc import Callable
-from jax.typing import ArrayLike
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -13,8 +12,8 @@ from uncprop.core.samplers import (
     stack_dict_arrays,
 )
 
-Array = jnp.ndarray
-PRNGKey = Any
+from uncprop.custom_types import Array, PRNGKey, ArrayLike
+
 
 class Distribution(ABC):
     """
@@ -159,15 +158,24 @@ class Posterior(Distribution):
         to blackbox sampling algorithms. Note that the default implmentation 
         simply returns `self.log_density`. Subclasses will often want to override 
         to apply change of variables adjustment to transform to unconstrained space.
+        prior.log_density and likelihood must be jitable for the returned function
+        to be jitable.
         """
-        return lambda x: self.log_density(x)
+        prior_logp = self.prior.log_density # bound method
+        lik = self.likelihood               # callable
+
+        def logp(x):
+            return prior_logp(x) + lik(x)
+
+        return logp
+
     
     def sample(self, key: PRNGKey, n: int = 1, **kwargs) -> Array:
         """ Default sampling method: NUTS """
         key_init_position, key_init_kernel, key_sample = jr.split(key, 3)
         logdensity = self._get_log_density_function()
         initial_position = self.prior.sample(key_init_position).ravel()
-        initial_position = dict(zip(initial_position, self.prior.par_names))
+        initial_position = dict(zip(self.prior.par_names, initial_position))
         init_state, kernel = init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs)
         states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
 

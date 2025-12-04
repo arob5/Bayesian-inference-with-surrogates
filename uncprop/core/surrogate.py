@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol, TypeAlias
 from collections.abc import Callable
-from jax.typing import ArrayLike
 import jax.numpy as jnp
 from gpjax import Dataset
 from numpyro.distributions import Distribution as NumpyroDistribution
@@ -12,10 +11,9 @@ from uncprop.core.inverse_problem import (
     Distribution,
     DistributionFromDensity,
     Prior,
-    PRNGKey
 )
 
-Array: TypeAlias = jnp.ndarray
+from uncprop.custom_types import Array, PRNGKey, ArrayLike
 
 # predictive distribution of a surrogate at set of inputs
 PredDist: TypeAlias = Distribution | NumpyroDistribution
