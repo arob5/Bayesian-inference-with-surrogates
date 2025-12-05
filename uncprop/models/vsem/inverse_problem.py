@@ -123,9 +123,27 @@ class DataRealization:
     """
     obs_key: PRNGKey
     data_generating_process: DataGeneratingProcess
-    forward_output: Array
-    observable: Array
-    observation: Array
+
+    def __post_init__(self):
+        # parameter to vsem output
+        param = self.data_generating_process.vsem_params
+        driver = self.data_generating_process.driver
+        vsem_input = vsem.make_vsem_input_from_named(param, driver, param)
+        vsem_output = vsem.solve_vsem_jax(vsem_input)[jnp.newaxis] # obs_op expects vectorized output
+
+        # output to observable
+        obs_op = self.data_generating_process.observation_operator_info.observation_operator
+        observable = obs_op(vsem_output).ravel()
+
+        # observable to observation
+        L = self.data_generating_process.noise_cov_tril
+        noise_realization = _sample_gaussian_tril(self.obs_key, L).ravel()
+        observation = observable + noise_realization
+
+        self.vsem_output = vsem_output
+        self.observable = observable
+        self.noise_realization = noise_realization
+        self.observation = observation
 
      # calibration parameters
    #  all_param_names = vsem.get_vsem_par_names()
@@ -182,59 +200,6 @@ def define_vsem_observation_operator(num_days: int,
         window_lens=window_lens,
         output_idx=vsem_output_idx
     )
-
-
-def define_vsem_likelihood(driver: Array,
-                           par_names: list[str],
-                           noise_cov: Array,
-                           window_len: int = 30):
-    '''
-    Returns data defining the likelihood model. The likelihood is assumed
-    to be of the form N(y | G(u), noise_cov), where G is the composition
-    of the VSEM forward model with an observation operator. The observation
-    operator maps to window means of leaf area index (LAI) (default montly means).
-    '''
-    
-    # create windows for averaging
-    n_days = len(driver)
-    window_start_idx = jnp.arange(0, n_days, window_len)
-    window_stop_idx = window_start_idx + window_len
-    n_windows = len(window_start_idx)
-
-    if int(window_stop_idx[-1]) != int(n_days):
-        raise ValueError(f'last entry of window_stop_idx should equal n_days = {n_days}.' 
-                         f' Got {window_stop_idx[-1]}.')
-    if len(window_start_idx) != noise_cov.shape[0]:
-        raise ValueError(f'noise_cov dimension should equal number of windows = {n_windows}'
-                         f' Got {noise_cov.shape[0]}.')
-
-    # mask of shape (n_windows, n_days); ones mark days in window
-    window_mask = jnp.vstack(
-        [jnp.concatenate([jnp.zeros(start), jnp.ones(end-start), jnp.zeros(n_days-end)])
-         for start, end in zip(window_start_idx, window_stop_idx)]
-    )
-    window_lens = jnp.sum(window_mask, axis=1)
-
-    # Observation operator defined as windowly averages of LAI.
-    vsem_output_idx = vsem.get_vsem_output_names().index('lai')
-
-    # Lower Cholesky factor of noise covariance
-
-
-
-    return VSEMLikelihoodInfo(driver=driver,
-                              par_names=par_names,
-                              window_mask=window_mask,
-                              window_lens=window_lens,
-                              output_idx=vsem_output_idx,
-                              noise_cov_tril=noise_cov)
-
-    driver_seed: PRNGKey
-    driver: Array
-    vsem_params: dict[str, float]
-    forward_model: Callable
-    observation_operator: Callable
-    noise_cov_tril: Array
 
 
 
@@ -469,3 +434,9 @@ class VSEMLikelihood:
     
 def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
     return int(jr.randint(key, (), 0, 2**63 - 1))
+
+def _sample_gaussian_tril(key: PRNGKey, L: Array, n: int = 1):
+    """Return n samples from N(0, LL^T). Out shape: (n, d)"""
+    d = L.shape[0]
+    samp = L @ jr.normal(key, shape=(d,n))
+    return samp.T

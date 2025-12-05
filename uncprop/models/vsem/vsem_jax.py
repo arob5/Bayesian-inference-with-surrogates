@@ -308,7 +308,6 @@ def make_vsem_input_from_named(par_named: Mapping[str, Any],
                                par_default: Mapping[str, float] | None = None) -> VSEMInput:
     """Convenience to create a VSEMInput from a (possibly partial) named parameter dict."""
     param = par_vector_from_named_dict(par_named, par_default)
-    # initial_condition extracted from param to match the user's access pattern
     initial = VSEMInitialCondition(param.veg_init, param.soil_init, param.root_init)
     driver_jnp = jnp.asarray(driver)
     return VSEMInput(param=param, initial_condition=initial, driver=driver_jnp)
