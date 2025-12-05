@@ -1,7 +1,7 @@
 # uncprob/models/vsem/inverse_problem.py
-"""
+'''
 Defines the Bayesian inverse problem for the VSEM experiment.
-"""
+'''
 from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -22,57 +22,164 @@ from uncprop.core.inverse_problem import (
     Posterior,
 )
 
+VSEM_DEFAULT_PARAMS = {
+    'kext': 0.85,
+    'lar': 1.86523322e+00,
+    'lue': 6.84170991e-04,
+    'gamma': 5.04967614e-01,
+    'tauv': 2.95868049e+03,
+    'taus': 2.58846896e+04,
+    'taur': 1.77011520e+03,
+    'av': 0.85,
+    'veg_init': 3.04573410e+00,
+    'soil_init': 2.11415896e+01,
+    'root_init': 5.58376223e+00
+}
+
+
+VSEM_DEFAULT_PRIORS = {
+    'kext': Uniform(0.4, 1.0),
+    'lar' : Uniform(0.2, 3.0),
+    'lue' : Uniform(5e-04, 4e-03),
+    'gamma': Uniform(2e-01, 6e-01),
+    'tauv': Uniform(5e+02, 3e+03),
+    'taus': Uniform(4e+03, 5e+04),
+    'taur': Uniform(5e+02, 3e+03), 
+    'av': Uniform(0.4, 1.0),
+    'veg_init': Uniform(0.0, 10.0), 
+    'soil_init': Uniform(0.0, 30.0),
+    'root_init': Uniform(0.0, 10.0)
+}
+
 
 @dataclass
-class VSEMLikelihoodInfo:
-    driver: Array
-    par_names: list[str]
+class ObservationOperatorInfo:
+    """Stores the observation operator and intermediate quantities
+    
+    The intermediate quantities define the structure of the observation operator,
+    and are primarily helpful for plotting. The observation operator is assumed
+    to be of the form "compute window averages of one of the VSEM outputs"
+    (e.g., monthly averages of LAI).
+    """
+    observation_operator: Callable
     window_mask: Array
     window_lens: Array
     output_idx: int
-    noise_cov: Array
+
 
 @dataclass
-class VSEMGroundTruth:
+class DataGeneratingProcess:
+    """Ground truth data generating process.
+    
+    Assumes an additive Gaussian noise model. `noise_cov_tril` is the lower 
+    Cholesky factor of the Gaussian noise.
+    """
+    driver_seed: PRNGKey
     driver: Array
-    all_params: dict[str, float]
-    vsem_output: Array
-    observable: Array
+    vsem_params: dict[str, float]
+    observation_operator_info: ObservationOperatorInfo
+    noise_cov_tril: Array
+
 
 @dataclass
-class VSEMObservedData:
-    obs_noise_key: PRNGKey
-    obs: Array
+class CalibrationModel:
+    """The model used for the data generating process when calibrating parameters
+    
+    This includes specification of calibration parameters (VSEM parameters that will
+    be learned from data) and "fixed parameters". `vsem_params` defines the defaults
+    for all VSEM parameters - the parameters specified in `calibration_params` will
+    override the defaults, and the remaining parameters will be fixed at the specified
+    default values. The `forward_model` is a map from the calibration parameters to
+    VSEM outputs (as defined by `build_vectorized_partial_forward_model()`). 
+    The observation operator is a map from VSEM outputs to an observable quantity.
+    """
+    driver: Array
+    vsem_params: dict[str, float]
+    calibration_params: list[str]
+    forward_model: Callable
+    observation_operator_info: ObservationOperatorInfo
+    noise_cov_tril: Array
 
+
+@dataclass
+class DataRealization:
+    """Stores observed data and intermediate quantities
+    
+    Intermediate quantities are the VSEM forward model output and the observable
+    (output of the observation operator before adding noise).
+    """
+    obs_seed: PRNGKey
+    data_generating_process: DataGeneratingProcess
+    forward_output: Array
+    observable: Array
+    observation: Array
 
      # calibration parameters
    #  all_param_names = vsem.get_vsem_par_names()
    #  param_idx = [all_param_names.index(par) for par in par_names]   
 
 
-def obs_op(vsem_output: Array, lik_info: VSEMLikelihoodInfo):
+def obs_op_window_means(vsem_output: Array,
+                        output_idx: int,
+                        window_mask: Array,
+                        window_lens: Array):
     """ Observation operator: window averages of LAI """
-    output_idx = lik_info.output_idx
-    mask = lik_info.window_mask
-    window_lens = lik_info.window_lens
 
     lai_output = vsem_output[:,:,output_idx].T # (n_days, n_ensemble)
-    lai_window_sums = mask @ lai_output # (n_windows, n_ensemble)
+    lai_window_sums = window_mask @ lai_output # (n_windows, n_ensemble)
     lai_window_means = lai_window_sums.T / window_lens # (n_ensemble, n_windows) 
 
     return lai_window_means
+
+
+def define_vsem_observation_operator(num_days: int, 
+                                     window_len: int = 30,
+                                     vsem_output_var: str = 'lai'):
+    
+    # create windows for averaging
+    window_start_idx = jnp.arange(0, num_days, window_len)
+    window_stop_idx = window_start_idx + window_len
+    n_windows = len(window_start_idx)
+
+    if int(window_stop_idx[-1]) != int(num_days):
+        raise ValueError(f'last entry of window_stop_idx should equal n_days = {num_days}.' 
+                         f' Got {window_stop_idx[-1]}.')
+
+    # mask of shape (n_windows, n_days); ones mark days in window
+    window_mask = jnp.vstack(
+        [jnp.concatenate([jnp.zeros(start), jnp.ones(end-start), jnp.zeros(num_days-end)])
+         for start, end in zip(window_start_idx, window_stop_idx)]
+    )
+    window_lens = jnp.sum(window_mask, axis=1)
+
+    # Observation operator defined as windowly averages of an VSEM output variable.
+    vsem_output_idx = vsem.get_vsem_output_names().index(vsem_output_var)
+
+    # JAX compatible closure
+    def obs_op(vsem_output):
+        return obs_op_window_means(vsem_output=vsem_output,
+                                   output_idx=vsem_output_idx,
+                                   window_mask=window_mask,
+                                   window_lens=window_lens)
+
+    return ObservationOperatorInfo(
+        observation_operator=obs_op,
+        window_mask=window_mask,
+        window_lens=window_lens,
+        output_idx=vsem_output_idx
+    )
 
 
 def define_vsem_likelihood(driver: Array,
                            par_names: list[str],
                            noise_cov: Array,
                            window_len: int = 30):
-    """
+    '''
     Returns data defining the likelihood model. The likelihood is assumed
     to be of the form N(y | G(u), noise_cov), where G is the composition
     of the VSEM forward model with an observation operator. The observation
     operator maps to window means of leaf area index (LAI) (default montly means).
-    """
+    '''
     
     # create windows for averaging
     n_days = len(driver)
@@ -97,12 +204,42 @@ def define_vsem_likelihood(driver: Array,
     # Observation operator defined as windowly averages of LAI.
     vsem_output_idx = vsem.get_vsem_output_names().index('lai')
 
+    # Lower Cholesky factor of noise covariance
+
+
+
     return VSEMLikelihoodInfo(driver=driver,
                               par_names=par_names,
                               window_mask=window_mask,
                               window_lens=window_lens,
                               output_idx=vsem_output_idx,
-                              noise_cov=noise_cov)
+                              noise_cov_tril=noise_cov)
+
+    driver_seed: PRNGKey
+    driver: Array
+    vsem_params: dict[str, float]
+    forward_model: Callable
+    observation_operator: Callable
+    noise_cov_tril: Array
+
+
+
+def simulate_vsem_ground_truth(key: PRNGKey,
+                               driver: Array,
+                               noise_cov_tril: Array,
+                               vsem_true_params: dict[str, float] = VSEM_DEFAULT_PARAMS):
+
+
+
+
+
+class VSEMGroundTruth:
+    driver: Array
+    all_params: dict[str, float]
+    vsem_output: Array
+    observable: Array
+
+
 
 
 # def simulate_observations_with_intermediates(key: PRNGKey,
@@ -120,29 +257,18 @@ def define_vsem_likelihood(driver: Array,
 
 
 class VSEMPrior(Prior):
-    """
+    '''
     The VSEM prior primarily represents the prior distribution over the VSEM 
     parameters that will be calibrated in the experiment. However, it also stores
     `_dists`, which defines the prior over all VSEM parameters. Additional methods
     beyond the standard Prior interface provide access to this extended prior.
-    """
+    '''
 
-    _dists = {
-        "kext": Uniform(0.4, 1.0),
-        "lar" : Uniform(0.2, 3.0),
-        "lue" : Uniform(5e-04, 4e-03),
-        "gamma": Uniform(2e-01, 6e-01),
-        "tauv": Uniform(5e+02, 3e+03),
-        "taus": Uniform(4e+03, 5e+04),
-        "taur": Uniform(5e+02, 3e+03), 
-        "av": Uniform(0.4, 1.0),
-        "veg_init": Uniform(0.0, 10.0), 
-        "soil_init": Uniform(0.0, 30.0),
-        "root_init": Uniform(0.0, 10.0)
-    }
+    # dictionary of marginals for all VSEM parameters
+    _dists = VSEM_DEFAULT_PRIORS
 
     def __init__(self, par_names: list[str] | None = None):
-        """ par_names defines the set of calibration parameters. """
+        ''' par_names defines the set of calibration parameters. '''
         self._par_names = par_names or vsem.get_vsem_par_names()
         low = jnp.array([dist.low for dist in self.dists.values()])
         high = jnp.array([dist.high for dist in self.dists.values()])
@@ -177,10 +303,10 @@ class VSEMPrior(Prior):
         return jnp.sum(l, axis=tuple(range(-1, 0)))
     
     def sample_all_vsem_params(self, key: PRNGKey):
-        """
+        '''
         Return dictionary representing a single sample from all of the parameters, 
         not just the calibration parameters.
-        """
+        '''
         samp = {}
         for par_name, prior in self._dists.items():
             samp[par_name] = prior.sample(key)
@@ -188,7 +314,7 @@ class VSEMPrior(Prior):
         return samp
     
     def sample_lhc(self, key: PRNGKey, n: int = 1):
-        """ Latin hypercube sampling """
+        ''' Latin hypercube sampling '''
         rng_key = _numpy_rng_seed_from_jax_key(key)
         rng = np.random.default_rng(seed=rng_key)
         lhc = qmc.LatinHypercube(d=self.dim, rng=rng)
@@ -204,9 +330,9 @@ class VSEMPrior(Prior):
 
 
 class VSEMLikelihood:
-    """
+    '''
     Defined to conform to the LogDensity protocol. 
-    """
+    '''
 
     def __init__(self,
                  key: PRNGKey,
@@ -214,10 +340,10 @@ class VSEMLikelihood:
                  driver: Array, 
                  par_names: list[str], 
                  ground_truth: dict[str, float] | None = None):
-        """
+        '''
         If provided, `ground_truth` is a dictionary of all VSEM parameters that 
         will be treated as the ground truth. 
-        """
+        '''
         # independent subkeys for simulating driver / sampling noise realization
         key_driver, key_noise = jr.split(key, 2)
 
@@ -240,7 +366,7 @@ class VSEMLikelihood:
         self._par_idx = [all_par_names.index(par) for par in self.par_names]
 
         # Observation operator defined as windowly averages of LAI.
-        self.lai_idx = vsem.get_vsem_output_names().index("lai")
+        self.lai_idx = vsem.get_vsem_output_names().index('lai')
         self.window_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
         window_stop_idx = jnp.empty_like(self.window_start_idx)
         window_stop_idx = window_stop_idx.at[:-1].set(self.window_start_idx[1:])
@@ -251,17 +377,17 @@ class VSEMLikelihood:
         # Ground truth
         if ground_truth is None:
             self._all_par_true = {
-                "kext": 0.85,
-                "lar": 1.86523322e+00,
-                "lue": 6.84170991e-04,
-                "gamma": 5.04967614e-01,
-                "tauv": 2.95868049e+03,
-                "taus": 2.58846896e+04,
-                "taur": 1.77011520e+03,
-                "av": 0.85,
-                "veg_init": 3.04573410e+00,
-                "soil_init": 2.11415896e+01,
-                "root_init": 5.58376223e+00
+                'kext': 0.85,
+                'lar': 1.86523322e+00,
+                'lue': 6.84170991e-04,
+                'gamma': 5.04967614e-01,
+                'tauv': 2.95868049e+03,
+                'taus': 2.58846896e+04,
+                'taur': 1.77011520e+03,
+                'av': 0.85,
+                'veg_init': 3.04573410e+00,
+                'soil_init': 2.11415896e+01,
+                'root_init': 5.58376223e+00
             }
         else:
             self._all_par_true = ground_truth
@@ -284,9 +410,9 @@ class VSEMLikelihood:
         return self.log_density(x)
 
     def plot_driver(self):
-        plt.plot(self.time_steps, self.driver, "o")
-        plt.xlabel("days")
-        plt.ylabel("PAR")
+        plt.plot(self.time_steps, self.driver, 'o')
+        plt.xlabel('days')
+        plt.ylabel('PAR')
         plt.show()
 
     def par_to_obs_map(self, par):
@@ -294,7 +420,7 @@ class VSEMLikelihood:
         return self.obs_op(vsem_output)
 
     def obs_op(self, vsem_output):
-        """ Observation operator: windowly averages of LAI """
+        ''' Observation operator: windowly averages of LAI '''
         lai_output = vsem_output[:,:,self.lai_idx]
         windowly_lai_averages = jnp.array(
             [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.window_start_idx, self.window_stop_idx)]
@@ -307,11 +433,11 @@ class VSEMLikelihood:
         return self._likelihood_rv.log_prob(pred_obs)
     
     def log_density_upper_bound(self, x):
-        """The log of the determinant term in the Gaussian density. 
+        '''The log of the determinant term in the Gaussian density. 
         log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)}.
 
         This term also represents an upper bound on the log density.
-        """
+        '''
         dim_times_two_pi = self.n * jnp.log(2.0 * jnp.pi)
         L = self._likelihood_rv.scale_tril
         log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
@@ -323,7 +449,7 @@ class VSEMLikelihood:
 
         if include_predicted_obs:
             pred_obs = self.obs_op(output)
-            axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, "o", color="red")
+            axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, 'o', color='red')
 
         return fig
     
@@ -331,7 +457,7 @@ class VSEMLikelihood:
         fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
 
         lai_ax = axs[self.lai_idx]
-        lai_ax.plot(self.window_midpoints, self.y, "o", color="red")
+        lai_ax.plot(self.window_midpoints, self.y, 'o', color='red')
 
         return fig
     
