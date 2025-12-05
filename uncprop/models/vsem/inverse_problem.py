@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
 
+import jax
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
@@ -74,7 +75,7 @@ class DataGeneratingProcess:
     Assumes an additive Gaussian noise model. `noise_cov_tril` is the lower 
     Cholesky factor of the Gaussian noise.
     """
-    driver_seed: PRNGKey
+    driver_key: PRNGKey
     driver: Array
     vsem_params: dict[str, float]
     observation_operator_info: ObservationOperatorInfo
@@ -89,16 +90,28 @@ class CalibrationModel:
     be learned from data) and "fixed parameters". `vsem_params` defines the defaults
     for all VSEM parameters - the parameters specified in `calibration_params` will
     override the defaults, and the remaining parameters will be fixed at the specified
-    default values. The `forward_model` is a map from the calibration parameters to
-    VSEM outputs (as defined by `build_vectorized_partial_forward_model()`). 
+    default values. The `forward_model`, which is a map from the calibration parameters to
+    VSEM outputs, is build by `build_vectorized_partial_forward_model()`. 
     The observation operator is a map from VSEM outputs to an observable quantity.
     """
     driver: Array
     vsem_params: dict[str, float]
     calibration_params: list[str]
-    forward_model: Callable
     observation_operator_info: ObservationOperatorInfo
     noise_cov_tril: Array
+
+    def __post_init__(self):
+        forward_model = vsem.build_vectorized_partial_forward_model(driver=self.driver, 
+                                                                    par_names=self.calibration_params, 
+                                                                    par_default=self.vsem_params)
+        self.forward_model = forward_model
+        
+        def param_to_observable_map(x):
+            vsem_output = self.forward_model(x)
+            observable = self.observation_operator_info.observation_operator(vsem_output)
+            return observable
+        
+        self.param_to_observable_map = param_to_observable_map
 
 
 @dataclass
@@ -108,7 +121,7 @@ class DataRealization:
     Intermediate quantities are the VSEM forward model output and the observable
     (output of the observation operator before adding noise).
     """
-    obs_seed: PRNGKey
+    obs_key: PRNGKey
     data_generating_process: DataGeneratingProcess
     forward_output: Array
     observable: Array
@@ -135,7 +148,8 @@ def obs_op_window_means(vsem_output: Array,
 def define_vsem_observation_operator(num_days: int, 
                                      window_len: int = 30,
                                      vsem_output_var: str = 'lai'):
-    
+    """Constructs a ObservationOperatorInfo using the obs_op_window_means observation operator"""
+
     # create windows for averaging
     window_start_idx = jnp.arange(0, num_days, window_len)
     window_stop_idx = window_start_idx + window_len
@@ -229,16 +243,7 @@ def simulate_vsem_ground_truth(key: PRNGKey,
                                noise_cov_tril: Array,
                                vsem_true_params: dict[str, float] = VSEM_DEFAULT_PARAMS):
 
-
-
-
-
-class VSEMGroundTruth:
-    driver: Array
-    all_params: dict[str, float]
-    vsem_output: Array
-    observable: Array
-
+    pass
 
 
 
