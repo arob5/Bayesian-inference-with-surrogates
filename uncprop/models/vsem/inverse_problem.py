@@ -80,14 +80,16 @@ def define_vsem_likelihood(driver: Array,
     window_stop_idx = window_start_idx + window_len
     n_windows = len(window_start_idx)
 
-    if window_stop_idx[-1] != n_days:
-        raise ValueError('last entry of window_stop_idx should equal n_days.')
+    if int(window_stop_idx[-1]) != int(n_days):
+        raise ValueError(f'last entry of window_stop_idx should equal n_days = {n_days}.' 
+                         f' Got {window_stop_idx[-1]}.')
     if len(window_start_idx) != noise_cov.shape[0]:
-        raise ValueError('noise_cov dimension should equal number of windows')
+        raise ValueError(f'noise_cov dimension should equal number of windows = {n_windows}'
+                         f' Got {noise_cov.shape[0]}.')
 
     # mask of shape (n_windows, n_days); ones mark days in window
     window_mask = jnp.vstack(
-        [jnp.concatenate([jnp.zeros(start), jnp.ones(end-start+1), jnp.zeros(n_days-(end+1))])
+        [jnp.concatenate([jnp.zeros(start), jnp.ones(end-start), jnp.zeros(n_days-end)])
          for start, end in zip(window_start_idx, window_stop_idx)]
     )
     window_lens = jnp.sum(window_mask, axis=1)
