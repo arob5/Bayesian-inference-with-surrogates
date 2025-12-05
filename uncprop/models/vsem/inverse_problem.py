@@ -5,14 +5,15 @@ Defines the Bayesian inverse problem for the VSEM experiment.
 from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
+from typing import Protocol
 
 import jax
 import numpy as np
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
-from typing import Protocol
 from numpyro.distributions import Uniform, MultivariateNormal
+from jax.scipy.linalg import solve_triangular
 from scipy.stats import qmc
 
 from uncprop.custom_types import Array, PRNGKey
@@ -65,6 +66,8 @@ class ObservationOperatorInfo:
     observation_operator: Callable
     window_mask: Array
     window_lens: Array
+    window_midpoints: Array
+    output_name: str
     output_idx: int
 
 
@@ -183,6 +186,7 @@ def define_vsem_observation_operator(num_days: int,
          for start, end in zip(window_start_idx, window_stop_idx)]
     )
     window_lens = jnp.sum(window_mask, axis=1)
+    window_midpoints = 0.5 * (window_start_idx + window_stop_idx)
 
     # Observation operator defined as windowly averages of an VSEM output variable.
     vsem_output_idx = vsem.get_vsem_output_names().index(vsem_output_var)
@@ -198,47 +202,25 @@ def define_vsem_observation_operator(num_days: int,
         observation_operator=obs_op,
         window_mask=window_mask,
         window_lens=window_lens,
+        window_midpoints=window_midpoints,
+        output_name=vsem_output_var,
         output_idx=vsem_output_idx
     )
 
 
-
-def simulate_vsem_ground_truth(key: PRNGKey,
-                               driver: Array,
-                               noise_cov_tril: Array,
-                               vsem_true_params: dict[str, float] = VSEM_DEFAULT_PARAMS):
-
-    pass
-
-
-
-# def simulate_observations_with_intermediates(key: PRNGKey,
-#                                              param: Array,
-#                                              forward_model: Callable,
-#                                              obs_op: Callable,
-#                                              driver: Array,
-#                                              noise_cov_tril: Array):
-#     param = jnp.asarray(param).ravel()
-#     vsem_output = forward_model(param)
-#     observable = obs_op(vsem_output)
-#     noise_realization = jr.normal(key, shape=())
-
-#     observations = noise_cov_tril.
-
-
 class VSEMPrior(Prior):
-    '''
+    """
     The VSEM prior primarily represents the prior distribution over the VSEM 
     parameters that will be calibrated in the experiment. However, it also stores
     `_dists`, which defines the prior over all VSEM parameters. Additional methods
     beyond the standard Prior interface provide access to this extended prior.
-    '''
+    """
 
     # dictionary of marginals for all VSEM parameters
     _dists = VSEM_DEFAULT_PRIORS
 
     def __init__(self, par_names: list[str] | None = None):
-        ''' par_names defines the set of calibration parameters. '''
+        """ par_names defines the set of calibration parameters. """
         self._par_names = par_names or vsem.get_vsem_par_names()
         low = jnp.array([dist.low for dist in self.dists.values()])
         high = jnp.array([dist.high for dist in self.dists.values()])
@@ -273,10 +255,10 @@ class VSEMPrior(Prior):
         return jnp.sum(l, axis=tuple(range(-1, 0)))
     
     def sample_all_vsem_params(self, key: PRNGKey):
-        '''
+        """
         Return dictionary representing a single sample from all of the parameters, 
         not just the calibration parameters.
-        '''
+        """
         samp = {}
         for par_name, prior in self._dists.items():
             samp[par_name] = prior.sample(key)
@@ -284,7 +266,7 @@ class VSEMPrior(Prior):
         return samp
     
     def sample_lhc(self, key: PRNGKey, n: int = 1):
-        ''' Latin hypercube sampling '''
+        """ Latin hypercube sampling """
         rng_key = _numpy_rng_seed_from_jax_key(key)
         rng = np.random.default_rng(seed=rng_key)
         lhc = qmc.LatinHypercube(d=self.dim, rng=rng)
@@ -300,138 +282,89 @@ class VSEMPrior(Prior):
 
 
 class VSEMLikelihood:
-    '''
-    Defined to conform to the LogDensity protocol. 
-    '''
+    """
+    Defined to conform to the LogDensity protocol, a callable that computes the 
+    log-likelihood.
+    """
 
     def __init__(self,
-                 key: PRNGKey,
-                 time_steps: Array,
-                 driver: Array, 
-                 par_names: list[str], 
-                 ground_truth: dict[str, float] | None = None):
-        '''
-        If provided, `ground_truth` is a dictionary of all VSEM parameters that 
-        will be treated as the ground truth. 
-        '''
-        # independent subkeys for simulating driver / sampling noise realization
-        key_driver, key_noise = jr.split(key, 2)
+                 model: CalibrationModel,
+                 data: DataRealization):
+        self.model = model 
+        self.data = data
 
-        time_steps = jnp.asarray(time_steps).ravel()
-        driver = jnp.asarray(driver).ravel()
-    
-        n_days = time_steps.shape[0]
-        if driver.shape[0] != n_days:
-            raise ValueError(f'time_steps and driver length mismatch: {time_steps[0]} vs {driver[0]}')
-
-        self.time_steps, self.driver = vsem.simulate_vsem_driver(key_driver, self.n_days)
-
-        self.n_days = n_days
-        self.driver = driver
-        self.time_steps = time_steps
-        self.par_names = par_names
-        self.d = len(par_names)
-
-        all_par_names = vsem.get_vsem_par_names()
-        self._par_idx = [all_par_names.index(par) for par in self.par_names]
-
-        # Observation operator defined as windowly averages of LAI.
-        self.lai_idx = vsem.get_vsem_output_names().index('lai')
-        self.window_start_idx = jnp.arange(start=0, stop=self.n_days, step=31)
-        window_stop_idx = jnp.empty_like(self.window_start_idx)
-        window_stop_idx = window_stop_idx.at[:-1].set(self.window_start_idx[1:])
-        window_stop_idx = window_stop_idx.at[-1].set(self.n_days - 1)
-        self.window_stop_idx = window_stop_idx
-        self.window_midpoints = jnp.round(0.5 * (self.window_start_idx + self.window_stop_idx))
-
-        # Ground truth
-        if ground_truth is None:
-            self._all_par_true = {
-                'kext': 0.85,
-                'lar': 1.86523322e+00,
-                'lue': 6.84170991e-04,
-                'gamma': 5.04967614e-01,
-                'tauv': 2.95868049e+03,
-                'taus': 2.58846896e+04,
-                'taur': 1.77011520e+03,
-                'av': 0.85,
-                'veg_init': 3.04573410e+00,
-                'soil_init': 2.11415896e+01,
-                'root_init': 5.58376223e+00
-            }
-        else:
-            self._all_par_true = ground_truth
-
-        self.par_true = jnp.array([self._all_par_true[par] for par in self.par_names])
-        
-        # VSEM forward model.
-        self.forward_model = vsem.build_vectorized_partial_forward_model(self.driver, self.par_names,
-                                                                         par_default=self._all_par_true)
-
-        self.vsem_output_true = self.forward_model(self.par_true)
-        self.observable_true = self.obs_op(self.vsem_output_true).flatten()
-        self.n = self.observable_true.shape[0]
-        self._sigma = 0.1 * jnp.std(self.observable_true)
-        self.noise = MultivariateNormal(covariance_matrix=(self._sigma**2) * jnp.identity(self.n))
-        self.y = self.observable_true + self.noise.sample(key_noise)
-        self._likelihood_rv = MultivariateNormal(loc=self.y, covariance_matrix=self.noise.covariance_matrix)
-        
     def __call__(self, x):
         return self.log_density(x)
-
-    def plot_driver(self):
-        plt.plot(self.time_steps, self.driver, 'o')
-        plt.xlabel('days')
-        plt.ylabel('PAR')
-        plt.show()
-
-    def par_to_obs_map(self, par):
-        vsem_output = self.forward_model(par)
-        return self.obs_op(vsem_output)
-
-    def obs_op(self, vsem_output):
-        ''' Observation operator: windowly averages of LAI '''
-        lai_output = vsem_output[:,:,self.lai_idx]
-        windowly_lai_averages = jnp.array(
-            [lai_output[:, start:end].mean(axis=1) for start, end in zip(self.window_start_idx, self.window_stop_idx)]
-        )        
-
-        return windowly_lai_averages.T
     
     def log_density(self, x):
-        pred_obs = self.par_to_obs_map(x)
-        return self._likelihood_rv.log_prob(pred_obs)
+        observation = self.data.observation
+        predicted_observable = self.model.param_to_observable_map(x)
+        noise_cov_tril = self.model.noise_cov_tril
+
+        return _gaussian_log_density_tril(x=observation, 
+                                          m=predicted_observable, 
+                                          L=noise_cov_tril)
     
     def log_density_upper_bound(self, x):
-        '''The log of the determinant term in the Gaussian density. 
-        log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)}.
+        """
+        Pointwise upper bound on the log-density.
+        In shape: (n,d), Out shape: (n,)
+        """
+        noise_cov_tril = self.model.noise_cov_tril
+        return _gaussian_log_det_term_tril(noise_cov_tril)
 
-        This term also represents an upper bound on the log density.
-        '''
-        dim_times_two_pi = self.n * jnp.log(2.0 * jnp.pi)
-        L = self._likelihood_rv.scale_tril
-        log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
-        return -0.5 * (dim_times_two_pi + log_det_cov)
 
-    def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
-        output = self.forward_model(par)
-        fig, axs = vsem.plot_vsem_outputs(output[:,burn_in_start:,:], nrows=2)
+# -----------------------------------------------------------------------------
+# Utility functions 
+# -----------------------------------------------------------------------------
 
-        if include_predicted_obs:
-            pred_obs = self.obs_op(output)
-            axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, 'o', color='red')
-
-        return fig
+def visualize_vsem_dgp(true_dgp: DataGeneratingProcess, 
+                       model: CalibrationModel, 
+                       data: DataRealization):
     
-    def plot_ground_truth(self):
-        fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
+    fig, axs = plt.subplots(nrows=1, ncols=2)
+    axs = axs.ravel()
+    observation = data.observation
+    window_midpoints = model.observation_operator_info.window_midpoints
 
-        lai_ax = axs[self.lai_idx]
-        lai_ax.plot(self.window_midpoints, self.y, 'o', color='red')
+    # true data generating process
+    ax = axs[0]
+    output_idx = true_dgp.observation_operator_info.output_idx
+    output_name = true_dgp.observation_operator_info.output_name
+    time_steps = jnp.arange(true_dgp.driver.shape[0])
+    ax.plot(time_steps, data.vsem_output[..., output_idx], label=output_name)
+    ax.plot(window_midpoints, data.observable, color='orange')
+    ax.plot(window_midpoints, data.observation, color='red')
+    ax.set_xlabel('days')
+    ax.set_ylabel('observable')
 
-        return fig
-    
-    
+    return fig, axs
+
+
+
+# def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
+#     output = self.forward_model(par)
+#     fig, axs = vsem.plot_vsem_outputs(output[:,burn_in_start:,:], nrows=2)
+
+#     if include_predicted_obs:
+#         pred_obs = self.obs_op(output)
+#         axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, 'o', color='red')
+
+#     return fig
+
+# def plot_ground_truth(self):
+#     fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
+
+#     lai_ax = axs[self.lai_idx]
+#     lai_ax.plot(self.window_midpoints, self.y, 'o', color='red')
+
+#     return fig
+
+
+
+
+
+
 def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
     return int(jr.randint(key, (), 0, 2**63 - 1))
 
@@ -440,3 +373,28 @@ def _sample_gaussian_tril(key: PRNGKey, L: Array, n: int = 1):
     d = L.shape[0]
     samp = L @ jr.normal(key, shape=(d,n))
     return samp.T
+
+def _gaussian_log_density_tril(x, m, L):
+    """
+    x is an input batch of shape (n, d).
+    m is the Gaussian mean, either (d,) or (n,d)
+    Output shape: (n,)
+    """
+    x = x - m
+    Linv_x = solve_triangular(L, x.T, lower=True)
+    mah2 = jnp.sum(Linv_x * Linv_x, axis=0)
+    log_det_term = _gaussian_log_det_term_tril(L)
+    return log_det_term - 0.5 * mah2
+
+def _gaussian_log_det_term_tril(L):
+    """
+    The log of the determinant term in the Gaussian density. 
+    log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)},
+    where C = LL^T. 
+
+    This term also represents an upper bound on the log density.
+    """
+    d = L.shape[0]
+    dim_times_two_pi = d * jnp.log(2.0 * jnp.pi)
+    log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
+    return -0.5 * (dim_times_two_pi + log_det_cov)
