@@ -45,7 +45,7 @@
 
 % Local custom commands. 
 \input{../shared/macros_general.tex}
-\input{macros}
+\input{../methods_paper/macros.tex}
 \newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
@@ -81,8 +81,8 @@
 \Crefname{rec}{Recommendation}{Recommendations}
 
 % Title and author
-\title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Sequential Design}
-\author{Andrew Roberts}
+\title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Active Learning}
+\author{Andrew Roberts, Michael Dietze, Jonathan Huggins}
 
 \begin{document}
 
@@ -185,12 +185,38 @@ and multifidelity methods (\todo: this third one may change). We conclude in \Cr
 All derivations and proofs are provided in the appendix.
 
 % Background
-\section{Background} \label{sec:background}
-In this section we introduce the Bayesian inference setting of interest, with an emphasis on Bayesian inverse problems
-stemming from mechanistic dynamical models. We provide a concrete example of parameter estimation for a
-system of ordinary differential equations, and conclude the section with a brief overview of Gaussian processes.
+\section{Bayesian Inference with Expensive Models} \label{sec:background}
+From a generic perspective, the scope of this paper concerns problems of Bayesian inference in which evaluation
+of the (unnormalized) posterior density incurs significant computational expense. This situation is exceedingly common 
+in large-scale scientific and engineering applications, where the goal is to infer latent parameters related to 
+observations through a computationally expensive computer model. We begin by introducing such Bayesian inverse 
+problems, and provide a concrete motivating example. 
  
- \subsection{Bayesian Inverse Problems}
+\subsection{The Bayesian Inference Setting}
+Many scientific problems require inferring unknown parameters $\Par \in \parSpace \subseteq \R^{\dimPar}$ using 
+noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$. In statistical approaches to this problem, the link
+between these quantities is modeled by specifying a likelihood $\lik(\Par; \obs) \Def p(\obs \given \Par)$, and a Bayesian 
+completes the model with a prior distribution $\Par \sim \priorDens$ over the parameters. 
+The central task of Bayesian inference is to characterize the posterior distribution
+\begin{align}
+&\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst} \priorDens(\Par) \lik(\Par; \obs),
+&&\normCst = \int_{\parSpace} \priorDens(\Par) \lik(\Par; \obs) \d\Par,
+\end{align}
+which encodes the uncertainty in the parameters after observing the data. Both the posterior density $\postDensNorm$
+and normalizing constant $\normCst$ depend on $\obs$, but we suppress this in the notation as the data realization 
+will remain fixed throughout. Typically, the integral defining $\normCst$ is intractable, so posterior inference algorithms
+rely on pointwise evaluations of the \textit{unnormalized} posterior density $\postDens(\Par) \Def \priorDens(\Par)\lik(\Par; \obs)$.
+A standard approach is to sample the posterior using a Markov chain Monte Carlo (MCMC) 
+algorithm, often requiring $10^5 - 10^7$ serial evaluations of $\postDens(\Par)$. While not a problem for simple 
+statistical models, this sequential computation renders MCMC infeasible when the cost of a density evaluation is high.
+\todo{add transition}
+
+\subsection[inline]{Bayesian Inverse Problems}
+
+
+
+
+ 
 We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
 density 
 \begin{equation}
@@ -269,6 +295,9 @@ queries to these functions as simulator evaluations.
 The following section provides a concrete example of such a simulation
 model stemming from the numerical solution of a system of differential equations. 
  
+\subsection{Bayesian Inverse Problems} 
+ 
+
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
 The problem of estimating the parameters of differential equation models 
  can be cast within the Bayesian inverse problem framework. One motivating source of applications 
@@ -305,6 +334,8 @@ for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this se
 inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
 Generalizations can be considered to cases with non-additive or non-Gaussian noise, or the 
 presence of model discrepancy.
+
+\begin{comment}
 
  \subsection{Gaussian Processes} \label{gp_review}
  Since Gaussian processes will serve as our primary example of a probabilistic surrogate,
@@ -2718,6 +2749,8 @@ sequential design phase.
 \item Literature typically focuses on convergence of the approx posterior. But in cases with very expensive computer models, one might have to stop pre-convergence. 
 In these settings the comparison between the approximate posteriors becomes even more important. 
 \end{enumerate}
+
+\end{comment}
 
 \bibliography{../shared/surrogates} 
 \end{document}
