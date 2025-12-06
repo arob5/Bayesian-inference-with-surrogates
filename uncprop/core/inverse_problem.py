@@ -183,12 +183,12 @@ class Posterior(Distribution):
         if compile:
             logdensity = jax.jit(logdensity)
 
-        # initialize sampler
-        initial_position = self.prior.sample(key_init_position).ravel()
-        initial_position = dict(zip(self.prior.par_names, initial_position))
+        # initialize sampler: note that `initial_position` will typically have shape (1,d) here.
+        initial_position = self.prior.sample(key_init_position) 
+        # initial_position = dict(zip(self.prior.par_names, initial_position))
         init_state, kernel = init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs)
 
         # run sampler
         states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
-        
+
         return stack_dict_arrays(states.position)

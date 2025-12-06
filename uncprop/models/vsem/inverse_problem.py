@@ -95,7 +95,7 @@ class CalibrationModel:
     for all VSEM parameters - the parameters specified in `calibration_params` will
     override the defaults, and the remaining parameters will be fixed at the specified
     default values. The `forward_model`, which is a map from the calibration parameters to
-    VSEM outputs, is build by `build_vectorized_partial_forward_model()`. 
+    VSEM outputs, is build by `build_batch_forward_model()`. 
     The observation operator is a map from VSEM outputs to an observable quantity.
     """
     driver: Array
@@ -105,9 +105,9 @@ class CalibrationModel:
     noise_cov_tril: Array
 
     def __post_init__(self):
-        forward_model = vsem.build_vectorized_partial_forward_model(driver=self.driver, 
-                                                                    par_names=self.calibration_params, 
-                                                                    par_default=self.vsem_params)
+        forward_model = vsem.build_batch_forward_model(driver=self.driver, 
+                                                       par_names=self.calibration_params, 
+                                                       default_param_dict=self.vsem_params)
         self.forward_model = forward_model
         
         def param_to_observable_map(x):
@@ -133,7 +133,7 @@ class DataRealization:
         param = self.data_generating_process.vsem_params
         driver = self.data_generating_process.driver
         vsem_input = vsem.make_vsem_input_from_named(param, driver, param)
-        vsem_output = vsem.solve_vsem_jax(vsem_input)[jnp.newaxis] # obs_op expects vectorized output
+        vsem_output = vsem.solve_vsem(vsem_input)[jnp.newaxis] # obs_op expects vectorized/batch output
 
         # output to observable
         obs_op = self.data_generating_process.observation_operator_info.observation_operator
