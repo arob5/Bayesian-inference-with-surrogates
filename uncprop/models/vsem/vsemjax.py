@@ -163,19 +163,18 @@ def vsem_rhs(x: Array, par: VSEMParam, driver_t: float | Array) -> Array:
     return jnp.stack([dxv_dt, dxs_dt, dxr_dt])
 
 
-def _vsem_step(carry: Array,
-               t_and_driver: tuple[int, float | Array],
+def _vsem_step(x_prev: Array,
+               driver_t: float | Array,
                par: VSEMParam) -> tuple[Array, Array]:
     """Single forward-Euler step for use with lax.scan."""
-    _, driver = t_and_driver
-    x_prev = carry
-    dx = vsem_rhs(x_prev, par, driver)
-    x_next = x_prev + dx  # daily time step
+    driver_t = jnp.squeeze(driver_t)
+    dx = vsem_rhs(x_prev, par, driver_t)
+    x_next = x_prev + dx  # forward Euler, dt=1 (daily time step)
 
     veg = x_next[0]
     soil = x_next[1]
     root = x_next[2]
-    nee = compute_nee(xv=veg, driver=driver, gamma=par.gamma, lue=par.lue,
+    nee = compute_nee(xv=veg, driver=driver_t, gamma=par.gamma, lue=par.lue,
                       kext=par.kext, lar=par.lar)
     lai = compute_lai(xv=veg, lar=par.lar)
 
@@ -185,43 +184,60 @@ def _vsem_step(carry: Array,
 
 @jax.jit
 def solve_vsem(vsem_input: VSEMInput) -> Array:
-    """Solve VSEM with forward Euler using lax.scan.
+    """Solve VSEM with forward Euler
 
     Returns:
         model_out: (n_timesteps, 5) with columns [veg, soil, root, nee, lai]
+        Note that the output does not include the initial condition (time step 0)
     """
-    driver = vsem_input.driver
-    n_timesteps = driver.shape[0]
-
-    x0 = jnp.array([
-        vsem_input.initial_condition.veg_init,
-        vsem_input.initial_condition.soil_init,
-        vsem_input.initial_condition.root_init
-    ])
-
-    # initial outputs correspond to initial condition
+    driver = vsem_input.driver.ravel()
     param = vsem_input.param
-    init_nee = compute_nee(xv=x0[0], driver=driver[0], gamma=param.gamma, lue=param.lue,
-                           kext=param.kext, lar=param.lar)
-    init_lai = compute_lai(xv=x0[0], lar=param.lar)
-    init_row = jnp.stack([x0[0], x0[1], x0[2], init_nee, init_lai])
 
-    # if driver has only a single time step, just return initial condition
-    is_single_step = jnp.equal(n_timesteps, 1)
-    def single_branch(_):
-        return init_row[None, :]
+    x0 = jnp.array([vsem_input.initial_condition.veg_init,
+                    vsem_input.initial_condition.soil_init,
+                    vsem_input.initial_condition.root_init])
 
-    def multi_branch(_):
-        driver_tail = driver[1:]
-        idx_tail = jnp.arange(1, n_timesteps)
-        seq_tail = (idx_tail, driver_tail)
-        carry0 = x0
-        step_fn = lambda carry, t_and_driver: _vsem_step(carry, t_and_driver, vsem_input.param)
-        _, outputs_tail = lax.scan(step_fn, carry0, seq_tail)
-        model_out = jnp.vstack([init_row, outputs_tail])
-        return model_out
+    def _step(x_prev, driver_t):
+        x_next, out_row = _vsem_step(x_prev, driver_t, param)
+        return x_next, out_row
 
-    return lax.cond(is_single_step, single_branch, multi_branch, operand=None)
+    # shape (n_timesteps, 5) [excludes initial condition]
+    _, outputs = lax.scan(_step, x0, driver)
+    return outputs
+
+
+# @jit
+# def solve_vsem(vsem_input: VSEMInput) -> Array:
+#     """Solve VSEM with forward Euler using lax.scan.
+
+#     Returns:
+#         model_out: (n_timesteps, 5) with columns [veg, soil, root, nee, lai]
+#     """
+#     driver = vsem_input.driver
+#     n_timesteps = driver.shape[0]
+
+#     x0 = jnp.array([
+#         vsem_input.initial_condition.veg_init,
+#         vsem_input.initial_condition.soil_init,
+#         vsem_input.initial_condition.root_init
+#     ])
+
+#     # initial outputs correspond to initial condition
+#     param = vsem_input.param
+#     init_nee = compute_nee(xv=x0[0], driver=driver[0], gamma=param.gamma, lue=param.lue,
+#                            kext=param.kext, lar=param.lar)
+#     init_lai = compute_lai(xv=x0[0], lar=param.lar)
+#     init_row = jnp.stack([x0[0], x0[1], x0[2], init_nee, init_lai])
+
+#     # Main loop over time steps
+#     driver_tail = driver[1:]
+#     idx_tail = jnp.arange(1, n_timesteps)
+#     seq_tail = (idx_tail, driver_tail)
+#     carry0 = x0
+#     step_fn = lambda carry, t_and_driver: _vsem_step(carry, t_and_driver, vsem_input.param)
+#     _, outputs_tail = lax.scan(step_fn, carry0, seq_tail)
+    
+#     return jnp.vstack([init_row, outputs_tail])
 
 
 # ---------------------------------------------------------------------
@@ -272,7 +288,10 @@ def make_vsem_input_from_named(par_named: Mapping[str, Any],
     initial_condition = VSEMInitialCondition(veg_init=param.veg_init,
                                              soil_init=param.soil_init,
                                              root_init=param.root_init)
-    driver_jnp = jnp.asarray(driver)
+
+    # ensure driver is flat array
+    driver_jnp = jnp.asarray(driver).ravel()
+
     return VSEMInput(param=param, initial_condition=initial_condition, driver=driver_jnp)
 
 
@@ -300,8 +319,8 @@ def build_batch_forward_model(driver: Array,
     - default_param_dict is converted to canonical defaults array.
     """
 
-    # convert driver once (do NOT convert to tuple)
-    driver = jnp.asarray(driver)
+    # ensure driver is flat array
+    driver = jnp.asarray(driver).ravel()
 
     # Validate parameter names
     for name in par_names:
@@ -324,7 +343,7 @@ def build_batch_forward_model(driver: Array,
                                                  root_init=param.root_init)
         vsem_input = VSEMInput(param=param,
                                initial_condition=initial_condition,
-                               driver=driver) # driver is array captured in closure
+                               driver=driver)
         return solve_vsem(vsem_input)
 
     # vectorize over the first axis of a batch of partial params, then jit the batched function
