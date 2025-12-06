@@ -6,8 +6,8 @@ output/
 ## Latex auxiliary files.
 *.aux
 *.lof
-papers/*.log
-papers/*.out
+papers/*/*.log
+papers/*/*.out
 *.lot
 *.toc
 *.bbl

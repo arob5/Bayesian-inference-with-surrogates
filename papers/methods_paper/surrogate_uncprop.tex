@@ -18,7 +18,7 @@
 % Figures
 \usepackage{caption, subcaption} % Captions and sub-figures. 
 
-% TODO notes
+% todo notes
 \usepackage{xcolor}
 \newcommand\issue[1]{\textcolor{red}{#1}}
 % \renewcommand\issue[1]{} % Uncomment to turn off red highlighting
@@ -45,8 +45,8 @@
 \usepackage[most]{tcolorbox}
 
 % Local custom commands. 
-\include{latex_macros_general}
-\include{latex_macros_unc_prop}
+\input{../shared/macros_general.tex}
+\input{macros.tex}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
 \setlist[1]{leftmargin=\parindent}
@@ -1295,7 +1295,7 @@ triangle inequality, integrating over $\parSpace$, and applying Tonelli's theore
 \qquad \blacksquare
 \end{equation*} 
  
-\bibliography{prob_surrogates_bayes} 
+\bibliography{./../shared/surrogates} 
 % \bibliographystyle{ieeetr}
 
 \end{document}

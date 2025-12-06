@@ -44,8 +44,8 @@
 }
 
 % Local custom commands. 
-\include{latex_macros_general}
-\include{latex_macros_gp_inv_prob}
+\input{../shared/macros_general.tex}
+\input{macros}
 \newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
@@ -2719,11 +2719,7 @@ sequential design phase.
 In these settings the comparison between the approximate posteriors becomes even more important. 
 \end{enumerate}
 
-
-
-\bibliography{prob_surrogates_bayes} 
-% \bibliographystyle{ieeetr}
-
+\bibliography{../shared/surrogates} 
 \end{document}
 
 
