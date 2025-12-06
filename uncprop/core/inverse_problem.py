@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol, runtime_checkable, TypeAlias, Any
 from collections.abc import Callable
+
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -161,22 +163,32 @@ class Posterior(Distribution):
         prior.log_density and likelihood must be jitable for the returned function
         to be jitable.
         """
-        prior_logp = self.prior.log_density # bound method
-        lik = self.likelihood               # callable
+        prior_logp = self.prior.log_density
+        log_lik = self.likelihood
 
         def logp(x):
-            return prior_logp(x) + lik(x)
-
+            return prior_logp(x) + log_lik(x)
+        
         return logp
 
-    
-    def sample(self, key: PRNGKey, n: int = 1, **kwargs) -> Array:
-        """ Default sampling method: NUTS """
+    def sample(self, key: PRNGKey, n: int = 1, compile: bool = True, **kwargs) -> Array:
+        """ Default sampling method: may be overriden by subclasses
+        
+        The default sampler is the blackjax implementation of NUTS.
+         """
         key_init_position, key_init_kernel, key_sample = jr.split(key, 3)
+
+        # target density
         logdensity = self._get_log_density_function()
+        if compile:
+            logdensity = jax.jit(logdensity)
+
+        # initialize sampler
         initial_position = self.prior.sample(key_init_position).ravel()
         initial_position = dict(zip(self.prior.par_names, initial_position))
         init_state, kernel = init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs)
-        states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
 
+        # run sampler
+        states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
+        
         return stack_dict_arrays(states.position)

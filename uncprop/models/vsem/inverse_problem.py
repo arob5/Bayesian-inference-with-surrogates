@@ -37,6 +37,7 @@ VSEM_DEFAULT_PARAMS = {
     'soil_init': 2.11415896e+01,
     'root_init': 5.58376223e+00
 }
+VSEM_DEFAULT_PARAMS = jax.tree_util.tree_map(jnp.asarray, VSEM_DEFAULT_PARAMS)
 
 
 VSEM_DEFAULT_PRIORS = {
@@ -147,11 +148,7 @@ class DataRealization:
         self.observable = observable
         self.noise_realization = noise_realization
         self.observation = observation
-
-     # calibration parameters
-   #  all_param_names = vsem.get_vsem_par_names()
-   #  param_idx = [all_param_names.index(par) for par in par_names]   
-
+ 
 
 def obs_op_window_means(vsem_output: Array,
                         output_idx: int,
@@ -271,7 +268,7 @@ class VSEMPrior(Prior):
         rng = np.random.default_rng(seed=rng_key)
         lhc = qmc.LatinHypercube(d=self.dim, rng=rng)
 
-        # Samples unit hypercube [0, 1)^d
+        # Sample unit hypercube [0, 1)^d
         samp = lhc.random(n=n)
 
         # Scale based on prior bounds
@@ -314,6 +311,59 @@ class VSEMLikelihood:
         return _gaussian_log_det_term_tril(noise_cov_tril)
 
 
+def generate_vsem_inv_prob_rep(key: PRNGKey,
+                               par_names: list[str],
+                               n_windows: int,
+                               n_days_per_window: int,
+                               observed_variable: str,
+                               noise_cov_tril: Array):
+    """
+    Generates a Posterior object representing a single instance of the
+    VSEM inverse problem.
+    """
+
+    key, key_prior, key_driver, key_obs = jr.split(key, 4)
+    n_days = n_windows * n_days_per_window
+
+    # prior on calibration parameters
+    prior = VSEMPrior(par_names)
+
+    # ground truth data generating process
+    all_true_param = prior.sample_all_vsem_params(key_prior)
+    time_steps, driver = vsem.simulate_vsem_driver(key_driver, n_days)
+    obs_op_info = define_vsem_observation_operator(num_days=n_days, 
+                                                   window_len=n_days_per_window,
+                                                   vsem_output_var=observed_variable)
+    true_dgp = DataGeneratingProcess(
+        driver_key=key_driver,
+        driver=driver,
+        vsem_params=VSEM_DEFAULT_PARAMS,
+        observation_operator_info=obs_op_info,
+        noise_cov_tril=noise_cov_tril
+    )
+
+    # calibration model
+    calibration_model = CalibrationModel(
+        driver=true_dgp.driver,
+        vsem_params=true_dgp.vsem_params,
+        calibration_params=par_names,
+        observation_operator_info=true_dgp.observation_operator_info,
+        noise_cov_tril=true_dgp.noise_cov_tril
+    )
+
+    # simulate observed data
+    observation_info = DataRealization(
+        obs_key=key_obs,
+        data_generating_process=true_dgp
+    )
+
+    # construct likelihood and posterior objects
+    likelihood = VSEMLikelihood(calibration_model, observation_info)
+    posterior = Posterior(prior, likelihood)
+
+    return posterior
+
+
 # -----------------------------------------------------------------------------
 # Utility functions 
 # -----------------------------------------------------------------------------
@@ -332,38 +382,13 @@ def visualize_vsem_dgp(true_dgp: DataGeneratingProcess,
     output_idx = true_dgp.observation_operator_info.output_idx
     output_name = true_dgp.observation_operator_info.output_name
     time_steps = jnp.arange(true_dgp.driver.shape[0])
-    ax.plot(time_steps, data.vsem_output[..., output_idx], label=output_name)
+    ax.plot(time_steps, data.vsem_output[..., output_idx].ravel(), label=output_name)
     ax.plot(window_midpoints, data.observable, color='orange')
-    ax.plot(window_midpoints, data.observation, color='red')
+    ax.plot(window_midpoints, data.observation, 'ro')
     ax.set_xlabel('days')
     ax.set_ylabel('observable')
 
     return fig, axs
-
-
-
-# def plot_vsem_outputs(self, par, burn_in_start=0, include_predicted_obs=False):
-#     output = self.forward_model(par)
-#     fig, axs = vsem.plot_vsem_outputs(output[:,burn_in_start:,:], nrows=2)
-
-#     if include_predicted_obs:
-#         pred_obs = self.obs_op(output)
-#         axs[self.lai_idx].plot(self.window_midpoints, pred_obs.T, 'o', color='red')
-
-#     return fig
-
-# def plot_ground_truth(self):
-#     fig, axs = vsem.plot_vsem_outputs(self.vsem_output_true, nrows=2)
-
-#     lai_ax = axs[self.lai_idx]
-#     lai_ax.plot(self.window_midpoints, self.y, 'o', color='red')
-
-#     return fig
-
-
-
-
-
 
 def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
     return int(jr.randint(key, (), 0, 2**63 - 1))
