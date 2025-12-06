@@ -209,9 +209,33 @@ rely on pointwise evaluations of the \textit{unnormalized} posterior density $\p
 A standard approach is to sample the posterior using a Markov chain Monte Carlo (MCMC) 
 algorithm, often requiring $10^5 - 10^7$ serial evaluations of $\postDens(\Par)$. While not a problem for simple 
 statistical models, this sequential computation renders MCMC infeasible when the cost of a density evaluation is high.
-\todo{add transition}
+\todo[inline]{add transition}
 
-\subsection[inline]{Bayesian Inverse Problems}
+\subsection{Bayesian Inverse Problems}
+The inference challenge posed by expensive posterior densities commonly arises in the Bayesian approach to 
+inverse problems \citep{Stuart_BIP}. In this setting, the observation $\obs$ typically corresponds to an 
+observable quantity from a complex physical system. The goal is to recover latent parameters of interest
+$\Par$ that gave rise to the observed data. The bulk of the modeling effort typically consists of constructing a
+mechanistic model $\fwd: \parSpace \to \obsSpace$ encoding domain knowledge, which describes the forward 
+process by which parameters produce observed quantities. We refer to $\fwd$ as the \textit{forward model}.
+The task of solving the inverse problem entails
+inverting the relationship, identifying parameter values that might have yielded a particular observation.
+This parameter recovery is commonly cast as a problem of Bayesian inference with a Gaussian noise model
+\begin{equation}
+\obs = \fwd(\Par) + \noise, \qquad
+\noise \sim \Gaussian(0, \likPar), \label{eq:inv_prob_Gaussian} 
+\end{equation}
+implying the likelihood
+\begin{equation}
+\lik(\Par; \obs) = \det(2\pi\likPar)^{-\dimObs/2} \Exp{-\frac{1}{2} \norm{\obs - \fwd(\Par)}^{2}_{\likPar}}.
+\footnote{We utilize the weighted norm notation $\norm{x}^{2}_{A} \Def x^\top A^{-1}x$, where $A$ is a positive definite matrix.}
+\label{eq:Gaussian-likelihood}
+\end{equation}
+Observe that the likelihood evaluation $\lik(\Par; \obs)$ depends on the corresponding forward model evaluation $\fwd(\Par)$.
+This latter computation may involve running an expensive computer simulation (e.g., a numerical differential equation solver)
+
+
+ 
 
 We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
 density 
