@@ -7,6 +7,7 @@ See BayesianTools R package:
 '''
 
 from __future__ import annotations
+import functools
 from dataclasses import dataclass
 from typing import Any
 from collections.abc import Sequence, Callable, Mapping
@@ -163,8 +164,8 @@ def vsem_rhs(x: Array, par: VSEMParam, driver_t: float | Array) -> Array:
 
 
 def _vsem_step(carry: Array,
-              t_and_driver: tuple[int, float | Array],
-              par: VSEMParam) -> tuple[Array, Array]:
+               t_and_driver: tuple[int, float | Array],
+               par: VSEMParam) -> tuple[Array, Array]:
     """Single forward-Euler step for use with lax.scan."""
     _, driver = t_and_driver
     x_prev = carry
@@ -285,79 +286,51 @@ def vector_to_vsemparam(full_vector: Array) -> VSEMParam:
 
 
 # ---------------------------------------------------------------------
-# Forward model builders (single-run and vectorized partial)
+# Forward model builders:
+#   Vectorized VSEM runs as function of varying input parameters
 # ---------------------------------------------------------------------
 
-def build_forward_model(driver: Sequence[float] | Array,
-                        par_default: Mapping[str, float] | None = None) -> Callable[[Mapping[str, Any]], Array]:
-    """Return a convenience function fwd(par_named) -> model_output for a single run.
-
-    This is user-facing and accepts Python mappings (partial parameter dicts).
-    The call to `fwd` happens outside JAX tracing by typical usage; if you want to
-    a jitted function that takes arrays, use `build_vectorized_partial_forward_model`.
+def build_batch_forward_model(driver: Array,
+                              par_names: list[str],
+                              default_param_dict: Mapping[str, float] | None = None):
     """
-    par_default = par_default or get_vsem_default_pars_dict()
+    Returns forward_batch(batch_of_partial_params) -> batched outputs.
+    - driver is treated as fixed (captured in closure) and should be a jnp array.
+    - par_names are validated against canonical_par_names.
+    - default_param_dict is converted to canonical defaults array.
+    """
+
+    # convert driver once (do NOT convert to tuple)
     driver = jnp.asarray(driver)
 
-    def fwd_single(par_named: Mapping[str, Any]) -> Array:
-        """Evaluate one run from a (partial) named parameter mapping."""
-        vsem_input = make_vsem_input_from_named(par_named, driver, par_default)
-        return solve_vsem(vsem_input)
-
-    return fwd_single
-
-
-def build_vectorized_forward_model(driver: Sequence[float] | Array,
-                                   par_names: Sequence[str],
-                                   par_default: Mapping[str, float] | None = None) -> Callable[[Array], Array]:
-    """Return a vectorized, jittable forward function that accepts an array of parameter
-    values in the order `par_names` and returns model outputs for each row.
-
-    The returned function `fwd(par_array)` accepts:
-      - 1D array of length len(par_names) -> returns (1, n_time, 5)
-      - 2D array shape (n_runs, len(par_names)) -> returns (n_runs, n_time, 5)
-
-    Notes:
-        A Python tuple of indices is used for selecting parameters, based on the canonical parameter
-        order. The inner JAX-jitted function uses .at[indices].set(row) to construct the full 
-        parameter value by overriding parameters in the default vector. This is all JAX traceable - 
-        the tuple of indices is static.
-    """
-    # Validate names and create static index tuple
+    # Validate parameter names
     for name in par_names:
         if name not in canonical_par_names:
             raise ValueError(f"Unknown parameter name: {name}")
+
+    # indices as a small python tuple (static) OR as a jnp array precomputed:
     indices = tuple(canonical_par_names.index(name) for name in par_names)
+    indices_arr = jnp.asarray(indices, dtype=jnp.int32)   # used in-array ops
 
-    # Default vector captured by closure (static object)
-    default_vec = canonical_defaults_array(par_default)
+    # default_param as a DeviceArray (captured in closure)
+    default_param = canonical_defaults_array(default_param_dict)
 
-    @jax.jit
-    def _single_run(row: Array) -> Array:
-        """Build a full param vector from `row` and evaluate VSEM"""
-        full = default_vec.at[list(indices)].set(row)
-        full = full.at[list(indices)].set(row)
-        param = vector_to_vsemparam(full)
-        initial_condition = VSEMInitialCondition(veg_init=param.soil_init,
+    def _single_run(partial_param: Array):
+        param_vec = default_param.at[indices_arr].set(partial_param)
+        param = vector_to_vsemparam(param_vec)
+
+        initial_condition = VSEMInitialCondition(veg_init=param.veg_init,
                                                  soil_init=param.soil_init,
                                                  root_init=param.root_init)
-        vsem_input = VSEMInput(param=param, initial_condition=initial_condition, driver=jnp.asarray(driver))
+        vsem_input = VSEMInput(param=param,
+                               initial_condition=initial_condition,
+                               driver=driver) # driver is array captured in closure
         return solve_vsem(vsem_input)
 
-    # vmap across first axis for multiple runs
-    vmapped_runner = jax.vmap(_single_run, in_axes=0, out_axes=0)
+    # vectorize over the first axis of a batch of partial params, then jit the batched function
+    forward_batch = jax.jit(jax.vmap(_single_run, in_axes=0, out_axes=0))
 
-    def fwd(par_array: Array) -> Array:
-        """User-facing wrapper accepting 1D or 2D arrays."""
-        arr = jnp.asarray(par_array)
-        if arr.ndim == 1:
-            return _single_run(arr)[jnp.newaxis, ...]
-        elif arr.ndim == 2:
-            return vmapped_runner(arr)
-        else:
-            raise ValueError('par_array must be 1D (single run) or 2D (n_runs, n_params).')
-
-    return fwd
+    return forward_batch
 
 
 # ---------------------------------------------------------------------

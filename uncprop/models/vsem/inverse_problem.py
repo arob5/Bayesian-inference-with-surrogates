@@ -17,7 +17,7 @@ from jax.scipy.linalg import solve_triangular
 from scipy.stats import qmc
 
 from uncprop.custom_types import Array, PRNGKey
-from uncprop.models.vsem import vsem_jax as vsem
+from uncprop.models.vsem import vsemjax as vsem
 from uncprop.core.inverse_problem import (
     Prior,
     LogLikelihood,
