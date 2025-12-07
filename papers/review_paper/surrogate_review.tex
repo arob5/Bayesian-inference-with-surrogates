@@ -231,98 +231,20 @@ implying the likelihood
 \footnote{We utilize the weighted norm notation $\norm{x}^{2}_{A} \Def x^\top A^{-1}x$, where $A$ is a positive definite matrix.}
 \label{eq:Gaussian-likelihood}
 \end{equation}
-Observe that the likelihood evaluation $\lik(\Par; \obs)$ depends on the corresponding forward model evaluation $\fwd(\Par)$.
-This latter computation may involve running an expensive computer simulation (e.g., a numerical differential equation solver)
-
-
- 
-
-We focus on the Bayesian inference setting in which pointwise evaluations of the unnormalized posterior
-density 
-\begin{equation}
-\postDens(\Par) \Def \priorDens(\Par) p(\obs \given \Par) \label{post_dens_generic}
-\end{equation}
-are available, but expensive, owing to the cost of computing the likelihood $p(\obs \given \Par)$. This setting 
-commonly arises in the Bayesian approach to inverse problems \citep{Stuart_BIP}. 
-Consider a \textit{forward model} $\fwd: \parSpace \subseteq \R^{\dimPar} \to \R^{\dimObs}$ describing 
-some system of interest, parameterized by input parameters $\Par \in \parSpace$. We assume throughout
-that $\fwd$ is a deterministic function, but extensions to the stochastic case are discussed in \Cref{sec:sbi}.
-In addition, suppose that
-we have noisy observations $\obs \in \obsSpace \subseteq \R^{\dimObs}$ of the output signal that $\fwd(\Par)$ 
-seeks to approximate. The \textit{inverse problem} concerns learning the parameter values $\Par$ such
- that $\fwd(\Par) \approx \obs$; i.e., \textit{calibrating} the model so that it agrees with the observations. 
- The statistical approach to this problem assumes that the link between model outputs and 
-observations is governed by a probability distribution on $\obs \given \Par$. We assume that this distribution 
-admits a density with corresponding log-likelihood 
-\begin{align}
-\llik: \parSpace \to \R, \label{log_likelihood}
-\end{align}
-such that $p(\obs \given \Par) = \Exp{\llik(\Par)}$. The notation $\llik(\Par)$ suppresses the dependence 
-on $\obs$, as the observed data will be fixed throughout. We start by focusing inference only on the 
-calibration parameter $\Par$, assuming that other likelihood parameters (e.g., noise covariance) 
-are fixed.
-
-The Bayesian approach completes the model specification with a prior distribution 
-on $\Par$. Letting $\priorDens(\Par)$ denote the density of this distribution, the Bayesian solution of the inverse problem is given 
-by the posterior distribution
-\begin{align}
-\postDensNorm(\Par) \Def p(\Par \given \obs) = \frac{1}{\normCst}\postDens(\Par) = \frac{1}{\normCst} \priorDens(\Par) \Exp{\llik(\Par)}, \label{post_dens}
-\end{align}
-with normalizing constant
-\begin{align}
-\normCst &= \int \priorDens(\Par) \Exp{\llik(\Par)} d\Par. \label{norm_cst}
-\end{align}
-We emphasize that $\postDens(\Par)$ denotes the \textit{unnormalized} 
-posterior density. We will also find it useful to introduce the notation
-\begin{equation}
-\lpost(\Par) \Def \log \postDens(\Par) = \log \priorDens(\Par) + \llik(\Par) \label{eq:lpost}
-\end{equation}
-for the logarithm of the unnormalized posterior density.
-When relevant, we will make explicit the dependence on the forward 
-model by writing $\llik(\Par; \fwd)$, $\lpost(\Par; \fwd)$, and $\postDens(\Par; \fwd)$. 
-In addition to considering
-generic likelihoods, we give special attention to the additive Gaussian noise model
-\begin{align}
-&\obs = \fwd(\Par) + \noise,
-&&\noise \sim \Gaussian(0, \likPar) \label{inv_prob_Gaussian} 
-\end{align}
-with corresponding log-likelihood 
-\begin{align}
-\llik(\Par; \fwd) &= \log\Gaussian(\obs \given \fwd(\Par), \likPar) \\
-&= -\frac{1}{2} \log\det (2\pi \likPar) - \frac{1}{2} (\obs - \fwd(\Par))^\top \likPar^{-1} (y - \fwd(\Par)), \label{llik_Gaussian}
-\end{align}
-as this model features prominently in the inverse problems literature.
-In general, the nonlinearity of $\fwd$ precludes a closed-form characterization of the posterior. In this case, the 
-standard approach is to instead draw samples from the distribution using a Markov chain Monte Carlo (MCMC) 
-algorithm. Such algorithms are serial in nature, often requiring $10^5 - 10^7$ iterations, with each 
-iteration involving an evaluation of $\lpost(\Par; \fwd)$. 
-In the inverse problem context, this requirement is prohibitive when the forward model 
-evaluations $\fwd(\Par)$ incur significant computational cost. This problem has motivated the
-development of numerous computationally cheap approximations to either 
-$\fwd(\Par)$ or $\lpost(\Par)$ (note that approximating the former induces 
-an approximation of the latter). We focus on surrogates that take the form of a  
-regression or interpolation model approximating the map $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
-\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
-that exploit the specific structure of the forward model; see \citet{multifidelityReview} for a detailed review.}
-Recall from the introduction that we refer to methods that explicitly model the former map as 
-\textit{forward model emulation}, and those that 
-model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
-map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
-Throughout this review, we will typically assume the functions
-$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ are computationally expensive black-boxes. In applications,
-the forward model often takes the form of a costly computer simulation, so we will occasionally refer to 
-queries to these functions as simulator evaluations.
-The following section provides a concrete example of such a simulation
-model stemming from the numerical solution of a system of differential equations. 
- 
-\subsection{Bayesian Inverse Problems} 
- 
+Observe that computing $\lik(\Par; \obs)$ (and thus $\postDens(\Par)$) requires the forward model evaluation $\fwd(\Par)$,
+which may involve running an expensive computer simulation (e.g., a numerical differential equation solver). Hence, in Bayesian
+inverse problems the posterior density $\postDens(\Par)$ is often a computationally expensive, and potentially black box 
+(i.e., difficult or impossible to differentiate), function. 
 
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
-The problem of estimating the parameters of differential equation models 
- can be cast within the Bayesian inverse problem framework. One motivating source of applications 
- stems from the use of dynamical models in Earth system modeling  
+In modeling the Earth system, complex dynamical models are used to simulate future trajectories
+of various physical processes, such as temperature trends and carbon fluxes
  \citep{ESM_modeling_2pt0,paramLSM,idealizedGCM,FATES_CES,CLMBayesianCalibration,FerEmulation}.
+These models often feature empirical parameters with unknown values that must be estimated from data.
+As a simple illustrative example, we consider the problem of parameter estimation for an ordinary 
+differential equation (ODE). While this example is simplified for clarity, the setup is structurally similar to many 
+inverse problems faced in practice, such as parameter estimation for land surface models \citep{paramLSM}. 
+ 
 Consider a parameter-dependent initial value problem 
 \begin{align}
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
@@ -345,17 +267,43 @@ Going forward, we focus on the discrete-time operator $\solutionOp$, neglecting 
 for simplicity. Finally, suppose we have observed data $\obs \in \obsSpace \subseteq \R^{\dimObs}$ that we model as a
 noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
 $\obsOp: \R^{\NTimeStep \times \dimState} \to \obsSpace$ mapping from the state trajectory to a 
-$\dimObs$-dimensional observable quantity. We assume the observations are generated as 
+$\dimObs$-dimensional observable quantity. Assume the observations are generated as 
 \begin{align}
 &\obs = (\obsOp \circ \solutionOp)(\ParTrue) + \noise, 
 &&\noise \sim \Gaussian(0, \likPar) \label{ode_inv_prob} 
 \end{align}
 for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this setting falls within the generic 
-inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. 
-Generalizations can be considered to cases with non-additive or non-Gaussian noise, or the 
-presence of model discrepancy.
+inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. In this case, the computational
+cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the numerical solver $\solutionOp(\Par)$.
+
+\section{Surrogate Models}
+\subsection{Regression-Based Surrogates}
+\subsection{Probabilistic Surrogates}
+\subsection{Common Surrogate Models}
+\subsection{Finite vs. Infinite Dimensional Surrogates}
 
 \begin{comment}
+\section{Modular Bayesian Workflow}
+% maybe discuss the KOH joint model in the intro here?
+\subsection{Initial Design}
+\subsection{Surrogate Target}
+\subsection{Posterior Approximation}
+\subsection{Surrogate Refinement}
+
+We focus on surrogates that take the form of a  
+regression or interpolation model approximating the map $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
+\footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
+that exploit the specific structure of the forward model; see \citet{multifidelityReview} for a detailed review.}
+Recall from the introduction that we refer to methods that explicitly model the former map as 
+\textit{forward model emulation}, and those that 
+model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
+map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
+Throughout this review, we will typically assume the functions
+$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ are computationally expensive black-boxes. In applications,
+the forward model often takes the form of a costly computer simulation, so we will occasionally refer to 
+queries to these functions as simulator evaluations.
+The following section provides a concrete example of such a simulation
+model stemming from the numerical solution of a system of differential equations. 
 
  \subsection{Gaussian Processes} \label{gp_review}
  Since Gaussian processes will serve as our primary example of a probabilistic surrogate,
