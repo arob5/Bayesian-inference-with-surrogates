@@ -14,14 +14,13 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from collections.abc import Sequence, Callable
+from collections.abc import Sequence, Callable, Mapping
 
 from jax.scipy.special import logsumexp
 from jax.lax import cumlogsumexp
 
-from jax.typing import ArrayLike
-Array = jnp.ndarray
-
+from uncprop.custom_types import Array, ArrayLike
+from uncprop.core.inverse_problem import Distribution
 
 class Grid:
 
@@ -65,12 +64,12 @@ class Grid:
         self.flat_grid = flat_grid
 
     @property
-    def cell_area(self):
-        return jnp.prod(self.dx)
+    def cell_area(self) -> float:
+        return float(jnp.prod(self.dx))
     
     @property
-    def n_points(self):
-        return jnp.prod(self.n_points_per_dim)
+    def n_points(self) -> int:
+        return int(jnp.prod(self.n_points_per_dim))
     
     @property
     def n_dims(self):
@@ -111,6 +110,48 @@ class Grid:
                                   title=title)
 
         return fig, ax
+
+
+class DensityComparisonGrid:
+
+    def __init__(self, 
+                 grid: Grid, 
+                 distributions: Mapping[str, Distribution]):
+        self.grid = grid
+        self.distributions = distributions
+
+        # unnormalized log densities over grid
+        self.log_dens_grid = {
+            nm: dist.log_density(self.grid.flat_grid).squeeze() for nm, dist in self.distributions.items()
+        }
+
+        # normalized log densities over grid
+        self.log_dens_norm_grid = {
+            nm: normalize_density_over_grid(logp=logp, cell_area=self.grid.cell_area)[0].squeeze() 
+            for nm, logp in self.log_dens_grid.items()
+        }
+
+    def plot(self, 
+             dist_name: str, 
+             normalized: bool = False, 
+             log_scale: bool = True):
+        
+        if normalized:
+            plot_vals = self.log_dens_norm_grid[dist_name]
+        else:
+            plot_vals = self.log_dens_grid[dist_name]
+            
+        if not log_scale:
+            plot_vals = jnp.exp(plot_vals)
+
+        return self.grid.plot(z=plot_vals, title=dist_name)
+
+
+
+
+
+
+
 
 
 def plot_2d_heatmap(X, Y, Z, dim_names, title=None):
