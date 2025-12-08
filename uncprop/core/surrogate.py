@@ -4,7 +4,11 @@ from abc import ABC, abstractmethod
 from typing import Protocol, TypeAlias
 from collections.abc import Callable
 import jax.numpy as jnp
+
 from gpjax import Dataset
+from gpjax.linalg.utils import add_jitter
+from gpjax.gps import ConjugatePosterior
+from gpjax.likelihoods import Gaussian as GPJaxGaussianLikelihood
 from numpyro.distributions import Distribution as NumpyroDistribution
 
 from uncprop.core.inverse_problem import (
@@ -14,6 +18,7 @@ from uncprop.core.inverse_problem import (
 )
 
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
+from uncprop.utils.distribution import GaussianFromNumpyro
 
 # predictive distribution of a surrogate at set of inputs
 PredDist: TypeAlias = Distribution | NumpyroDistribution
@@ -62,7 +67,7 @@ class Surrogate(ABC):
     """
 
     @abstractmethod
-    def __call__(self, input: ArrayLike) -> PredDist:
+    def __call__(self, input: ArrayLike, **kwargs) -> PredDist:
         pass
 
     @property
@@ -149,15 +154,18 @@ class SurrogateDistribution(ABC):
         raise NotImplementedError('sample_trajectory() not implemented by SurrogateDistribution object.')
 
     def expected_surrogate_approx(self) -> Distribution:
+        """ aka 'plug-in mean' """
         raise NotImplementedError
     
     def expected_log_density_approx(self) -> Distribution:
         raise NotImplementedError
     
     def expected_density_approx(self) -> Distribution:
+        """ aka 'expected unnormalized posterior' """
         raise NotImplementedError
     
-    def expected_normalized_density_approx(self, method, **method_kwargs) -> Distribution:
+    def expected_normalized_density_approx(self, *args, **method_kwargs) -> Distribution:
+        """ aka 'expected posterior' """
         raise NotImplementedError
     
     def _expected_normalized_imputation(self, 
@@ -193,7 +201,6 @@ class LogDensGPSurrogate(SurrogateDistribution):
     def support(self):
         return self._support
     
-
     def log_density_from_pred(self, pred: PredDist):
         """ Surrogate predictions are log-density predictions """
         return pred
@@ -217,3 +224,125 @@ class LogDensGPSurrogate(SurrogateDistribution):
         
         return DistributionFromDensity(log_dens=log_expected_dens,
                                        dim=self.surrogate.input_dim)
+    
+
+class GPJaxSurrogate(Surrogate):
+    """
+    Wrapper around a gpjax conjugate posterior object. The primary reasons
+    for this wrapper are to:
+    (1) automatically wrap gpjax Gaussian predictions as GaussianFromNumpyro objects,
+        so they are valid Distributions.
+    (2) implement an update method for fast GP conditioning at new points.
+    """
+    def __init__(self, gp: ConjugatePosterior, design: Dataset):
+        assert isinstance(gp, ConjugatePosterior)
+        assert isinstance(design, Dataset)
+        assert isinstance(gp.likelihood, GPJaxGaussianLikelihood)
+
+        self.gp = gp
+        self.design = design
+        self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
+        self.Sigma_inv = self._compute_kernel_precision()
+
+    @property
+    def input_dim(self):
+        return self.design.in_dim
+
+    def __call__(self, 
+                 input: ArrayLike, 
+                 given: tuple[Array, Array] | None = None, 
+                 **kwargs) -> GaussianFromNumpyro:
+        
+        if given is None:
+            Sigma_inv = self.Sigma_inv
+            design = self.design
+        else:
+            Sigma_inv, design = self._update_kernel_precision(given)
+
+        return self._predict_using_precision(input, Sigma_inv, design)
+
+    def _predict_using_precision(self, x: ArrayLike, Sigma_inv: Array, design: Dataset) -> GaussianFromNumpyro:
+        """ 
+        Compute posterior GP multivariate normal prediction at test inputs `x`, conditional
+        on dataset `design`. `Sigma_inv` is the inverse of the kernel matrix (including the noise covariance)
+        evaluated at `design.X`.
+        """
+        x = jnp.asarray(x).reshape(-1, self.input_dim)
+        x_design, y_design = design.X, design.y
+        k_test_design =  self.gp.prior.kernel.cross_covariance(x, x_design)
+        k_test_design_Sigma_inv = k_test_design @ Sigma_inv
+
+        prior_mean_test = self.gp.prior.mean_function(x)
+        prior_mean_design = self.gp.prior.mean_function(x_design)
+        prior_cov_test = self.gp.prior.kernel.gram(x).to_dense()
+
+        pred_mean = prior_mean_test + k_test_design_Sigma_inv @ (y_design - prior_mean_design)
+        pred_cov = prior_cov_test - k_test_design_Sigma_inv @ k_test_design.T
+        n_pred = x.shape[0]
+
+        return Gaussian(mean=pred_mean.squeeze(),
+                        covariance_matrix=pred_cov.reshape(n_pred, n_pred))
+
+
+    def _update_kernel_precision(self, given: tuple[Array, Array] | Dataset):
+        """ 
+        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
+        batch of new conditioning points Xnew are added. Returns the updated inverse 
+        kernel matrix as well as the updated dataset (union of the old dataset and 
+        the newly added points). `given` is either a gpjax `Dataset` containing the 
+        new input/output pairs or a tuple (Xnew, ynew) containing the same information.
+        """
+        if isinstance(given, Dataset):
+            Xnew, ynew = given.X, given.y
+            new_dataset = self.design + given # union of datasets
+        elif isinstance(given, tuple):
+            Xnew = given[0].reshape(-1, self.input_dim)
+            ynew = given[1].reshape(-1, 1)
+            new_dataset = self.design + Dataset(X=Xnew, y=ynew)
+        else:
+            raise TypeError(f"`given` must be a tuple or gpjax Dataset object. Got {type(given)}")
+        
+        # Partitioned matrix inverse updates.
+        num_new_points = Xnew.shape[0]
+        Sigma_inv = self.Sigma_inv.copy()
+        Xcurr = self.design.X.copy()
+
+        for i in range(num_new_points):
+            xnew = Xnew[i]
+            Sigma_inv = self._update_single_point_kernel_precision(Sigma_inv, Xcurr, xnew)
+            Xcurr = jnp.vstack([Xcurr, xnew])
+
+        return Sigma_inv, new_dataset
+    
+
+    def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
+        """ 
+        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
+        single conditioning point xnew is added. X is the current conditioning 
+        set and xnew is the new point to add.
+        """
+        xnew = xnew.reshape(1, -1) # (1, 1)
+        knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
+        Kinv_knm = Sigma_inv @ knm # (n, 1)
+        k_new_new = self.gp.prior.kernel.gram(xnew).to_dense().squeeze() # scalar
+        kappa = k_new_new + self.sig2_obs - (knm.T @ Kinv_knm).squeeze() # scalar
+        
+        outer = Kinv_knm @ Kinv_knm.T  # (n,1) @ (1,n) -> (n,n)
+        top_left= Sigma_inv + outer / kappa # (n,n)
+        top_right = -Kinv_knm / kappa
+        bottom_left = top_right.T
+        bottom_right = jnp.array([[1.0 / kappa]]) # (1,1)
+
+        top = jnp.hstack([top_left, top_right])       # shape (n, n+1)
+        bottom = jnp.hstack([bottom_left, bottom_right])  # shape (1, n+1)
+
+        return jnp.vstack([top, bottom]) # (n+1, n+1)
+
+
+    def _compute_kernel_precision(self):
+        X = self.design.X
+        K = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter)
+        Sigma = K + jnp.eye(K.shape[0]) * self.sig2_obs
+        L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
+        Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
+        return Sigma_inv

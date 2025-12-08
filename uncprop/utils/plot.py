@@ -21,30 +21,31 @@ def set_plot_theme():
 
 def smart_subplots(
     nrows=None, ncols=None, figsize=None,
-    tight=True, nplots=None, max_rows=None,
+    tight=True, nplots=None, max_cols=None,
     flatten=True, squeeze=True, sharex=False, sharey=False,
     **kwargs
 ):
     """
-    Wrapper for plt.subplots with enhanced features:
-      - tight: Use tight_layout if True (default)
-      - nrows, ncols, figsize: as in plt.subplots
-      - nplots, max_rows: alternative way to choose grid shape
-      - figsize: auto-chosen if not given
-      - flatten: If True (default), always return flat list of axes
-      - squeeze, sharex, sharey: as in plt.subplots
+    Wrapper for plt.subplots with enhanced features.
+    - tight: Use tight_layout if True
+    - nrows, ncols, figsize: as in plt.subplots
+    - nplots, max_cols: alternative way to choose grid shape (row-major order)
+    - flatten: If True (default), always return flat list of axes
     """
-    # Error checks
+ 
+    # grid specification logic
     if nplots is not None:
         if (nrows is not None) or (ncols is not None):
-            raise ValueError("Specify either nplots (with optional max_rows), OR nrows/ncols, not both.")
+            raise ValueError("Specify either nplots (with optional max_cols), OR nrows/ncols, not both.")
         if nplots <= 0:
             raise ValueError("nplots must be positive")
-        if max_rows is not None and max_rows <= 0:
-            raise ValueError("max_rows must be positive if specified")
-        _max_rows = max_rows if max_rows is not None else 4
-        nrows = min(nplots, _max_rows)
-        ncols = math.ceil(nplots / nrows)
+        if max_cols is not None and max_cols <= 0:
+            raise ValueError("max_cols must be positive if specified")
+        
+        # row major logic: Fill rows first
+        _max_cols = max_cols if max_cols is not None else 1
+        ncols = min(nplots, _max_cols)
+        nrows = math.ceil(nplots / ncols)
     elif nrows is not None or ncols is not None:
         if nrows is None or ncols is None:
             raise ValueError("If specifying nrows or ncols, both must be provided.")

@@ -137,13 +137,13 @@ class DensityComparisonGrid:
              dist_names: list[str] | str, 
              normalized: bool = False, 
              log_scale: bool = True,
-             ):
+             **kwargs):
         
         if isinstance(dist_names, str):
             dist_names = [dist_names]
 
         nplots = len(dist_names)
-        fig, axs = smart_subplots(nplots=nplots, max_rows=3)
+        fig, axs = smart_subplots(nplots=nplots, **kwargs)
 
         for dist_name, ax in zip(dist_names, axs):
             if normalized:

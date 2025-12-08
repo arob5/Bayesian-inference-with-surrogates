@@ -7,6 +7,7 @@ from collections.abc import Callable
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+from numpyro.distributions import MultivariateNormal
 
 from uncprop.core.samplers import (
     init_nuts_kernel,
