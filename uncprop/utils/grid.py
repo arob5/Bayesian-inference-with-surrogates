@@ -21,6 +21,7 @@ from jax.lax import cumlogsumexp
 
 from uncprop.custom_types import Array, ArrayLike
 from uncprop.core.inverse_problem import Distribution
+from uncprop.utils.plot import smart_subplots
 
 class Grid:
 
@@ -78,7 +79,8 @@ class Grid:
     def plot(self, 
              f: Callable | None = None,
              z: ArrayLike | None = None,
-             title: str | None = None):
+             title: str | None = None,
+             ax: Axes | None = None) -> tuple[Figure, Axes]:
         """
         Visualize function values at grid points. Values must either be specified 
         directly via `z`, or a function `f` must be supplied and the values 
@@ -96,18 +98,18 @@ class Grid:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
         if self.n_dims == 2:
-            return self._plot_2d(z, title=title)
+            return self._plot_2d(z, title=title, ax=ax)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
-    def _plot_2d(self, z, title=None):
+    def _plot_2d(self, z, title=None, ax=None):
         assert self.n_dims == 2
 
         X, Y = self.grid_arrays
         Z = z.reshape(X.shape)
         fig, ax = plot_2d_heatmap(X, Y, Z, 
                                   dim_names=self.dim_names,
-                                  title=title)
+                                  title=title, ax=ax)
 
         return fig, ax
 
@@ -132,30 +134,36 @@ class DensityComparisonGrid:
         }
 
     def plot(self, 
-             dist_name: str, 
+             dist_names: list[str] | str, 
              normalized: bool = False, 
-             log_scale: bool = True):
+             log_scale: bool = True,
+             ):
         
-        if normalized:
-            plot_vals = self.log_dens_norm_grid[dist_name]
-        else:
-            plot_vals = self.log_dens_grid[dist_name]
+        if isinstance(dist_names, str):
+            dist_names = [dist_names]
+
+        nplots = len(dist_names)
+        fig, axs = smart_subplots(nplots=nplots, max_rows=3)
+
+        for dist_name, ax in zip(dist_names, axs):
+            if normalized:
+                plot_vals = self.log_dens_norm_grid[dist_name]
+            else:
+                plot_vals = self.log_dens_grid[dist_name]
             
-        if not log_scale:
-            plot_vals = jnp.exp(plot_vals)
+            if not log_scale:
+                plot_vals = jnp.exp(plot_vals)
 
-        return self.grid.plot(z=plot_vals, title=dist_name)
+            self.grid.plot(z=plot_vals, title=dist_name, ax=ax)
 
-
-
-
+        return fig, axs
 
 
-
-
-
-def plot_2d_heatmap(X, Y, Z, dim_names, title=None):
-    fig, ax = plt.subplots()
+def plot_2d_heatmap(X, Y, Z, dim_names, title=None, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
 
     # pcolormesh expects X, Y, Z of shape (ny, nx)
     pcm = ax.pcolormesh(X, Y, Z, shading='auto')
