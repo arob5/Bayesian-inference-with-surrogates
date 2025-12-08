@@ -3,59 +3,76 @@ from __future__ import annotations
 from typing import Any
 
 import jax.numpy as jnp
+import jax.random as jr
 from gpjax import Dataset
 from numpyro.distributions import MultivariateNormal
 from jax.scipy.special import logsumexp
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
-from uncprop.core.surrogate import Surrogate, LogDensGPSurrogate, PredDist
 from uncprop.core.inverse_problem import Posterior, DistributionFromDensity
 from uncprop.utils.gpjax_models import construct_gp, train_gp_hyperpars
 from uncprop.utils.grid import normalize_density_over_grid, Grid
+from uncprop.core.surrogate import (
+    GPJaxSurrogate, 
+    LogDensGPSurrogate,
+    construct_design, 
+    PredDist,
+)
 
 
-class VSEMSurrogate(Surrogate):
+def fit_vsem_surrogate(key: PRNGKey,
+                       posterior: Posterior,
+                       n_design: int,
+                       design_method: str,
+                       gp_train_args: dict | None = None,
+                       verbose: bool = True) -> tuple[VSEMPosteriorSurrogate, dict]:
+    """ Top-level function for fitting VSEM log posterior surrogate
 
-    def __init__(self, 
-                 design: Dataset,
-                 exact_posterior: Posterior,
-                 gp_train_args: dict | None = None):
-        
-        if design.in_dim != exact_posterior.dim:
-            raise ValueError(f'Design and posterior dim mismatch: {design.in_dim } vs {exact_posterior.dim}')
-        if gp_train_args is None:
-            gp_train_args = {}
-        
-        gp_untuned, bijection = construct_gp(design, set_bounds=True)
-        gp, opt_info = train_gp_hyperpars(gp_untuned, bijection, design, **gp_train_args)
+    Note that `posterior` represents the posterior of the exact inverse problem that 
+    we are trying to approximate.
+    """
+    key, key_design = jr.split(key, 2)
 
-        self.design = design
-        self.gp = gp
-        self._gp_untuned = gp_untuned
-        self._opt_info = opt_info
-        self._input_dim = exact_posterior.dim
+    # sample design points
+    design = construct_design(key=key_design,
+                              design_method=design_method, 
+                              n_design=n_design, 
+                              prior=posterior.prior,
+                              f=lambda x: posterior.log_density(x))
 
-    def __call__(self, input: ArrayLike) -> PredDist:
-        pred_latent = self.gp(input, train_data=self.design)
-        pred = self.gp.likelihood(pred_latent)
-        return pred
-
-    @property
-    def input_dim(self) -> int:
-        return self._input_dim
+    # fit log-posterior surrogate
+    if design.in_dim != posterior.dim:
+        raise ValueError(f'Design and posterior dim mismatch: {design.in_dim} vs {posterior.dim}')
+    if gp_train_args is None:
+        gp_train_args = {}
     
-    def summarize_fit(self):
-        start_loss = self._opt_info['starting_loss']
-        end_loss = self._opt_info['final_loss']
-        gp_scale = jnp.sqrt(self.gp.prior.kernel.variance.get_value())
-        gp_ls = self.gp.prior.kernel.lengthscale.get_value()
-        gp_noise_sd = self.gp.likelihood.obs_stddev.get_value()
+    gp_untuned, bijection = construct_gp(design, set_bounds=True)
+    gp, opt_info = train_gp_hyperpars(gp_untuned, bijection, design, **gp_train_args)
+    if verbose:
+        _print_gp_fit_info(gp, opt_info)
 
-        print(f'Initial loss {start_loss}')
-        print(f'Final loss {end_loss}')
-        print(f'gp scale: {gp_scale}')
-        print(f'gp lengthscales: {gp_ls}')
-        print(f'gp noise std dev: {gp_noise_sd}')
+    # wrap gpjax object as a GPJAXSurrogate
+    log_density_surrogate = GPJaxSurrogate(gp=gp, design=design)
+
+    # random posterior induced by GP surrogate
+    posterior_surrogate = VSEMPosteriorSurrogate(log_dens=log_density_surrogate,
+                                                 support=posterior.support)
+    
+    return posterior_surrogate, opt_info
+
+
+def _print_gp_fit_info(gp, opt_info):
+    start_loss = opt_info['starting_loss']
+    end_loss = opt_info['final_loss']
+    gp_scale = jnp.sqrt(gp.prior.kernel.variance.get_value())
+    gp_ls = gp.prior.kernel.lengthscale.get_value()
+    gp_noise_sd = gp.likelihood.obs_stddev.get_value()
+
+    print(f'Initial loss {start_loss}')
+    print(f'Final loss {end_loss}')
+    print(f'gp scale: {gp_scale}')
+    print(f'gp lengthscales: {gp_ls}')
+    print(f'gp noise std dev: {gp_noise_sd}')
 
 
 class VSEMPosteriorSurrogate(LogDensGPSurrogate):
@@ -82,7 +99,6 @@ class VSEMPosteriorSurrogate(LogDensGPSurrogate):
 
         return DistributionFromDensity(log_dens=log_dens,
                                        dim=self.surrogate.input_dim)
-
 
 
 def _estimate_ep_grid(logpi_samples: Array, cell_area: float | None) -> Array:
