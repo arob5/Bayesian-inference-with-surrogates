@@ -56,6 +56,24 @@ class VSEMSurrogate(Surrogate):
         print(f'gp noise std dev: {gp_noise_sd}')
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class VSEMTest:
     """ Surrogate uncertainty propagation experiment for surrogate modeling for VSEM inverse problem.
 

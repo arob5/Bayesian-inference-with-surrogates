@@ -167,7 +167,7 @@ class Posterior(Distribution):
         log_lik = self.likelihood
 
         def logp(x):
-            return prior_logp(x) + log_lik(x)
+            return (prior_logp(x) + log_lik(x)).squeeze()
         
         return logp
 
@@ -175,7 +175,7 @@ class Posterior(Distribution):
         """ Default sampling method: may be overriden by subclasses
         
         The default sampler is the blackjax implementation of NUTS.
-         """
+        """
         key_init_position, key_init_kernel, key_sample = jr.split(key, 3)
 
         # target density
@@ -185,10 +185,9 @@ class Posterior(Distribution):
 
         # initialize sampler: note that `initial_position` will typically have shape (1,d) here.
         initial_position = self.prior.sample(key_init_position) 
-        # initial_position = dict(zip(self.prior.par_names, initial_position))
-        init_state, kernel = init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs)
+        init_state, kernel = jax.block_until_ready(init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs))
 
         # run sampler
         states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
 
-        return stack_dict_arrays(states.position)
+        return states.squeeze()

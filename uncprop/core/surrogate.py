@@ -120,17 +120,24 @@ class SurrogateDistribution(ABC):
     def support(self) -> tuple[tuple, tuple] | None:
         pass
 
-    def log_density(self, input: ArrayLike | PredDist) -> PredDist:
+    def log_density_from_pred(self, pred: PredDist) -> PredDist:
         """
-        Returns Distribution representing the surrogate-based prediction
-        of the log-density at the input points `input`. If `input` is 
-        itself a Distribution, then it should be interpreted as the 
-        surrogate predictive distribution at those points, which prevents
-        re-computing the predictions if they have already been computed.
+        The log density parameterized as a function of the surrogate
+        predictive distribution. `pred` represents surrogate predictions
+        at a set of points. This function returns a Distribution representing
+        the pushforward of the surrogate predictions through the log density
+        map. 
         """
         raise NotImplementedError
-        
-
+    
+    def log_density(self, input: ArrayLike) -> PredDist:
+        """ Same return type as `log_density_from_pred` but first computes
+            the surrogate predictions at a set of inputs. Then pushes the 
+            distribution through the log density map.
+        """
+        pred = self.surrogate(input)
+        return self.log_density_from_pred(pred)
+    
     def sample_trajectory(self) -> Distribution:
         """ Returns a Distribution representing a trajectory of the random distribution 
         
@@ -156,8 +163,6 @@ class SurrogateDistribution(ABC):
     def _expected_normalized_imputation(self, 
                                         n_trajectory: int = 100, 
                                         n_samp_per_trajectory: int = 1):
-        # TODO: rewrite this in more efficient and JAX-friendly way.
-        # TODO: write DistributionFromSamples
         raise NotImplementedError
 
 
@@ -170,23 +175,29 @@ class LogDensGPSurrogate(SurrogateDistribution):
     That is, f is a Gaussian process.
     """
 
-    def __init__(self, log_dens: Surrogate):
+    def __init__(self, log_dens: Surrogate, support: tuple[tuple, tuple] | None = None):
         if not isinstance(log_dens, Surrogate):
             raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a Surrogate, got {type(log_dens)}')
         self._surrogate = log_dens
+        self._support = support
 
     @property
     def surrogate(self):
         return self._surrogate
-
-
-    def log_density(self, input: ArrayLike | PredDist) -> PredDist:
-        """ Surrogate predictions are log-density predictions """
-        if isinstance(input, PredDist):
-            return input
-        return self.surrogate(input)
+    
+    @property
+    def dim(self):
+        return self.surrogate.input_dim
+    
+    @property
+    def support(self):
+        return self._support
     
 
+    def log_density_from_pred(self, pred: PredDist):
+        """ Surrogate predictions are log-density predictions """
+        return pred
+    
     def expected_surrogate_approx(self) -> DistributionFromDensity:
         """ Plug-in surrogate mean as log-density approximation. """
         surrogate_mean = lambda x: self.surrogate.mean(x)
@@ -194,12 +205,10 @@ class LogDensGPSurrogate(SurrogateDistribution):
         return DistributionFromDensity(log_dens=surrogate_mean,
                                        dim=self.surrogate.input_dim)
     
-
     def expected_log_density_approx(self) -> DistributionFromDensity:
-        """ Surrogate is the log-density, so these two methods are equivalent. """
+        """ Surrogate is the log-density, so equivalent to expected_surrogate_approx. """
         return self.expected_surrogate_approx()
     
-
     def expected_density_approx(self) -> Distribution:
         """ Density surrogate exp{f(u)} is log-normal, so expectation is log-normal mean """
         def log_expected_dens(x):
