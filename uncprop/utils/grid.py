@@ -10,6 +10,7 @@ logZ is used to denote (log) normalizing constants.
 """
 from __future__ import annotations
 
+import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -76,10 +77,15 @@ class Grid:
     def n_dims(self):
         return len(self.n_points_per_dim)
     
+    @property
+    def shape(self):
+        return self.n_points_per_dim
+    
     def plot(self, 
              f: Callable | None = None,
              z: ArrayLike | None = None,
              title: str | None = None,
+             points: ArrayLike | None = None,
              ax: Axes | None = None) -> tuple[Figure, Axes]:
         """
         Visualize function values at grid points. Values must either be specified 
@@ -98,18 +104,18 @@ class Grid:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
         if self.n_dims == 2:
-            return self._plot_2d(z, title=title, ax=ax)
+            return self._plot_2d(z, title=title, points=points, ax=ax)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
-    def _plot_2d(self, z, title=None, ax=None):
+    def _plot_2d(self, z, title=None, points=None, ax=None):
         assert self.n_dims == 2
 
         X, Y = self.grid_arrays
         Z = z.reshape(X.shape)
         fig, ax = plot_2d_heatmap(X, Y, Z, 
                                   dim_names=self.dim_names,
-                                  title=title, ax=ax)
+                                  title=title, points=points, ax=ax)
 
         return fig, ax
 
@@ -137,6 +143,7 @@ class DensityComparisonGrid:
              dist_names: list[str] | str, 
              normalized: bool = False, 
              log_scale: bool = True,
+             points: ArrayLike | None = None,
              **kwargs):
         
         if isinstance(dist_names, str):
@@ -154,12 +161,12 @@ class DensityComparisonGrid:
             if not log_scale:
                 plot_vals = jnp.exp(plot_vals)
 
-            self.grid.plot(z=plot_vals, title=dist_name, ax=ax)
+            self.grid.plot(z=plot_vals, title=dist_name, points=points, ax=ax)
 
         return fig, axs
 
 
-def plot_2d_heatmap(X, Y, Z, dim_names, title=None, ax=None):
+def plot_2d_heatmap(X, Y, Z, dim_names, title=None, points=None, ax=None):
     if ax is None:
         fig, ax = plt.subplots()
     else:
@@ -167,6 +174,12 @@ def plot_2d_heatmap(X, Y, Z, dim_names, title=None, ax=None):
 
     # pcolormesh expects X, Y, Z of shape (ny, nx)
     pcm = ax.pcolormesh(X, Y, Z, shading='auto')
+
+    # optionally add points
+    if points is not None:
+        points = np.atleast_2d(points)
+        ax.plot(points[:,0], points[:,1], 'o')
+
     fig.colorbar(pcm, ax=ax)
     ax.set_xlabel(dim_names[0])
     ax.set_ylabel(dim_names[1])
@@ -258,7 +271,7 @@ def get_grid_coverage_mask(log_prob: Array, *,
 
     order = jnp.argsort(log_prob, descending=True, axis=1)
     inv_order = jnp.argsort(order, axis=1)
-    log_prob_sorted = log_prob[:,order]
+    log_prob_sorted = jnp.take_along_axis(log_prob, order, axis=1)
     log_cum_prob = cumlogsumexp(log_prob_sorted, axis=1)
     
     m = probs.shape[0]
@@ -295,6 +308,7 @@ def plot_2d_mask(mask: Array,
         raise ValueError(f'Grid shape {grid_shape} and flat mask length {d} disagree.')
     
     fig, axs = plt.subplots(nrows=n, ncols=m)
+    axs = np.atleast_2d(axs)
 
     for i in range(n):
         for j in range(m):
@@ -557,7 +571,7 @@ def _is_normalized(log_prob: Array, log_tol: float = 1e-10) -> Array:
     log_prob = _check_grid_batch(log_prob)
     logZ = logsumexp(log_prob, axis=1)
 
-    n = log_prob.shape[1]
+    n = log_prob.shape[0]
     is_normalized = jnp.tile(False, n)
     is_finite = jnp.isfinite(logZ)
     is_normalized = is_normalized.at[is_finite].set(

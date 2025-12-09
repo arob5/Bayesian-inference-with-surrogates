@@ -295,12 +295,13 @@ class GPJaxSurrogate(Surrogate):
         pred_cov = prior_cov_test - k_test_design_Sigma_inv @ k_test_design.T
         n_pred = x.shape[0]
 
-        # add likelihood noise to latent Gaussian prediction
-        pred_cov = add_jitter(pred_cov.reshape(n_pred, n_pred), self.sig2_obs)
-        # noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs)
+        # add likelihood noise to latent Gaussian prediction. Following gpjax convention
+        # of also adding jitter here
+        pred_cov = pred_cov.reshape(n_pred, n_pred)
+        noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs + self.gp.jitter)
 
         gaussian_pred = MultivariateNormal(loc=pred_mean.squeeze(),
-                                           covariance_matrix=pred_cov)
+                                           covariance_matrix=noisy_cov)
         return GaussianFromNumpyro(gaussian_pred)
 
 
