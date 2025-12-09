@@ -296,11 +296,11 @@ class GPJaxSurrogate(Surrogate):
         n_pred = x.shape[0]
 
         # add likelihood noise to latent Gaussian prediction
-        pred_cov = pred_cov.reshape(n_pred, n_pred)
-        noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs)
+        pred_cov = add_jitter(pred_cov.reshape(n_pred, n_pred), self.sig2_obs)
+        # noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs)
 
         gaussian_pred = MultivariateNormal(loc=pred_mean.squeeze(),
-                                           covariance_matrix=noisy_cov)
+                                           covariance_matrix=pred_cov)
         return GaussianFromNumpyro(gaussian_pred)
 
 
@@ -358,10 +358,8 @@ class GPJaxSurrogate(Surrogate):
         
         Includes the observation noise covariance. 
         """
-
         X = self.design.X
-        K = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter)
-        Sigma = K + jnp.eye(K.shape[0]) * self.sig2_obs
+        Sigma = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter + self.sig2_obs)
         L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
         Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
         return Sigma_inv

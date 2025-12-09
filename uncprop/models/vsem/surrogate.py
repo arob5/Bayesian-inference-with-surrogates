@@ -78,8 +78,8 @@ def _print_gp_fit_info(gp, opt_info):
 class VSEMPosteriorSurrogate(LogDensGPSurrogate):
 
     def expected_normalized_density_approx(self,
-                                           *,
                                            key: PRNGKey,
+                                           *,
                                            grid: Grid,
                                            n_mc: int = 10_000,
                                            **method_kwargs) -> DistributionFromDensity:
@@ -119,7 +119,7 @@ def _estimate_ep_grid(logpi_samples: Array, cell_area: float | None) -> Array:
     n_densities, _ = logp.shape
 
     # log of normalized ep density 
-    log_ep = logsumexp(logp.T) - jnp.log(n_densities) # (n_densities,)
+    log_ep = logsumexp(logp, axis=0) - jnp.log(n_densities) # (n_densities,)
 
     return log_ep
 
