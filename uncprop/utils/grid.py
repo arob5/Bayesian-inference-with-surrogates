@@ -139,8 +139,12 @@ class DensityComparisonGrid:
             for nm, logp in self.log_dens_grid.items()
         }
 
+    @property
+    def distribution_names(self):
+        return list(self.distributions.keys())
+
     def plot(self, 
-             dist_names: list[str] | str, 
+             dist_names: list[str] | str | None = None, 
              normalized: bool = False, 
              log_scale: bool = True,
              points: ArrayLike | None = None,
@@ -148,6 +152,8 @@ class DensityComparisonGrid:
         
         if isinstance(dist_names, str):
             dist_names = [dist_names]
+        elif dist_names is None:
+            dist_names = self.distribution_names
 
         nplots = len(dist_names)
         fig, axs = smart_subplots(nplots=nplots, **kwargs)

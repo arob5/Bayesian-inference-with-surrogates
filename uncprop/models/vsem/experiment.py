@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as jr
 
 from uncprop.custom_types import PRNGKey
-from uncprop.utils.experiment import Replicate, Experiment
+from uncprop.utils.experiment import Replicate
 from uncprop.utils.grid import Grid, DensityComparisonGrid
 from uncprop.models.vsem.inverse_problem import generate_vsem_inv_prob_rep
 from uncprop.models.vsem.surrogate import fit_vsem_surrogate
@@ -68,3 +68,5 @@ class VSEMReplicate(Replicate):
 
         density_comparison = DensityComparisonGrid(grid=self.grid, distributions=dists)
         self.density_comparison = density_comparison
+
+        return self

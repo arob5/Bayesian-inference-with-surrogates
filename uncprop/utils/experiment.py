@@ -33,17 +33,12 @@ class Replicate:
 
 @dataclass
 class Experiment:
-    """
-    An experiment is a collection of replicates, with each replicate
-    differing only 
-    """
 
     name: str
     base_out_dir: Path | str
     num_reps: int
     base_key: PRNGKey
     Replicate: type[Replicate]
-    global_replicate_settings: dict[str, Any]
 
     def __post_init__(self):
         self.base_out_dir = Path(self.base_out_dir)
@@ -61,20 +56,36 @@ class Experiment:
         # create replicate generator
         self.replicates = ()
 
-    def run_replicate(self, idx: int):
-        key = self.replicate_keys[idx]
-        settings = self.global_replicate_settings
-        rep = self.Replicate(key, **settings)
-        return rep()
+    def run_replicate(self, 
+                      idx: int, 
+                      setup_kwargs: dict | None = None,
+                      run_kwargs: dict | None = None):
+        print(f'Running replicate {idx}')
 
-    @abstractmethod
-    def __call__(self, time=True):
+        if setup_kwargs is None:
+            setup_kwargs = {}
+        if run_kwargs is None:
+            run_kwargs = {}
+
+        key = self.replicate_keys[idx]
+        rep = self.Replicate(key=key, **setup_kwargs)
+        return rep(**run_kwargs)
+
+    def __call__(self, 
+                 setup_kwargs: dict | None = None,
+                 run_kwargs: dict | None = None):
         """Top-level execution of the experiment
         
-        Typically will iterate over each replicate and call `run_replicate()`.
-        May write to file/return results, or Replicate may be in charge of I/O.
+        Default method iterates over each replicate and call `run_replicate()`.
+        Most experiments will want to subclass and override this method to 
+        handle I/O results, batching/parallelization, etc.
         """
-        pass
+        return [
+            self.run_replicate(idx=idx,
+                               setup_kwargs=setup_kwargs,
+                               run_kwargs=run_kwargs)
+            for idx in range(self.num_reps)                
+        ]
             
 
 class PosteriorComparison(Replicate):
