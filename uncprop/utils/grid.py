@@ -142,13 +142,45 @@ class DensityComparisonGrid:
     @property
     def distribution_names(self):
         return list(self.distributions.keys())
+    
+    def calc_coverage(self, 
+                      baseline: str, 
+                      other: str | list[str] | None = None,
+                      probs: Array | None = None):
+        """
+        `baseline` is the name of the distribution treated as the baseline/exact
+        distribution for the coverage caclulations.
+        """
+        if other is None:
+            other = [nm for nm in self.distribution_names if nm != baseline]
+        
+        log_prob_baseline = self.log_dens_norm_grid[baseline]
+        log_prob_other = jnp.vstack([self.log_dens_norm_grid[nm] for nm in other])
+        
+        log_coverage, probs, mask = coverage_curve_grid(log_prob_true=log_prob_baseline,
+                                                        log_prob_approx=log_prob_other,
+                                                        probs=probs)
+        return log_coverage, probs, mask, other
+
+
+    def plot_coverage(self, 
+                      baseline: str, 
+                      other: str | list[str] | None = None,
+                      probs: Array | None = None):
+        
+        log_coverage, probs, _, names = self.calc_coverage(baseline=baseline,
+                                                           other=other,
+                                                           probs=probs)
+        return plot_coverage_curve(log_coverage=log_coverage, 
+                                   probs=probs, names=names)
+
 
     def plot(self, 
-             dist_names: list[str] | str | None = None, 
+             dist_names: str | list[str] | None = None, 
              normalized: bool = False, 
              log_scale: bool = True,
              points: ArrayLike | None = None,
-             **kwargs):
+             **kwargs) -> tuple[Figure, Axes]:
         
         if isinstance(dist_names, str):
             dist_names = [dist_names]
@@ -172,27 +204,9 @@ class DensityComparisonGrid:
         return fig, axs
 
 
-def plot_2d_heatmap(X, Y, Z, dim_names, title=None, points=None, ax=None):
-    if ax is None:
-        fig, ax = plt.subplots()
-    else:
-        fig = ax.figure
-
-    # pcolormesh expects X, Y, Z of shape (ny, nx)
-    pcm = ax.pcolormesh(X, Y, Z, shading='auto')
-
-    # optionally add points
-    if points is not None:
-        points = np.atleast_2d(points)
-        ax.plot(points[:,0], points[:,1], 'o')
-
-    fig.colorbar(pcm, ax=ax)
-    ax.set_xlabel(dim_names[0])
-    ax.set_ylabel(dim_names[1])
-    ax.set_title(title)
-
-    return fig, ax
-
+# -----------------------------------------------------------------------------
+# Helper grid functions 
+# -----------------------------------------------------------------------------
 
 def normalize_density_over_grid(logp: Array, 
                                 *,
@@ -243,7 +257,8 @@ def normalize_density_over_grid(logp: Array,
         return (jnp.exp(log_prob_norm), jnp.exp(logZ))
     
 
-def get_grid_coverage_mask(log_prob: Array, *,
+def get_grid_coverage_mask(log_prob: Array, 
+                           *,
                            probs: Array | None = None, 
                            check_normalized: bool = True,
                            normalized_log_tol: float = 1e-10):
@@ -299,276 +314,58 @@ def get_grid_coverage_mask(log_prob: Array, *,
     return mask
 
 
-def plot_2d_mask(mask: Array, 
-                 grid_shape: tuple[int, int],
-                 prob_idx: ArrayLike | None = None):
-    if mask.ndim != 3:
-        raise ValueError('mask should be 3d, as returned by `get_grid_coverage_mask()`.')
-    if prob_idx is not None:
-        prob_idx = jnp.atleast_1d(prob_idx)
-        mask = mask[:, prob_idx, :]
-
-    n, m, d = mask.shape
-    d1, d2 = grid_shape
-    if d != d1 * d2:
-        raise ValueError(f'Grid shape {grid_shape} and flat mask length {d} disagree.')
-    
-    fig, axs = plt.subplots(nrows=n, ncols=m)
-    axs = np.atleast_2d(axs)
-
-    for i in range(n):
-        for j in range(m):
-            ax = axs[i,j]
-            mask_grid = mask[i,j,:].reshape(d1, d2).astype(int)
-            ax.imshow(mask_grid, origin='lower', interpolation='nearest')
-    
-    return fig, axs
-
-
-def coverage_curve_grid(
-    logp_true: Array,
-    logp_approx: Array,
-    cell_area: float | None = None,
-    probs: Array | None = None,
-    *,
-    return_masks: bool = True,
-    return_weights: bool = True,
-    tie_break: str = 'fractional',
-    normalized_log_tol: float = 1e-10,
-    rng=None
-):
+def coverage_curve_grid(log_prob_true: ArrayLike,
+                        log_prob_approx: ArrayLike,
+                        *,
+                        probs: Array | None = None,
+                        check_normalized: bool = True,
+                        normalized_log_tol: float = 1e-10) -> tuple[Array, Array, Array]:
     """
-    Compute HPD coverage curve on a discrete grid using robust log-space arithmetic.
+    Given (n, n_grid) arrays of normalized log probability values (each row 
+    is normalized), computes highest probability density (HPD) regions at the
+    probability levels `probs` using `log_prob_approx`, then computes the log 
+    probability of each region under `log_prob_true`. `log_prob_true` and
+    `log_prob_approx` must be broadcastable. A common case is that `log_prob_true`
+    is a 1d array (multiple approximating distributions, one true baseline).
 
-    This function compares an *approximate* distribution (logp_approx) to a
-    *reference/true* distribution (logp_true) defined on the same discrete, evenly-spaced grid.
-    All inputs are provided as log-values (unnormalized log-densities). The code
-    normalizes in log-space, sorts the approximate distribution to produce HPD sets, 
-    and computes the mass of the *true* distribution inside those HPD sets.
-
-    Ties (level sets) are handled robustly: by default a **fractional**
-    inclusion of the last level-set is used so the approximating distribution's
-    HPD mass equals the probability level exactly (avoiding systematic 
-    integer-selection bias). Optionally supports other tie breaking methods
-    'random' (shuffle equal values) or 'expand' (include whole level set).
-
-    The densities are by default (`cell_area = None`) treated as log masses. If 
-    `cell_area` is a positive float, then `cell_area` is multiplied by the densities
-    to convert to cell masses. 
-
-    Args:
-        logp_true : array_like
-            1D array of log-weights for the *true* distribution (length n = H*W)
-        logp_approx : array_like
-            1D array of log-weights for the *approximate* distribution (same length)
-        cell_area : float or None
-            Area of each grid cell. If provided it's applied as +log(cell_area) before normalization.
-        probvs : array_like or None
-            Array of target HPD masses (in (0,1)). If None, defaults to np.linspace(0.01,0.99,99).
-        return_masks : bool
-            If True, also return boolean masks (per-prob) of fully included cells.
-        return_weights : bool
-            If True (default), also return a 2D array `weights` shaped (len(probs), n)
-            with fractional inclusion weights in [0,1] for every cell and prob. This
-            encodes partial inclusion of the level-set block: 1.0 = fully included,
-            0.0 = excluded, intermediate values indicate partial inclusion.
-        tie_break : {'fractional','random','expand'}
-            - 'fractional' (default): include fractional part of the level set so that
-            the approximating mass equals the prob exactly (deterministic).
-            - 'random': randomly shuffle equal-valued runs and take integer selection
-            (Monte Carlo unbiased if averaged over repeats).
-            - 'expand': include entire level-set (may overshoot prob).
-        normalized_log_tol : float
-            Tolerance in log-space for deciding whether an input is already normalized
-            (i.e., |logZ| <= normalized_log_tol implies normalized).
-        rng : numpy.random.Generator or None
-            Optional RNG to control random tie-breaking.
+    Note that the log probabilities must be normalized. By default a check is done
+    to ensure this.
 
     Returns:
-        tuple (probs, log_coverage, masks, weights)
-
-    Where
-    - probs : array of requested probability values (same as input or default)
-    - log_coverage : array of log(true_mass(HPD_approx(prob))) for each prob
-    - masks : list of boolean arrays (only fully-included cells) if return_masks True. Else None.
-    - weights : a float ndarray with shape (len(probs), n) with fractional weights in [0,1]
-                if return_weights is True. Else None.
-
-    Notes:
-        - `masks` show which cells were fully included deterministically. For fractional
-        inclusion, `weights` should be used to compute true coverage or visualization.
-        - The function computes true coverage via a weighted sum over the true mass:
-            true_mass = sum_i weights[prob_idx, i] * p_true[i],
-        where p_true = exp(logp_true_normalized).
+        tuple, with elements:
+            - (n, n_prob) array, where the (i,j) element is the log coverage of the nth
+              distribution at probability level probs[j].
+            - the `probs` array of shape (n_prob,)
+            - the (n, n_prob, n_grid) boolean mask returned by get_grid_coverage_mask().
     """
+
+    log_prob_true = _check_grid_batch(log_prob_true)
+    log_prob_approx = _check_grid_batch(log_prob_approx)
+
+    if check_normalized:
+        _check_normalized(log_prob_true, normalized_log_tol)
+        _check_normalized(log_prob_approx, normalized_log_tol)
+
     if probs is None:
-        probs = np.linspace(0.1, 0.99, 10)
-    probs = np.asarray(probs, dtype=float)
-    if np.any(probs < 0) or np.any(probs > 1):
-        raise ValueError("probs must lie in [0,1]")
+        probs = jnp.linspace(0.1, 0.99, 10)
+    else:
+        probs = jnp.asarray(probs).ravel()
+        if jnp.any(probs < 0) or jnp.any(probs > 1):
+            raise ValueError('probs must lie in [0,1]')
+        
+    # compute coverage masks for approximating distribution
+    masks = get_grid_coverage_mask(log_prob=log_prob_approx,
+                                   probs=probs, check_normalized=False)
 
-    logp_t = np.asarray(logp_true).ravel().astype(float)
-    logp_a = np.asarray(logp_approx).ravel().astype(float)
-    if logp_t.shape != logp_a.shape:
-        raise ValueError("logp_true and logp_approx must have the same number of elements")
-    n_grid = logp_t.size
+    # compute probability in the approximate HPD regions under the true distribution; return (n, n_prob)
+    log_coverage = logsumexp(
+        log_prob_true[:, jnp.newaxis, :] + jnp.where(masks, 0.0, -jnp.inf), # (n, n_prob, n_grid)
+        axis=-1
+    )
 
-    # normalize log probs, potentially converting densities to cell masses
-    logp_t_norm, logZ_t = normalize_if_not(logp_t, cell_area, 
-                                           tol_log=normalized_log_tol)
-    logp_a_norm, logZ_a = normalize_if_not(logp_a, cell_area, 
-                                           tol_log=normalized_log_tol)
-    logp_t_norm = logp_t_norm.ravel()
-    logp_a_norm = logp_a_norm.ravel()
-    logZ_t = logZ_t.item()
-    logZ_a = logZ_a.item()
+    return log_coverage, probs, masks
 
-    if not np.isfinite(logZ_t):
-        raise ValueError("true log-probabilities are all -inf or non-finite")
-    if not np.isfinite(logZ_a):
-        raise ValueError("approx log-probabilities are all -inf or non-finite")
-
-    # For weighted sums
-    p_t = np.exp(logp_t_norm)
-
-    # sorted descending approximate log-probs
-    # for reproducibility with 'random' tie-break, optionally shuffle equal-values
-    order = np.argsort(logp_a_norm)[::-1]
-    logp_a_sorted = logp_a_norm[order]
-
-
-    log_cum = logcumsumexp_1d(logp_a_sorted)  # log of cumulative approx mass in sorted order
-
-    log_coverage = np.empty_like(probs, dtype=float)
-    masks = [] if return_masks else None
-    weights = np.zeros((probs.size, n_grid), dtype=float) if return_weights else None
-
-    for prob_idx, prob in enumerate(probs):
-        if prob <= 0:
-            log_coverage[prob_idx] = -np.inf
-            if return_masks:
-                masks.append(np.zeros(n_grid, dtype=bool))
-            if return_weights:
-                weights[prob_idx, :] = 0.0
-            continue
-
-        if prob >= 1:
-            mask_full = np.ones(n_grid, dtype=bool)
-            log_cov_full = logsumexp(logp_t_norm)  # should be 0 if normalized
-            log_coverage[prob_idx] = log_cov_full
-            if return_masks:
-                masks.append(mask_full)
-            if return_weights:
-                weights[prob_idx, :] = 1.0
-            continue
-
-        log_prob = np.log(prob)
-
-        # First index where cumulative >= prob
-        k = None
-        exceeds_prob = (log_cum >= log_prob) & np.isfinite(log_cum)
-        if np.any(exceeds_prob):
-            k = np.argmax(exceeds_prob)  # first True index
-        else:
-            k = None
-
-        # shouldn't happen since should sum to one, but possible
-        # due to numerical error; fallback to include all
-        if k is None:
-            mask_full = np.ones(n_grid, dtype=bool)
-            log_cov = logsumexp(logp_t_norm[mask_full])
-            log_coverage[prob_idx] = log_cov
-            if return_masks:
-                masks.append(mask_full)
-            if return_weights:
-                weights[prob_idx, :] = 1.0
-            continue
-
-        # find contiguous block of entries equal to threshold
-        # (contiguous due to fact that array is sorted)
-        threshold = logp_a_sorted[k]
-        approx_equal = np.isclose(logp_a_sorted, threshold, rtol=0, atol=1e-12)
-        left_idx = k
-        while left_idx > 0 and approx_equal[left_idx - 1]:
-            left_idx -= 1
-        right_idx = k
-        while right_idx + 1 < n_grid and approx_equal[right_idx + 1]:
-            right_idx += 1
-
-        if tie_break == 'expand':
-            sel_sorted_indices = np.arange(0, right_idx + 1)
-            mask = np.zeros(n_grid, dtype=bool)
-            mask[order[sel_sorted_indices]] = True
-            if return_weights:
-                weights[prob_idx, :] = 0.0
-                weights[prob_idx, order[: (right_idx + 1)]] = 1.0
-            log_cov = logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
-
-        elif tie_break == 'random':
-            sel_sorted_indices = np.arange(0, k + 1)
-            mask = np.zeros(n_grid, dtype=bool)
-            mask[order[sel_sorted_indices]] = True
-            if return_weights:
-                weights[prob_idx, :] = 0.0
-                weights[prob_idx, order[: (k + 1)]] = 1.0
-            log_cov = logsumexp(logp_t_norm[mask]) if np.any(mask) else -np.inf
-
-        else:  # tie_break == 'fractional'
-            # compute cumulative mass before the block
-            if left_idx == 0:
-                cum_before = 0.0
-            else:
-                log_cum_before = log_cum[left_idx - 1]
-                cum_before = float(np.exp(log_cum_before))
-
-            block_log_mass = logsumexp(logp_a_sorted[left_idx: right_idx + 1])
-            block_mass = float(np.exp(block_log_mass))
-
-            if block_mass <= 0:
-                f = 0.0
-            else:
-                f = float((prob - cum_before) / block_mass)
-                f = np.clip(f, 0.0, 1.0)
-
-            # build weights: 1 for fully included before the block, f for block, 0 otherwise
-            if return_weights:
-                w = np.zeros(n_grid, dtype=float)
-                if left_idx > 0:
-                    w[order[:left_idx]] = 1.0
-                w[order[left_idx: right_idx + 1]] = f
-                weights[prob_idx, :] = w
-
-            # compute true mass via weighted sum in linear space for stability
-            if return_weights:
-                total_true = float(np.dot(weights[prob_idx, :], p_t))
-            else:
-                # if weights not requested, fall back to computing true_before and true_block
-                if left_idx > 0:
-                    idx_before = order[:left_idx]
-                    true_before = float(np.sum(p_t[idx_before]))
-                else:
-                    true_before = 0.0
-                idx_block = order[left_idx: right_idx + 1]
-                true_block = float(np.sum(p_t[idx_block]))
-                total_true = true_before + f * true_block
-
-            if total_true <= 0:
-                log_cov = -np.inf
-            else:
-                log_cov = np.log(total_true)
-
-            # build boolean mask of fully-included cells (before block)
-            mask = np.zeros(n_grid, dtype=bool)
-            if left_idx > 0:
-                mask[order[:left_idx]] = True
-
-        log_coverage[prob_idx] = log_cov
-        if return_masks:
-            masks.append(mask.copy())
-
-    return probs, log_coverage, masks, weights
-
-
+    
 def _is_normalized(log_prob: Array, log_tol: float = 1e-10) -> Array:
     """
     Check if density is normalized, given log probabilities. Vectorized
@@ -603,3 +400,133 @@ def _check_grid_batch(x: ArrayLike) -> Array:
         raise ValueError('Invalid input: x.ndim > 2')
     
     return jnp.atleast_2d(x)
+
+
+# -----------------------------------------------------------------------------
+# Plotting helpers
+# -----------------------------------------------------------------------------
+
+def plot_2d_heatmap(X, Y, Z, dim_names, title=None, points=None, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    # pcolormesh expects X, Y, Z of shape (ny, nx)
+    pcm = ax.pcolormesh(X, Y, Z, shading='auto')
+
+    # optionally add points
+    if points is not None:
+        points = np.atleast_2d(points)
+        ax.plot(points[:,0], points[:,1], 'o')
+
+    fig.colorbar(pcm, ax=ax)
+    ax.set_xlabel(dim_names[0])
+    ax.set_ylabel(dim_names[1])
+    ax.set_title(title)
+
+    return fig, ax
+
+
+def plot_2d_mask(mask: Array, 
+                 grid_shape: tuple[int, int],
+                 prob_idx: ArrayLike | None = None):
+    """
+    Plots coverage mask, as returned by get_grid_coverage_mask()
+    """
+
+    if mask.ndim != 3:
+        raise ValueError('mask should be 3d, as returned by `get_grid_coverage_mask()`.')
+    if prob_idx is not None:
+        prob_idx = jnp.atleast_1d(prob_idx)
+        mask = mask[:, prob_idx, :]
+
+    n, m, d = mask.shape
+    d1, d2 = grid_shape
+    if d != d1 * d2:
+        raise ValueError(f'Grid shape {grid_shape} and flat mask length {d} disagree.')
+    
+    fig, axs = plt.subplots(nrows=n, ncols=m)
+    axs = np.atleast_2d(axs)
+
+    for i in range(n):
+        for j in range(m):
+            ax = axs[i,j]
+            mask_grid = mask[i,j,:].reshape(d1, d2).astype(int)
+            ax.imshow(mask_grid, origin='lower', interpolation='nearest')
+    
+    return fig, axs
+
+
+def plot_coverage_curve(log_coverage: Array, 
+                        probs: Array, 
+                        names: list[str] | None = None):
+    """
+    Accepts as arguments the first two return values from `coverage_curve_grid()`.
+    """
+    log_coverage = jnp.atleast_2d(log_coverage)
+    n_curves = log_coverage.shape[0]
+
+    if names is None:
+        names = [f'dist{i}' for i in range(n_curves)]
+
+    # coverage curves
+    fig, ax = plt.subplots()
+    for i in range(n_curves):
+        ax.plot(probs, jnp.exp(log_coverage[i]), label=names[i])
+
+    # Add line y = x
+    xmin, xmax = ax.get_xlim()
+    x = np.linspace(xmin, xmax, 100)
+    y = x
+    ax.plot(x, y, linestyle='--')
+
+    ax.set_xlabel('nominal coverage')
+    ax.set_ylabel('actual coverage')
+    ax.legend()
+
+    return fig, ax
+
+
+def plot_coverage_curve_reps(log_coverage: Array, 
+                             probs: Array, 
+                             names: list[str] | None = None,
+                             qmin: float = 0.05,
+                             qmax: float = 0.95,
+                             single_plot: bool = False,
+                             alpha: float = 0.3) -> tuple[Figure, Axes]:
+    """
+    Summarizes an ensemble of coverage curves, typically from multiple replicates
+    of an experiment. Arguments are the same as `plot_coverage_curve`
+    except that `log_coverage` has a leading batch access; i.e., it is shape
+    (n_reps, n_dists, n_probs). `qmin` and `qmax` specify the quantiles defining
+    the width of the confidence band.
+
+    Optionally plots lines on single plot, or splits into multiple plots.
+    """
+    log_coverage = jnp.atleast_3d(log_coverage)
+    n_curves = log_coverage.shape[1]
+
+    if names is None:
+        names = [f'dist{i}' for i in range(n_curves)]
+
+    # compute quantiles for each distribution
+    q = jnp.array([qmin, 0.5, qmax])
+    quantiles = jnp.quantile(jnp.exp(log_coverage), q=q, axis=0) # (3, n_dists, n_probs)
+
+    fig, ax = plt.subplots()
+    for i in range(n_curves):
+        ax.fill_between(probs, quantiles[0,i,:], quantiles[2,i,:], label=names[i], alpha=alpha)
+        ax.plot(probs, quantiles[1,i,:])
+
+    # Add line y = x
+    xmin, xmax = ax.get_xlim()
+    x = np.linspace(xmin, xmax, 100)
+    y = x
+    ax.plot(x, y, linestyle='--')
+
+    ax.set_xlabel('nominal coverage')
+    ax.set_ylabel('actual coverage')
+    ax.legend()
+
+    return fig, ax
