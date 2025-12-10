@@ -267,13 +267,14 @@ Going forward, we focus on the discrete-time operator $\solutionOp$, neglecting 
 for simplicity. Finally, suppose we have observed data $\obs \in \obsSpace \subseteq \R^{\dimObs}$ that we model as a
 noise-corrupted function of the state trajectory. This is formalized by the definition of an observation operator 
 $\obsOp: \R^{\NTimeStep \times \dimState} \to \obsSpace$ mapping from the state trajectory to a 
-$\dimObs$-dimensional observable quantity. Assume the observations are generated as 
+$\dimObs$-dimensional observable quantity. Assuming the data generating process
 \begin{align}
 &\obs = (\obsOp \circ \solutionOp)(\ParTrue) + \noise, 
 &&\noise \sim \Gaussian(0, \likPar) \label{ode_inv_prob} 
 \end{align}
-for some ``true'' parameter value $\ParTrue \in \parSpace$. Observe that this setting falls within the generic 
-inverse problem framework with forward model $\fwd \Def \obsOp \circ \solutionOp$. In this case, the computational
+for some ``true'' parameter value $\ParTrue \in \parSpace$, we see that this problem is of the form in 
+\Cref{eq:inv_prob_Gaussian} with forward model $\fwd \Def \obsOp \circ \solutionOp$.
+In this case, the computational
 cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the numerical solver $\solutionOp(\Par)$.
 
 \section{Surrogate Models}

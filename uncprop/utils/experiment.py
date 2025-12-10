@@ -5,6 +5,7 @@ approximation experiment.
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,24 +34,36 @@ class Replicate:
 
 @dataclass
 class Experiment:
+    """
+    Run an experiment consisting of a set of replicates of a base experiment.
 
+    Instantiating an Experiment object stores the Replicate that will be used, 
+    as well as additional metadata. It also handles filepaths and creates
+    the JAX PRNG keys used for each replicate.
+
+    `base_out_dir` is the base directory for the experiment. Each time 
+    `__call__()` is invoked, a new subdirectory is created, which houses the
+    output from that particular call. This allows running an experiment with 
+    a set structure/PRNG keys with different settings.
+    """
     name: str
     base_out_dir: Path | str
     num_reps: int
     base_key: PRNGKey
     Replicate: type[Replicate]
+    subdir_name_fn: Callable[[dict, dict], str | Path]
 
     def __post_init__(self):
         self.base_out_dir = Path(self.base_out_dir)
-        self.out_dir = self.base_out_dir / self.name
 
         # create output directory
-        if self.out_dir.exists():
-            raise FileExistsError(f'Experiment out dir already exists: {self.out_dir}')
-        print(f'Creating experiment out dir: {self.out_dir}')
-        self.out_dir.mkdir(parents=True)
+        if self.base_out_dir.exists():
+            print(f'Using existing base output directory: {self.base_out_dir}')
+        else:
+            print(f'Creating new output directory: {self.base_out_dir}')
+            self.base_out_dir.mkdir(parents=True)
 
-        # create base prng key for each experiment
+        # create base prng key for each replicate
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
 
     def run_replicate(self, 
@@ -67,23 +80,66 @@ class Experiment:
         key = self.replicate_keys[idx]
         rep = self.Replicate(key=key, **setup_kwargs)
         return rep(**run_kwargs)
+    
+    def save_results(self, subdir: Path, *args, **kwargs):
+        print('No save_results() methods implemented.')
 
-    def __call__(self, 
+    def make_subdir_name(self, setup_kwargs: dict, run_kwargs: dict) -> str | Path:
+        return self.subdir_name_fn(setup_kwargs, run_kwargs)
+
+    def create_subdir(self, 
+                      *,
+                      setup_kwargs: dict, 
+                      run_kwargs: dict, 
+                      name: str | Path | None = None):
+        if name is None:
+            subdir = self.make_subdir_name(setup_kwargs, run_kwargs)
+        else: 
+            subdir = Path(name)
+
+        subdir = self.base_out_dir / subdir
+
+        # create output directory
+        if subdir.exists():
+            raise FileExistsError(f'Experiment sub-directory already exists: {subdir}')
+        print(f'Creating experiment sub-directory: {subdir}')
+        subdir.mkdir(parents=True)
+
+        return subdir
+
+    def __call__(self,
                  setup_kwargs: dict | None = None,
-                 run_kwargs: dict | None = None):
+                 run_kwargs: dict | None = None,
+                 backup_frequency: int | None = None,
+                 subdir_name: str | Path | None = None):
         """Top-level execution of the experiment
         
-        Default method iterates over each replicate and call `run_replicate()`.
-        Most experiments will want to subclass and override this method to 
-        handle I/O results, batching/parallelization, etc.
-        """
-        return [
-            self.run_replicate(idx=idx,
-                               setup_kwargs=setup_kwargs,
-                               run_kwargs=run_kwargs)
-            for idx in range(self.num_reps)                
-        ]
-            
+        Default method iterates over each replicate and call `run_replicate()`, 
+        optionally saving results periodically by calling `save_results()`.
+        Some experiments may want to subclass and override to handle specialty
+        batching/parallelization.
 
-class PosteriorComparison(Replicate):
-    pass
+        `subdir` allows manually specifying the subdirectory for this call,
+        overriding the default behavior of using `make_subdir_name()`.
+        """
+        subdir = self.create_subdir(setup_kwargs=setup_kwargs, 
+                                    run_kwargs=run_kwargs,
+                                    name=subdir_name)
+
+        results: list[Any] = [None] * self.num_reps
+        failed_reps: list[int] = []
+
+        for rep_idx in range(self.num_reps):
+            try:
+                results[rep_idx] = self.run_replicate(idx=rep_idx,
+                                                      setup_kwargs=setup_kwargs,
+                                                      run_kwargs=run_kwargs)
+            except Exception as e:
+                print(f'Iteration {rep_idx} failed with error: {e}')
+                failed_reps.append(rep_idx)
+                results[rep_idx] = e
+            finally:
+                if (backup_frequency is not None) and (rep_idx % backup_frequency == 0):
+                    self.save_results(subdir, results)
+
+        return results, failed_reps
