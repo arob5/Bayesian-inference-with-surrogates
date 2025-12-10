@@ -13,23 +13,27 @@ from uncprop.models.vsem.surrogate import fit_vsem_surrogate
 class VSEMReplicate(Replicate):
 
     # fixed settings across all experiments
-    noise_sd = 0.1
-    n_months = 24
+    n_months = 12
 
     inverse_problem_settings = {
-        'par_names': ['kext', 'av'],
+        'par_names': ['av', 'veg_init'],
         'n_windows': n_months,
         'n_days_per_window': 30,
-        'observed_variable': 'lai',
-        'noise_cov_tril': noise_sd * jnp.identity(n_months)
+        'observed_variable': 'lai'
     }
 
     surrogate_settings = {
         'design_method': 'lhc'
     }
 
-    def __init__(self, key: PRNGKey, n_design: int, n_grid: int = 50, **kwargs):
+    def __init__(self, 
+                 key: PRNGKey, 
+                 n_design: int, 
+                 noise_sd: int,
+                 n_grid: int = 50,
+                 **kwargs):
         key, key_inv_prob, key_surrogate = jr.split(key, 3)
+        self.inverse_problem_settings['noise_cov_tril'] = noise_sd * jnp.identity(self.n_months)
         self.surrogate_settings['n_design'] = n_design
         
         # exact posterior
@@ -37,9 +41,9 @@ class VSEMReplicate(Replicate):
                                                **self.inverse_problem_settings)
         
         # surrogate posterior
-        surrogate_posterior, fit_info = fit_vsem_surrogate(key=key_surrogate, 
-                                                           posterior=posterior,
-                                                           **self.surrogate_settings)
+        surrogate_post_gp, surrogate_post_clip, fit_info = fit_vsem_surrogate(key=key_surrogate, 
+                                                                              posterior=posterior,
+                                                                              **self.surrogate_settings)
         
         # grid points for grid-based metrics
         grid = Grid(low=posterior.support[0],
@@ -49,15 +53,22 @@ class VSEMReplicate(Replicate):
         
         self.key = key
         self.posterior = posterior
-        self.surrogate_posterior = surrogate_posterior
+        self.surrogate_posterior_gp = surrogate_post_gp
+        self.surrogate_posterior_clip_gp = surrogate_post_clip
         self.fit_info = fit_info
         self.grid = grid
 
 
-    def __call__(self, **kwargs):        
+    def __call__(self, surrogate_tag: str, **kwargs):
+        # Note that each time this is called for a particular instance will generate the same key_ep.
         key, key_ep = jr.split(self.key, 2)
         post = self.posterior
-        surr = self.surrogate_posterior
+        if surrogate_tag == 'gp':
+            surr = self.surrogate_posterior_gp
+        elif surrogate_tag == 'clip_gp':
+            surr = self.surrogate_posterior_clip_gp
+        else:
+            raise ValueError(f'surrogate_tag must be `gp` or `clip_gp`; got {surrogate_tag}')
 
         dists = {
             'exact': post,

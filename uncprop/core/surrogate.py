@@ -22,10 +22,14 @@ from uncprop.core.inverse_problem import (
 )
 
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
-from uncprop.utils.distribution import GaussianFromNumpyro
+from uncprop.utils.distribution import (
+    GaussianFromNumpyro,
+    clipped_gaussian_mean,
+    log_clipped_lognormal_mean,
+)
 
 # predictive distribution of a surrogate at set of inputs
-PredDist: TypeAlias = Distribution | NumpyroDistribution
+PredDist: TypeAlias = Distribution
 
 
 def construct_design(key: PRNGKey,
@@ -98,8 +102,8 @@ class Surrogate(ABC):
 
     def stdev(self, input: ArrayLike) -> Array:
         return self(input).stdev
-    
-    
+
+        
 class SurrogateDistribution(ABC):
     """
     This class represents a random probability distribution, where the
@@ -140,13 +144,20 @@ class SurrogateDistribution(ABC):
         raise NotImplementedError
     
     def log_density(self, input: ArrayLike) -> PredDist:
-        """ Same return type as `log_density_from_pred` but first computes
-            the surrogate predictions at a set of inputs. Then pushes the 
-            distribution through the log density map.
+        """ 
+        Same return type as `log_density_from_pred` but first computes
+        the surrogate predictions at a set of inputs. Then pushes the 
+        distribution through the log density map.
         """
         pred = self.surrogate(input)
         return self.log_density_from_pred(pred)
     
+    def sample_surrogate_pred(self, key: PRNGKey, input: ArrayLike, n: int = 1) -> Array:
+        """
+        Sample the surrogate predictive distribution at a set of inputs.
+        """
+        return self.surrogate(input).sample(key, n=n)
+
     def sample_trajectory(self) -> Distribution:
         """ Returns a Distribution representing a trajectory of the random distribution 
         
@@ -187,7 +198,9 @@ class LogDensGPSurrogate(SurrogateDistribution):
     That is, f is a Gaussian process.
     """
 
-    def __init__(self, log_dens: GPJaxSurrogate, support: tuple[tuple, tuple] | None = None):
+    def __init__(self, 
+                 log_dens: GPJaxSurrogate, 
+                 support: tuple[tuple, tuple] | None = None):
         if not isinstance(log_dens, GPJaxSurrogate):
             raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a GPJaxSurrogate, got {type(log_dens)}')
         self._surrogate = log_dens
@@ -211,10 +224,12 @@ class LogDensGPSurrogate(SurrogateDistribution):
     
     def expected_surrogate_approx(self) -> DistributionFromDensity:
         """ Plug-in surrogate mean as log-density approximation. """
-        surrogate_mean = lambda x: self.surrogate.mean(x)
+
+        gp = self.surrogate
+        surrogate_mean = lambda x: gp.mean(x)
 
         return DistributionFromDensity(log_dens=surrogate_mean,
-                                       dim=self.surrogate.input_dim)
+                                       dim=gp.input_dim)
     
     def expected_log_density_approx(self) -> DistributionFromDensity:
         """ Surrogate is the log-density, so equivalent to expected_surrogate_approx. """
@@ -222,13 +237,93 @@ class LogDensGPSurrogate(SurrogateDistribution):
     
     def expected_density_approx(self) -> Distribution:
         """ Density surrogate exp{f(u)} is log-normal, so expectation is log-normal mean """
+        gp = self.surrogate
+
         def log_expected_dens(x):
-            pred = self.surrogate(x)
+            pred = gp(x)
             return pred.mean + 0.5 * pred.variance
         
         return DistributionFromDensity(log_dens=log_expected_dens,
-                                       dim=self.surrogate.input_dim)
+                                       dim=gp.input_dim)
     
+
+class LogDensClippedGPSurrogate(SurrogateDistribution):
+    """
+    The same form as LogDensGPSurrogate, but the GP f(u) is "clipped"; i.e., it
+    is replaced by g(u) := min{f(u), b(u)} where b(u) is a given pointwise upper
+    bound. This is useful when the posterior density being approximated has a 
+    known upper bound.
+
+    The GP f(u) is still considered the "surrogate" here (`self.surrogate`); the clipping
+    transformation is simply applied post-hoc to any predictive quantities.
+    """
+
+    def __init__(self, 
+                 log_dens: GPJaxSurrogate,
+                 log_dens_upper_bound: Callable[[ArrayLike], Array],
+                 support: tuple[tuple, tuple] | None = None):
+        if not isinstance(log_dens, GPJaxSurrogate):
+            raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a GPJaxSurrogate, got {type(log_dens)}')
+        self._surrogate = log_dens
+        self._log_dens_upper_bound = log_dens_upper_bound
+        self._support = support
+
+    @property
+    def surrogate(self):
+        return self._surrogate
+    
+    @property
+    def dim(self):
+        return self.surrogate.input_dim
+    
+    @property
+    def support(self):
+        return self._support
+    
+    def sample_surrogate_pred(self, key: PRNGKey, input: ArrayLike, n: int = 1) -> Array:
+        """
+        Clip the Gaussian samples
+        """
+        gaussian_samp = self.surrogate(input).sample(key, n=n)
+        upper_bound = self._log_dens_upper_bound(input).ravel()
+        return jnp.clip(gaussian_samp, max=upper_bound)
+    
+    def log_density_from_pred(self, pred: PredDist):
+        """ Surrogate predictions are Gaussian log-density predictions; just clip them """
+        return pred
+    
+    def expected_surrogate_approx(self) -> DistributionFromDensity:
+        """ Plug-in surrogate mean as log-density approximation. """
+        log_dens_upper_bound = self._log_dens_upper_bound
+        gp = self.surrogate
+
+        def surrogate_mean(x):
+            gaussian_mean = gp.mean(x)
+            gaussian_var = gp.variance(x)
+            upper_bound = log_dens_upper_bound(x)
+            return clipped_gaussian_mean(gaussian_mean, gaussian_var, upper_bound)
+
+        return DistributionFromDensity(log_dens=surrogate_mean,
+                                       dim=gp.input_dim)
+    
+    def expected_log_density_approx(self) -> DistributionFromDensity:
+        """ Surrogate is the log-density, so equivalent to expected_surrogate_approx. """
+        return self.expected_surrogate_approx()
+    
+    def expected_density_approx(self) -> Distribution:
+        """ Density surrogate exp{f(u)} is log-normal, so expectation is clipped log-normal mean """
+        log_dens_upper_bound = self._log_dens_upper_bound
+        gp = self.surrogate
+
+        def log_expected_dens(x):
+            gaussian_mean = gp.mean(x)
+            gaussian_var = gp.variance(x)
+            upper_bound = log_dens_upper_bound(x)
+            return log_clipped_lognormal_mean(gaussian_mean, gaussian_var, upper_bound)
+        
+        return DistributionFromDensity(log_dens=log_expected_dens,
+                                       dim=gp.input_dim)
+
 
 class GPJaxSurrogate(Surrogate):
     """

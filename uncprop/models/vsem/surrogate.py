@@ -9,12 +9,14 @@ from numpyro.distributions import MultivariateNormal
 from jax.scipy.special import logsumexp
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
-from uncprop.core.inverse_problem import Posterior, DistributionFromDensity
+from uncprop.core.inverse_problem import Distribution, Posterior, DistributionFromDensity
 from uncprop.utils.gpjax_models import construct_gp, train_gp_hyperpars
 from uncprop.utils.grid import normalize_density_over_grid, Grid
 from uncprop.core.surrogate import (
-    GPJaxSurrogate, 
+    GPJaxSurrogate,
+    SurrogateDistribution,
     LogDensGPSurrogate,
+    LogDensClippedGPSurrogate,
     construct_design, 
     PredDist,
 )
@@ -25,7 +27,7 @@ def fit_vsem_surrogate(key: PRNGKey,
                        n_design: int,
                        design_method: str,
                        gp_train_args: dict | None = None,
-                       verbose: bool = True) -> tuple[VSEMPosteriorSurrogate, dict]:
+                       verbose: bool = True) -> tuple[VSEMPosteriorSurrogate, VSEMPosteriorSurrogate, dict]:
     """ Top-level function for fitting VSEM log posterior surrogate
 
     Note that `posterior` represents the posterior of the exact inverse problem that 
@@ -54,11 +56,19 @@ def fit_vsem_surrogate(key: PRNGKey,
     # wrap gpjax object as a GPJAXSurrogate
     log_density_surrogate = GPJaxSurrogate(gp=gp, design=design)
 
-    # random posterior induced by GP surrogate
-    posterior_surrogate = VSEMPosteriorSurrogate(log_dens=log_density_surrogate,
-                                                 support=posterior.support)
+    # random posteriors induced by GP surrogate and clipped GP surrogate
+    def log_dens_upper_bound(x: ArrayLike) -> Array:
+        return posterior.likelihood.log_density_upper_bound(x) + posterior.prior.log_density(x)
+
+    post_surrogate_gp = LogDensGPSurrogate(log_dens=log_density_surrogate,
+                                           support=posterior.support)
+    post_surrogate_clip_gp = LogDensClippedGPSurrogate(log_dens=log_density_surrogate,
+                                                       log_dens_upper_bound=log_dens_upper_bound,
+                                                       support=posterior.support)
     
-    return posterior_surrogate, opt_info
+    return (VSEMPosteriorSurrogate(post_surrogate_gp), 
+            VSEMPosteriorSurrogate(post_surrogate_clip_gp), 
+            opt_info)
 
 
 def _print_gp_fit_info(gp, opt_info):
@@ -75,8 +85,51 @@ def _print_gp_fit_info(gp, opt_info):
     print(f'gp noise std dev: {gp_noise_sd}')
 
 
-class VSEMPosteriorSurrogate(LogDensGPSurrogate):
+class VSEMPosteriorSurrogate(SurrogateDistribution):
+    """
+    A light wrapper around either `LogDensGPSurrogate` or `LogDensClippedGPSurrogate`, with 
+    the sole purpose of adding the `expected_normalized_density_approx()` method specialized
+    for the grid-based VSEM experiment.
 
+    This is really a temporary hack. A better long-term solution would consist of defining 
+    a LogDensSurrogate class.
+    """
+
+    def __init__(self,
+                 posterior_surrogate: LogDensGPSurrogate | LogDensClippedGPSurrogate, 
+                 support: tuple[tuple, tuple] | None = None):
+        if not isinstance(posterior_surrogate, (LogDensGPSurrogate, LogDensClippedGPSurrogate )):
+            raise ValueError(f'VSEMPosteriorSurrogate wraps either LogDensGPSurrogate or LogDensClippedGPSurrogate')
+        self._posterior_surrogate = posterior_surrogate
+
+    @property
+    def posterior_surrogate(self):
+        return self._posterior_surrogate
+
+    @property
+    def surrogate(self):
+        return self.posterior_surrogate.surrogate
+    
+    @property
+    def dim(self):
+        return self.posterior_surrogate.dim
+    
+    @property
+    def support(self):
+        return self.posterior_surrogate.support
+    
+    def log_density_from_pred(self, pred: PredDist):
+        return self.posterior_surrogate.log_density_from_pred(pred)
+    
+    def expected_surrogate_approx(self) -> DistributionFromDensity:
+        return self.posterior_surrogate.expected_surrogate_approx()
+    
+    def expected_log_density_approx(self) -> DistributionFromDensity:
+        return self.posterior_surrogate.expected_surrogate_approx()
+    
+    def expected_density_approx(self) -> Distribution:
+        return self.posterior_surrogate.expected_density_approx()
+    
     def expected_normalized_density_approx(self,
                                            key: PRNGKey,
                                            *,
@@ -88,17 +141,19 @@ class VSEMPosteriorSurrogate(LogDensGPSurrogate):
         posterior approximation as a Monte Carlo based estimate of the density
         over a 2d grid of points. The argument `grid` is required only to extract
         the cell area, which informs how the density is approximated. The args
-        `key`, `n_mc` control the Monte Carlo sampling.        
+        `key`, `n_mc` control the Monte Carlo sampling.
+
+        This works for both Gaussian and clipped Gaussian predictors.       
         """
-        
+    
         cell_area = grid.cell_area
+        input_dim = self.surrogate.input_dim
 
         def log_dens(x: ArrayLike):
-            log_post_samp = self.surrogate(x).sample(key, n=n_mc) # (n_mc, n_x)
+            log_post_samp = self.posterior_surrogate.sample_surrogate_pred(key, input=x, n=n_mc) # (n_mc, n_x)
             return _estimate_ep_grid(log_post_samp, cell_area=cell_area)
 
-        return DistributionFromDensity(log_dens=log_dens,
-                                       dim=self.surrogate.input_dim)
+        return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
 
 
 def _estimate_ep_grid(logpi_samples: Array, cell_area: float | None) -> Array:

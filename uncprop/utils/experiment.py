@@ -26,7 +26,7 @@ class Replicate:
         pass
 
     @abstractmethod
-    def __call__(self):
+    def __call__(self, *args, **kwargs) -> Any:
         """Run single replicate of experiment with specified key"""
         pass
 
@@ -52,9 +52,6 @@ class Experiment:
 
         # create base prng key for each experiment
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
-
-        # create replicate generator
-        self.replicates = ()
 
     def run_replicate(self, 
                       idx: int, 

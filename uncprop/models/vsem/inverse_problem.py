@@ -55,6 +55,64 @@ VSEM_DEFAULT_PRIORS = {
 }
 
 
+def generate_vsem_inv_prob_rep(key: PRNGKey,
+                               par_names: list[str],
+                               n_windows: int,
+                               n_days_per_window: int,
+                               observed_variable: str,
+                               noise_cov_tril: Array):
+    """ Top-level function for generating instance of a VSEM inverse problem
+
+    Generates a Posterior object representing the exact posterior corresponding
+    to a VSEM inverse problem.
+    """
+
+    key, key_prior, key_driver, key_obs = jr.split(key, 4)
+    n_days = n_windows * n_days_per_window
+
+    # prior on calibration parameters
+    prior = VSEMPrior(par_names)
+
+    # ground truth data generating process
+    defaults = VSEM_DEFAULT_PARAMS.copy()
+    true_calibration_params = prior.sample_all_vsem_params(key_prior)
+    for param, value in true_calibration_params.items():
+        defaults[param] = value
+
+    time_steps, driver = vsem.simulate_vsem_driver(key_driver, n_days)
+    obs_op_info = define_vsem_observation_operator(num_days=n_days, 
+                                                   window_len=n_days_per_window,
+                                                   vsem_output_var=observed_variable)
+    true_dgp = DataGeneratingProcess(
+        driver_key=key_driver,
+        driver=driver,
+        vsem_params=defaults,
+        observation_operator_info=obs_op_info,
+        noise_cov_tril=noise_cov_tril
+    )
+
+    # calibration model
+    calibration_model = CalibrationModel(
+        driver=true_dgp.driver,
+        vsem_params=true_dgp.vsem_params,
+        calibration_params=par_names,
+        observation_operator_info=true_dgp.observation_operator_info,
+        noise_cov_tril=true_dgp.noise_cov_tril
+    )
+
+    # simulate observed data
+    observation_info = DataRealization(
+        obs_key=key_obs,
+        data_generating_process=true_dgp
+    )
+
+    # construct likelihood and posterior objects
+    likelihood = VSEMLikelihood(calibration_model, observation_info)
+    posterior = Posterior(prior, likelihood)
+
+    return posterior
+
+
 @dataclass
 class ObservationOperatorInfo:
     """Stores the observation operator and intermediate quantities
@@ -309,59 +367,6 @@ class VSEMLikelihood:
         """
         noise_cov_tril = self.model.noise_cov_tril
         return _gaussian_log_det_term_tril(noise_cov_tril)
-
-
-def generate_vsem_inv_prob_rep(key: PRNGKey,
-                               par_names: list[str],
-                               n_windows: int,
-                               n_days_per_window: int,
-                               observed_variable: str,
-                               noise_cov_tril: Array):
-    """
-    Generates a Posterior object representing a single instance of the
-    VSEM inverse problem.
-    """
-
-    key, key_prior, key_driver, key_obs = jr.split(key, 4)
-    n_days = n_windows * n_days_per_window
-
-    # prior on calibration parameters
-    prior = VSEMPrior(par_names)
-
-    # ground truth data generating process
-    all_true_param = prior.sample_all_vsem_params(key_prior)
-    time_steps, driver = vsem.simulate_vsem_driver(key_driver, n_days)
-    obs_op_info = define_vsem_observation_operator(num_days=n_days, 
-                                                   window_len=n_days_per_window,
-                                                   vsem_output_var=observed_variable)
-    true_dgp = DataGeneratingProcess(
-        driver_key=key_driver,
-        driver=driver,
-        vsem_params=VSEM_DEFAULT_PARAMS,
-        observation_operator_info=obs_op_info,
-        noise_cov_tril=noise_cov_tril
-    )
-
-    # calibration model
-    calibration_model = CalibrationModel(
-        driver=true_dgp.driver,
-        vsem_params=true_dgp.vsem_params,
-        calibration_params=par_names,
-        observation_operator_info=true_dgp.observation_operator_info,
-        noise_cov_tril=true_dgp.noise_cov_tril
-    )
-
-    # simulate observed data
-    observation_info = DataRealization(
-        obs_key=key_obs,
-        data_generating_process=true_dgp
-    )
-
-    # construct likelihood and posterior objects
-    likelihood = VSEMLikelihood(calibration_model, observation_info)
-    posterior = Posterior(prior, likelihood)
-
-    return posterior
 
 
 # -----------------------------------------------------------------------------
