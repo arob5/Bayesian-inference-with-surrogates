@@ -139,7 +139,10 @@ class Experiment:
                 failed_reps.append(rep_idx)
                 results[rep_idx] = e
             finally:
-                if (backup_frequency is not None) and (rep_idx % backup_frequency == 0):
+                final_iteration = (rep_idx == self.num_reps-1)
+                backup_iteration = (backup_frequency is not None) and (rep_idx % backup_frequency == 0)
+
+                if final_iteration or backup_iteration:
                     self.save_results(subdir, results)
 
         return results, failed_reps

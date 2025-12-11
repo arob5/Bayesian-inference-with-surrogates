@@ -1,4 +1,5 @@
 # uncprop/models/vsem/experiment.py
+from pathlib import Path
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -37,10 +38,12 @@ class VSEMReplicate(Replicate):
                  n_design: int, 
                  noise_sd: int,
                  n_grid: int = 50,
+                 verbose: bool = True,
                  **kwargs):
         key, key_inv_prob, key_surrogate = jr.split(key, 3)
         self.inverse_problem_settings['noise_cov_tril'] = noise_sd * jnp.identity(self.n_months)
         self.surrogate_settings['n_design'] = n_design
+        self.surrogate_settings['verbose'] = verbose
         
         # exact posterior
         posterior = generate_vsem_inv_prob_rep(key=key_inv_prob,
@@ -89,5 +92,21 @@ class VSEMReplicate(Replicate):
         return self
     
 
-    class VSEMExperiment(Experiment):
-        pass
+class VSEMExperiment(Experiment):
+
+    def collect_results(self, results, *args, **kwargs):
+        # coverage results
+        log_coverage = jnp.stack(
+            [rep.density_comparison.calc_coverage(baseline='exact')[0] for rep in results],
+            axis=0
+        )
+
+        probs = results[0].density_comparison.calc_coverage(baseline='exact')[1]
+
+        return {'log_coverage': log_coverage,
+                'probs': probs}
+
+    def save_results(self, subdir: Path, results: list, *args, **kwargs):
+
+        results_dict = self.collect_results(results)
+        jnp.savez(subdir / 'coverage_results.npz', **results_dict)
