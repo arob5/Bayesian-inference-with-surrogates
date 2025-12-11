@@ -1,7 +1,11 @@
-% Useful info on newcomand: https://tex.stackexchange.com/questions/117358/newcommand-argument-confusion
+% Latex macros for surrogate uncertainty propagation paper.
+% Andrew Roberts
+
+\usepackage{dsfont}
+
 
 % --------------------------------------------------------------------------------------------------
-% Bayesian inverse problem: general setup 
+% Bayesian inverse problem.
 % --------------------------------------------------------------------------------------------------
 
 % General inverse problems.
@@ -25,190 +29,110 @@
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
 
+% --------------------------------------------------------------------------------------------------
+% Surrogates
+% --------------------------------------------------------------------------------------------------
+
+% General notation for representing emulated quantity
+\newcommand{\Em}[1]{{#1}_{\Ndesign}}
+
+% Emulator target
+\newcommand{\target}{\mathsf{f}} % Target map for emulation
+\newcommand{\targetEm}{\Em{f}} % Emulator for target quantity
+\newcommand{\targetTraj}{f} % Trajectory of emulator for target map
+\newcommand{\emDist}{\nu} % Predictive distribution (law) of the emulator (a stochastic process)
+\newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
+\newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
+\newcommand{\emObs}{z} % The design set used to train the emulator.
+\newcommand{\targetRange}{\mathbb{F}} % Codomain for the target function.
+\newcommand{\emLik}{\lik_{\target}} % Likelihood for emulator model for training on simulation data
+
+% Design points
+\newcommand{\Ndesign}{N}
+\newcommand{\designIdx}{n}
+\newcommand{\design}{U_{\Ndesign}}
+
+% Gaussian processes
+\newcommand{\GP}{\mathcal{GP}} % GP distribution.
+\newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution.
+\newcommand{\gpMeanBase}{\mu} % The base notation used for GP mean (no sub/superscripts). 
+\newcommand{\gpKerBase}{k}
+\newcommand{\gpMeanPrior}{\gpMeanBase_0}
+\newcommand{\gpKerPrior}{\gpKerBase_0}
+\newcommand{\gpMean}[1][\star]{\gpMeanBase_{#1}}
+\newcommand{\gpKer}[1][\star]{\gpKerBase_{#1}}
+
+% Surrogate posterior approximations
+\newcommand{\ep}{\mathrm{ep}}
+\newcommand{\eup}{\mathrm{eup}}
+\newcommand{\postEm}{\Em{\postDens}}
+\newcommand{\postNormEm}{\Em{\postDensNorm}}
+\newcommand{\normCstEm}{\Em{\normCst}}
+\newcommand{\postApproxEP}{\Em{\postDensNorm}^{\ep}}
+\newcommand{\postApproxMean}{\Em{\postDens}^{\mathrm{mean}}}
+\newcommand{\postApproxEUP}{\Em{\postDens}^{\eup}}
+\newcommand{\postApproxEUPNorm}{\Em{\postDensNorm}^{\eup}}
+\newcommand{\postApproxNormMean}{\Em{\postDensNorm}^{\mathrm{mean}}}
+
+% Likelihood approximations.
+\newcommand{\likApproxEP}{\Em{\lik}^{\ep}}
+\newcommand{\likApproxEUP}{\Em{\lik}^{\eup}}
+
+% --------------------------------------------------------------------------------------------------
+% Proofs and Theoretical Sections
+% --------------------------------------------------------------------------------------------------
+
 % Variational formulation.
 \newcommand{\qMeas}{Q} % Generic prob measure on parSpace (used in variational formulation)
 \newcommand{\qDens}{q} % Density of qDens.
 \newcommand{\qSpace}{\mathcal{Q}} % Space of densities or measures.
 \newcommand{\loss}{\mathcal{L}}
+\newcommand{\qDensOpt}{\qDens_{\mathrm{opt}}} % Solution of optimization problem
+\newcommand{\qMeasOpt}{\qMeas_{\mathrm{opt}}}
 
-% --------------------------------------------------------------------------------------------------
-% Gaussian Process Emulators
-% --------------------------------------------------------------------------------------------------
-
-% Generic GP commands. 
-\newcommand{\Ndesign}{N}
-\newcommand{\GP}{\mathcal{GP}} % GP distribution.
-\newcommand{\LNP}{\mathcal{LNP}} % Log-normal process distribution. 
-\newcommand{\func}{f} % Generic function used for results that hold for any generic GP. 
-\newcommand{\funcPrior}{\func_{0}}
-\newcommand{\funcVal}[1][\Ndesign]{\varphi_{#1}}
-\newcommand{\funcValExact}[1][\Ndesign]{\varphi_{#1}^{*}}
-\newcommand{\gpMeanBase}{\mu} % The base notation used for GP mean (no sub/superscripts). 
-\newcommand{\gpKerBase}{k}
-\newcommand{\gpMeanPrior}{\gpMeanBase_0}
-\newcommand{\gpKerPrior}{\gpKerBase_0}
-\newcommand{\gpMean}[1][\Ndesign]{\gpMeanBase_{#1}}
-\newcommand{\gpKer}[1][\Ndesign]{\gpKerBase_{#1}}
-\newcommand{\nuggetSD}{\eta}
-\newcommand{\kerMat}[1][\Ndesign]{K_{#1}}
-\newcommand{\emLawPrior}[1]{{\Pi}^{#1}} % The prior law/distribution of an emulator.
-\newcommand{\design}[1][\Ndesign]{\mathcal{D}_{#1}}
-\newcommand{\designRand}[2][\Nbatch]{\mathcal{D}_{#1}^{#2}} % When the response is unobserved/random. 
-\newcommand{\emLaw}[2][\design]{{\Pi}^{#2}_{#1}} % The conditional law/distribution of an emulator (may or may not be Gaussian). 
-\newcommand{\target}{f_{\circ}} % Target map for emulation
-\newcommand{\targetEm}{f} % Emulator for target quantity
-\newcommand{\targetTraj}{f} % Trajectory of emulator for target map
-\newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory (e.g., in a Metropolis-Hastings scheme)
-\newcommand{\emDist}{\nu} % Distribution (law) of the emulator (a stochastic process)
-\newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
-\newcommand{\emObs}{z} % The design set used to train the emulator.
-\newcommand{\targetRange}{\mathbb{F}}
-\newcommand{\emJoint}{\eta} % Joint measure over (u,f)
-\newcommand{\jointKOH}{\zeta} % Joint distribution over both surrogate and calibration parameters (as in KOH setup)
+% Analyzing EUP vs. EP
 \newcommand{\jgap}{\Delta_\normCst} % The "Jensen gap" for the normalizing constant.
 
-% Exponentiated quadratic kernel.
-\newcommand{\lengthscale}{\ell}
-\newcommand{\margSD}{\gamma}
+% Fully Bayesian/Kennedy and O'Hagan formulation.
+\newcommand{\jointKOH}{\zeta} % Joint distribution over both surrogate and calibration parameters (as in KOH setup)
+\newcommand{\postKOH}{\jointKOH^{\obs, \emObs}} % Posterior of the joint distribution
+\newcommand{\condMargKOH}{\jointKOH^{\obs,\targetTraj}_{\Par}} % Marginal conditional of \Par, given \targetTraj and \obs.
+\newcommand{\qCond}{T_{\qMeas}} % In the KOH context we have \qMeas(d\Par,d\targetTraj) = \emDist(d\targetTraj)\qCond(\targetTraj, d\Par)
+\newcommand{\qSpaceCut}{\qSpace_{\mathrm{cut}}}
 
-% Log-likelihood and forward model emulators. 
-\newcommand{\fwdPrior}{\fwd_{0}}
-\newcommand{\llikPrior}{\llik_{0}}
-\newcommand{\funcEm}[1][\Ndesign]{\func_{#1}}
-\newcommand{\fwdEm}[1][\Ndesign]{\fwd_{#1}}
-\newcommand{\llikEm}[1][\Ndesign]{\llik_{#1}} 
-\newcommand{\lpostEm}[1][\Ndesign]{\llik^{\postDens}_{#1}} 
-\newcommand{\postEm}[1][\Ndesign]{\postDens_{#1}} 
-\newcommand{\postNormEm}[1][\Ndesign]{\postDensNorm_{#1}} 
-\newcommand{\llikEmFwd}[1][\Ndesign]{\llik^{\fwd}_{#1}}
-\newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
-
-% Mean and kernel functions for log-likelihood and forward model emulators. 
-\newcommand{\emMeanPrior}[1]{\gpMeanPrior^{#1}} 
-\newcommand{\emKerPrior}[1]{\gpKerPrior^{#1}}
-\newcommand{\emMean}[2][\Ndesign]{\gpMeanBase^{#2}_{#1}} % First argument is number of design points, second is the function being emulated. 
-\newcommand{\emKer}[2][\Ndesign]{\gpKerBase^{#2}_{#1}}
-\newcommand{\accProbMHEm}[1][\Ndesign]{\accProbMH_{#1}}
-
-% Posterior Approximations
-\newcommand{\normCstEm}[1][\Ndesign]{\normCst_{#1}}
-\newcommand{\postApproxEP}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EP}}}
-\newcommand{\postApproxMean}[1][\Ndesign]{\postDens_{#1}^{\mathrm{mean}}}
-\newcommand{\postApproxMarg}[1][\Ndesign]{\postDens_{#1}^{\mathrm{EUP}}}
-\newcommand{\postApproxNormMarg}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{EUP}}}
-\newcommand{\postApproxNormMean}[1][\Ndesign]{\postDensNorm_{#1}^{\mathrm{mean}}}
-
-
-\newcommand{\llikEmRdm}[2][\Ndesign]{{#2}_{#1}}
-\newcommand{\fwdEmRdm}[2][\Ndesign]{{#2}_{#1}^{\fwd}}
-\newcommand{\llikEmRdmDens}[1][\Ndesign]{\llikEmRdm[#1]{\postDens}} % Convenience function 
-\newcommand{\fwdEmRdmDens}[1][\Ndesign]{\fwdEmRdm[#1]{\postDens}} % Convenience function 
-\newcommand{\llikEmSampDensNorm}[1][\Ndesign]{\llikEmRdm[#1]{\postDensNorm}^{\mathrm{EP}}}
-
-
-
-% Marginal approximations. 
-\newcommand{\llikEmMarg}[2][\Ndesign]{{#2}_{#1}^{\text{marg}}}
-\newcommand{\fwdEmMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,marg}}}
-\newcommand{\llikEmMargDens}[1][\Ndesign]{\llikEmMarg[#1]{\postDens}} 
-\newcommand{\fwdEmMargDens}[1][\Ndesign]{\fwdEmMarg[#1]{\postDens}} 
-\newcommand{\CovComb}[1][\Ndesign]{\Em[{#1}]{\likPar}^{\fwd}}
-
-% Mean approximations. 
-\newcommand{\llikEmMean}[2][\Ndesign]{{#2}_{#1}^{\text{mean}}}
-\newcommand{\fwdEmMean}[2][\Ndesign]{{#2}_{#1}^{\fwd \text{,mean}}}
-\newcommand{\llikEmMeanDens}[1][\Ndesign]{\llikEmMean[#1]{\postDens}} 
-\newcommand{\fwdEmMeanDens}[1][\Ndesign]{\fwdEmMean[#1]{\postDens}} 
-
-% Quantile approximations. 
-\newcommand{\quantileProb}{\alpha}
-\newcommand{\GaussianCDF}{\Phi}
-\newcommand{\quantile}[1][\quantileProb]{q^{\quantileProb}}
-\newcommand{\llikEmQ}[2][\Ndesign]{{#2}_{#1}^{\quantileProb}}
-\newcommand{\fwdEmQ}[2][\Ndesign]{{#2}_{#1}^{\fwd, \quantileProb}}
-\newcommand{\llikEmQDens}[1][\Ndesign]{\llikEmQ[#1]{\postDens}} 
-\newcommand{\fwdEmQDens}[1][\Ndesign]{\fwdEmQ[#1]{\postDens}} 
-
-% Joint marginal approximations. 
-\newcommand{\llikEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\textrm{joint-marg}}}
-\newcommand{\fwdEmJointMarg}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,joint-marg}}}
-
-% Joint Monte Carlo within Metropolis-Hastings noisy MCMC approximations. 
-\newcommand{\postSampleKernel}{\mathcal{K}}
-\newcommand{\mcwmhJointLabel}{\textrm{mcwmh-joint}}
-\newcommand{\mcwmhIndLabel}{\textrm{mcwmh-ind}}
-\newcommand{\mhPseudoMargLabel}{\textrm{mh-pseudo-marg}}
-\newcommand{\llikEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\mcwmhJointLabel}}
-\newcommand{\fwdEmJointMCWMH}[2][\Ndesign]{{#2}_{#1}^{\fwd \textrm{,\mcwmhJointLabel}}}
-
-% Design. 
-\newcommand{\Nbatch}{B}
-\newcommand{\Nrounds}{K_{\textrm{design}}}
-\newcommand{\designIndex}{k}
-\newcommand{\Naugment}{\Ndesign + \Nbatch}
-\newcommand{\idxDesign}{n} % Primary symbol used to index each design point. 
-\newcommand{\parMat}{U} % Generic matrix of input parameter points. 
-\newcommand{\parMatCand}{\parMat_{\mathrm{cand}}} % Candidate points for discrete optimization 
-\newcommand{\designIn}[1][\Ndesign]{U_{#1}} % Design inputs. 
-\newcommand{\designOutLlik}[1][\Ndesign]{\ell_{#1}}
-\newcommand{\designOutFwd}[1][\Ndesign]{g_{#1}}
-\newcommand{\designOutLlikExact}[1][\Ndesign]{\ell^*_{#1}}
-\newcommand{\designOutFwdExact}[1][\Ndesign]{g^*_{#1}}
-\newcommand{\designBatchIn}{U_{\Nbatch}}
-\newcommand{\designBatchLlik}{\ell_{\Nbatch}}
-\newcommand{\designBatchFunc}{\varphi_{\Nbatch}}
-\newcommand{\designBatchFwd}{g_{\Nbatch}}
-\newcommand{\fwdEmCond}[2][\Ndesign]{\fwdEm[{#1}]^{#2}}
-\newcommand{\acq}[1][\Ndesign]{\mathcal{A}_{#1}}
-\newcommand{\qoiMap}{\phi}
-\newcommand{\qoi}[1][\Ndesign]{\qoiMap_{#1}}
-
-% Acquisition functions 
-\newcommand{\labelAcq}[2][\Ndesign]{\acq[#1]^{\textrm{#2}}}
-\newcommand{\maxvarLabel}{\textrm{max-var}}
-\newcommand{\maxentLabel}{\textrm{max-ent}}
-\newcommand{\intvarLabel}{\textrm{int-var}}
-\newcommand{\intentLabel}{\textrm{int-ent}}
-\newcommand{\maxexpvarLabel}{\textrm{max-exp-var}}
-\newcommand{\maxexpentLabel}{\textrm{max-exp-ent}}
-\newcommand{\intExpVarLabel}{\textrm{int-exp-var}}
-\newcommand{\fwdintExpVarLabel}{\fwd \textrm{,}\intExpVarLabel}
-\newcommand{\intExpEntLabel}{\textrm{int-exp-ent}}
-\newcommand{\Ent}{H} % Entropy 
-\newcommand{\weightDens}[1][\Ndesign]{\rho_{#1}}
-\newcommand{\varInflation}{v}
-
-% Basis function emulation. 
-\newcommand{\basisVec}{\phi}
-\newcommand{\basisWeight}{w}
-\newcommand{\dimBasis}{R}
-\newcommand{\idxBasis}{r}
+% Measure-theoretic details for proofs.
+\newcommand{\emJoint}{\eta} % Joint measure over (u,f)
+\newcommand{\BorelSig}{\mathcal{B}}
+\newcommand{\emSpace}{\mathcal{F}}
+\newcommand{\emSig}{\mathcal{A}} % Sigma algebra in function space for emulator
+\newcommand{\refMeas}{\lambda} % Reference measure on parameter space
 
 % --------------------------------------------------------------------------------------------------
 % Markov Chain Monte Carlo. 
 % --------------------------------------------------------------------------------------------------
 
-% Generic MCMC commands. 
-\newcommand{\propDens}{q} % Proposal density
-\newcommand{\propDist}{Q} % Proposal distribution (measure)
-\newcommand{\propPar}{\tilde{\Par}} % Proposal density
-\newcommand{\llikSamp}{\ell} 
-\newcommand{\llikSampProp}{\tilde{\ell}} 
-\newcommand{\llikSampDist}{\nu}
-\newcommand{\CovProp}{\mathbf{C}} % Proposal covariance matrix
+% General
 \newcommand{\sampleIndex}{k} % Generic index for samples. 
 \newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
 \newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
-\newcommand{\NMCMC}{\NSample} % Proposal covariance matrix
-\newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
-\newcommand{\avgAccProbMH}{\overline{a}}
-\newcommand{\accProbRatio}{r}
-\newcommand{\likRatio}{\lambda}
-\newcommand{\MarkovKernel}{P}
-\newcommand{\mcmcIndex}{\sampleIndex}
-% \newcommand{\indexMCMC}[2][\mcmcIndex]{{#2}_{#1}}
 \newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
-\newcommand{\AR}{\mathsf{A}} % Metropolis-Hastings accept-reject step
+\newcommand{\NMCMC}{\NSample} % Number MCMC samples
+\newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
+
+% Proposal distribution.
+\newcommand{\propDens}{q} % Proposal density
+\newcommand{\propDist}{Q} % Proposal distribution (measure)
+\newcommand{\propDistPar}{\propDist_{\Par}}
+\newcommand{\propDensPar}{\propDens_{\Par}}
+\newcommand{\propDistTarget}{\propDist_{\target}}
+\newcommand{\propPar}{\tilde{\Par}} % Proposed parameter value
+\newcommand{\targetTrajProp}{\tilde{\targetTraj}} % Proposed value of target trajectory
+
+% Random kernel MCMC
+\newcommand{\MarkovKer}{\mathsf{P}}
+\newcommand{\MarkovKerPar}{\MarkovKer_{\Par}}
+\newcommand{\MarkovKerTarget}{\MarkovKer_{\target}}
+\newcommand{\randomKer}[1][\targetTraj]{P_{#1}} % TODO: remove this
 
 % Preconditioned Crank-Nicholson
 \newcommand{\pcnCor}{\rho}
@@ -234,7 +158,27 @@
 \newcommand{\forcing}{w}
 
 % --------------------------------------------------------------------------------------------------
-% Very Simple Ecosystem Model (VSEM)
+% Numerical example: linear Gaussian model
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\fwdLin}{G} % Linear forward model
+\newcommand{\priorMean}{m_0} 
+\newcommand{\priorCov}{C_0}
+\newcommand{\postMean}{m}
+\newcommand{\postCov}{C}
+\newcommand{\noiseCov}{\Sigma}
+\newcommand{\emBias}{r}
+\newcommand{\emCov}{Q}
+\newcommand{\postMeanEP}{\postMean^{\ep}}
+\newcommand{\postMeanEUP}{\postMean^{\eup}}
+\newcommand{\postCovEP}{\postCov^{\ep}}
+\newcommand{\postCovEUP}{\postCov^{\eup}}
+\newcommand{\epGain}{H} % = \postCov \fwdLin^\top \noiseCov^{-1}
+\newcommand{\eupNoiseCov}{\tilde{\noiseCov}} % = \noiseCov + \emCov
+\newcommand{\eupObs}{\tilde{\obs}} % = \obs - \emBias
+
+% --------------------------------------------------------------------------------------------------
+% Numerical example: Very Simple Ecosystem Model (VSEM)
 % --------------------------------------------------------------------------------------------------
 
 \newcommand{\stateV}{\state_{\textrm{v}}}

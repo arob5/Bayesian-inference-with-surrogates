@@ -45,7 +45,7 @@
 
 % Local custom commands. 
 \input{../shared/macros_general.tex}
-\input{../methods_paper/macros.tex}
+\input{macros.tex}
 \newcommand{\bphi}{\boldsymbol{\phi}}
 
 \setlist{topsep=1ex,parsep=1ex,itemsep=0ex}
@@ -65,6 +65,7 @@
 \newtheorem{lemma}{Lemma}
 \newtheorem{thm}{Theorem}
 \newtheorem{corollary}{Corollary}
+\newtheorem{remark}{Remark}
 \newtheorem{rec}{Recommendation}
 
 \crefname{prop}{Proposition}{Propositions}
@@ -79,6 +80,8 @@
 \Crefname{corollary}{Corollary}{Corollaries}
 \crefname{rec}{Recommendation}{Recommendations}
 \Crefname{rec}{Recommendation}{Recommendations}
+\crefname{remark}{Remark}{Remark}
+\Crefname{remark}{Remark}{Remark}
 
 % Title and author
 \title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Active Learning}
@@ -209,7 +212,6 @@ rely on pointwise evaluations of the \textit{unnormalized} posterior density $\p
 A standard approach is to sample the posterior using a Markov chain Monte Carlo (MCMC) 
 algorithm, often requiring $10^5 - 10^7$ serial evaluations of $\postDens(\Par)$. While not a problem for simple 
 statistical models, this sequential computation renders MCMC infeasible when the cost of a density evaluation is high.
-\todo[inline]{add transition}
 
 \subsection{Bayesian Inverse Problems}
 The inference challenge posed by expensive posterior densities commonly arises in the Bayesian approach to 
@@ -278,8 +280,43 @@ In this case, the computational
 cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the numerical solver $\solutionOp(\Par)$.
 
 \section{Surrogate Models}
+Given the inference bottleneck imposed by a computationally expensive posterior density, many methods have emerged
+aiming to approximate the posterior distribution using only a small set of density evaluations. Many such approaches 
+consist of replacing a computationally-limiting component of the model with a cheap \textit{surrogate}, thus enabling 
+the use of standard inference schemes on the resulting approximate model. In this section, we introduce the particular
+sub-class of surrogate models that form the focus of this article.
+
+\begin{remark}
+The term ``surrogate'' is widely used in varying contexts in which some baseline quantity is replaced by an 
+approximation. The remainder of this section defines our precise usage of the word. In the interest of variety, we 
+use ``emulator'' as a synonym, with ``emulate'' referring to the process of constructing an emulator. 
+\end{remark}
+
 \subsection{Regression-Based Surrogates}
+While there is a vast literature on constructing bespoke surrogates that leverage the structure of a particular model, 
+we instead focus on the broadly applicable strategy of learning regression-based emulators from black-box model 
+evaluations. Even within this class of surrogates the regression modeling setup can vary widely, 
+with a key decision being the choice of response variable to approximate with the regression model. 
+To formalize this notion, let $\target: \parSpace \to \targetRange$ denote the map that the surrogate seeks to 
+approximate. When relevant, we will augment the notation from \Cref{sec:background} to emphasize the dependence
+on this \textit{target map}; e.g., $\postDens(\Par; \target)$, $\lik(\Par; \target, \obs)$, $\normCst(\target)$, etc. 
+We make the assumption throughout that $\postDens(\Par; \target)$ depends on $\Par$ only through $\target(\Par)$.
+The implicit assumption here is that the target map has been chosen to alleviate the computational bottleneck; that is,
+the density $\postDens(\Par; \target)$ is cheap to compute once the expensive computation $\target(\Par)$ is 
+available.
+
+A regression-based surrogate is a regression model $\targetEm$ fit to training data 
+$\{(\Par_{\designIdx}, \target(\Par_{\designIdx}))\}_{\designIdx=1}^{\Ndesign}$ constructed by evaluating the exact
+target map at a set of \textit{design points} $\design \Def \{\Par_{\designIdx}\}_{\designIdx=1}^{\Ndesign}$.
+Substituting the exact map with its emulator induces an approximation of the posterior density 
+$\postDensNorm(\Par; \targetEm) = \postDens(\Par; \targetEm) / \normCst(\targetEm)$. By eliminating the primary 
+computational bottleneck, the approximate unnormalized density $\postDens(\Par; \targetEm)$ can now be fed to 
+standard inference algorithms (e.g., MCMC).
+
 \subsection{Probabilistic Surrogates}
+
+
+
 \subsection{Common Surrogate Models}
 \subsection{Finite vs. Infinite Dimensional Surrogates}
 
