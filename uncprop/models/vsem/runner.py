@@ -13,8 +13,13 @@ base_dir = Path('/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper')
 # -----------------------------------------------------------------------------
 
 key = jr.key(9768565)
-setup_kwargs = {'n_grid': 50, 'n_design': 8, 'noise_sd': 1.0, 'verbose': False}
-num_reps = 3
+setup_kwargs = {'n_grid': 50, 
+                'n_design': 8, 
+                'noise_sd': 1.0, 
+                'verbose': False,
+                'jitter': 1e-4}
+num_reps = 20
+backup_frequency = 10
 experiment_name = 'vsem'
 out_dir = base_dir / 'out' / experiment_name
 
@@ -26,15 +31,22 @@ def _make_subdir_name(setup_kwargs, run_kwargs):
 # Run experiment 
 # -----------------------------------------------------------------------------
 
-experiment = VSEMExperiment(name=experiment_name,
-                            num_reps=num_reps,
-                            base_out_dir=out_dir,
-                            base_key=key,
-                            Replicate=VSEMReplicate,
-                            subdir_name_fn=_make_subdir_name)
+def run_vsem_experiment():
+    experiment = VSEMExperiment(name=experiment_name,
+                                num_reps=num_reps,
+                                base_out_dir=out_dir,
+                                base_key=key,
+                                Replicate=VSEMReplicate,
+                                subdir_name_fn=_make_subdir_name)
 
-experiment(run_kwargs={'surrogate_tag': 'gp'}, 
-           setup_kwargs=setup_kwargs)
+    return experiment(run_kwargs={'surrogate_tag': 'gp'}, 
+                      setup_kwargs=setup_kwargs, 
+                      backup_frequency=backup_frequency)
 
-experiment(run_kwargs={'surrogate_tag': 'clip_gp'}, 
-           setup_kwargs=setup_kwargs)
+    # experiment(run_kwargs={'surrogate_tag': 'clip_gp'}, 
+    #            setup_kwargs=setup_kwargs,
+    #            backup_frequency=backup_frequency)
+    
+
+if __name__ == '__main__':
+    run_vsem_experiment()

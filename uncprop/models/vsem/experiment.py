@@ -39,11 +39,13 @@ class VSEMReplicate(Replicate):
                  noise_sd: int,
                  n_grid: int = 50,
                  verbose: bool = True,
+                 jitter: float = 0.0,
                  **kwargs):
         key, key_inv_prob, key_surrogate = jr.split(key, 3)
         self.inverse_problem_settings['noise_cov_tril'] = noise_sd * jnp.identity(self.n_months)
         self.surrogate_settings['n_design'] = n_design
         self.surrogate_settings['verbose'] = verbose
+        self.surrogate_settings['jitter'] = jitter
         
         # exact posterior
         posterior = generate_vsem_inv_prob_rep(key=key_inv_prob,
@@ -66,7 +68,7 @@ class VSEMReplicate(Replicate):
         self.surrogate_posterior_clip_gp = surrogate_post_clip
         self.fit_info = fit_info
         self.grid = grid
-
+        self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
 
     def __call__(self, surrogate_tag: str, **kwargs):
         # Note that each time this is called for a particular instance will generate the same key_ep.
@@ -94,19 +96,41 @@ class VSEMReplicate(Replicate):
 
 class VSEMExperiment(Experiment):
 
-    def collect_results(self, results, *args, **kwargs):
-        # coverage results
+    def collect_results(self, results, failed_reps, *args, **kwargs):
+        """
+        Note that in the below comments `n_reps` is the number of non-failed replicates.
+        """
+
+        # Only format non-failed iterations
+        results = [rep for i, rep in enumerate(results) if i not in failed_reps]
+
+        # surrogate mean/variance predictions at grid points; each (n_reps, n_grid)
+        pred_mean = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
+        pred_var = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
+
+        # unnormalized log-densities of each distribution over grid points; dict of (n_reps, n_grid)
+        names = list(results[0].density_comparison.distributions.keys())
+        log_dens_approx = {}
+        for nm in names:
+            log_dens_approx[nm] = jnp.vstack([
+                rep.density_comparison.log_dens_grid[nm] for rep in results
+            ])
+
+        # coverage results; (n_reps, n_prob, n_grid)
         log_coverage = jnp.stack(
             [rep.density_comparison.calc_coverage(baseline='exact')[0] for rep in results],
             axis=0
         )
-
         probs = results[0].density_comparison.calc_coverage(baseline='exact')[1]
 
-        return {'log_coverage': log_coverage,
+        return {'pred_mean': pred_mean,
+                'pred_var': pred_var,
+                'log_dens_approx': log_dens_approx,
+                'log_coverage': log_coverage,
                 'probs': probs}
 
-    def save_results(self, subdir: Path, results: list, *args, **kwargs):
+    def save_results(self, subdir: Path, results: list, failed_reps: list, *args, **kwargs):
+        results_dict = self.collect_results(results, failed_reps)
 
-        results_dict = self.collect_results(results)
-        jnp.savez(subdir / 'coverage_results.npz', **results_dict)
+        jnp.savez(subdir / 'results.npz', **results_dict)
+        jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps)

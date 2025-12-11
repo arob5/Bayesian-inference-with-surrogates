@@ -338,12 +338,20 @@ class GPJaxSurrogate(Surrogate):
     the rk-pcn algorithm, which does not require repeatedly conditioning the GP. A copy
     method can easily be added to return an updated conditional GPJaxSurrogate when this
     functionality is required.
+
+    Notes:
+        `jitter` is a value added to the diagonal of any predictive covariance. Note that 
+        the gpjax jitter is added regardless; this provides an opportunity to increase the 
+        jitter if necessary.
     """
-    def __init__(self, gp: ConjugatePosterior, design: Dataset):
+    def __init__(self, gp: ConjugatePosterior, 
+                 design: Dataset, 
+                 jitter: float = 0.0):
         assert isinstance(gp, ConjugatePosterior)
         assert isinstance(design, Dataset)
         assert isinstance(gp.likelihood, GPJaxGaussianLikelihood)
 
+        self.jitter = jitter
         self.gp = gp
         self.design = design
         self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
@@ -393,7 +401,7 @@ class GPJaxSurrogate(Surrogate):
         # add likelihood noise to latent Gaussian prediction. Following gpjax convention
         # of also adding jitter here
         pred_cov = pred_cov.reshape(n_pred, n_pred)
-        noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs + self.gp.jitter)
+        noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs + self.gp.jitter + self.jitter)
 
         gaussian_pred = MultivariateNormal(loc=pred_mean.squeeze(),
                                            covariance_matrix=noisy_cov)
@@ -435,7 +443,7 @@ class GPJaxSurrogate(Surrogate):
         knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
         Kinv_knm = Sigma_inv @ knm # (n, 1)
         k_new_new = self.gp.prior.kernel.gram(xnew).to_dense().squeeze() # scalar
-        kappa = k_new_new + self.sig2_obs - (knm.T @ Kinv_knm).squeeze() # scalar
+        kappa = k_new_new + self.sig2_obs + self.gp.jitter + self.jitter - (knm.T @ Kinv_knm).squeeze() # scalar
         
         outer = Kinv_knm @ Kinv_knm.T  # (n,1) @ (1,n) -> (n,n)
         top_left= Sigma_inv + outer / kappa # (n,n)
@@ -455,7 +463,7 @@ class GPJaxSurrogate(Surrogate):
         Includes the observation noise covariance. 
         """
         X = self.design.X
-        Sigma = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter + self.sig2_obs)
+        Sigma = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter + self.jitter + self.sig2_obs)
         L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
         Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
         return Sigma_inv

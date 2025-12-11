@@ -50,7 +50,7 @@ class GaussianFromNumpyro(Distribution):
     @property
     def variance(self) -> Array:
         """ Return marginal variances of shape (d,) """
-        return self._numpyro_mvn.variance
+        return jnp.diag(self.cov)
     
 
 # -----------------------------------------------------------------------------

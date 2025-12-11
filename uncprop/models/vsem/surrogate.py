@@ -27,7 +27,8 @@ def fit_vsem_surrogate(key: PRNGKey,
                        n_design: int,
                        design_method: str,
                        gp_train_args: dict | None = None,
-                       verbose: bool = True) -> tuple[VSEMPosteriorSurrogate, VSEMPosteriorSurrogate, dict]:
+                       verbose: bool = True,
+                       jitter: float = 0.0) -> tuple[VSEMPosteriorSurrogate, VSEMPosteriorSurrogate, dict]:
     """ Top-level function for fitting VSEM log posterior surrogate
 
     Note that `posterior` represents the posterior of the exact inverse problem that 
@@ -54,7 +55,7 @@ def fit_vsem_surrogate(key: PRNGKey,
         _print_gp_fit_info(gp, opt_info)
 
     # wrap gpjax object as a GPJAXSurrogate
-    log_density_surrogate = GPJaxSurrogate(gp=gp, design=design)
+    log_density_surrogate = GPJaxSurrogate(gp=gp, design=design, jitter=jitter)
 
     # random posteriors induced by GP surrogate and clipped GP surrogate
     def log_dens_upper_bound(x: ArrayLike) -> Array:

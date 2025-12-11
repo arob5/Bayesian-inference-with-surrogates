@@ -366,7 +366,9 @@ def coverage_curve_grid(log_prob_true: ArrayLike,
     return log_coverage, probs, masks
 
     
-def _is_normalized(log_prob: Array, log_tol: float = 1e-10) -> Array:
+def _is_normalized(log_prob: Array, 
+                   log_tol: float = 1e-10,
+                   verbose: bool = False) -> Array:
     """
     Check if density is normalized, given log probabilities. Vectorized
     to operate over rows of `log_prob`.
@@ -379,13 +381,18 @@ def _is_normalized(log_prob: Array, log_tol: float = 1e-10) -> Array:
     is_finite = jnp.isfinite(logZ)
     is_normalized = is_normalized.at[is_finite].set(
         jnp.less_equal(jnp.abs(logZ[is_finite]), log_tol)
-    )   
+    ) 
+
+    if verbose and not jnp.all(is_normalized):
+        n_failed = jnp.sum(~is_normalized)
+        max_err = jnp.max(jnp.abs(logZ[is_finite]))
+        print(f'{n_failed} log_probs not normalized. Maximum absolute log integral = {max_err}')
 
     return is_normalized
 
 
 def _check_normalized(log_prob: Array, log_tol: float = 1e-10) -> None:
-    is_normalized = jnp.all(_is_normalized(log_prob, log_tol))
+    is_normalized = jnp.all(_is_normalized(log_prob, log_tol, verbose=True))
     if not is_normalized:
         raise ValueError('log_prob is not normalized.')
 

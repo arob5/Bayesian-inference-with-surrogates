@@ -143,6 +143,10 @@ class Experiment:
                 backup_iteration = (backup_frequency is not None) and (rep_idx % backup_frequency == 0)
 
                 if final_iteration or backup_iteration:
-                    self.save_results(subdir, results)
+                    try:
+                        self.save_results(subdir, results, failed_reps)
+                    except Exception as save_error:
+                        print(f'save_results() failed with error: {save_error}')
 
+        print(f'{len(failed_reps)} of {self.num_reps} replicates failed.')
         return results, failed_reps
