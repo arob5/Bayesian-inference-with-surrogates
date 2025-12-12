@@ -40,7 +40,9 @@
 \newcommand{\target}{\mathsf{f}} % Target map for emulation
 \newcommand{\targetEm}{\Em{f}} % Emulator for target quantity
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
-\newcommand{\emDist}{\nu} % Predictive distribution (law) of the emulator (a stochastic process)
+\newcommand{\emMean}{\mu_\Ndesign}
+\newcommand{\emVar}{s^2_\Ndesign}
+\newcommand{\emDist}{\nu_{\Ndesign}} % Predictive distribution (law) of the emulator (a stochastic process)
 \newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
 \newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
 \newcommand{\emObs}{z} % The design set used to train the emulator.

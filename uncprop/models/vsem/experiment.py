@@ -1,5 +1,6 @@
 # uncprop/models/vsem/experiment.py
 from pathlib import Path
+from typing import Any
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -20,23 +21,23 @@ class VSEMReplicate(Replicate):
     """
 
     # fixed settings across all experiments
-    n_months = 12
+    n_months: int = 12
 
-    inverse_problem_settings = {
+    inverse_problem_settings: dict[str, Any] = {
         'par_names': ['av', 'veg_init'],
         'n_windows': n_months,
         'n_days_per_window': 30,
         'observed_variable': 'lai'
     }
 
-    surrogate_settings = {
+    surrogate_settings: dict[str, Any] = {
         'design_method': 'lhc'
     }
 
     def __init__(self, 
                  key: PRNGKey, 
                  n_design: int, 
-                 noise_sd: int,
+                 noise_sd: float,
                  n_grid: int = 50,
                  verbose: bool = True,
                  jitter: float = 0.0,
@@ -90,6 +91,7 @@ class VSEMReplicate(Replicate):
 
         density_comparison = DensityComparisonGrid(grid=self.grid, distributions=dists)
         self.density_comparison = density_comparison
+        self.coverage_results = self.density_comparison.calc_coverage(baseline='exact')
 
         return self
     
@@ -103,10 +105,12 @@ class VSEMExperiment(Experiment):
 
         # Only format non-failed iterations
         results = [rep for i, rep in enumerate(results) if i not in failed_reps]
+        if len(results) == 0:
+            return None
 
         # surrogate mean/variance predictions at grid points; each (n_reps, n_grid)
         pred_mean = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
-        pred_var = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
+        pred_var = jnp.vstack([rep.surrogate_pred.variance.ravel() for rep in results])
 
         # unnormalized log-densities of each distribution over grid points; dict of (n_reps, n_grid)
         names = list(results[0].density_comparison.distributions.keys())
@@ -116,21 +120,29 @@ class VSEMExperiment(Experiment):
                 rep.density_comparison.log_dens_grid[nm] for rep in results
             ])
 
-        # coverage results; (n_reps, n_prob, n_grid)
+        # coverage results
         log_coverage = jnp.stack(
-            [rep.density_comparison.calc_coverage(baseline='exact')[0] for rep in results],
+            [rep.coverage_results[0] for rep in results], 
             axis=0
         )
-        probs = results[0].density_comparison.calc_coverage(baseline='exact')[1]
+
+        probs = results[0].coverage_results[1]
+        dist_names = results[0].coverage_results[3]
 
         return {'pred_mean': pred_mean,
                 'pred_var': pred_var,
                 'log_dens_approx': log_dens_approx,
                 'log_coverage': log_coverage,
-                'probs': probs}
+                'probs': probs,
+                'dist_names': dist_names}
+
 
     def save_results(self, subdir: Path, results: list, failed_reps: list, *args, **kwargs):
         results_dict = self.collect_results(results, failed_reps)
+
+        if results_dict is None:
+            print('Results list is length 0. Not saving')
+            return None
 
         jnp.savez(subdir / 'results.npz', **results_dict)
         jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps)

@@ -1,6 +1,7 @@
 from jax import config
 config.update('jax_enable_x64', True)
 from pathlib import Path
+from typing import Any
 
 import jax.random as jr
 from uncprop.models.vsem.experiment import VSEMReplicate, VSEMExperiment
@@ -13,12 +14,22 @@ base_dir = Path('/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper')
 # -----------------------------------------------------------------------------
 
 key = jr.key(9768565)
-setup_kwargs = {'n_grid': 50, 
-                'n_design': 8, 
-                'noise_sd': 1.0, 
-                'verbose': False,
-                'jitter': 1e-4}
-num_reps = 20
+
+# Different experimental setups
+gp_tags = ['gp', 'clip_gp']
+design_settings = [(4, 1e-4), (8, 1e-3), (16, 1e-2)] # (n_design, jitter)
+
+n_design = [4, 8, 16]
+setups = [(tag, n, jitter) for tag in gp_tags for n, jitter in design_settings]
+
+setup_kwargs: dict[str, Any] = {'n_grid': 50, 
+                                'n_design': None,
+                                'noise_sd': 1.0, 
+                                'verbose': False,
+                                'jitter': None}
+run_kwargs: dict[str, Any] = {'surrogate_tag': None}
+
+num_reps = 100
 backup_frequency = 10
 experiment_name = 'vsem'
 out_dir = base_dir / 'out' / experiment_name
@@ -38,15 +49,20 @@ def run_vsem_experiment():
                                 base_key=key,
                                 Replicate=VSEMReplicate,
                                 subdir_name_fn=_make_subdir_name)
+    all_results = []
 
-    return experiment(run_kwargs={'surrogate_tag': 'gp'}, 
-                      setup_kwargs=setup_kwargs, 
-                      backup_frequency=backup_frequency)
+    for tag, n, jitter in setups:
+        setup_kwargs['n_design'] = n
+        setup_kwargs['jitter'] = jitter
+        run_kwargs['surrogate_tag'] = tag
 
-    # experiment(run_kwargs={'surrogate_tag': 'clip_gp'}, 
-    #            setup_kwargs=setup_kwargs,
-    #            backup_frequency=backup_frequency)
-    
+        results = experiment(run_kwargs=run_kwargs, 
+                             setup_kwargs=setup_kwargs, 
+                             backup_frequency=backup_frequency)
+        all_results.append(results)
+
+    return all_results
+
 
 if __name__ == '__main__':
     run_vsem_experiment()

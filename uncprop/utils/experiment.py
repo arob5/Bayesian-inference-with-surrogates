@@ -52,16 +52,18 @@ class Experiment:
     base_key: PRNGKey
     Replicate: type[Replicate]
     subdir_name_fn: Callable[[dict, dict], str | Path]
+    write_to_file: bool = True
 
     def __post_init__(self):
         self.base_out_dir = Path(self.base_out_dir)
 
         # create output directory
-        if self.base_out_dir.exists():
-            print(f'Using existing base output directory: {self.base_out_dir}')
-        else:
-            print(f'Creating new output directory: {self.base_out_dir}')
-            self.base_out_dir.mkdir(parents=True)
+        if self.write_to_file: 
+            if self.base_out_dir.exists():
+                print(f'Using existing base output directory: {self.base_out_dir}')
+            else:
+                print(f'Creating new output directory: {self.base_out_dir}')
+                self.base_out_dir.mkdir(parents=True)
 
         # create base prng key for each replicate
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
@@ -92,6 +94,9 @@ class Experiment:
                       setup_kwargs: dict, 
                       run_kwargs: dict, 
                       name: str | Path | None = None):
+        if not self.write_to_file:
+            return None
+
         if name is None:
             subdir = self.make_subdir_name(setup_kwargs, run_kwargs)
         else: 
@@ -126,23 +131,26 @@ class Experiment:
                                     run_kwargs=run_kwargs,
                                     name=subdir_name)
 
-        results: list[Any] = [None] * self.num_reps
+        results: list[Any] = []
         failed_reps: list[int] = []
 
         for rep_idx in range(self.num_reps):
             try:
-                results[rep_idx] = self.run_replicate(idx=rep_idx,
-                                                      setup_kwargs=setup_kwargs,
-                                                      run_kwargs=run_kwargs)
+                rep_result = self.run_replicate(idx=rep_idx,
+                                                setup_kwargs=setup_kwargs,
+                                                run_kwargs=run_kwargs)
+                results.append(rep_result)
             except Exception as e:
                 print(f'Iteration {rep_idx} failed with error: {e}')
                 failed_reps.append(rep_idx)
-                results[rep_idx] = e
+                results.append(e)
             finally:
                 final_iteration = (rep_idx == self.num_reps-1)
-                backup_iteration = (backup_frequency is not None) and (rep_idx % backup_frequency == 0)
+                backup_iteration = ((backup_frequency is not None) and 
+                                    (rep_idx % backup_frequency == 0) and 
+                                    (rep_idx != 0))               
 
-                if final_iteration or backup_iteration:
+                if self.write_to_file and (final_iteration or backup_iteration):
                     try:
                         self.save_results(subdir, results, failed_reps)
                     except Exception as save_error:

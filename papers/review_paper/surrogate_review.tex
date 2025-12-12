@@ -281,7 +281,7 @@ cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the
 
 \section{Surrogate Models}
 Given the inference bottleneck imposed by a computationally expensive posterior density, many methods have emerged
-aiming to approximate the posterior distribution using only a small set of density evaluations. Many such approaches 
+aiming to approximate the posterior using only a small set of density evaluations. Many such approaches 
 consist of replacing a computationally-limiting component of the model with a cheap \textit{surrogate}, thus enabling 
 the use of standard inference schemes on the resulting approximate model. In this section, we introduce the particular
 sub-class of surrogate models that form the focus of this article.
@@ -289,19 +289,19 @@ sub-class of surrogate models that form the focus of this article.
 \begin{remark}
 The term ``surrogate'' is widely used in varying contexts in which some baseline quantity is replaced by an 
 approximation. The remainder of this section defines our precise usage of the word. In the interest of variety, we 
-use ``emulator'' as a synonym, with ``emulate'' referring to the process of constructing an emulator. 
+also use ``emulator'' as a synonym, with ``emulate'' referring to the process of constructing an emulator. 
 \end{remark}
 
 \subsection{Regression-Based Surrogates}
 While there is a vast literature on constructing bespoke surrogates that leverage the structure of a particular model, 
 we instead focus on the broadly applicable strategy of learning regression-based emulators from black-box model 
-evaluations. Even within this class of surrogates the regression modeling setup can vary widely, 
+evaluations. Even within this class of surrogates, the regression modeling setup can vary widely, 
 with a key decision being the choice of response variable to approximate with the regression model. 
 To formalize this notion, let $\target: \parSpace \to \targetRange$ denote the map that the surrogate seeks to 
 approximate. When relevant, we will augment the notation from \Cref{sec:background} to emphasize the dependence
 on this \textit{target map}; e.g., $\postDens(\Par; \target)$, $\lik(\Par; \target, \obs)$, $\normCst(\target)$, etc. 
 We make the assumption throughout that $\postDens(\Par; \target)$ depends on $\Par$ only through $\target(\Par)$.
-The implicit assumption here is that the target map has been chosen to alleviate the computational bottleneck; that is,
+The implicit assumption here is that the target map has been chosen to alleviate the computational bottleneck; hence,
 the density $\postDens(\Par; \target)$ is cheap to compute once the expensive computation $\target(\Par)$ is 
 available.
 
@@ -314,10 +314,31 @@ computational bottleneck, the approximate unnormalized density $\postDens(\Par; 
 standard inference algorithms (e.g., MCMC).
 
 \subsection{Probabilistic Surrogates}
-In practice, fitting a highly accurate surrogate can be challenging. The induced posterior approximation inherits the 
-imperfections from the underlying emulator.
+In practice, fitting a highly accurate surrogate can be challenging, and the induced posterior approximation inherits 
+imperfections from the underlying emulator. We argue that a Bayesian surrogate-based workflow should consist of
+two distinct steps to alleviate the problem of unquantified posterior approximation error: (1) when possible, refine the
+emulator by selecting new design points in a goal-oriented fashion; and (2) when the computational budget is exhausted, 
+construct a final posterior approximation that propagates the surrogate uncertainty. Both of these steps require access to 
+a notion of predictive uncertainty. For this reason, we focus on probabilistic surrogate models, which output predictions 
+in the form of probability distributions. 
 
+We write $\targetEm(\Par) \sim \emDist(\Par)$ to denote the predictive distribution
+at a particular input, and $\targetEm \sim \emDist$ to denote the functional distribution over emulator trajectories.
+Let $\emE$ denote the expectation with respect to the predictive distribution, and $\emMean(\Par) \Def \emE[\targetEm(\Par)]$,
+$\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$ denote the pointwise predictive mean and variance, respectively.
+Plugging the random emulator in place of the true target map induces a distribution over downstream quantities such as 
+$\postDensNorm(\Par; \targetEm)$. When discussing these pushforward distributions we make use of the 
+notation $\postNormEm \Def \postDensNorm(\cdot; \targetEm)$ when explicit reference to the underlying emulator
+is not necessary.
 
+\begin{remark}
+Conceptually, we typically think of the randomness in the predictive distribution as quantifying \textbf{epistemic uncertainty},
+which in principle could be reduced, were it computationally feasible to evaluate $\target$ at any given input. The predictive 
+distribution may also quantify \textbf{aleatoric uncertainty}, irreducible uncertainty stemming from the inability of any 
+parameterization of the surrogate to exactly represent the true target function.
+\todo{cite Burkner here}
+\end{remark}
+ 
 \subsection{Common Surrogate Models}
 \subsection{Finite vs. Infinite Dimensional Surrogates}
 
