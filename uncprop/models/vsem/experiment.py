@@ -51,6 +51,9 @@ class VSEMReplicate(Replicate):
         # exact posterior
         posterior = generate_vsem_inv_prob_rep(key=key_inv_prob,
                                                **self.inverse_problem_settings)
+        vsem_params_dict = posterior.likelihood.model.vsem_params
+        vsem_params = jnp.array(list(vsem_params_dict.values()))
+        vsem_param_names = list(vsem_params_dict.keys())
         
         # surrogate posterior
         surrogate_post_gp, surrogate_post_clip, fit_info = fit_vsem_surrogate(key=key_surrogate, 
@@ -65,8 +68,11 @@ class VSEMReplicate(Replicate):
         
         self.key = key
         self.posterior = posterior
+        self.vsem_params = vsem_params
+        self.vsem_param_names = vsem_param_names
         self.surrogate_posterior_gp = surrogate_post_gp
         self.surrogate_posterior_clip_gp = surrogate_post_clip
+        self.design = self.surrogate_posterior_gp.surrogate.design
         self.fit_info = fit_info
         self.grid = grid
         self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
@@ -107,6 +113,17 @@ class VSEMExperiment(Experiment):
         results = [rep for i, rep in enumerate(results) if i not in failed_reps]
         if len(results) == 0:
             return None
+        
+        # inverse problem data realization
+        vsem_params = jnp.vstack([rep.vsem_params for rep in results])
+        driver = jnp.stack([rep.posterior.likelihood.model.driver for rep in results], axis=0)
+        vsem_output = jnp.stack([rep.posterior.likelihood.data.vsem_output for rep in results], axis=0)
+        observable = jnp.stack([rep.posterior.likelihood.data.observable for rep in results], axis=0)
+        observation = jnp.stack([rep.posterior.likelihood.data.observation for rep in results], axis=0)
+        
+        # design points
+        design_x = jnp.stack([rep.design.X for rep in results], axis=0) # (n_reps, n_design, d)
+        design_y = jnp.vstack([rep.design.y.ravel() for rep in results]) # (n_reps, n_design)
 
         # surrogate mean/variance predictions at grid points; each (n_reps, n_grid)
         pred_mean = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
@@ -129,15 +146,27 @@ class VSEMExperiment(Experiment):
         probs = results[0].coverage_results[1]
         dist_names = results[0].coverage_results[3]
 
-        return {'pred_mean': pred_mean,
+        return {'vsem_params': vsem_params,
+                'driver': driver,
+                'vsem_output': vsem_output,
+                'observable': observable,
+                'observation': observation,
+                'pred_mean': pred_mean,
                 'pred_var': pred_var,
+                'design_x': design_x,
+                'design_y': design_y,
                 'log_dens_approx': log_dens_approx,
                 'log_coverage': log_coverage,
                 'probs': probs,
-                'dist_names': dist_names}
+                'dist_names': dist_names,
+                'vsem_param_names': results[0].vsem_param_names}
 
 
-    def save_results(self, subdir: Path, results: list, failed_reps: list, *args, **kwargs):
+    def save_results(self, 
+                     subdir: Path,
+                     results: list, 
+                     failed_reps: list, 
+                     *args, **kwargs):
         results_dict = self.collect_results(results, failed_reps)
 
         if results_dict is None:
@@ -145,4 +174,30 @@ class VSEMExperiment(Experiment):
             return None
 
         jnp.savez(subdir / 'results.npz', **results_dict)
-        jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps)
+        jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps, key=jr.key_data(self.base_key))
+
+
+# -----------------------------------------------------------------------------
+# Helper functions: plots / analysis
+# -----------------------------------------------------------------------------
+
+def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int):
+    subdir = Path(out_dir) / subdir_name
+    info_path = Path(subdir) / 'logging_info.npz'
+
+    # check if rep failed
+    info = jnp.load(subdir / 'logging_info.npz')
+    failed_reps = info['failed_reps']
+    if rep_idx in failed_reps:
+        print(f'Replicate {rep_idx} failed.')
+        return None
+    
+    # Load grid for plots
+    grid_info = jnp.load(out_dir / 'grid.npz')
+
+    grid = Grid(low=grid_info['low'],
+                high=grid_info['high'],
+                n_points_per_dim=grid_info['n_points_per_dim'],
+                dim_names=grid_info['dim_names'])
+
+

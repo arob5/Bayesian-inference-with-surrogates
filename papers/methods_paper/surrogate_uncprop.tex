@@ -82,8 +82,8 @@
 \Crefname{ex}{Example}{Examples}
 
 % Title and author
-\title{Uncertainty Propagation in Surrogate-Based Bayesian Inference}
-\author{Andrew Roberts, Jonathan Huggins, Michael Dietze}
+\title{Propagating Surrogate Uncertainty in Bayesian Inverse Problems}
+\author{Andrew Roberts, Michael Dietze, Jonathan Huggins}
 
 \begin{document}
 \maketitle
@@ -93,10 +93,16 @@ Standard Bayesian inference schemes are infeasible for inverse problems
 with computationally expensive forward models. A common solution is to 
 replace the model with a cheaper surrogate. To avoid overconfident 
 conclusions, it is essential to acknowledge the surrogate approximation by propagating 
-its uncertainty. However, at present there is no standard method for uncertainty 
-propagation in this context. To fill this gap, we propose a particular uncertainty-aware 
-posterior approximation as the baseline, which is justified by Bayesian decision theoretic
-arguments. \todo{unfinished}
+its uncertainty. At present, a variety of distinct uncertainty propagation methods 
+have been suggested, with little guidance on how their performance can vary.
+To fill this gap, we start by proposing a particular baseline uncertainty-aware posterior
+approximation, justified by decision theoretic and modular Bayesian inference arguments.
+We then investigate a popular computationally convenient alternative, highlighting when 
+it may differ from the baseline. Finally, we develop a Markov chain Monte Carlo
+algorithm that is shown to produce a superior approximation to the baseline across a variety
+of experiments. Our numerical experiments are motivated by problems of parameter 
+estimation for dynamical models, with particular emphasis on Gaussian process surrogates
+trained to emulate either the underlying forward model or the log likelihood of the Bayesian model.
 \end{abstract}
 
 \section{Introduction}

@@ -10,6 +10,7 @@
 
 % General inverse problems.
 \newcommand{\Par}{u}
+\newcommand{\ParBatch}{U}
 \newcommand{\parSpace}{\mathbb{U}} % Parameter space
 \newcommand{\dimPar}{D} % Parameter dimension 
 \newcommand{\idxParDim}{d} % Primary symbol used to index each parameter dimension. 
@@ -38,10 +39,11 @@
 
 % Emulator target
 \newcommand{\target}{\mathsf{f}} % Target map for emulation
-\newcommand{\targetEm}{\Em{f}} % Emulator for target quantity
+\newcommand{\targetEm}[1][\Ndesign]{f_{#1}} % Emulator for target quantity
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
-\newcommand{\emMean}{\mu_\Ndesign}
-\newcommand{\emVar}{s^2_\Ndesign}
+\newcommand{\emMean}[1][\Ndesign]{\mu_{#1}}
+\newcommand{\emVar}[1][\Ndesign]{s^2_{#1}}
+\newcommand{\emKer}[1][\Ndesign]{k_{#1}}
 \newcommand{\emDist}{\nu_{\Ndesign}} % Predictive distribution (law) of the emulator (a stochastic process)
 \newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
 \newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
@@ -51,6 +53,7 @@
 
 % Design points
 \newcommand{\Ndesign}{N}
+\newcommand{\Nbatch}{B}
 \newcommand{\designIdx}{n}
 \newcommand{\design}{U_{\Ndesign}}
 

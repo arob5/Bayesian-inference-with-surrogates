@@ -324,8 +324,13 @@ in the form of probability distributions.
 
 We write $\targetEm(\Par) \sim \emDist(\Par)$ to denote the predictive distribution
 at a particular input, and $\targetEm \sim \emDist$ to denote the functional distribution over emulator trajectories.
-Let $\emE$ denote the expectation with respect to the predictive distribution, and $\emMean(\Par) \Def \emE[\targetEm(\Par)]$,
-$\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$ denote the pointwise predictive mean and variance, respectively.
+Let $\emE$ denote expectation with respect to the predictive distribution, with $\emMean(\Par) \Def \emE[\targetEm(\Par)]$ and
+$\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$ denoting the pointwise predictive mean and variance, respectively.
+For a finite set of inputs $\ParBatch \Def \{\Par_b\}_{b=1}^{\Nbatch} \subset \parSpace^{\Nbatch}$, we use the vectorized notation 
+$\target(\ParBatch) \Def [\target(\Par_1), \dots, \target(\Par_\Nbatch)]^\top$. In this case,
+$\targetEm(\ParBatch) \sim \emDist(\ParBatch)$ is the $\Nbatch$-dimensional joint predictive distribution with mean vector 
+$\emMean(\ParBatch)$ and covariance matrix $\emVar(\ParBatch)$.
+
 Plugging the random emulator in place of the true target map induces a distribution over downstream quantities such as 
 $\postDensNorm(\Par; \targetEm)$. When discussing these pushforward distributions we make use of the 
 notation $\postNormEm \Def \postDensNorm(\cdot; \targetEm)$ when explicit reference to the underlying emulator
@@ -340,15 +345,78 @@ parameterization of the surrogate to exactly represent the true target function.
 \end{remark}
  
 \subsection{Common Surrogate Models}
-\subsection{Finite vs. Infinite Dimensional Surrogates}
 
-\begin{comment}
+\subsubsection{Gaussian Processes}
+Gaussian processes (GPs) are widely used as surrogate models, boasting an extensive literature \todo[inline]{cite}. 
+The typical workflow consists of specifying a GP prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ over the target function $\target$, 
+with $\emMean(\cdot)$ and $\emKer(\cdot, \cdot)$ denoting the prior mean and covariance functions, respectively. The 
+defining property of a GP is that each of the finite-dimensional distributions is Gaussian 
+$\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$.
+
+Gaussian processes (GPs) have emerged as a canonical surrogate model, and provide the 
+basis for examples given throughout this review. GPs have been extensively applied in a
+wide variety of surrogate modeling tasks, including as emulators for solving Bayesian 
+inverse problems (e.g., \citet{GP_PDE_priors,VehtariParallelGP}). The Gaussian predictive distribution of a 
+GP facilitates many convenient closed-form computations. Extensions of the GP methodology
+can produce more flexible emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
+GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
+typically yield predictions in the form of (infinite) mixtures of Gaussians.
+
+\subsubsection{Polynomials}
+
+\subsubsection{Neural Networks}
+
+\subsection{Finite vs. Infinite Dimensional Surrogates}
+As will be explored in the subsequent section, a diverse array of methods have been proposed for propagating 
+surrogate uncertainty within the posterior approximation. It is our view that this can be largely explained by 
+computational considerations for particular emulators, rather than by an overarching philosophy of uncertainty 
+propagation. In particular, a key differentiating characteristic is whether or not the surrogate admits a finite-dimensional 
+representation. We define $\targetEm$ to be finite-dimensional if its randomness stems from a finite-dimensional
+parameter $\theta_{\Ndesign}$; i.e., $\targetEm(\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
+random vector $\theta_{\Ndesign}$ and non-random function $g$.
+In this case, it is feasible to sample trajectories (sample paths) of $\targetEm$ via 
+\begin{align}
+&\targetTraj(\cdot) \Def g(\cdot, \theta),
+&&\theta \sim \mathrm{law}(\theta_{\Ndesign}).
+\end{align}
+The sampled trajectory $\targetTraj(\cdot)$ can now be evaluated at any input value. A standard example is a 
+model taking the form of a linear combination of basis functions 
+$\targetEm(\cdot) = \sum_{j=1}^{J} \theta_{\Ndesign}^{(j)} g^{(j)}(\cdot)$.
+
+An infinite-dimensional surrogate admits no such finite-dimensional representation. 
+Typical examples include surrogates constructed from Gaussian processes. For these models, 
+it is computationally infeasible to sample trajectories. Instead, the surrogate can typically be 
+characterized by the set of distributions $\emDist(\ParBatch)$ over finite-dimensional
+subsets $\ParBatch$.
+
+
 \section{Modular Bayesian Workflow}
 % maybe discuss the KOH joint model in the intro here?
 \subsection{Initial Design}
 \subsection{Surrogate Target}
 \subsection{Posterior Approximation}
 \subsection{Surrogate Refinement}
+
+
+
+\begin{comment}
+
+\paragraph{Infinite-Dimensional Model.} For an infinite-dimensional model, no such 
+finite-dimensional parameter $\theta_{\Ndesign}$ exists. Typical examples include 
+GPs and deep GPs. In this setting, a generic view of a 
+surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
+over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
+for the implementation of surrogate models in software packages such as 
+\verb+BoTorch+ \citep{botorch}. It is therefore feasible to sample the finite-dimensional distributions
+$\funcEm[\Ndesign](\parMat)$ for finite input sets $\parMat$, but sampling trajectories
+$\func_{\mathrm{samp}}(\cdot) \sim \mathrm{law}(\funcEm[\Ndesign])$ would require 
+infinite computing resources. Practical techniques to sample approximate trajectories have been
+extensively studied when $\funcEm[\Ndesign]$ is a GP, including work in 
+Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
+and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}.
+Common approaches construct finite-rank approximations of the form  
+in \Cref{eq:finite-basis}.
+
 
 We focus on surrogates that take the form of a  
 regression or interpolation model approximating the map $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
