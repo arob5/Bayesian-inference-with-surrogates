@@ -1171,9 +1171,19 @@ evaluating the exact log-posterior density at these points. The GP mean constant
 optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \todo{cite}. 
 
 \section{Conclusion} \label{sec:conclusion}
+\todo[inline]{intro paragraph summarizing paper}
+
+We view this work as a first step in providing a rigorous foundation to inform uncertainty propagation methods in 
+modular surrogate-based Bayesian workflows. 
+
+View this an initial work in a rigorous comparison of different methods
+
 Future work: looking at performance of these methods under model misspecification. Connections to generalized
 Bayesian inference. Robust log-density emulation. Active learning (different perspectives: propagating uncertainty
 vs. reducing error).
+
+Situation can be more complicated: might prefer ep when likelihood is misspecified. But might prefer eup if surrogate
+correlation structure is misspecified
 
 
 % Appendix

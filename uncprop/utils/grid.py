@@ -84,7 +84,7 @@ class Grid:
     def plot(self, 
              f: Callable | None = None,
              z: Array | list[Array] | None = None,
-             titles: str | None = None,
+             titles: list[str] | None = None,
              points: ArrayLike | None = None,
              **kwargs) -> tuple[Figure, Sequence[Axes]]:
         """
@@ -155,14 +155,20 @@ class DensityComparisonGrid:
 
     def __init__(self, 
                  grid: Grid, 
-                 distributions: Mapping[str, Distribution]):
+                 distributions: Mapping[str, Distribution] | None = None,
+                 log_dens_grid: Mapping[str, Array] | None = None):
+        if not (distributions is None) ^ (log_dens_grid is None):
+            raise ValueError('DensityComparison grid requires exactly one of `distributions` and `log_dens_grid` to be provided.')
+
         self.grid = grid
         self.distributions = distributions
+        self.log_dens_grid = log_dens_grid
 
         # unnormalized log densities over grid
-        self.log_dens_grid = {
-            nm: dist.log_density(self.grid.flat_grid).squeeze() for nm, dist in self.distributions.items()
-        }
+        if self.log_dens_grid is None:
+            self.log_dens_grid = {
+                nm: dist.log_density(self.grid.flat_grid).squeeze() for nm, dist in self.distributions.items()
+            }
 
         # normalized log densities over grid
         self.log_dens_norm_grid = {
@@ -172,7 +178,7 @@ class DensityComparisonGrid:
 
     @property
     def distribution_names(self):
-        return list(self.distributions.keys())
+        return list(self.log_dens_grid.keys())
     
     def calc_coverage(self, 
                       baseline: str, 
@@ -211,28 +217,20 @@ class DensityComparisonGrid:
              normalized: bool = False, 
              log_scale: bool = True,
              points: ArrayLike | None = None,
-             **kwargs) -> tuple[Figure, Axes]:
+             **kwargs) -> tuple[Figure, Sequence[Axes]]:
         
         if isinstance(dist_names, str):
             dist_names = [dist_names]
         elif dist_names is None:
             dist_names = self.distribution_names
 
-        nplots = len(dist_names)
-        fig, axs = smart_subplots(nplots=nplots, **kwargs)
+        plot_vals = self.log_dens_norm_grid if normalized else self.log_dens_grid
+        plot_vals = [plot_vals[nm] for nm in dist_names]
 
-        for dist_name, ax in zip(dist_names, axs):
-            if normalized:
-                plot_vals = self.log_dens_norm_grid[dist_name]
-            else:
-                plot_vals = self.log_dens_grid[dist_name]
-            
-            if not log_scale:
-                plot_vals = jnp.exp(plot_vals)
+        if not log_scale:
+            plot_vals = [jnp.exp(arr) for arr in plot_vals]
 
-            self.grid.plot(z=plot_vals, title=dist_name, points=points, ax=ax)
-
-        return fig, axs
+        return self.grid.plot(z=plot_vals, titles=dist_names, points=points, **kwargs)
 
 
 # -----------------------------------------------------------------------------
@@ -529,10 +527,16 @@ def plot_coverage_curve(log_coverage: Array,
 def plot_coverage_curve_reps(log_coverage: Array, 
                              probs: Array, 
                              names: list[str] | None = None,
+                             colors: list[str] | None = None,
                              qmin: float = 0.05,
                              qmax: float = 0.95,
                              single_plot: bool = False,
-                             alpha: float = 0.3) -> tuple[Figure, Axes]:
+                             alpha: float = 0.3,
+                             xlabel: str = 'nominal coverage',
+                             ylabel: str = 'actual coverage',
+                             set_title: bool = True,
+                             ax: Axes | None = None,
+                             **kwargs) -> tuple[Figure, Axes]:
     """
     Summarizes an ensemble of coverage curves, typically from multiple replicates
     of an experiment. Arguments are the same as `plot_coverage_curve`
@@ -542,9 +546,12 @@ def plot_coverage_curve_reps(log_coverage: Array,
 
     Optionally plots lines on single plot, or splits into multiple plots.
     """
+    if ax is not None and not single_plot:
+        raise ValueError('currently only allows passing `ax` for `single_plot = True`')
+
     log_coverage = jnp.atleast_3d(log_coverage)
     n_curves = log_coverage.shape[1]
-
+    
     if names is None:
         names = [f'dist{i}' for i in range(n_curves)]
 
@@ -552,19 +559,37 @@ def plot_coverage_curve_reps(log_coverage: Array,
     q = jnp.array([qmin, 0.5, qmax])
     quantiles = jnp.quantile(jnp.exp(log_coverage), q=q, axis=0) # (3, n_dists, n_probs)
 
-    fig, ax = plt.subplots()
-    for i in range(n_curves):
-        ax.fill_between(probs, quantiles[0,i,:], quantiles[2,i,:], label=names[i], alpha=alpha)
-        ax.plot(probs, quantiles[1,i,:])
+    if ax is not None:
+        fig = ax.figure
+        axs = [ax] * n_curves
+    elif single_plot:
+        fig, ax = plt.subplots()
+        axs = [ax] * n_curves
+    else:
+        fig, axs = smart_subplots(nplots=n_curves, **kwargs)
 
-    # Add line y = x
-    xmin, xmax = ax.get_xlim()
-    x = np.linspace(xmin, xmax, 100)
-    y = x
-    ax.plot(x, y, linestyle='--')
+    for i, ax in enumerate(axs):
+        label = names[i]
+        color = colors[label] if (colors is not None and label in colors) else None
+        ax.fill_between(probs, quantiles[0,i,:], quantiles[2,i,:], 
+                        label=label, color=color, alpha=alpha)
+        ax.plot(probs, quantiles[1,i,:], color=color)
 
-    ax.set_xlabel('nominal coverage')
-    ax.set_ylabel('actual coverage')
-    ax.legend()
+        if not single_plot and set_title:
+            ax.set_title(names[i])
 
-    return fig, ax
+        # Add line y = x
+        if i == 0 or not single_plot:
+            xmin, xmax = ax.get_xlim()
+            x = np.linspace(xmin, xmax, 100)
+            y = x
+            aux_color = colors['aux'] if (colors is not None and 'aux' in colors) else None
+            ax.plot(x, y, linestyle='--', color=aux_color)
+
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+  
+    if single_plot:
+        axs[0].legend()
+
+    return fig, axs

@@ -191,9 +191,25 @@ class VSEMExperiment(Experiment):
 # Helper functions: plots / analysis
 # -----------------------------------------------------------------------------
 
+def load_results(out_dir: str | Path, subdir_names: list[str]):
+    out_dir = Path(out_dir)
+    results = {}
+
+    for nm in subdir_names:
+        subdir = out_dir / nm
+        results[nm] = {}
+        res = results[nm]
+
+        res['logging_info'] = jnp.load(subdir / 'logging_info.npz')
+        res['grid_info'] = jnp.load(subdir / 'grid_info.npz')
+        res['results'] = jnp.load(subdir / 'results.npz')
+        res['log_dens'] = jnp.load(subdir / 'log_dens.npz')
+
+    return results
+
+
 def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int, n_reps: int):
     subdir = Path(out_dir) / subdir_name
-    info_path = subdir / 'logging_info.npz'
 
     # check if rep failed
     info = jnp.load(subdir / 'logging_info.npz')
@@ -206,7 +222,7 @@ def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int, n_reps: i
     if len(failed_reps) > 0:
         all_rep_idx = [idx for idx in range(n_reps)]
         rep_idx = all_rep_idx.index(rep_idx)
-
+    
     # Load grid for plots
     grid_info = jnp.load(subdir / 'grid_info.npz')
 
@@ -215,9 +231,40 @@ def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int, n_reps: i
                 n_points_per_dim=grid_info['n_points_per_dim'],
                 dim_names=grid_info['dim_names'])
     
-    # Generate plots
+    # load results
+    results = jnp.load(subdir / 'results.npz')
+    log_dens = jnp.load(subdir / 'log_dens.npz')
 
+    # Produce plots
+    gp_plot = _summarize_rep_gp(log_dens, results, grid, rep_idx)
+    post_approx_plots = _summarize_rep_post_approx(log_dens, results, grid, rep_idx)
+    plots = [gp_plot] + post_approx_plots
+
+    return grid, results, log_dens, plots
+
+
+def _summarize_rep_gp(log_dens, results, grid, rep_idx):
+    exact = log_dens['exact'][rep_idx]
+    pred_mean = results['pred_mean'][rep_idx]
+    pred_sd = jnp.sqrt(results['pred_var'])[rep_idx]
+    design_x = results['design_x'][rep_idx]
+
+    fig, ax = grid.plot(z=[exact, pred_mean, pred_sd],
+                        titles=['exact', 'mean', 'sd'],
+                        points=design_x,  max_cols=3)
     
-    return grid
+    return (fig, ax)
 
 
+def _summarize_rep_post_approx(log_dens, results, grid, rep_idx):
+    log_dens_rep = {nm: arr[rep_idx] for nm, arr in log_dens.items()}
+    post_approx_grid = DensityComparisonGrid(grid=grid, log_dens_grid=log_dens_rep)
+    design_x = results['design_x'][rep_idx]
+
+    log_dens_comparison_plot = post_approx_grid.plot(normalized=True, log_scale=True, 
+                                                     max_cols=4, points=design_x)
+    dens_comparison_plot = post_approx_grid.plot(normalized=True, log_scale=False, 
+                                                 max_cols=4, points=design_x)
+    coverage_grid = post_approx_grid.plot_coverage(baseline='exact', probs=results['probs'])
+
+    return [log_dens_comparison_plot, dens_comparison_plot, coverage_grid]
