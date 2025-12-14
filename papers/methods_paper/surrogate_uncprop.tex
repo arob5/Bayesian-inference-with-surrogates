@@ -926,45 +926,35 @@ See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
 for background on pseudo-marginal MCMC.
 \end{rmk}
  
-
-\paragraph{Related work.} \todo{update this section to align with new notation}
-The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
-in depth in \citep{garegnani2021NoisyMCMC}. \citet{BurknerSurrogate} propose targeting the 
-distribution proportional to $\hat{\postDens}^M(\Par; \targetTraj_{1:M})$, where $\targetTraj_{1:M}$
-is fixed across all MCMC iterations. This does not target the EUP exactly, and can be viewed
-as an analog of the sample average approximation from the optimization literature \citep{SAA}.
-To improve MCMC efficiency, \citet{garegnani2021NoisyMCMC} also considers ``noisy'' approximations
-of the EUP. In contrast to pseudo-marginal algorithms, these methods re-sample both 
-$\targetTraj_{1:M}$ and $\tilde{\targetTraj}_{1:M}$ each iteration. 
-\citet{FerEmulation} utilize a similar noisy algorithm with $M = 1$, adopting an
-approximate computation viewpoint rather than explicitly trying to target $\postApproxEUPNorm$.
-
+\paragraph{Related work.}
 Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
 for EP-based inference. They appear to implicitly assume the use of finite-dimensional emulators,
-as difficulties related to sampling trajectories are not addressed. There has been interest in the 
-modular Bayes community in designing approximate MCMC schemes as an alternative to
-MwMC for cut posterior inference. \citet{PlummerCut} describes the implementation of such 
-an algorithm in the WinBUGS software \todo{cite}, referred to as the \textit{naive cut algorithm}.
-The author shows that this algorithm does not admit the cut posterior as an invariant
-distribution, and moreover that the implicit target distribution depends on the particular Markov kernels
-chosen to perform the updates. The paper proposes a solution to improve the approximation 
-using tempered transitions. Subsequent work has considered more sophisticated algorithms
-that seek to explicitly estimate the intractable normalizing constant ratios
-\citep{SAACut} \todo{add Yves' paper here} 
-Our MwG algorithm can be viewed as a version of the naive cut algorithm operating in function space.
+as difficulties related to sampling trajectories are not addressed.
+\citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstep{\targetTraj}_{\Par}$ and 
+$\nextstep{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
+Addressing pathologies in this approach were a primary motivation for our proposed method. 
+
+There has been interest in the modular Bayes community in designing approximate MCMC 
+schemes as an alternative to MwMC for cut posterior inference. \citet{PlummerCut} describes 
+the implementation of such an algorithm in the WinBUGS software, referred to as the 
+\textit{naive cut algorithm}. The author shows that this algorithm does not admit the cut posterior 
+as an invariant distribution, and moreover that the implicit target distribution depends on the 
+particular Markov kernels chosen to perform the updates.
+The paper proposes a solution to 
+improve the approximation using tempered transitions. Subsequent work has considered more 
+sophisticated algorithms that seek to explicitly estimate the intractable normalizing constant ratios
+\citep{SAACut} or utilize coupling approaches based on unbiased telescoping sum estimators \citep{yvesCut}.
+Our proposed method can be viewed as a version of the cut algorithm operating in function space.
 We opt to avoid normalizing constant estimation and instead slow down the mixing of the 
 $\targetTraj$-chain to control the approximation error.
 
 \section{Numerical Experiments} \label{sec:experiments}
 We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
 plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
-quality of the rk-pcn approximation to the EP. For the latter, we evaluate the rk-pcn algorithms in
-\Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the correlation parameter $\pcnCor$. 
-We compare these MCMC approximations against the EUP as well as the naive cut algorithm 
-described in \citet{PlummerCut}. We note that there is a growing literature on approximate algorithms 
-for cut posterior inference, but our focus in the present paper is on evaluating the rk-pcn algorithm in 
-the surrogate modeling setting.
-\todo[inline]{cite a few papers here}
+quality of the random kernel pCN (rk-pcn) approximation to the EP. For the latter, we evaluate the
+rk-pcn schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
+correlation parameter $\pcnCor$. We compare these MCMC approximations against the EUP as 
+well as the naive cut algorithm described in \citet{PlummerCut}.
 
 % Linear Gaussian Example
 \subsection{Linear Gaussian Example}

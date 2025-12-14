@@ -401,6 +401,19 @@ subsets $\ParBatch$.
 
 \begin{comment}
 
+
+% stuff to include in MCMC section
+The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
+in depth in \citep{garegnani2021NoisyMCMC}. \citet{BurknerSurrogate} propose targeting the 
+distribution proportional to $\hat{\postDens}^M(\Par; \targetTraj_{1:M})$, where $\targetTraj_{1:M}$
+is fixed across all MCMC iterations. This does not target the EUP exactly, and can be viewed
+as an analog of the sample average approximation from the optimization literature \citep{SAA}.
+To improve MCMC efficiency, \citet{garegnani2021NoisyMCMC} also considers ``noisy'' approximations
+of the EUP. In contrast to pseudo-marginal algorithms, these methods re-sample both 
+$\targetTraj_{1:M}$ and $\tilde{\targetTraj}_{1:M}$ each iteration. 
+\citet{FerEmulation} utilize a similar noisy algorithm with $M = 1$, adopting an
+approximate computation viewpoint rather than explicitly trying to target $\postApproxEUPNorm$.
+
 \paragraph{Infinite-Dimensional Model.} For an infinite-dimensional model, no such 
 finite-dimensional parameter $\theta_{\Ndesign}$ exists. Typical examples include 
 GPs and deep GPs. In this setting, a generic view of a 
