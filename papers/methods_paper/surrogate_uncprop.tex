@@ -678,9 +678,12 @@ $\postEm(\Par) \sim \LN(\gpMean(\Par), \emVar(\Par))$, implying
 As opposed to the preceding example, the EUP in this context is correctly interpreted as 
 pointwise inflation of the plug-in mean approximation in accordance with the surrogate uncertainty. 
 At two points with equal predictive mean $\gpMean$, the EUP always assigns higher density to the 
-more uncertain location. Notably, the magnitude of the
-uncertainty inflation scales with the exponentiated predictive variance, potentially leading to extreme 
-concentration in the most uncertain regions. For example, if $\emSD(\Par) = 2$,
+more uncertain location. Also in contrast to the previous example, \Cref{eq:EUP-Gaussian-ldens}
+does not exhibit prior reversion as $\emVar(\Par)$ increases at a particular point; as 
+$\postApproxEUPNorm(\Par)  \to \infty$ as $\emVar(\Par) \to \infty$.
+Notably the magnitude of the uncertainty inflation scales with the exponentiated predictive 
+variance, making the EUP susceptible to extreme concentration in small regions exhibiting high uncertainty.
+For example, if $\emSD(\Par) = 2$,
 $\emMean(\Par^\prime) = \emMean(\Par)$, and 
 $\emSD(\Par^\prime) = 2 \emSD(\Par)$, then 
 $\{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)\} / 
@@ -709,8 +712,8 @@ As shown in \Cref{prop:EP-variational}, the EP is the minimizer when the loss
 is defined with respect to the normalized distributions.
 The EUP is referred to as the ``marginal'' approximation in 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar},
-in which it is analyzed theoretically for both log-likelihood and forward 
-model emulators. \citet{VehtariParallelGP} highlight pathological 
+which establish error bounds with respect to the true posterior in Hellinger distance.
+\citet{VehtariParallelGP} highlight pathological 
 behavior of the EUP for GP log-density emulators, and recommend 
 against its use in this setting. To our knowledge, \citet{BurknerSurrogate}
 is the only previous work to directly compare the EP and EUP (which 
@@ -718,7 +721,7 @@ they call the ``expected likelihood''). Their comparison is limited to
 numerical results in case studies involving forward model emulators.
 The closed-form EUP expressions in 
 \Cref{eq:EUP-Gaussian-ldens,eq:EUP-Gaussian-fwd} have been 
-noted in a variety of works 
+noted in a variety of studies 
 \citep{StuartTeck1,StuartTeck2,VehtariParallelGP,weightedIVAR,
 GP_PDE_priors,Surer2023sequential,Takhtaganov2018AdaptiveBayesianGP}. 
 The EUP has seen 
@@ -730,7 +733,7 @@ villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel
 % Approximate Computation for the EP
 \section{Approximate Computation for the Expected Posterior} \label{sec:computation}
 The previous section explored the EUP as an approximation to the EP, demonstrating when 
-the two distributions may significantly differ. We now seek a more direct route to EP-based
+the two distributions may deviate. We now seek a more direct route to EP-based
 inference, and introduce an approximate MCMC algorithm towards this end. 
 We start by clarifying the difficulties associated with EP computation.
 
@@ -758,8 +761,8 @@ is rarely possible, so this inner sampling step is replaced by an MCMC algorithm
 The resulting sampling scheme is sometimes called \textit{Metropolis within Monte Carlo (MwMC)} 
 \citep{garegnani2021NoisyMCMC}. MwMC has the downside of requiring $\NSample \gg 1$
 MCMC runs, but this may be less of an issue in modern parallel computing environments \citep{BurknerSurrogate}. 
-Moreover, methods have been developed to reduce the size of $\NSample$ required to achieve a
-desired level of precision \citep{BurknerTwoStep}. 
+Moreover, methods have been developed to reduce the number of sampled trajectories $\NSample$ 
+required to adequately characterize the EP \citep{BurknerTwoStep}. 
 
 The more significant issue is the outer sampling step, which requires simulating surrogate 
 trajectories $\targetEm \sim \emDist$. While not a problem for finite-dimensional 
@@ -782,41 +785,39 @@ Their method consists of approximating GP
 trajectories by sampling the surrogate at a finite grid of points, 
 and then approximating the trajectory as the GP mean, conditional on the 
 sampled values at these points. This approach has the downside of 
-addressing the difficult question of choosing an appropriate conditioning set.
-Our MCMC method avoids the challenges associated with discretization
-and repeated just-in-time sampling.
+requiring the difficult choice of an appropriate conditioning set.
 
 \subsection{Random Kernel Metropolis-Hastings}
 To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
-MCMC algorithm that produces approximate EP samples. The sampler targets the joint distribution 
+MCMC algorithm that produces approximate EP samples. Our method avoids the challenges 
+associated with discretization and repeated just-in-time sampling.
+The sampler targets the joint distribution 
 $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
 which admits $\postApproxEP$ as a marginal. At a high level, we consider algorithms that alternate between 
 $\Par$ and $\targetTraj$ updates, which update the current MCMC state $(\Par, \targetTraj)$ like
 \begin{align}
-\targetTraj^\prime &\sim \MarkovKerTarget(\targetTraj, \cdot) \label{eq:f-update} \\
-\Par^\prime &\sim \MarkovKerPar(\Par, \cdot \given \targetTraj^\prime), \label{eq:u-update}
+\nextstate{\targetTraj} &\sim \MarkovKerTarget(\targetTraj, \cdot) \label{eq:f-update} \\
+\nextstate{\Par} &\sim \MarkovKerPar(\Par, \cdot \given \nextstate{\targetTraj}), \label{eq:u-update}
 \end{align}
 where $\MarkovKerTarget$ and $\MarkovKerPar$ are Markov kernels. 
 We refer to algorithms of this form as \textit{random kernel MCMC}, motivated by the view of 
 $\MarkovKerPar(\Par, \cdot \given \targetEm)$ as a random surrogate-based approximation 
-of its exact analog $\MarkovKerPar(\Par, \cdot \given \target)$.
+to the exact kernel $\MarkovKerPar(\Par, \cdot \given \target)$.
 Throughout this section we fix $\MarkovKerPar$ to be an MH kernel defined with respect to a 
 proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by sampling a proposal 
-$\propPar \sim \propDistPar(\Par, \cdot)$ and setting the next state $\Par^\prime$ to $\propPar$
+$\propPar \sim \propDistPar(\Par, \cdot)$ and setting the next state $\nextstate{\Par}$ to $\propPar$
 with probability 
 \begin{equation}
 \accProbMH_{\Par}(\Par, \propPar)
-= \min\left(1, \frac{\postDens(\propPar; \targetTraj^\prime)}{\postDens(\Par; \targetTraj^\prime)} \cdot 
+= \min\left(1, \frac{\postDens(\propPar; \nextstate{\targetTraj})}{\postDens(\Par; \nextstate{\targetTraj})} \cdot 
 \frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right);
 \label{eq:MH-ratio-u}
 \end{equation}
-otherwise $\Par^\prime$ is assigned the current state $\Par$. Here $\propDensPar(\Par, \cdot)$ denotes the density of 
-$\propDistPar(\Par, \cdot)$. Provided the unnormalized density $\postDens(\Par; \targetTraj^\prime)$
-depends on $\targetTraj^\prime$ only through $\targetTraj^\prime(\Par)$, then the MH update for $\Par$ only requires 
-realizing the finite-dimensional projection $[\targetTraj^\prime(\Par), \targetTraj^\prime(\propPar)]$ of the 
-function $\targetTraj^\prime$.
-
-\todo[inline]{This is a bit awkward; don't want to cause confusion with derivative of $\targetTraj$}
+otherwise $\nextstate{\Par}$ is assigned the current state $\Par$. Here $\propDensPar(\Par, \cdot)$ denotes the density of 
+$\propDistPar(\Par, \cdot)$. Provided the unnormalized density $\postDens(\Par; \nextstate{\targetTraj})$
+depends on $\nextstate{\targetTraj}$ only through $\nextstate{\targetTraj}(\Par)$, then the MH update for $\Par$ only requires 
+realizing the finite-dimensional projection $[\nextstate{\targetTraj}(\Par), \nextstate{\targetTraj}(\propPar)]$ of the 
+function $\nextstate{\targetTraj}$.
 
 \subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
 Having established the MH update for $\Par$, we now focus on specifying the kernel $\MarkovKerTarget$
@@ -1180,7 +1181,8 @@ optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \
 
 \section{Conclusion} \label{sec:conclusion}
 Future work: looking at performance of these methods under model misspecification. Connections to generalized
-Bayesian inference. Robust log-density emulation.
+Bayesian inference. Robust log-density emulation. Active learning (different perspectives: propagating uncertainty
+vs. reducing error).
 
 
 % Appendix

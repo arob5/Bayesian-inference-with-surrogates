@@ -19,6 +19,7 @@ key = jr.key(9768565)
 gp_tags = ['gp', 'clip_gp']
 design_settings = [(4, 1e-4), (8, 1e-3), (16, 1e-2)] # (n_design, jitter)
 setups = [(tag, n, jitter) for tag in gp_tags for n, jitter in design_settings]
+setups = [setups[3], setups[4], setups[5]]
 
 setup_kwargs: dict[str, Any] = {'n_grid': 50, 
                                 'n_design': None,
