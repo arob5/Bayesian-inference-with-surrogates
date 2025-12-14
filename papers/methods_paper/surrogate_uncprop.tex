@@ -575,11 +575,11 @@ is the ``Jensen gap.''
 \end{prop}
 
 By Jensen's inequality $\jgap \geq 0$, implying that the Jensen gap represents a 
-$\Par$-independent positive bias in the difference between EP and EUP, modulated by the magnitude of 
+$\Par$-independent positive bias in the difference between EP and EUP, modulated by
 $\emE[\postEm(\Par)]$. Since both distributions integrate to one, any positive 
 biases must be balanced by negative biases at other values of $\Par$.
-The second term in \Cref{eq:ep-eup-pw-err} will be negative for ``influential'' $\Par$ values, 
-those with larger realizations of $\postEm(\Par)$ highly correlated with larger values of 
+The second term in \Cref{eq:ep-eup-pw-err} will be negative for ``influential'' $\Par$ 
+values---those with larger realizations of $\postEm(\Par)$ highly correlated with larger values of 
 $\normCstEm$. The influence of a parameter value will typically increase when 
 $\postEm(\Par)$ is large on average, highly variable, and is positively correlated with other 
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
@@ -622,69 +622,67 @@ on situations where the randomness in $\targetEm$ is primarily epistemic---in pr
 reduced via further evaluations of the simulator. The EP effectively follows from the view that this 
 epistemic uncertainty is external to the data-generating process. Another important consideration
 is that the EP is a true cut posterior distribution, while the EUP incorporates the data $\obs$ into
-the uncertainty propagation method. This is perhaps most clearly illustrated by the posterior 
-mixture formulations in \Cref{eq:ep-mixture,eq:eup-mixture}, where we see that the EUP mixture 
-weights depend on $\obs$.
+the uncertainty propagation method. In this sense, the EUP is ``partially modular''---the surrogate 
+is fit using only simulator data, but the observational data alters the weights assigned to surrogate
+trajectories in the second stage.
 
 \subsection{EUP Examples}
+We return to \Cref{ex:fwd-em,ex:ldens-em} to highlight concrete characterizations of the EUP
+in two common practical settings. 
 
-\begin{examplebox}{Forward Model GP Surrogate}[continued]
+\begin{ex}[Example 1 Continued]
 \label{ex:fwd-em-cont}
-We return to \Cref{ex:fwd-em}, with surrogate density 
-$\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$ 
-derived from a (potentially multi-output) GP emulator $\targetEm \sim \GP(\gpMean, \gpKer)$
-replacing the true forward model $\fwd$. This setup is commonly considered in the Bayesian 
+Consider the setup from example \Cref{ex:fwd-em} with approximate density 
+$\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$. We now 
+additionally assume that the surrogate has Gaussian pointwise predictions 
+$\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. Such predictions might come from 
+a (potentially multi-output) GP emulator, though note that the EUP is defined only by the 
+pointwise predictions, and ignores any correlational structure in the surrogate.
+
+This setup is commonly considered in the Bayesian 
 inverse problem literature \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
 idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
 Under these assumptions, the EUP assumes the form
 \begin{equation}
-\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \gpMean(\Par), \likPar + \gpKer(\Par)),
+\postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \emMean(\Par), \likPar + \emVar(\Par)),
 \label{eq:EUP-Gaussian-fwd}
 \end{equation}
 following from the formula for the convolution of two Gaussians \citep{StuartTeck2}.
 In this context, the uncertainty propagation admits a data space interpretation, with
-$\gpKer(\Par)$ inflating the observation covariance.
-This does not imply that the EUP strictly induces larger posterior inflation in regions with larger uncertainty.
-Since the Gaussian likelihood is bounded above,
-when $\gpMean(\Par)$ and $\obs$ are close, then an increase in $\gpKer(\Par)$ may actually 
-deflate the density at $\Par$. In regions where $\gpMean(\Par)$ and $\obs$ significantly differ,
-then the surrogate uncertainty typically has the effect of inflating the density, relative to the 
-plug-in mean approximation.
-\todo[inline]{Finish this section once experiment 3 is complete}
-\todo[inline]{Fix example numbering}
-\end{examplebox}
+$\gpKer(\Par)$ inflating the observation covariance. This implies reversion to the prior density 
+$\postApproxEUPNorm(\Par) \to \priorDens(\Par)$ as $\emVar(\Par) \to \infty$. Note that it is not correct to 
+think of \Cref{eq:EUP-Gaussian-fwd}  as simply inflating the plug-in mean approximation in regions with 
+high uncertainty. Since the Gaussian likelihood is bounded above, when $\emMean(\Par)$ and $\obs$ are close, 
+then an increase in $\emVar(\Par)$ may actually deflate the density at $\Par$.
+\end{ex}
 
-\begin{examplebox}{Log-Density GP Surrogate}[continued]
+\begin{ex}[Example 2 Continued]
 \label{ex:ldens-em-cont}
-We return to \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$,
-and consider a GP emulator $\targetEm \sim \GP(\gpMean, \gpKer)$. 
-In particular, this implies the pointwise predictions $\targetEm(\Par)$ are Gaussian, with 
-$\E[\targetEm(\Par)] = \gpMean(\Par)$ and 
-$\Cov[\targetEm(\Par),\targetEm(\Par^\prime)] = \gpKer(\Par, \Par^\prime)$. We use the shorthand 
-$\gpKer(\Par) \Def \gpKer(\Par, \Par)$ for the predictive variance. This setup,
-encompassing both the log-likelihood and log-posterior emulation settings, has been 
-considered in several applications 
+Consider the setup from \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
+We again assume an emulator with Gaussian predictions $\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. 
+This encompasses both the log-likelihood and log-posterior emulation settings; in the former case, 
+$\emMean(\Par)$ is the sum of $\log \priorDens(\Par)$ and the mean of the log-likelihood emulator.
+This setup has been considered in several applications
 \citep{VehtariParallelGP,FATES_CES,trainDynamics,quantileApprox,
 ActiveLearningMCMC,FerEmulation,StuartTeck1,StuartTeck2,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}.
 
-In this setting, $\postEm$ is a log-normal process, implying the pointwise predictive 
-distributions $\postEm(\Par) \sim \LN(\gpMean(\Par), \gpKer(\Par))$, as well as
+Under these assumptions, the pushforward predictive distributions for $\postEm(\Par)$ are log-normal
+$\postEm(\Par) \sim \LN(\gpMean(\Par), \emVar(\Par))$, implying
 \begin{equation}
 \postApproxEUPNorm(\Par) 
-\propto \Exp{\gpMean(\Par) + \frac{1}{2}\gpKer(\Par)}
-= \postApproxMean(\Par) \Exp{\frac{1}{2}\gpKer(\Par)}.
+\propto \Exp{\gpMean(\Par) + \frac{1}{2}\emVar(\Par)}
+= \postApproxMean(\Par) \Exp{\frac{1}{2}\emVar(\Par)}.
 \label{eq:EUP-Gaussian-ldens}
 \end{equation} 
-\Cref{eq:EUP-Gaussian-ldens} illustrates that the EUP inflates the plug-in mean approximation 
-in regions with high surrogate uncertainty. 
-At two points with equal predictive mean $\gpMean$, the 
-EUP always assigns higher density to the more uncertain location 
-(unlike in \Cref{ex:fwd-em-cont}). Notably, the magnitude of the
-uncertainty inflation scales with the exponentiated variance of the GP, potentially leading to extreme 
-concentration in the most uncertain regions. For example, if $\gpKer(\Par) = 4$,
-$\gpMean(\Par^\prime) = \gpMean(\Par)$, and 
-$\gpKer(\Par^\prime) = 4 \gpKer(\Par)$, then 
+As opposed to the preceding example, the EUP in this context is correctly interpreted as 
+pointwise inflation of the plug-in mean approximation in accordance with the surrogate uncertainty. 
+At two points with equal predictive mean $\gpMean$, the EUP always assigns higher density to the 
+more uncertain location. Notably, the magnitude of the
+uncertainty inflation scales with the exponentiated predictive variance, potentially leading to extreme 
+concentration in the most uncertain regions. For example, if $\emSD(\Par) = 2$,
+$\emMean(\Par^\prime) = \emMean(\Par)$, and 
+$\emSD(\Par^\prime) = 2 \emSD(\Par)$, then 
 $\{\postApproxEUPNorm(\Par^\prime)/\postApproxEUPNorm(\Par)\} / 
 \{\postApproxNormMean(\Par^\prime)/\postApproxNormMean(\Par)\} \approx 400$. 
 The $2\times$ difference in surrogate standard deviation translates to a $400\times$ difference in 
@@ -692,11 +690,10 @@ density approximation, relative to the plug-in mean. This undesirable behavior, 
 \citet{VehtariParallelGP}, can be viewed partially as a consequence of the dominating effect
 of the second term in \Cref{eq:ep-eup-pw-err} at points where the distribution of 
 $\postEm(\Par)$ is heavy-tailed.
-As illustrated in the experiment in \Cref{sec:vsem}, the EP tends to be more robust, though not immune, to the 
-sensitivity exhibited by posterior estimates under GP log-density surrogates.
+As illustrated in the experiment in \Cref{sec:vsem}, the EP tends to be more robust, 
+though not immune, to the sensitivity exhibited by posterior estimates under GP log-density surrogates.
 \todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
-\todo[inline]{Fix example numbering}
-\end{examplebox}
+\end{ex}
 
 \paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
 in \citet{BilionisBayesSurrogates}, motivated by the extended parameter space viewpoint
@@ -1182,6 +1179,9 @@ evaluating the exact log-posterior density at these points. The GP mean constant
 optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \todo{cite}. 
 
 \section{Conclusion} \label{sec:conclusion}
+Future work: looking at performance of these methods under model misspecification. Connections to generalized
+Bayesian inference. Robust log-density emulation.
+
 
 % Appendix
 \section{Appendix}
