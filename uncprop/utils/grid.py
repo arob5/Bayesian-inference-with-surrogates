@@ -83,10 +83,10 @@ class Grid:
     
     def plot(self, 
              f: Callable | None = None,
-             z: ArrayLike | None = None,
-             title: str | None = None,
+             z: Array | list[Array] | None = None,
+             titles: str | None = None,
              points: ArrayLike | None = None,
-             ax: Axes | None = None) -> tuple[Figure, Axes]:
+             **kwargs) -> tuple[Figure, Sequence[Axes]]:
         """
         Visualize function values at grid points. Values must either be specified 
         directly via `z`, or a function `f` must be supplied and the values 
@@ -98,17 +98,48 @@ class Grid:
         if z is None:
             z = f(self.flat_grid)
 
-        # Ensure that z is a flat array of length equal to grid length
-        z = jnp.asarray(z).ravel()
+        # validate that z can be interpreted as multiple sets of values over the grid
+        if isinstance(z, list):
+            z = [arr.ravel() for arr in z]
+            z = jnp.stack(z, axis=1)
+        else:
+            z = jnp.asarray(z)
+
+        if z.ndim > 2:
+            raise ValueError('z cannot have more than 2 dimensions.')
+        if z.ndim < 2:
+            z = z.reshape(-1, 1)
         if z.shape[0] != self.n_points:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
         if self.n_dims == 2:
-            return self._plot_2d(z, title=title, points=points, ax=ax)
+            return self._plot_2d(z, titles=titles, points=points, **kwargs)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
-    def _plot_2d(self, z, title=None, points=None, ax=None):
+
+    def _plot_2d(self,
+                 z: Array,
+                 titles: str | list[str] | None = None, 
+                 points: ArrayLike | None = None,
+                 **kwargs) -> tuple[Figure, Sequence[Axes]]:
+        """
+        Note: for now the same points are plotted on each plot
+        """
+        assert self.n_dims == 2
+
+        nplots = z.shape[1]
+        fig, axs = smart_subplots(nplots=nplots, **kwargs)
+        if titles is None:
+            titles = [f'z{i}' for i in range(nplots)]
+
+        for i, nm, ax in zip(range(nplots), titles, axs):
+            self._plot_single_2d(z=z[:,i], title=nm, points=points, ax=ax)
+
+        return fig, axs
+
+
+    def _plot_single_2d(self, z, title=None, points=None, ax=None):
         assert self.n_dims == 2
 
         X, Y = self.grid_arrays

@@ -146,7 +146,7 @@ class VSEMExperiment(Experiment):
         probs = results[0].coverage_results[1]
         dist_names = results[0].coverage_results[3]
 
-        return {'vsem_params': vsem_params,
+        info = {'vsem_params': vsem_params,
                 'driver': driver,
                 'vsem_output': vsem_output,
                 'observable': observable,
@@ -155,11 +155,12 @@ class VSEMExperiment(Experiment):
                 'pred_var': pred_var,
                 'design_x': design_x,
                 'design_y': design_y,
-                'log_dens_approx': log_dens_approx,
                 'log_coverage': log_coverage,
                 'probs': probs,
                 'dist_names': dist_names,
                 'vsem_param_names': results[0].vsem_param_names}
+
+        return info, log_dens_approx
 
 
     def save_results(self, 
@@ -167,13 +168,22 @@ class VSEMExperiment(Experiment):
                      results: list, 
                      failed_reps: list, 
                      *args, **kwargs):
-        results_dict = self.collect_results(results, failed_reps)
+        results_dict, log_dens_dict = self.collect_results(results, failed_reps)
 
         if results_dict is None:
             print('Results list is length 0. Not saving')
             return None
+        
+        # save grid info (constant across reps)
+        grid = results[0].grid
+        jnp.savez(subdir / 'grid_info.npz', 
+                  low=grid.low,
+                  high=grid.high,
+                  n_points_per_dim=grid.n_points_per_dim,
+                  dim_names=grid.dim_names)
 
         jnp.savez(subdir / 'results.npz', **results_dict)
+        jnp.savez(subdir / 'log_dens.npz', **log_dens_dict)
         jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps, key=jr.key_data(self.base_key))
 
 
@@ -181,9 +191,9 @@ class VSEMExperiment(Experiment):
 # Helper functions: plots / analysis
 # -----------------------------------------------------------------------------
 
-def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int):
+def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int, n_reps: int):
     subdir = Path(out_dir) / subdir_name
-    info_path = Path(subdir) / 'logging_info.npz'
+    info_path = subdir / 'logging_info.npz'
 
     # check if rep failed
     info = jnp.load(subdir / 'logging_info.npz')
@@ -192,12 +202,22 @@ def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int):
         print(f'Replicate {rep_idx} failed.')
         return None
     
+    # adjust rep index (necessary if some reps failed)
+    if len(failed_reps) > 0:
+        all_rep_idx = [idx for idx in range(n_reps)]
+        rep_idx = all_rep_idx.index(rep_idx)
+
     # Load grid for plots
-    grid_info = jnp.load(out_dir / 'grid.npz')
+    grid_info = jnp.load(subdir / 'grid_info.npz')
 
     grid = Grid(low=grid_info['low'],
                 high=grid_info['high'],
                 n_points_per_dim=grid_info['n_points_per_dim'],
                 dim_names=grid_info['dim_names'])
+    
+    # Generate plots
+
+    
+    return grid
 
 
