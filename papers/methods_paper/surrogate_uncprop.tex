@@ -864,8 +864,7 @@ restricting the scale of $\propDistTarget$, thus slowing down the mixing speed o
 For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
 between $\targetTraj$ and $\tilde{\targetTraj}$, implying that setting $\pcnCor$ close to one ensures 
 $\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. We illustrate the effect of this 
-approximation through experiments; a complete theoretical analysis is the subject of concurrent work and is
-beyond the scope of the present paper.
+approximation through experiments; a complete theoretical analysis is beyond the scope of the present paper.
 
 As currently stated, the pCN update in \Cref{eq:pcn-proposal} is practically implementable only when 
 $\targetEm$ admits a finite-dimensional representation. However, the algorithm can still be implemented
@@ -881,12 +880,12 @@ Additional implementation details are provided in the appendix.
     \label{alg:rk-pcn-finite}
     \begin{algorithmic}[1]
     \State \textbf{Input:} Current state $(\Par, \targetTraj)$
-    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime)$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
     \State $\xi \sim \Gaussian(0, \gpKer)$
-    \State $\targetTraj^\prime \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\nextstate{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
     \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \targetTraj^\prime) / \postDens(\Par; \targetTraj^\prime) \right\}$
-    \State $\Par^\prime \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
+    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
     \end{algorithmic}
 \end{algorithm}
 
@@ -895,22 +894,22 @@ Additional implementation details are provided in the appendix.
     \label{alg:rk-pcn-infinite}
     \begin{algorithmic}[1]
     \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
-    \State \textbf{Output:} Updated state $(\Par^\prime, \targetTraj^\prime_{\Par^\prime})$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj}_{\nextstate{\Par}})$
     \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
     \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
     \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
     \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
-    \State $(\targetTraj^\prime_{\Par}, \targetTraj^\prime_{\propPar})^\top \gets 
+    \State $(\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar})^\top \gets 
     	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \targetTraj^\prime) / \postDens(\Par; \targetTraj^\prime) \right\}$ 
-    	\Comment{Compute using $\targetTraj^\prime_{\Par}, \targetTraj^\prime_{\propPar}$}
-    \State $\Par^\prime \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
-    \State $\targetTraj^{\prime}_{\Par^\prime} \gets \targetTraj^\prime_{\propPar} \indicator{v \leq \alpha_{\Par}} + \targetTraj^\prime_{\Par} \indicator{v > \alpha_{\Par}}$
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$ 
+    	\Comment{Compute using $\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar}$}
+    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v > \alpha_{\Par}}$
     \end{algorithmic}
 \end{algorithm}
 
-\subsection{A Correlated Pseudo-Marginal Algorithm}
-The approximate MwG scheme above is derived by invoking the approximation 
+\begin{rmk}
+The approximate Metropolis-within-Gibbs scheme above is derived by invoking the approximation
 $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$.
 A natural alternative is to invoke the approximation 
 $\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$,
@@ -920,11 +919,13 @@ which yields the acceptance probability
 = \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)}\right).
 \label{eq:MH-ratio-cpm}
 \end{equation}
-This is precisely a correlated psuedo-marginal (cPM) that exactly targets $\postApproxEP$.
+This is precisely a correlated psuedo-marginal algorithm that exactly targets $\postApproxEUPNorm$.
+This provides an alternative algorithmic derivation of the EUP based on a heuristic modification of 
+an algorithm targeting the EP.
 See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
 for background on pseudo-marginal MCMC.
+\end{rmk}
  
-\todo[inline]{Move to appendix?}
 
 \paragraph{Related work.} \todo{update this section to align with new notation}
 The pseudo-marginal approach to EUP-based inference is noted in \citep{StuartTeck1} and studied 
