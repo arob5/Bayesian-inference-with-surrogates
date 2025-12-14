@@ -1030,13 +1030,13 @@ coefficients in these linear combinations in directions with $s_j \neq 0$ are gi
     \centering
     \begin{subfigure}{0.7\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
         \label{fig:plot1a}
     \end{subfigure}
 
     \begin{subfigure}{0.7\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
         \label{fig:plot1b}
     \end{subfigure}
     \vspace{0.5em}
@@ -1077,12 +1077,12 @@ distributions for the exact posterior and surrogate predictive distribution for 
     \centering
     \begin{subfigure}[b]{0.45\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{./../experiments/linear_Gaussian/out/experiment1_exact_post.png}
+        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_exact_post.png}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.45\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{./../experiments/linear_Gaussian/out/experiment1_surrogate.png}
+        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_surrogate.png}
     \end{subfigure}
     \caption{Summary of the exact posterior and surrogate marginal distributions for a single replicate in the experiment.
     \textit{(Left)} The true posterior mean, $\pm 2$ standard deviations (shaded blue), $\pm 2$ prior standard deviations, and observations (red).
@@ -1095,7 +1095,7 @@ distributions for the exact posterior and surrogate predictive distribution for 
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_coverage.png}
+    \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
     \caption{Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
     		 The shaded regions summarize the middle 90\% of the replicates. Joint coverage is defined 
 		  via the Gaussian coverage ellipsoids at the different probability levels.}
@@ -1108,7 +1108,7 @@ on average.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=\linewidth]{./../experiments/linear_Gaussian/out/experiment1_mcmc.png}
+    \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
     \caption{The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
     		 variability over the 100 replicates. For the EUP the distance is computed
     		 in closed-form, as both distributions are Gaussian. The remaining approximations include the rk-pcn
@@ -1169,6 +1169,21 @@ The GP prior is defined via a constant mean function and a Gaussian kernel. The 
 $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of points from the prior and then 
 evaluating the exact log-posterior density at these points. The GP mean constant and kernel hyperparameters are 
 optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \todo{cite}. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
+    \caption{todo}
+    \label{fig:vsem_coverage_gp}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
+    \caption{todo}
+    \label{fig:vsem_coverage_gp}
+\end{figure}
+
 
 \section{Conclusion} \label{sec:conclusion}
 \todo[inline]{intro paragraph summarizing paper}
