@@ -51,22 +51,9 @@ def init_nuts_kernel(key: PRNGKey,
     return initial_state, kernel
 
 
-def init_rkpcn_kernel(log_density: Callable[[Array], float],
-                      gp: GPJaxSurrogate,
-                      u_prop_cov: Array | None = None,
-                      pcn_cor: float = 0.99):
-    """
-    An MCMC sampler to *approximately* sample from the expectation of the random
-    measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
-    Precisely, one seeks to sample from E_f{pi(u; f)}.
-     
-    The algorithm rk-pcn sampler operates on the extended state space (u, f), which is in
-    principle infinite dimensional. In reality, it is only necessary to instantiate 
-    bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
-    implementation of this algorithm maintains a state of the form (u, f(u)).
-    """
-    pass
-
+# -----------------------------------------------------------------------------
+# Cut Sampler
+# -----------------------------------------------------------------------------
 
 class CutState(NamedTuple):
     """State of the cut sampler chain.
@@ -133,6 +120,27 @@ def init_cut_kernel(key: PRNGKey,
                              logdensity=initial_logdensity_sample)
 
     return initial_state, kernel
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def init_rkpcn_kernel(log_density: Callable[[Array], float],
+                      gp: GPJaxSurrogate,
+                      u_prop_cov: Array | None = None,
+                      pcn_cor: float = 0.99):
+    """
+    An MCMC sampler to *approximately* sample from the expectation of the random
+    measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
+    Precisely, one seeks to sample from E_f{pi(u; f)}.
+     
+    The algorithm rk-pcn sampler operates on the extended state space (u, f), which is in
+    principle infinite dimensional. In reality, it is only necessary to instantiate 
+    bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
+    implementation of this algorithm maintains a state of the form (u, f(u)).
+    """
+    pass
 
 
 # -----------------------------------------------------------------------------
