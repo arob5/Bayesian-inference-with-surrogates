@@ -305,15 +305,16 @@ class VSEMPrior(Prior):
     def sample(self, key: PRNGKey, n: int = 1):
         return self._prior_rv.sample(key, sample_shape=(n,))
 
-    def log_density(self, x):
-        # TODO: Uniform doesnt throw error or return -Inf if value is outside of support.
-        #       should maybe manually check for this case.
-        
+    def log_density(self, x):        
         l = self._prior_rv.log_prob(x)
+        l = jnp.sum(l, axis=-1)
 
-        # sum over batch axis
-        return jnp.sum(l, axis=tuple(range(-1, 0)))
-    
+        # numpyro Uniform doesnt throw error or return -Inf if value is outside support
+        low, high = self.support
+        l = jnp.where(jnp.all((x >= low) & (x <= high), axis=1), l, -jnp.inf)
+
+        return l
+
     def sample_all_vsem_params(self, key: PRNGKey):
         """
         Return dictionary representing a single sample from all of the parameters, 

@@ -95,26 +95,25 @@ class CutInfo(NamedTuple):
 
 
 def init_cut_kernel(key: PRNGKey,
-                    surrogate_dist: SurrogateDistribution,
+                    logp_sampler: Callable[[PRNGKey, ArrayLike, ArrayLike], Array],
                     initial_position: Array,
                     u_prop_cov: Array) -> tuple[CutState, Callable]:
     """
-    Accepts a random measure `surrogate_dist`. Implements a noisy 
-    Metropolis-Hastings algorithm with a symmetric Gaussian proposal
-    with covariance `u_prop_cov`. 
+    A noisy Metropolis-Hastings (MH) algorithm with a symmetric Gaussian proposal
+    with covariance `u_prop_cov`. Proceeds like a typical MH algorithm, but at 
+    each iteration the log-density values at the current and proposed points are 
+    sampled using `logp_sampler`.
     """
 
     # build kernel function
     def kernel(key: PRNGKey, state: tuple) -> tuple[CutState, CutInfo]:
-        key_proposal, key_surrogate, key_accept = jr.split(key, 3)
+        key_proposal, key_lp, key_accept = jr.split(key, 3)
 
         u_curr, L, _ = state
         u_prop = _sample_gaussian_tril(key_proposal, m=u_curr, L=L).squeeze()
-        U = jnp.stack([u_curr, u_prop], axis=0)
 
         # sample log-density values at current/proposed points
-        lp_curr, lp_prop = surrogate_dist.log_true(U).squeeze()
-        # lp_curr, lp_prop = surrogate_dist.log_density(U).sample(key_surrogate).squeeze()
+        lp_curr, lp_prop = logp_sampler(key_lp, u_curr, u_prop).squeeze()
 
         # u update
         u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
@@ -128,7 +127,7 @@ def init_cut_kernel(key: PRNGKey,
     
     # build initial state
     proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
-    initial_logdensity_sample = surrogate_dist.log_density(initial_position).sample(key).squeeze()
+    initial_logdensity_sample = logp_sampler(key, initial_position, initial_position)[0]
     initial_state = CutState(position=initial_position,
                              proposal_tril=proposal_tril,
                              logdensity=initial_logdensity_sample)
