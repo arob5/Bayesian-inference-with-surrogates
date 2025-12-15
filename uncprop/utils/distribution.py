@@ -1,57 +1,14 @@
 # uncprop/utils/distribution.py
 
 import jax
+import jax.random as jr
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax.scipy.stats import norm
-
-from numpyro.distributions import MultivariateNormal
+from jax.scipy.linalg import solve_triangular
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
-from uncprop.core.inverse_problem import Distribution
 
-# -----------------------------------------------------------------------------
-# Wrap numpyro MultivariateNormal as Distribution
-# -----------------------------------------------------------------------------
-
-class GaussianFromNumpyro(Distribution):
-    def __init__(self, dist: MultivariateNormal):
-        assert isinstance(dist, MultivariateNormal)
-        assert dist.batch_shape == ()
-
-        self._numpyro_mvn = dist
-
-    @property
-    def dim(self) -> int:
-        return self._numpyro_mvn.event_shape[0]
-
-    @property
-    def support(self) -> tuple[tuple, tuple] | None:
-        return None
-
-    def sample(self, key: PRNGKey, n: int = 1) -> Array:
-        """ Out: (n,d)"""
-        return self._numpyro_mvn.sample(key, sample_shape=(n,))
-
-    def log_density(self, x: ArrayLike) -> Array:
-        """ In: (n,d) or (d,), Out: (n,)"""
-        return self._numpyro_mvn.log_prob(x)
-    
-    @property
-    def mean(self) -> Array:
-        """ Return mean of shape (d,) """
-        return self._numpyro_mvn.mean
-
-    @property
-    def cov(self) -> Array:
-        """ Return covariance matrix of shape (d,d) """
-        return self._numpyro_mvn.covariance_matrix
-
-    @property
-    def variance(self) -> Array:
-        """ Return marginal variances of shape (d,) """
-        return jnp.diag(self.cov)
-    
 
 # -----------------------------------------------------------------------------
 # Clipped Gaussian and LogNormal mean
@@ -164,3 +121,33 @@ def log_clipped_lognormal_mean(m: ArrayLike, s2: ArrayLike, b: ArrayLike) -> Arr
     return result
 
     
+def _sample_gaussian_tril(key: PRNGKey, L: Array, m: ArrayLike = 0.0, n: int = 1):
+    """Return n samples from N(0, LL^T). Out shape: (n, d)"""
+    d = L.shape[0]
+    samp = L @ jr.normal(key, shape=(d,n))
+    return jnp.asarray(m).ravel() + samp.T
+
+def _gaussian_log_density_tril(x, m, L):
+    """
+    x is an input batch of shape (d,) or (n, d).
+    m is the Gaussian mean, either (d,) or (n,d)
+    Output shape: (n,)
+    """
+    x = jnp.atleast_2d(x) - m
+    Linv_x = solve_triangular(L, x.T, lower=True)
+    mah2 = jnp.sum(Linv_x * Linv_x, axis=0)
+    log_det_term = _gaussian_log_det_term_tril(L)
+    return log_det_term - 0.5 * mah2
+
+def _gaussian_log_det_term_tril(L):
+    """
+    The log of the determinant term in the Gaussian density. 
+    log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)},
+    where C = LL^T. 
+
+    This term also represents an upper bound on the log density.
+    """
+    d = L.shape[0]
+    dim_times_two_pi = d * jnp.log(2.0 * jnp.pi)
+    log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
+    return -0.5 * (dim_times_two_pi + log_det_cov)

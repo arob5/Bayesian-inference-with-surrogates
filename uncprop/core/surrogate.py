@@ -15,15 +15,14 @@ from numpyro.distributions import (
     MultivariateNormal,
 )
 
-from uncprop.core.inverse_problem import (
-    Distribution,
-    DistributionFromDensity,
-    Prior,
+from uncprop.custom_types import Array, PRNGKey, ArrayLike
+from uncprop.core.distribution import (
+    Distribution, 
+    DistributionFromDensity, 
+    GaussianFromNumpyro,
 )
 
-from uncprop.custom_types import Array, PRNGKey, ArrayLike
 from uncprop.utils.distribution import (
-    GaussianFromNumpyro,
     clipped_gaussian_mean,
     log_clipped_lognormal_mean,
 )
@@ -35,20 +34,14 @@ PredDist: TypeAlias = Distribution
 def construct_design(key: PRNGKey,
                      design_method: str, 
                      n_design: int, 
-                     prior: Prior, 
+                     prior_sampler: Callable[[PRNGKey, int], ArrayLike], 
                      f: Callable) -> Dataset:
     """ Construct design (training) data for training a surrogate
 
-    Sample design inputs from prior, then evaluate target function f to
+    Sample design input, then evaluate target function f to
     construct design outputs. Return design as gpjax Dataset object.
     """
-
-    if design_method == 'lhc':
-        x_design = prior.sample_lhc(key, n_design)
-    elif design_method == 'uniform':
-        x_design = prior.sample(key, n_design)
-    else:
-        raise ValueError(f'Invalid design method {design_method}')
+    x_design = prior_sampler(key, n_design)
 
     x_design = jnp.asarray(x_design)
     y_design = jnp.asarray(f(x_design))

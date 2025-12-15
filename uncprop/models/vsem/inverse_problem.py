@@ -1,7 +1,7 @@
 # uncprob/models/vsem/inverse_problem.py
-'''
+"""
 Defines the Bayesian inverse problem for the VSEM experiment.
-'''
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -17,6 +17,11 @@ from jax.scipy.linalg import solve_triangular
 from scipy.stats import qmc
 
 from uncprop.custom_types import Array, PRNGKey
+from uncprop.utils.distribution import (
+    _sample_gaussian_tril,
+    _gaussian_log_density_tril,
+    _gaussian_log_det_term_tril,
+)
 from uncprop.models.vsem import vsemjax as vsem
 from uncprop.core.inverse_problem import (
     Prior,
@@ -199,7 +204,7 @@ class DataRealization:
 
         # observable to observation
         L = self.data_generating_process.noise_cov_tril
-        noise_realization = _sample_gaussian_tril(self.obs_key, L).ravel()
+        noise_realization = _sample_gaussian_tril(self.obs_key, L=L).ravel()
         observation = observable + noise_realization
 
         self.vsem_output = vsem_output
@@ -352,6 +357,7 @@ class VSEMLikelihood:
         return self.log_density(x)
     
     def log_density(self, x):
+        x = jnp.atleast_2d(x)
         observation = self.data.observation
         predicted_observable = self.model.param_to_observable_map(x)
         noise_cov_tril = self.model.noise_cov_tril
@@ -397,34 +403,3 @@ def visualize_vsem_dgp(true_dgp: DataGeneratingProcess,
 
 def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
     return int(jr.randint(key, (), 0, 2**63 - 1))
-
-def _sample_gaussian_tril(key: PRNGKey, L: Array, n: int = 1):
-    """Return n samples from N(0, LL^T). Out shape: (n, d)"""
-    d = L.shape[0]
-    samp = L @ jr.normal(key, shape=(d,n))
-    return samp.T
-
-def _gaussian_log_density_tril(x, m, L):
-    """
-    x is an input batch of shape (n, d).
-    m is the Gaussian mean, either (d,) or (n,d)
-    Output shape: (n,)
-    """
-    x = x - m
-    Linv_x = solve_triangular(L, x.T, lower=True)
-    mah2 = jnp.sum(Linv_x * Linv_x, axis=0)
-    log_det_term = _gaussian_log_det_term_tril(L)
-    return log_det_term - 0.5 * mah2
-
-def _gaussian_log_det_term_tril(L):
-    """
-    The log of the determinant term in the Gaussian density. 
-    log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)},
-    where C = LL^T. 
-
-    This term also represents an upper bound on the log density.
-    """
-    d = L.shape[0]
-    dim_times_two_pi = d * jnp.log(2.0 * jnp.pi)
-    log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
-    return -0.5 * (dim_times_two_pi + log_det_cov)
