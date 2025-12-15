@@ -137,6 +137,10 @@ class GaussianFromNumpyro(Distribution):
     def cov(self) -> Array:
         """ Return covariance matrix of shape (d,d) """
         return self._numpyro_mvn.covariance_matrix
+    
+    @property
+    def chol(self) -> Array:
+        return self._numpyro_mvn.scale_tril
 
     @property
     def variance(self) -> Array:

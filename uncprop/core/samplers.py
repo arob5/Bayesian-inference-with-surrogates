@@ -123,12 +123,45 @@ def init_cut_kernel(key: PRNGKey,
 
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Preconditioned Crank-Nicolson Random Kernel Algorithm (rk-pcn)
 # -----------------------------------------------------------------------------
+
+class RKPCNState(NamedTuple):
+    """State of the rkpcn sampler chain.
+
+    position
+        Current position of the chain.
+    f_at_position
+        Current value of f evaluated at current position.
+    proposal_tril
+        Lower Cholesky factor of proposal covariance for u.
+    rho
+        Correlation parameter for the pCN proposal.
+    logdensity
+        Current sampled value of the log density.
+    """
+    position: Array
+    f_at_position: Array
+    proposal_tril: Array
+    rho: ArrayLike
+    logdensity: ArrayLike
+
+class RKPCNInfo(NamedTuple):
+    """Side information for the cut sampler chain.
+
+    log_ratio
+        log of the Metropolis acceptance ratio
+    is_accepted
+        whether proposal was accepted or not
+    """
+    log_ratio: ArrayLike
+    is_accepted: ArrayLike
+
 
 def init_rkpcn_kernel(log_density: Callable[[Array], float],
                       gp: GPJaxSurrogate,
-                      u_prop_cov: Array | None = None,
+                      initial_position: Array, 
+                      u_prop_cov: Array,
                       pcn_cor: float = 0.99):
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
@@ -139,8 +172,52 @@ def init_rkpcn_kernel(log_density: Callable[[Array], float],
     principle infinite dimensional. In reality, it is only necessary to instantiate 
     bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
     implementation of this algorithm maintains a state of the form (u, f(u)).
+
+    Note that `log_density` and `gp` must be specified so that they can be called like
+        key = jax.random.key(3532)
+        pred = gp(u) # predictive distribution
+        f_pred = pred.sample(key)
+        lp_pred = log_density(f_pred)
+
+    In other words, `log_density` is parameterized as a function of the surrogate output,
+    not as a function of the parameter u. The Gaussian predictive distribution must 
+    satisfy the following:
+        - single input u: gp(u).sample() has shape (p,)
+        - multiple inputs u of shape (n,d): gp(u).sample() has shape (n,p)
     """
-    pass
+
+    # build kernel function
+    def kernel(key: PRNGKey, state: tuple) -> tuple[RKPCNState, RKPCNInfo]:
+        key_jit, key_proposal, key_accept = jr.split(key, 3)
+
+        u, fu, L, rho, _ = state
+        v = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
+
+        # just-in-time sample
+        fv = gp.condition_then_predict(v, given=(u, fu)).sample(key_jit)
+
+        # Projection of law(f) onto (u, v)
+        uv = jnp.stack([u, v], axis=0)
+        fuv = jnp.stack([fu, fv], axis=1)
+        fuv_dist = gp(uv)
+
+        # f update
+        guv = _pcn_proposal(key_proposal, fuv, fuv_dist.mean, fuv_dist.chol, rho=rho)
+        gu = guv[0]
+        gv = guv[1]
+
+        # u update
+        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
+                                                               lp_curr=log_density(gu), 
+                                                               lp_prop=log_density(gv),
+                                                               u_curr=u, u_prop=v)
+        g_u_next = jax.lax.cond(accept, lambda _: gv, lambda _: gu, operand=None)
+
+        info = RKPCNInfo(log_ratio=log_alpha, is_accepted=accept)
+        next_state = RKPCNState(position=u_next, f_at_position=g_u_next,
+                                proposal_tril=L, rho=rho, logdensity=lp_next)
+
+        return next_state, info
 
 
 # -----------------------------------------------------------------------------
@@ -167,6 +244,17 @@ def _mh_accept_reject(key: PRNGKey,
     )   
 
     return u_next, lp_next, log_alpha, accept
+
+
+def _pcn_proposal(key: PRNGKey,
+                  x: Array,
+                  mean: Array, 
+                  cov_tril: Array, 
+                  rho: float) -> Array:
+    pcn_mean = mean + rho * (x - mean)
+    pcn_tril = jnp.sqrt(1 - rho**2) * cov_tril
+
+    return _sample_gaussian_tril(key, m=pcn_mean, L=pcn_tril)
 
 
 def stack_dict_arrays(data_dict: dict[str, ArrayLike], 
