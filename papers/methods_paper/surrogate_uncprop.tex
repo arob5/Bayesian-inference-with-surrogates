@@ -1124,6 +1124,8 @@ are typically unknown and must be learned from observational data. Parameter est
 computational challenges for large-scale land surface models, 
 underscoring the potential for surrogates in this domain \citep{paramLSM}. 
 
+\subsubsection{Experimental Setup}
+
 \paragraph{Mechanistic Model.}
 We consider a synthetic data experiment using the \textit{Very Simple Ecosystem Model} (VSEM), 
 a toy model capturing the basic structure of more complex land surface models \citep{vsem}. The model 
@@ -1161,7 +1163,10 @@ one year period. We assume an additive Gaussian noise model
 \end{align}
 where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
 and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
-Synthetic data $\obs$ is simulated using this model with fixed ground truth values $\Par_{\circ}$.
+Ground truth values $\Par_{\circ}$ are sampled from the prior (the fixed parameters not being calibrated are also 
+assigned independent uniform priors). The mechanistic model is assumed to be well-specified, such that $\fwd$
+uses the correct ground truth values for the fixed parameters.
+Synthetic data $\obs$ is simulated from the model in \Cref{eq:vsem-likelihood} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
 We consider two different emulators for the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) \lik(\Par; \obs)\}$.
@@ -1181,26 +1186,55 @@ We thus consider a second surrogate $\targetEm^{\mathrm{clip}}$ defined by the p
 $\targetEm^{\mathrm{clip}}(\Par) \Def \min\{\targetEm(\Par), b(\Par)\}$. \citet{quantileApprox} make a similar 
 observation and instead truncate the predictive distribution, but we find that the clipped Gaussian is more appropriate here.
 
-\paragraph{Experimental Setup.} 
+\paragraph{Experiment Replications.}
+We repeat one hundred replications of the above setup. Each replicate varies in the sampled driver data, ground 
+truth $\Par_{\circ}$, synthetic observations $\obs$, and design points for the emulator. Both the GP and clipped GP
+surrogates are used for each replicate. This entire procedure is repeated for different numbers of design points
+$\Ndesign \in \{4, 8, 16\}$. As the parameter space here is two-dimensional, we approximate all probability distributions
+over a dense grid.
 
+\subsubsection{Results}
+\paragraph{GP Surrogate.}
+\Cref{fig:vsem_coverage_gp} summarizes the coverage of the posterior approximations derived using the GP 
+emulator $\targetEm$. The mean and EUP approximations systematically under-cover, while the EP is better 
+calibrated, though still under-covers on average. Very few replicates for any of the approximations actually
+over-cover, as would be expected for the approximations that propagate surrogate uncertainty. This is largely 
+due to the extreme sensitivity of posterior approximations derived from GP log-density surrogates.
+As noted in \Cref{ex:ldens-em-cont}, the EUP tends to concentrate in the region with highest uncertainty. When 
+there are fewer design points then the GP predictive variance is larger and this concentration can be extreme, 
+as evidenced by the severe under-coverage in the $\Ndesign = 4$ case. Even in the $\Ndesign = 16$ case,
+in which the GP variance is typically modestly small, the median EUP replicate has a coverage of zero at 
+every probability level. The GP model itself bears partial responsibility---it is generally quite difficult to 
+encode reasonable inductive biases in a GP model to accurately represent the epistemic uncertainty for a complex 
+log-density surface. That being said, the EUP tends to amplify any pathologies of the GP model, while the EP 
+is seen to largely avoid the most extreme behavior. In general, we urge caution in using a 
+global GP log-density emulator without the incorporation of additional inductive biases to guard against
+this sensitive behavior. 
 
-
-\begin{figure}[htbp]
+\paragraph{Clipped GP Surrogate.}
+The clipped GP results in \Cref{fig:vsem_coverage_clip_gp} demonstrate that the small adjustment of encoding the 
+likelihood bound constraint in the predictive distribution drastically improves all of the posterior approximations.
+The plug-in mean still systematically under-covers, but both the EUP and EP are well-calibrated on average.
+The clipping transform avoids the EUP pathologies stemming form the log-normal tails of $\postEm(\Par)$.
+However, we do still observe evidence (especially for $\Ndesign = 16$) of EUP instability relative to the EP,
+with a greater portion of the replicates resulting in significant under or over-calibration.
+ 
+\begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
-    \caption{todo}
+    \caption{Coverage results using $\targetEm$}
     \label{fig:vsem_coverage_gp}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
-    \caption{todo}
-    \label{fig:vsem_coverage_gp}
+    \caption{Coverage results using $\targetEm^{\mathrm{clip}}$}
+    \label{fig:vsem_coverage_clip_gp}
 \end{figure}
 
-
 \section{Conclusion} \label{sec:conclusion}
+\begin{comment}
 \todo[inline]{intro paragraph summarizing paper}
 
 We view this work as a first step in providing a rigorous foundation to inform uncertainty propagation methods in 
@@ -1214,7 +1248,7 @@ vs. reducing error).
 
 Situation can be more complicated: might prefer ep when likelihood is misspecified. But might prefer eup if surrogate
 correlation structure is misspecified
-
+\end{comment}
 
 % Appendix
 \section{Appendix}
