@@ -1082,41 +1082,39 @@ distributions for the exact posterior and surrogate predictive distribution for 
     \label{fig:lin-gauss-replicate-summary}
 \end{figure}
 
-
-
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
-    \caption{Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
+        \caption{Coverage}
+        \label{fig:lin-gauss-coverage}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
+        \caption{EP Approximation}
+        \label{fig:lin-gauss-mcmc}
+    \end{subfigure}
+    \caption{\textit{(Left)} Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
     		 The shaded regions summarize the middle 90\% of the replicates. Joint coverage is defined 
-		  via the Gaussian coverage ellipsoids at the different probability levels.}
-    \label{fig:lin-gauss-coverage}
-\end{figure}
-\Cref{fig:lin-gauss-coverage} summarizes the calibration of the three surrogate-based posterior approximations
-at different coverage levels. As the surrogate is biased, the plug-in mean posterior systematically fails to cover
-the true posterior. By propagating the surrogate uncertainty, both the EP and EUP achieve reasonable coverage 
-on average.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
-    \caption{The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
+		  via the Gaussian coverage ellipsoids at the different probability levels. 
+		  \textit{(Right)} The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
     		 variability over the 100 replicates. For the EUP the distance is computed
     		 in closed-form, as both distributions are Gaussian. The remaining approximations include the rk-pcn
 		 algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
 		 For these algorithms,
 		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
 		 which is then used in the closed-form distance formula.}
-    \label{fig:lin-gauss-mcmc}
 \end{figure}
 
-\paragraph{MCMC Evaluation.} We compare the MCMC-based approximations against the closed-form EP and 
-EUP distributions.
-
-
-
-
-
+\paragraph{MCMC Evaluation.} \Cref{fig:lin-gauss-mcmc} compares the MCMC-based approximations against the 
+closed-form EP and EUP distributions. Each of the rk-pcn algorithms accurately represent the EP, with the $\rho = 0.99$
+setting driving the approximation error near zero. The EUP exhibits more variability, while the cut approximation consistently 
+deviates from the EP target. Note that these algorithms are operating over a high-dimensional ($\dimPar = 100$)
+parameter space in this example. The rk-pcn algorithm is well-equipped for this situation, as the pCN proposal is 
+designed for high-dimensional latent Gaussian models \citep{functionSpaceMCMC}.
 
 % Ecosystem Model Calibration
 \subsection{Ecosystem Model Calibration} \label{sec:vsem}
@@ -1126,6 +1124,7 @@ are typically unknown and must be learned from observational data. Parameter est
 computational challenges for large-scale land surface models, 
 underscoring the potential for surrogates in this domain \citep{paramLSM}. 
 
+\paragraph{Mechanistic Model.}
 We consider a synthetic data experiment using the \textit{Very Simple Ecosystem Model} (VSEM), 
 a toy model capturing the basic structure of more complex land surface models \citep{vsem}. The model 
 describes the evolution of the state vector 
@@ -1138,7 +1137,7 @@ ordinary differential equations
 \dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
 \dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
 \end{align}
-where the model forcing $\forcing(\Time)$ is provided by photosynthetically active radiation 
+where the model driver $\forcing(\Time)$ is given by photosynthetically active radiation 
 (\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
 Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
 \begin{align}
@@ -1148,25 +1147,43 @@ Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
 \end{align} 
 where $\GPP(\stateV, \forcing)$ and $\LAI(\stateV)$ model Gross Primary Productivity (GPP; \textrm{kg C/$m^2$/day})
 and Leaf Area Index (LAI; \textrm{$m^2/m^2$}), respectively.
-We numerically solve the ODE at a daily time step
+Given a noisy synthetic model driver time series and initial conditions $\{\vegInit, \rootInit, \soilInit\}$,
+we numerically solve the ODE at a daily time step
 via the basic Euler scheme as implemented in the R \verb+BayesianTools+ package \citep{vsem}. 
 
-We consider estimating the parameters $\Par \Def (\KEXT, \alphaV)$ given noisy monthly averages of LAI over a 
-two year period. We assume an additive Gaussian noise model
-\begin{align*}
+\paragraph{Statistical Model.}
+We consider estimating the parameters $\Par \Def (\alphaV, \vegInit)$ given noisy monthly averages of LAI over a 
+one year period. We assume an additive Gaussian noise model
+\begin{align}
 &\obs = \fwd(\Par) + \noise,
-&&\noise \sim \Gaussian(0, \sigma^2 I) 
-\end{align*}
-where $\fwd: \parSpace \to \R^{24}$ maps to the twenty-four LAI averages. For simplicity, we fix $\sigma^2$
-and assume independent uniform priors on $\Par$. Synthetic data $\obs$ is simulated
-using this model with fixed ground truth values $\{\Par_{\circ}, \sigma_{\circ}^2\}$.
-\todo[inline]{state the specific values/priors here}
+&&\noise \sim \Gaussian(0, \sigma^2 I)
+\label{eq:vsem-likelihood}
+\end{align}
+where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
+and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
+Synthetic data $\obs$ is simulated using this model with fixed ground truth values $\Par_{\circ}$.
 
-We consider a GP emulator of the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) p(\obs \given \Par)\}$.
-The GP prior is defined via a constant mean function and a Gaussian kernel. The training (i.e., design) data
-$\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of points from the prior and then 
-evaluating the exact log-posterior density at these points. The GP mean constant and kernel hyperparameters are 
-optimized by maximum marginal likelihood using the \verb+gpjax+ Python package \todo{cite}. 
+\paragraph{Surrogate Model.}
+We consider two different emulators for the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) \lik(\Par; \obs)\}$.
+The first is a conjugate GP surrogate with GP prior defined by a constant mean function and a Gaussian kernel.
+The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of 
+points using a latin hypercube design and then evaluating the exact log-posterior density at these points. 
+The GP mean constant and kernel hyperparameters are optimized by maximum marginal likelihood 
+using the \verb+gpjax+ Python package \citep{gpjax}. We constrain the kernel lengthscales to avoid pathologically 
+high or low values, and constrain the variance parameter of the GP likelihood to be small to encourage interpolation 
+of the training points. Conditioning the optimized GP on the training data yields the surrogate
+$\targetEm \sim \GP(\gpMean, \gpKer)$. 
+
+Though this surrogate construction has been used in the literature, it has the apparent deficiency of neglecting 
+known bound constraints on the target density. Given the Gaussian likelihood in \Cref{eq:vsem-likelihood}, we
+know that at any point $\Par$ the log-posterior cannot exceed $b(\Par) \Def \log\det(2\pi \sigma^2 I) + \log \priorDens(\Par)$.
+We thus consider a second surrogate $\targetEm^{\mathrm{clip}}$ defined by the pointwise clipping transform
+$\targetEm^{\mathrm{clip}}(\Par) \Def \min\{\targetEm(\Par), b(\Par)\}$. \citet{quantileApprox} make a similar 
+observation and instead truncate the predictive distribution, but we find that the clipped Gaussian is more appropriate here.
+
+\paragraph{Experimental Setup.} 
+
+
 
 \begin{figure}[htbp]
     \centering
