@@ -126,7 +126,7 @@ def init_cut_kernel(key: PRNGKey,
 # Preconditioned Crank-Nicolson Random Kernel Algorithm (rk-pcn)
 # -----------------------------------------------------------------------------
 
-class RKPCNState(NamedTuple):
+class RKPCNStateOld(NamedTuple):
     """State of the rkpcn sampler chain.
 
     position
@@ -146,7 +146,7 @@ class RKPCNState(NamedTuple):
     rho: ArrayLike
     logdensity: ArrayLike
 
-class RKPCNInfo(NamedTuple):
+class RKPCNInfoOld(NamedTuple):
     """Side information for the cut sampler chain.
 
     log_ratio
@@ -158,12 +158,12 @@ class RKPCNInfo(NamedTuple):
     is_accepted: ArrayLike
 
 
-def init_rkpcn_kernel(key: PRNGKey,
+def init_rkpcn_kernel_old(key: PRNGKey,
                       log_density: Callable[[Array, Array], float],
                       gp: GPJaxSurrogate,
                       initial_position: Array, 
                       u_prop_cov: Array,
-                      pcn_cor: float = 0.99) -> tuple[RKPCNState, Callable]:
+                      pcn_cor: float = 0.99) -> tuple[RKPCNStateOld, Callable]:
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
     measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
@@ -191,7 +191,7 @@ def init_rkpcn_kernel(key: PRNGKey,
     """
 
     # build kernel function
-    def kernel(key: PRNGKey, state: tuple) -> tuple[RKPCNState, RKPCNInfo]:
+    def kernel(key: PRNGKey, state: tuple) -> tuple[RKPCNStateOld, RKPCNInfoOld]:
         key_jit, key_proposal, key_accept = jr.split(key, 3)
 
         u, fu, L, rho, _ = state
@@ -210,14 +210,148 @@ def init_rkpcn_kernel(key: PRNGKey,
         gu = guv[0]
         gv = guv[1]
 
-        # ### TEMP
-        # key, key_temp = jr.split(key_jit, 2)
-        # gu, _, log_alpha, accept = _mh_accept_reject(key_temp,
-        #                                              lp_curr=log_density(fu, u), 
-        #                                              lp_prop=log_density(gu, u),
-        #                                              u_curr=fu, u_prop=gu)
-        # gv = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
-        # ###
+        ### TEMP
+        key, key_temp = jr.split(key_jit, 2)
+        gu, _, log_alpha, accept = _mh_accept_reject(key_temp,
+                                                     lp_curr=log_density(fu, u), 
+                                                     lp_prop=log_density(gu, u),
+                                                     u_curr=fu, u_prop=gu)
+        gv = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
+        ###
+
+        # u update
+        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
+                                                               lp_curr=log_density(gu, u), 
+                                                               lp_prop=log_density(gv, v),
+                                                               u_curr=u, u_prop=v)
+        g_u_next = jax.lax.cond(accept, lambda _: gv, lambda _: gu, operand=None)
+
+        info = RKPCNInfoOld(log_ratio=log_alpha, is_accepted=accept)
+        next_state = RKPCNStateOld(position=u_next, f_at_position=g_u_next,
+                                proposal_tril=L, rho=rho, logdensity=lp_next)
+
+        return next_state, info
+
+    # build initial state
+    proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
+    f_at_initial = gp(initial_position).sample(key).squeeze()
+    initial_state = RKPCNStateOld(position=initial_position,
+                               f_at_position=f_at_initial,
+                               proposal_tril=proposal_tril,
+                               logdensity=log_density(f_at_initial, initial_position),
+                               rho=pcn_cor)
+
+    return initial_state, kernel
+
+
+# -----------------------------------------------------------------------------
+# Preconditioned Crank-Nicolson Random Kernel Algorithm (rk-pcn)
+# -----------------------------------------------------------------------------
+
+class RKPCNState(NamedTuple):
+    """State of the rkpcn sampler chain.
+
+    position
+        Current position of the chain.
+    f_at_position
+        Current value of f evaluated at current position.
+    proposal_tril
+        Lower Cholesky factor of proposal covariance for u.
+    rho
+        Correlation parameter for the pCN proposal.
+    logdensity
+        Current sampled value of the log density.
+    """
+    position: Array
+    f_position: tuple[Array, Array]
+    logZ: ArrayLike
+    quadrature_rule: tuple[Array, Array] # (u_quad, logw_quad)
+    proposal_tril: Array
+    rho: float
+    logdensity: ArrayLike
+
+class RKPCNInfo(NamedTuple):
+    """Side information for the cut sampler chain.
+
+    log_ratio
+        log of the Metropolis acceptance ratio
+    is_accepted
+        whether proposal was accepted or not
+    """
+    log_ratio: ArrayLike
+    is_accepted: ArrayLike
+
+
+def init_rkpcn_kernel(key: PRNGKey,
+                      log_density: Callable[[Array, Array], float],
+                      gp: GPJaxSurrogate,
+                      initial_position: Array,
+                      support_inputs: Array, 
+                      u_prop_cov: Array,
+                      pcn_cor: float = 0.99) -> tuple[RKPCNState, Callable]:
+    """
+    An MCMC sampler to *approximately* sample from the expectation of the random
+    measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
+    Precisely, one seeks to sample from E_f{pi(u; f)}.
+    
+    The algorithm rk-pcn sampler operates on the extended state space (u, f), which is in
+    principle infinite dimensional. In reality, it is only necessary to instantiate 
+    bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
+    implementation of this algorithm maintains a state of the form (u, f(u)).
+
+    Note that `log_density` and `gp` must be specified so that they can be called like
+        key = jax.random.key(3532)
+        pred = gp(u) # predictive distribution
+        f_pred = pred.sample(key)
+        lp_pred = log_density(f_pred, u)
+
+    In other words, `log_density` is parameterized as a function of the surrogate output,
+    not as a function of the parameter u. The argument `u` is still passed, as this is 
+    useful in certain cases (e.g., constraining the support of u).
+    
+    The Gaussian predictive distribution must 
+    satisfy the following:
+        - single input u: gp(u).sample() has shape (p,)
+        - multiple inputs u of shape (n,d): gp(u).sample() has shape (n,p)
+    """
+
+    # build kernel function
+    def kernel(key: PRNGKey, state: RKPCNState) -> tuple[RKPCNState, RKPCNInfo]:
+        key_jit, key_proposal, key_accept = jr.split(key, 3)
+
+        u = state.position
+        fu, fU = state.f_position
+        logZf = state.logZ
+        U, logw = state.quadrature_rule
+        L = state.proposal_tril
+        rho = state.rho
+
+        v = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
+
+        # just-in-time sample
+        uU = jnp.stack([u, U], axis=0)
+        fuU = jnp.stack([fu, fU], axis=0)
+        fv = gp.condition_then_predict(v, given=(uU, fuU)).sample(key_jit).squeeze()
+        
+        # Projection of law(f) onto {u, v, U}
+        vuU = jnp.stack([v, uU], axis=0)
+        fvuU = jnp.stack([fv, fuU], axis=0)
+        fvuU_dist = gp(vuU)
+
+        # f update
+        gvuU = _pcn_proposal(key_proposal, fvuU, fvuU_dist.mean, fvuU_dist.chol, rho=rho).squeeze()
+        gv = gvuU[0]
+        gu = gvuU[1]
+        gU = gvuU[2:]
+
+        ### TEMP
+        key, key_temp = jr.split(key_jit, 2)
+        gu, _, log_alpha, accept = _mh_accept_reject(key_temp,
+                                                     lp_curr=log_density(fu, u), 
+                                                     lp_prop=log_density(gu, u),
+                                                     u_curr=fu, u_prop=gu)
+        gv = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
+        ###
 
         # u update
         u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
@@ -242,7 +376,6 @@ def init_rkpcn_kernel(key: PRNGKey,
                                rho=pcn_cor)
 
     return initial_state, kernel
-
 
 
 # -----------------------------------------------------------------------------

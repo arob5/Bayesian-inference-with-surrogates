@@ -310,13 +310,14 @@ the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 \section{The Expected Posterior} \label{sec:EP}
 The second stage in the modular surrogate workflow consists of using the 
 trained emulator $\targetEm$ to approximate the posterior $\postDensNorm$.
-A simple approximation may be constructed by plugging in the surrogate mean
+A simple approximation may be constructed by plugging in the surrogate mean 
+$\Em{\bar{\targetTraj}} \Def \emE[\targetEm]$
 \begin{equation}
-\postApproxNormMean(\Par) \Def \postDens(\Par; \emE[\targetEm]) / \normCst(\emE[\targetEm]),
+\postApproxNormMean(\Par) \Def \postDens(\Par; \Em{\bar{\targetTraj}}) / \normCst(\Em{\bar{\targetTraj}}),
 \label{eq:mean-approx}
 \end{equation}
 but this ignores the emulator uncertainty, resulting in overconfident 
-posterior inference. This poses the question of defining a posterior approximation 
+posterior inference. This raises the question of defining a posterior approximation 
 that correctly propagates the uncertainty in $\targetEm$.
 Given the lack of a unifying probabilistic model across the two inference stages, 
 proper uncertainty quantification is not automatically given by standard Bayesian 
@@ -356,7 +357,7 @@ The following result provides the unique minimizer $\qDensOpt$ with respect to t
 
 \begin{prop} \label{prop:EP-variational}
 If the loss $\loss(\postNormEm, q)$ is chosen as the forward Kullback-Leibler (KL) divergence 
-$\KL{\postNormEm}{q}$ or squared $L_2$ error $\norm{\postNormEm - q}_{L_2(\parSpace)}^2$
+$\KL{\postNormEm}{q}$ or squared $L_2$ error $\norm{\postNormEm - q}_{L_2(\parSpace)}^2$,
 then the optimization problem in \Cref{eq:variational-opt} is solved uniquely by 
 \begin{equation}
 \qDensOpt(\Par) = 
@@ -389,7 +390,7 @@ We assume throughout that $\targetEm$ is constructed such that
 trajectories of $\postNormEm$ are almost surely integrable, implying the sampling procedure
 in \Cref{eq:ep-prob-model} is well-defined. See 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models,garegnani2021NoisyMCMC} for
-technical conditions that ensure existence.
+technical conditions.
 
 The EP also admits a marginal likelihood interpretation under the hierarchical model
 \begin{equation}
@@ -468,7 +469,7 @@ See \Cref{sec:computation} for additional computational details.
 
 In the modular Bayes literature, there is a wide body of work 
 on the cut posterior, which is equivalent to the EP 
-when a fully Bayesian reference model is considered (\Cref{sec:cut})
+when a fully Bayesian reference model is considered
 \citep{PlummerCut,cutInference,moduleModels}.
 Various papers have justified the cut posterior as a reverse KL divergence minimizer, 
 akin to \Cref{prop:kl-cut-op} \citep{cutVar,cutVar2,moduleModels}. 
@@ -497,7 +498,7 @@ termed the  \textit{expected unnormalized posterior (EUP)}, and provide analytic
 illustrating how the EP and EUP can differ.
 
 \subsection{The Expected Unnormalized Posterior} \label{sec:eup}
-Notice that, unlike $\postNormEm(\Par)$, the unnormalized density surrogate
+Unlike $\postNormEm(\Par)$, the unnormalized density surrogate
 $\postEm(\Par)$ depends only on the single-point prediction $\targetEm(\Par)$
 rather than the full emulator $\targetEm$. The EUP is defined by computing
 a pointwise expectation of $\postEm(\Par)$ and then normalizing post-hoc:
@@ -509,9 +510,9 @@ a pointwise expectation of $\postEm(\Par)$ and then normalizing post-hoc:
 The equality in \Cref{eq:post-approx-EUP} follows from
 changing the order of integration, courtesy of Tonelli's theorem \citep{StuartTeck1}. The EUP
 is a marginal of the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)] d\Par$. 
+$\postDens(\Par; \targetTraj) / \emE[\normCst(\targetEm)]$. 
 As compared to the analogous EP joint
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj) / \normCst(\targetTraj) d\Par$,
+$\postDens(\Par; \targetTraj) / \normCst(\targetTraj)$,
 we see that the EUP replaces the normalizing function $\normCst(\targetTraj)$ with
 the global point estimate $\emE[\normCst(\targetEm)]$. The $\targetTraj$-marginal of
 this joint is proportional to $\emDist(\d\targetTraj) \normCst(\targetTraj)$, implying the
