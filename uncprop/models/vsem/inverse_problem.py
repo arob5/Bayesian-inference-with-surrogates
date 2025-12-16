@@ -305,7 +305,8 @@ class VSEMPrior(Prior):
     def sample(self, key: PRNGKey, n: int = 1):
         return self._prior_rv.sample(key, sample_shape=(n,))
 
-    def log_density(self, x):        
+    def log_density(self, x):
+        x = jnp.atleast_2d(x)        
         l = self._prior_rv.log_prob(x)
         l = jnp.sum(l, axis=-1)
 
