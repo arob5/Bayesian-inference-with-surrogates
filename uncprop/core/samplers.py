@@ -264,12 +264,11 @@ class RKPCNState(NamedTuple):
         Current sampled value of the log density.
     """
     position: Array
-    f_position: tuple[Array, Array | None] # (fu, fu_quad)
-    logZ: ArrayLike
-    quadrature_rule: tuple[Array, Array] # (u_quad, logw_quad)
+    f_position: Array
+    logdensity: Array
     proposal_tril: Array
-    rho: float
-    logdensity: ArrayLike
+    f_update_info: Any
+
 
 class RKPCNInfo(NamedTuple):
     """Side information for the cut sampler chain.
@@ -289,7 +288,7 @@ def init_rkpcn_kernel(key: PRNGKey,
                       initial_position: Array,
                       u_prop_cov: Array,
                       f_update_fn: Callable[..., tuple[RKPCNState, Array]],
-                      pcn_cor: float = 0.99) -> tuple[RKPCNState, Callable]:
+                      f_update_info: Any) -> tuple[RKPCNState, Callable]:
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
     measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
@@ -326,7 +325,7 @@ def init_rkpcn_kernel(key: PRNGKey,
     # build kernel function
     def kernel(key: PRNGKey, state: RKPCNState) -> tuple[RKPCNState, RKPCNInfo]:
 
-        key_u_proposal, key_f_update, key_u_accept = jr.split(key, 2)
+        key_u_proposal, key_f_update, key_u_accept = jr.split(key, 3)
 
         u = state.position
         fu = state.f_position
@@ -353,12 +352,10 @@ def init_rkpcn_kernel(key: PRNGKey,
         # Updated state and auxiliary info
         info = RKPCNInfo(log_ratio=log_alpha, is_accepted=accept)
         next_state = RKPCNState(position=u_next,
-                                f_position=(g_u_next, gU),
-                                logZ=logZg,
-                                quadrature_rule=(U, logw),
-                                proposal_tril=L, 
-                                rho=rho, 
-                                logdensity=lp_next)
+                                f_position=fnext_unext,
+                                logdensity=lp_next,
+                                proposal_tril=L,
+                                f_update_info=state.f_update_info)
 
         return next_state, info
 
@@ -369,24 +366,15 @@ def init_rkpcn_kernel(key: PRNGKey,
     key_init, key_quad = jr.split(key, 2)
 
     # initial position
-    f_initial_position = gp(initial_position).sample(key_init).squeeze()
-    lp_init = log_density(f_initial_position, initial_position)
+    f_init = gp(initial_position).sample(key_init).squeeze()
+    lp_init = log_density(f_init, initial_position)
 
-    # quadrature points
-    U, logw = quadrature_rule
-    U = jnp.atleast_2d(U)
-    logw = logw.ravel()
-    fU = gp(U).sample(key_quad).squeeze()
-    lp_quad = log_density(fU, U)
-    logZf = logZ_approx(lp_quad, logw)
-
+    # build initial state
     initial_state = RKPCNState(position=initial_position,
-                               f_position=(f_initial_position, fU),
-                               logZ=logZf,
-                               quadrature_rule=(U, logw),
+                               f_position=f_init,
+                               logdensity=lp_init,
                                proposal_tril=proposal_tril, 
-                               rho=pcn_cor, 
-                               logdensity=lp_init)
+                               f_update_info=f_update_info)
 
     return initial_state, kernel
 
@@ -402,6 +390,9 @@ def _f_update_pcn_proposal(key: PRNGKey,
     
     Realizes pCN proposal at the finite set of points (u, u_prop), where u
     is the current position.
+
+    f_update_info requires:
+        rho: float, the pCN correlation parameter
     """
 
     rho = state.f_update_info.rho
@@ -434,6 +425,9 @@ def _f_update_eup_cpm(key: PRNGKey,
     pCN proposal with a Metropolis correction that uses ratio pi(u; g)/pi(u; f) of unnormalized 
     densities. Does not include normalizing constants Z(f)/Z(g) in this ratio, which makes this
     update target the EUP, not the EP.
+
+    f_update_info requires:
+        rho: float, the pCN correlation parameter
     """
     key_proposal, key_accept = jr.split(key, 2)
 
