@@ -8,6 +8,7 @@ from typing import Any, NamedTuple
 import jax
 import jax.random as jr
 import jax.numpy as jnp
+from jax.scipy.special import logsumexp
 
 from numpyro.distributions import MultivariateNormal
 import blackjax
@@ -263,7 +264,7 @@ class RKPCNState(NamedTuple):
         Current sampled value of the log density.
     """
     position: Array
-    f_position: tuple[Array, Array]
+    f_position: tuple[Array, Array | None] # (fu, fu_quad)
     logZ: ArrayLike
     quadrature_rule: tuple[Array, Array] # (u_quad, logw_quad)
     proposal_tril: Array
@@ -283,11 +284,11 @@ class RKPCNInfo(NamedTuple):
 
 
 def init_rkpcn_kernel(key: PRNGKey,
-                      log_density: Callable[[Array, Array], float],
+                      log_density: Callable[[Array, Array], Array],
                       gp: GPJaxSurrogate,
                       initial_position: Array,
-                      support_inputs: Array, 
                       u_prop_cov: Array,
+                      f_update_fn: Callable[..., tuple[RKPCNState, Array]],
                       pcn_cor: float = 0.99) -> tuple[RKPCNState, Callable]:
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
@@ -313,69 +314,155 @@ def init_rkpcn_kernel(key: PRNGKey,
     satisfy the following:
         - single input u: gp(u).sample() has shape (p,)
         - multiple inputs u of shape (n,d): gp(u).sample() has shape (n,p)
+
+    Notes:
+        The notation used in the function body is as follows:
+            - f/g: current/proposed GP trajectories
+            - u/v: current/proposed parameter positions
+            - unext/fnext: next state
+        We use the notation fv to mean the value of f at input v, and so on.
     """
 
     # build kernel function
     def kernel(key: PRNGKey, state: RKPCNState) -> tuple[RKPCNState, RKPCNInfo]:
-        key_jit, key_proposal, key_accept = jr.split(key, 3)
+
+        key_u_proposal, key_f_update, key_u_accept = jr.split(key, 2)
 
         u = state.position
-        fu, fU = state.f_position
-        logZf = state.logZ
-        U, logw = state.quadrature_rule
+        fu = state.f_position
+
+        # Propose new u position
         L = state.proposal_tril
-        rho = state.rho
-
-        v = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
-
-        # just-in-time sample
-        uU = jnp.stack([u, U], axis=0)
-        fuU = jnp.stack([fu, fU], axis=0)
-        fv = gp.condition_then_predict(v, given=(uU, fuU)).sample(key_jit).squeeze()
-        
-        # Projection of law(f) onto {u, v, U}
-        vuU = jnp.stack([v, uU], axis=0)
-        fvuU = jnp.stack([fv, fuU], axis=0)
-        fvuU_dist = gp(vuU)
+        v = _sample_gaussian_tril(key_u_proposal, m=u, L=L).squeeze()
 
         # f update
-        gvuU = _pcn_proposal(key_proposal, fvuU, fvuU_dist.mean, fvuU_dist.chol, rho=rho).squeeze()
-        gv = gvuU[0]
-        gu = gvuU[1]
-        gU = gvuU[2:]
-
-        ### TEMP
-        key, key_temp = jr.split(key_jit, 2)
-        gu, _, log_alpha, accept = _mh_accept_reject(key_temp,
-                                                     lp_curr=log_density(fu, u), 
-                                                     lp_prop=log_density(gu, u),
-                                                     u_curr=fu, u_prop=gu)
-        gv = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
-        ###
+        state, fnext_v = f_update_fn(key=key_f_update, 
+                                     state=state,
+                                     gp=gp,
+                                     log_density=log_density,
+                                     u_prop=v)
+        fnext_u = state.f_position
 
         # u update
-        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
-                                                               lp_curr=log_density(gu, u), 
-                                                               lp_prop=log_density(gv, v),
+        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_u_accept,
+                                                               lp_curr=state.logdensity, 
+                                                               lp_prop=log_density(fnext_v, v),
                                                                u_curr=u, u_prop=v)
-        g_u_next = jax.lax.cond(accept, lambda _: gv, lambda _: gu, operand=None)
+        fnext_unext = jax.lax.cond(accept, lambda _: fnext_v, lambda _: fnext_u, operand=None)
 
+        # Updated state and auxiliary info
         info = RKPCNInfo(log_ratio=log_alpha, is_accepted=accept)
-        next_state = RKPCNState(position=u_next, f_at_position=g_u_next,
-                                proposal_tril=L, rho=rho, logdensity=lp_next)
+        next_state = RKPCNState(position=u_next,
+                                f_position=(g_u_next, gU),
+                                logZ=logZg,
+                                quadrature_rule=(U, logw),
+                                proposal_tril=L, 
+                                rho=rho, 
+                                logdensity=lp_next)
 
         return next_state, info
 
+    #
     # build initial state
+    #
     proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
-    f_at_initial = gp(initial_position).sample(key).squeeze()
+    key_init, key_quad = jr.split(key, 2)
+
+    # initial position
+    f_initial_position = gp(initial_position).sample(key_init).squeeze()
+    lp_init = log_density(f_initial_position, initial_position)
+
+    # quadrature points
+    U, logw = quadrature_rule
+    U = jnp.atleast_2d(U)
+    logw = logw.ravel()
+    fU = gp(U).sample(key_quad).squeeze()
+    lp_quad = log_density(fU, U)
+    logZf = logZ_approx(lp_quad, logw)
+
     initial_state = RKPCNState(position=initial_position,
-                               f_at_position=f_at_initial,
-                               proposal_tril=proposal_tril,
-                               logdensity=log_density(f_at_initial, initial_position),
-                               rho=pcn_cor)
+                               f_position=(f_initial_position, fU),
+                               logZ=logZf,
+                               quadrature_rule=(U, logw),
+                               proposal_tril=proposal_tril, 
+                               rho=pcn_cor, 
+                               logdensity=lp_init)
 
     return initial_state, kernel
+
+
+def _f_update_pcn_proposal(key: PRNGKey,
+                           *,
+                           state: RKPCNState,
+                           gp: GPJaxSurrogate,
+                           log_density: Callable[[Array, Array], Array], 
+                           u_prop: Array,
+                           **kwargs):
+    """ pCN proposal without a Metropolis correction. 
+    
+    Realizes pCN proposal at the finite set of points (u, u_prop), where u
+    is the current position.
+    """
+
+    rho = state.f_update_info.rho
+    u = state.position
+    fu = state.f_position
+
+    gU, _ = _just_in_time_pcn_proposal(key=key,
+                                       gp=gp,
+                                       given=(u, fu),
+                                       u_jit=u_prop,
+                                       rho=rho)
+
+    # Update state
+    gu = gU[0]
+    gv = gU[1]
+    state = state._replace(f_position=gu, logdensity=log_density(gu, u))
+
+    return state, gv
+
+
+def _f_update_eup_cpm(key: PRNGKey,
+                      *,
+                      state: RKPCNState,
+                      gp: GPJaxSurrogate, 
+                      log_density: Callable[[Array, Array], Array],
+                      u_prop: Array,
+                      **kwargs):
+    """ Correlation pseudo-marginal (cPM) update for targeting expected unnormalized posterior (EUP) 
+    
+    pCN proposal with a Metropolis correction that uses ratio pi(u; g)/pi(u; f) of unnormalized 
+    densities. Does not include normalizing constants Z(f)/Z(g) in this ratio, which makes this
+    update target the EUP, not the EP.
+    """
+    key_proposal, key_accept = jr.split(key, 2)
+
+    rho = state.f_update_info.rho
+    u = state.position
+    fu = state.f_position
+    lu = state.logdensity
+
+    # Proposal
+    gU, fv = _just_in_time_pcn_proposal(key=key_proposal,
+                                        gp=gp,
+                                        given=(u, fu),
+                                        u_jit=u_prop,
+                                        rho=rho)
+    gu = gU[0]
+    gv = gU[1]
+
+    # Accept-Reject with EUP target
+    fnext_u, lnext_u, log_alpha, accept = _mh_accept_reject(key_accept,
+                                                            lp_curr=lu, 
+                                                            lp_prop=log_density(gu, u),
+                                                            u_curr=fu, u_prop=gu)
+    fnext_v = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
+
+    # Update state
+    state = state._replace(f_position=fnext_u, logdensity=lnext_u)
+
+    return state, fnext_v
+
 
 
 # -----------------------------------------------------------------------------
@@ -386,11 +473,12 @@ def _mh_accept_reject(key: PRNGKey,
                       lp_curr: float,
                       lp_prop: float,
                       u_curr: ArrayLike,
-                      u_prop: ArrayLike) -> tuple[Array, Array, Array, Array]:
+                      u_prop: ArrayLike,
+                      log_correction: ArrayLike = 0.0) -> tuple[Array, Array, Array, Array]:
     """ Assumes symmetric proposal """
     log_unif = jnp.log(jr.uniform(key))
 
-    log_alpha = lp_prop - lp_curr
+    log_alpha = lp_prop - lp_curr + log_correction
     log_alpha = jnp.where(jnp.isnan(log_alpha), -jnp.inf, log_alpha)
     accept = log_unif < log_alpha
 
@@ -413,6 +501,44 @@ def _pcn_proposal(key: PRNGKey,
     pcn_tril = jnp.sqrt(1 - rho**2) * cov_tril
 
     return _sample_gaussian_tril(key, m=pcn_mean, L=pcn_tril)
+
+
+def _just_in_time_pcn_proposal(key: PRNGKey,
+                               *,
+                               gp: GPJaxSurrogate,
+                               given: tuple[Array, Array],
+                               u_jit: Array,
+                               rho: float):
+    """ Just-in-time sample then pCN proposal.
+
+    Given a realization `given = (u, fu)` of a GP at inputs u, and another set
+    of inputs `u_jit`. First, just-in-time samples values at `u_jit` via
+    f_jit ~ law(f(u_jit) | f(u) = u). Then returns a pCN proposal at the 
+    combined set of inputs (u, u_jit), given current value (fu, f_jit).
+
+    Returns:
+        tuple:
+            fU_prop: the pCN proposal at inputs (u, u_jit)
+            f_jit: the just in time sample f_jit at input u_jit
+    """
+
+    key_jit, key_proposal = jr.split(key, 2)
+
+    # just-in-time sample
+    f_jit = gp.condition_then_predict(u_jit, given=given).sample(key_jit).squeeze()
+
+    # pCN proposal, realized at points (u, u_jit)
+    u, fu = given
+    U = jnp.vstack([u, u_jit])
+    fU = jnp.concatenate([jnp.reshape(fu, -1), jnp.reshape(f_jit, -1)])
+    fU_dist = gp(U)
+    fU_prop = _pcn_proposal(key_proposal, fU, fU_dist.mean, fU_dist.chol, rho=rho).squeeze()
+
+    return fU_prop, f_jit
+
+
+def _logZ_approx(logw: ArrayLike, lp_U: ArrayLike, axis=None):
+    return logsumexp(logw + lp_U, axis=axis)
 
 
 def stack_dict_arrays(data_dict: dict[str, ArrayLike], 
