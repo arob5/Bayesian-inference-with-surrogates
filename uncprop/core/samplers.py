@@ -40,95 +40,123 @@ def mcmc_loop(key: PRNGKey,
     return states
 
 
-def init_nuts_kernel(key: PRNGKey, 
+# -----------------------------------------------------------------------------
+# Metropolis-Hastings (light wrapper around blackjax implementation)
+# -----------------------------------------------------------------------------
+
+def init_rwmh_kernel(key: PRNGKey,
                      logdensity: Callable,
                      initial_position: Position,
-                     num_warmup_steps: int = 1000):
-    warmup = blackjax.window_adaptation(blackjax.nuts, logdensity)
-    warmup_key, _ = jax.random.split(key, 2)
-    (initial_state, nuts_params), _ = warmup.run(warmup_key, initial_position, num_steps=num_warmup_steps)
-    kernel = blackjax.nuts(logdensity, **nuts_params).step
+                     prop_cov: Array):
+    """
+    Initializes blackjax random walk Metropolis-Hastings kernel with additive
+    Gaussian proposals. No adaptation is done.
+    """
+    
+    # blackjax expects scale/standard deviations
+    if prop_cov.ndim == 1:
+        prop_scale = jnp.sqrt(prop_cov)
+    else:
+        prop_scale = jnp.linalg.cholesky(prop_cov, upper=False)
+
+    proposal = blackjax.mcmc.random_walk.normal(prop_scale)
+
+    rmh = blackjax.rmh(logdensity, proposal)
+    initial_state = rmh.init(initial_position, key)
+    kernel = rmh.step
 
     return initial_state, kernel
 
 
 # -----------------------------------------------------------------------------
-# Cut Sampler
+# Adaptive Metropolis-Hastings 
 # -----------------------------------------------------------------------------
 
-class CutState(NamedTuple):
-    """State of the cut sampler chain.
-
-    position
-        Current position of the chain.
-    proposal_tril
-        Lower Cholesky factor of proposal covariance
-    logdensity
-        Current sampled value of the log density
-    """
-    position: Array
-    proposal_tril: Array
-    logdensity: ArrayLike
-
-class CutInfo(NamedTuple):
-    """Side information for the cut sampler chain.
-
-    log_ratio
-        log of the Metropolis acceptance ratio
-    is_accepted
-        whether proposal was accepted or not
-    """
-    log_ratio: ArrayLike
-    is_accepted: ArrayLike
-
-
-def init_cut_kernel(key: PRNGKey,
-                    logp_sampler: Callable[[PRNGKey, ArrayLike, ArrayLike], Array],
-                    initial_position: Array,
-                    u_prop_cov: Array) -> tuple[CutState, Callable]:
-    """
-    A noisy Metropolis-Hastings (MH) algorithm with a symmetric Gaussian proposal
-    with covariance `u_prop_cov`. Proceeds like a typical MH algorithm, but at 
-    each iteration the log-density values at the current and proposed points are 
-    sampled using `logp_sampler`.
-    """
+def init_adaptive_rwmh_kernel(key: PRNGKey,
+                              logdensity_fn: Callable,
+                              initial_position: Position,
+                              adapt_settings: AdaptationSettings):
 
     # build kernel function
-    def kernel(key: PRNGKey, state: tuple) -> tuple[CutState, CutInfo]:
-        key_proposal, key_lp, key_accept = jr.split(key, 3)
+    def kernel(key: PRNGKey, state: AdaptiveRWMHState) -> tuple[AdaptiveRWMHState, Any]: # TODO
 
-        u_curr, L, _ = state
-        u_prop = _sample_gaussian_tril(key_proposal, m=u_curr, L=L).squeeze()
+        key_proposal, key_accept = jr.split(key, 2)
+        u = state.position
+        L = _proposal_tril_from_adaptation(state.adapt_state)
 
-        # sample log-density values at current/proposed points
-        lp_curr, lp_prop = logp_sampler(key_lp, u_curr, u_prop).squeeze()
+        # Proposal / accept-reject step
+        u_prop = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
+        u_next, lp_next, accept_prob, accept = _mh_accept_reject(key_accept,
+                                                                 lp_curr=state.logdensity, 
+                                                                 lp_prop=logdensity_fn(u_prop),
+                                                                 u_curr=u, u_prop=u_prop)
 
-        # u update
-        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
-                                                               lp_curr=lp_curr, lp_prop=lp_prop,
-                                                               u_curr=u_curr, u_prop=u_prop)
+        # Update batch histories
+        new_sample_history = jax.lax.dynamic_update_slice(state.sample_history, 
+                                                          u_next.reshape(1, -1), 
+                                                          (state.step_in_batch, 0))
+        new_acc_history = jax.lax.dynamic_update_slice(state.accept_prob_history, 
+                                                       u_next.reshape(-1), 
+                                                       (state.step_in_batch,))
+                                                                    
+        # Adaptation trigger
+        next_step_count = state.step_in_batch + 1
+        is_update_step = (next_step_count == adapt_settings.adapt_interval)
         
-        info = CutInfo(log_ratio=log_alpha, is_accepted=accept)
-        next_state = CutState(position=u_next, proposal_tril=L, logdensity=lp_next)
+        def _do_update(s):
+            avg_acc = jnp.mean(s.accept_prob_history)
+            new_adapt = update_adaptation(
+                s.adapt, 
+                s.sample_history, 
+                avg_acc, 
+                adapt_settings
+            )
+            return new_adapt
 
-        return next_state, info
+        def _no_update(s):
+            return s.adapt_state
+
+        new_adapt_state = jax.lax.cond(
+            is_update_step,
+            _do_update,
+            _no_update,
+            state
+        )
+
+        # Reset counter if adaptation occurred
+        next_step_count = jnp.where(is_update_step, 0, next_step_count)
+
+        # Updated state and auxiliary info
+        next_state = AdaptiveRWMHState(position=u_next,
+                                       logdensity=lp_next,
+                                       adapt_state=new_adapt_state,
+                                       sample_history=new_sample_history,
+                                       accept_prob_history=new_acc_history,
+                                       step_in_batch=next_step_count)
+
+        return next_state, _
+
+
+class AdaptationState(NamedTuple):
+    """
+    Holds the state of the adaptation mechanism. The proposal covariance
+    is parameterized as:
+        exp(2 * log_scale) * cov_prop = s^2 * C
     
-    # build initial state
-    proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
-    initial_logdensity_sample = logp_sampler(key, initial_position, initial_position)[0]
-    initial_state = CutState(position=initial_position,
-                             proposal_tril=proposal_tril,
-                             logdensity=initial_logdensity_sample)
+    cov_prop
+        The current proposal covariance matrix (shape matrix).
+    log_scale
+        The log of the global scaling factor.
+    times_adapted
+        Counter for how many adaptation steps have occurred.
+    """
+    cov_prop: Array
+    log_scale: float
+    times_adapted: int
 
-    return initial_state, kernel
 
-
-# -----------------------------------------------------------------------------
-# Preconditioned Crank-Nicolson Random Kernel Algorithm (rk-pcn)
-# -----------------------------------------------------------------------------
-
-class RKPCNStateOld(NamedTuple):
-    """State of the rkpcn sampler chain.
+class AdaptiveRWMHState(NamedTuple):
+    """State for adaptive random walk Metropolis-Hastings.
 
     position
         Current position of the chain.
@@ -142,105 +170,122 @@ class RKPCNStateOld(NamedTuple):
         Current sampled value of the log density.
     """
     position: Array
-    f_at_position: Array
-    proposal_tril: Array
-    rho: ArrayLike
-    logdensity: ArrayLike
-
-class RKPCNInfoOld(NamedTuple):
-    """Side information for the cut sampler chain.
-
-    log_ratio
-        log of the Metropolis acceptance ratio
-    is_accepted
-        whether proposal was accepted or not
-    """
-    log_ratio: ArrayLike
-    is_accepted: ArrayLike
+    logdensity: float
+    adapt_state: AdaptationState
+    sample_history: Array # buffer for batch of samples used in adaptation
+    accept_prob_history: Array # buffer for batch of acceptance probabilities
+    step_in_batch: int # counts from 0 to adapt_interval
 
 
-def init_rkpcn_kernel_old(key: PRNGKey,
-                      log_density: Callable[[Array, Array], float],
-                      gp: GPJaxSurrogate,
-                      initial_position: Array, 
-                      u_prop_cov: Array,
-                      pcn_cor: float = 0.99) -> tuple[RKPCNStateOld, Callable]:
-    """
-    An MCMC sampler to *approximately* sample from the expectation of the random
-    measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
-    Precisely, one seeks to sample from E_f{pi(u; f)}.
-     
-    The algorithm rk-pcn sampler operates on the extended state space (u, f), which is in
-    principle infinite dimensional. In reality, it is only necessary to instantiate 
-    bivariate projections of the GP of the form [f(u), f(u')]. Therefore, the practical
-    implementation of this algorithm maintains a state of the form (u, f(u)).
-
-    Note that `log_density` and `gp` must be specified so that they can be called like
-        key = jax.random.key(3532)
-        pred = gp(u) # predictive distribution
-        f_pred = pred.sample(key)
-        lp_pred = log_density(f_pred, u)
-
-    In other words, `log_density` is parameterized as a function of the surrogate output,
-    not as a function of the parameter u. The argument `u` is still passed, as this is 
-    useful in certain cases (e.g., constraining the support of u).
+class AdaptationSettings(NamedTuple):
+    """Hyperparameters for the adaptation logic.
     
-    The Gaussian predictive distribution must 
-    satisfy the following:
-        - single input u: gp(u).sample() has shape (p,)
-        - multiple inputs u of shape (n,d): gp(u).sample() has shape (n,p)
+    The scale is updated as:
+        s_new := s * exp{scale_numerator / (N + 3) ** gamma_exponent * (accept_ratio - target_accept)}
+        C_new := C + (C_hat - C) / (N + 3) ** gamma_exponent
+
+    where N = times_adapted is the number of times adaptation has occurred up to this point.
+    `accept_ratio` and `C_hat` are empirical estimates computed using the recent history of the chain.
     """
+    adapt_interval: int = 50
+    target_accept: float = 0.234
+    adapt_cov: bool = True
+    adapt_scale: bool = True
+    gamma_exponent: float = 0.8
+    scale_numerator: float = 10.0
+    jitter: float = 1e-6
 
-    # build kernel function
-    def kernel(key: PRNGKey, state: tuple) -> tuple[RKPCNStateOld, RKPCNInfoOld]:
-        key_jit, key_proposal, key_accept = jr.split(key, 3)
 
-        u, fu, L, rho, _ = state
-        v = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
+def init_adaptation(
+    dim: int, 
+    initial_cov: Array | None = None, 
+    initial_log_scale: float | None = None
+) -> AdaptationState:
+    """Initializes the adaptation state."""
+    
+    if initial_cov is None:
+        initial_cov = jnp.eye(dim)
+    
+    if initial_log_scale is None:
+        # Gelman-Roberts-Gilks heuristic: 2.38^2 / d
+        initial_log_scale = jnp.log(2.38) - 0.5 * jnp.log(dim)
+        
+    return AdaptationState(
+        cov_prop=initial_cov,
+        log_scale=initial_log_scale,
+        times_adapted=0
+    )
 
-        # just-in-time sample
-        fv = gp.condition_then_predict(v, given=(u, fu)).sample(key_jit).squeeze()
 
-        # Projection of law(f) onto (u, v)
-        uv = jnp.stack([u, v], axis=0)
-        fuv = jnp.stack([fu, fv], axis=0)
-        fuv_dist = gp(uv)
+@jax.jit
+def update_adaptation(
+    state: AdaptationState, 
+    batch_history: Array, 
+    batch_accept_rate: float,
+    settings: AdaptationSettings = AdaptationSettings()
+) -> AdaptationState:
+    """
+    Performs one step of adaptation based on a batch of MCMC history.
+    
+    Args:
+        state: Current AdaptationState.
+        batch_history: Array of shape (batch_size, dim) containing recent samples.
+        batch_accept_rate: Scalar, average acceptance probability of the batch.
+        settings: Hyperparameters.
+    
+    Returns:
+        Updated AdaptationState.
+    """
+    
+    # Calculate decay factor: gamma = (N + 3)^(-gamma_exponent)
+    gamma = 1.0 / ((state.times_adapted + 3.0) ** settings.gamma_exponent)
+    
+    # Update Scale (Robbins-Monro)
+    # l_new = l_old + eta * gamma * (acc - target)
+    diff = batch_accept_rate - settings.target_accept
+    scale_adjustment = settings.scale_numerator * gamma * diff
+    new_log_scale = state.log_scale + scale_adjustment
 
-        # f update
-        guv = _pcn_proposal(key_proposal, fuv, fuv_dist.mean, fuv_dist.chol, rho=rho).squeeze()
-        gu = guv[0]
-        gv = guv[1]
+    # Update Covariance (Stochastic Approximation / exponential moving average)
+    # C_new = (1-gamma)*C_old + gamma*C_batch
+    batch_cov = jnp.cov(batch_history, rowvar=False)
+    batch_cov = jnp.atleast_2d(batch_cov)
+    new_cov = state.cov_prop + gamma * (batch_cov - state.cov_prop)
+    
+    # Enforce Symmetry and Regularize to ensure positive definiteness
+    new_cov = 0.5 * (new_cov + new_cov.T)
+    new_cov = new_cov + settings.jitter * jnp.eye(new_cov.shape[0])
 
-        ### TEMP
-        key, key_temp = jr.split(key_jit, 2)
-        gu, _, log_alpha, accept = _mh_accept_reject(key_temp,
-                                                     lp_curr=log_density(fu, u), 
-                                                     lp_prop=log_density(gu, u),
-                                                     u_curr=fu, u_prop=gu)
-        gv = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
-        ###
+    return AdaptationState(
+        cov_prop=new_cov,
+        log_scale=new_log_scale,
+        times_adapted=state.times_adapted + 1
+    )
 
-        # u update
-        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_accept,
-                                                               lp_curr=log_density(gu, u), 
-                                                               lp_prop=log_density(gv, v),
-                                                               u_curr=u, u_prop=v)
-        g_u_next = jax.lax.cond(accept, lambda _: gv, lambda _: gu, operand=None)
 
-        info = RKPCNInfoOld(log_ratio=log_alpha, is_accepted=accept)
-        next_state = RKPCNStateOld(position=u_next, f_at_position=g_u_next,
-                                proposal_tril=L, rho=rho, logdensity=lp_next)
+def _proposal_tril_from_adaptation(state: AdaptationState) -> Array:
+    """
+    Reconstructs the Cholesky decomposition of the full proposal matrix.
+    Sigma = exp(2 * log_scale) * cov_prop
+    L = exp(log_scale) * cholesky(cov_prop)
+    """
+    scale = jnp.exp(state.log_scale)
+    L_cov = jnp.linalg.cholesky(state.cov_prop, upper=False)
+    return scale * L_cov
 
-        return next_state, info
 
-    # build initial state
-    proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
-    f_at_initial = gp(initial_position).sample(key).squeeze()
-    initial_state = RKPCNStateOld(position=initial_position,
-                               f_at_position=f_at_initial,
-                               proposal_tril=proposal_tril,
-                               logdensity=log_density(f_at_initial, initial_position),
-                               rho=pcn_cor)
+# -----------------------------------------------------------------------------
+# NUTS 
+# -----------------------------------------------------------------------------
+
+def init_nuts_kernel(key: PRNGKey, 
+                     logdensity: Callable,
+                     initial_position: Position,
+                     num_warmup_steps: int = 1000):
+    warmup = blackjax.window_adaptation(blackjax.nuts, logdensity)
+    warmup_key, _ = jax.random.split(key, 2)
+    (initial_state, nuts_params), _ = warmup.run(warmup_key, initial_position, num_steps=num_warmup_steps)
+    kernel = blackjax.nuts(logdensity, **nuts_params).step
 
     return initial_state, kernel
 
@@ -273,12 +318,12 @@ class RKPCNState(NamedTuple):
 class RKPCNInfo(NamedTuple):
     """Side information for the cut sampler chain.
 
-    log_ratio
-        log of the Metropolis acceptance ratio
+    accept_prob
+        acceptance probability
     is_accepted
         whether proposal was accepted or not
     """
-    log_ratio: ArrayLike
+    accept_prob: ArrayLike
     is_accepted: ArrayLike
 
 
@@ -343,14 +388,14 @@ def init_rkpcn_kernel(key: PRNGKey,
         fnext_u = state.f_position
 
         # u update
-        u_next, lp_next, log_alpha, accept = _mh_accept_reject(key_u_accept,
-                                                               lp_curr=state.logdensity, 
-                                                               lp_prop=log_density(fnext_v, v),
-                                                               u_curr=u, u_prop=v)
+        u_next, lp_next, accept_prob, accept = _mh_accept_reject(key_u_accept,
+                                                                 lp_curr=state.logdensity, 
+                                                                 lp_prop=log_density(fnext_v, v),
+                                                                 u_curr=u, u_prop=v)
         fnext_unext = jax.lax.cond(accept, lambda _: fnext_v, lambda _: fnext_u, operand=None)
 
         # Updated state and auxiliary info
-        info = RKPCNInfo(log_ratio=log_alpha, is_accepted=accept)
+        info = RKPCNInfo(accept_prob=accept_prob, is_accepted=accept)
         next_state = RKPCNState(position=u_next,
                                 f_position=fnext_unext,
                                 logdensity=lp_next,
@@ -446,17 +491,16 @@ def _f_update_eup_cpm(key: PRNGKey,
     gv = gU[1]
 
     # Accept-Reject with EUP target
-    fnext_u, lnext_u, log_alpha, accept = _mh_accept_reject(key_accept,
-                                                            lp_curr=lu, 
-                                                            lp_prop=log_density(gu, u),
-                                                            u_curr=fu, u_prop=gu)
+    fnext_u, lnext_u, accept_prob, accept = _mh_accept_reject(key_accept,
+                                                              lp_curr=lu, 
+                                                              lp_prop=log_density(gu, u),
+                                                              u_curr=fu, u_prop=gu)
     fnext_v = jax.lax.cond(accept, lambda _: gv, lambda _: fv, operand=None)
 
     # Update state
     state = state._replace(f_position=fnext_u, logdensity=lnext_u)
 
     return state, fnext_v
-
 
 
 # -----------------------------------------------------------------------------
@@ -483,7 +527,10 @@ def _mh_accept_reject(key: PRNGKey,
         operand=None,
     )   
 
-    return u_next, lp_next, log_alpha, accept
+    # acceptance probability
+    accept_prob = jnp.clip(jnp.exp(log_alpha), min=0.0, max=1.0)
+
+    return u_next, lp_next, accept_prob, accept
 
 
 def _pcn_proposal(key: PRNGKey,

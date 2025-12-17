@@ -25,7 +25,7 @@ class Distribution(ABC):
 
     @property
     @abstractmethod
-    def support(self) -> tuple[tuple, tuple] | None:
+    def support(self) -> tuple[ArrayLike, ArrayLike]:
         """
         Should return tuple of the form lower, upper where lower and upper
         are each tuples of length `dim` giving the dimension-by-dimension
@@ -117,8 +117,8 @@ class GaussianFromNumpyro(Distribution):
         return self._numpyro_mvn.event_shape[0]
 
     @property
-    def support(self) -> tuple[tuple, tuple] | None:
-        return None
+    def support(self) -> tuple[ArrayLike, ArrayLike]:
+        return -jnp.inf, jnp.inf
 
     def sample(self, key: PRNGKey, n: int = 1) -> Array:
         """ Out: (n,d)"""
@@ -146,3 +146,10 @@ class GaussianFromNumpyro(Distribution):
     def variance(self) -> Array:
         """ Return marginal variances of shape (d,) """
         return jnp.diag(self.cov)
+    
+
+def sample_distribution(distribution: Distribution,
+                        n_samples: int,
+                        n_burnin: int = 1000,
+                        thin_window: int = 5):
+    pass

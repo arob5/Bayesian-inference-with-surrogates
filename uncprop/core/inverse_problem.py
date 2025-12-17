@@ -8,13 +8,8 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 
-from uncprop.core.samplers import (
-    init_nuts_kernel,
-    mcmc_loop,
-    stack_dict_arrays,
-)
-
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
+from uncprop.core.samplers import init_rwmh_kernel, mcmc_loop
 from uncprop.core.distribution import Distribution, LogDensity
 
 
@@ -80,23 +75,42 @@ class Posterior(Distribution):
         
         return logp
 
-    def sample(self, key: PRNGKey, n: int = 1, compile: bool = True, **kwargs) -> Array:
+    def sample(self,
+               key: PRNGKey, 
+               n: int = 1, 
+               prop_cov: Array | None = None,
+               initial_position: Array | None = None,
+               **kwargs) -> Array:
         """ Default sampling method: may be overriden by subclasses
         
-        The default sampler is the blackjax implementation of NUTS.
+        The default sampler is the blackjax implementation of random walk Metropolis-Hastings.
         """
         key_init_position, key_init_kernel, key_sample = jr.split(key, 3)
 
         # target density
         logdensity = self._get_log_density_function()
-        if compile:
-            logdensity = jax.jit(logdensity)
 
-        # initialize sampler: note that `initial_position` will typically have shape (1,d) here.
-        initial_position = self.prior.sample(key_init_position) 
-        init_state, kernel = jax.block_until_ready(init_nuts_kernel(key_init_kernel, logdensity, initial_position, **kwargs))
+        # default proposal covariance (diagonal)
+        if prop_cov is None:
+            low, high = self.support
+            infinite_support = jnp.any(jnp.isinf(low) | jnp.isinf(high))
+            if infinite_support:
+                prop_cov = jnp.tile(1.0, self.dim)
+            else:
+                prop_cov = 0.1 * (jnp.broadcast_to(high, self.dim) - jnp.broadcast_to(low, self.dim))
+                prop_cov = prop_cov ** 2
+
+        # initial condition
+        if initial_position is None:
+            initial_position = self.prior.sample(key_init_position).squeeze()
+
+        # initialize state and kernel
+        init_state, kernel = init_rwmh_kernel(key=key_init_kernel,
+                                              logdensity=logdensity,
+                                              initial_position=initial_position,
+                                              prop_cov=prop_cov)
 
         # run sampler
         states = mcmc_loop(key_sample, kernel, init_state, num_samples=n)
 
-        return states.squeeze()
+        return jax.block_until_ready(states.position)
