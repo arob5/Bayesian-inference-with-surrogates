@@ -1,8 +1,9 @@
 # uncprop/core/samplers.py
+from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 import jax
@@ -21,6 +22,7 @@ from blackjax.base import (
 )
 
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
+from uncprop.core.distribution import Distribution
 from uncprop.core.surrogate import GPJaxSurrogate, SurrogateDistribution
 from uncprop.utils.distribution import _sample_gaussian_tril
 
@@ -29,6 +31,8 @@ def mcmc_loop(key: PRNGKey,
               kernel: UpdateFn, 
               initial_state: State, 
               num_samples: int = 4000):
+    """Main MCMC loop for all samplers"""
+
     @jax.jit
     def one_step(state, key):
         state, _ = kernel(key, state)
@@ -38,6 +42,51 @@ def mcmc_loop(key: PRNGKey,
     _, states = jax.lax.scan(one_step, initial_state, keys)
 
     return states
+
+
+def sample_distribution(key: PRNGKey,
+                        dist: Distribution,
+                        n_samples: int,
+                        n_burnin: int = 1000,
+                        thin_window: int = 5,
+                        prop_cov: Array | None = None,
+                        adapt: bool = True,
+                        adapt_kwargs: Mapping[str, Any] | None = None):
+    """ MCMC sampling for Distribution objects
+
+    Adaptive Metropolis-Hastings with various reasonable defaults for
+    sampling from distributions with densities.
+    """
+    
+    key_init_position, key_init_kernel, key_warmup, key_sample = jr.split(key, 4)
+
+    # target density
+    logdensity = dist.log_density
+
+    # Initialize proposal covariance (will be adapted)
+    if prop_cov is None:
+        prop_cov = _init_dist_proposal_cov(dist)
+        adapt_state = AdaptationState(cov_prop=prop_cov, times_adapted=0)
+    else:
+        pass
+
+    # Warm-up adaptation
+    adapt_kwargs = adapt_kwargs or {}
+    adapt_settings = AdaptationSettings(**adapt_kwargs)
+
+
+def _init_dist_proposal_cov(dist: Distribution):
+    """A reasonable initial covariance"""
+
+    low, high = dist.support
+    infinite_support = jnp.any(jnp.isinf(low) | jnp.isinf(high))
+    if infinite_support:
+        prop_cov = jnp.tile(1.0, dist.dim)
+    else:
+        prop_cov = 0.1 * (jnp.broadcast_to(high, dist.dim) - jnp.broadcast_to(low, dist.dim))
+        prop_cov = prop_cov ** 2
+
+    return prop_cov
 
 
 # -----------------------------------------------------------------------------
@@ -75,10 +124,13 @@ def init_rwmh_kernel(key: PRNGKey,
 def init_adaptive_rwmh_kernel(key: PRNGKey,
                               logdensity_fn: Callable,
                               initial_position: Position,
-                              adapt_settings: AdaptationSettings):
+                              adapt_settings: AdaptationSettings,
+                              initial_cov: Array | None = None,
+                              inital_log_scale: float | None = None):
 
     # build kernel function
-    def kernel(key: PRNGKey, state: AdaptiveRWMHState) -> tuple[AdaptiveRWMHState, Any]: # TODO
+    def kernel(key: PRNGKey, 
+               state: AdaptiveRWState) -> tuple[AdaptiveRWState, AdaptiveRWInfo]:
 
         key_proposal, key_accept = jr.split(key, 2)
         u = state.position
@@ -96,7 +148,7 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
                                                           u_next.reshape(1, -1), 
                                                           (state.step_in_batch, 0))
         new_acc_history = jax.lax.dynamic_update_slice(state.accept_prob_history, 
-                                                       u_next.reshape(-1), 
+                                                       accept_prob.reshape(-1), 
                                                        (state.step_in_batch,))
                                                                     
         # Adaptation trigger
@@ -106,7 +158,7 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
         def _do_update(s):
             avg_acc = jnp.mean(s.accept_prob_history)
             new_adapt = update_adaptation(
-                s.adapt, 
+                s.adapt_state, 
                 s.sample_history, 
                 avg_acc, 
                 adapt_settings
@@ -127,14 +179,34 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
         next_step_count = jnp.where(is_update_step, 0, next_step_count)
 
         # Updated state and auxiliary info
-        next_state = AdaptiveRWMHState(position=u_next,
+        next_state = AdaptiveRWState(position=u_next,
                                        logdensity=lp_next,
                                        adapt_state=new_adapt_state,
                                        sample_history=new_sample_history,
                                        accept_prob_history=new_acc_history,
                                        step_in_batch=next_step_count)
+        info = AdaptiveRWInfo(acceptance_rate=accept_prob, 
+                              is_accepted=accept)
 
-        return next_state, _
+        return next_state, info
+
+    # Initialize state
+    initial_position = initial_position.ravel()
+    dim = initial_position.shape[0]
+    adapt_inverval = adapt_settings.adapt_interval
+
+    adapt_state = init_adaptation_state(dim=dim,
+                                        initial_cov=initial_cov,
+                                        initial_log_scale=inital_log_scale)
+    
+    initial_state = AdaptiveRWState(position=initial_position,
+                                    logdensity=logdensity_fn(initial_position),
+                                    adapt_state=adapt_state,
+                                    sample_history=jnp.zeros((adapt_inverval, dim)),
+                                    accept_prob_history=jnp.zeros(adapt_inverval),
+                                    step_in_batch=0)
+
+    return initial_state, kernel
 
 
 class AdaptationState(NamedTuple):
@@ -155,7 +227,7 @@ class AdaptationState(NamedTuple):
     times_adapted: int
 
 
-class AdaptiveRWMHState(NamedTuple):
+class AdaptiveRWState(NamedTuple):
     """State for adaptive random walk Metropolis-Hastings.
 
     position
@@ -177,6 +249,11 @@ class AdaptiveRWMHState(NamedTuple):
     step_in_batch: int # counts from 0 to adapt_interval
 
 
+class AdaptiveRWInfo(NamedTuple):
+    acceptance_rate: float
+    is_accepted: bool
+
+
 class AdaptationSettings(NamedTuple):
     """Hyperparameters for the adaptation logic.
     
@@ -196,7 +273,7 @@ class AdaptationSettings(NamedTuple):
     jitter: float = 1e-6
 
 
-def init_adaptation(
+def init_adaptation_state(
     dim: int, 
     initial_cov: Array | None = None, 
     initial_log_scale: float | None = None
@@ -217,7 +294,6 @@ def init_adaptation(
     )
 
 
-@jax.jit
 def update_adaptation(
     state: AdaptationState, 
     batch_history: Array, 
@@ -252,7 +328,7 @@ def update_adaptation(
     batch_cov = jnp.atleast_2d(batch_cov)
     new_cov = state.cov_prop + gamma * (batch_cov - state.cov_prop)
     
-    # Enforce Symmetry and Regularize to ensure positive definiteness
+    # Enforce symmetry and regularize to ensure positive definiteness
     new_cov = 0.5 * (new_cov + new_cov.T)
     new_cov = new_cov + settings.jitter * jnp.eye(new_cov.shape[0])
 

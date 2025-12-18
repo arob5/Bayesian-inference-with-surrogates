@@ -146,10 +146,3 @@ class GaussianFromNumpyro(Distribution):
     def variance(self) -> Array:
         """ Return marginal variances of shape (d,) """
         return jnp.diag(self.cov)
-    
-
-def sample_distribution(distribution: Distribution,
-                        n_samples: int,
-                        n_burnin: int = 1000,
-                        thin_window: int = 5):
-    pass
