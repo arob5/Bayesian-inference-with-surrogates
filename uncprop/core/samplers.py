@@ -46,33 +46,84 @@ def mcmc_loop(key: PRNGKey,
 
 def sample_distribution(key: PRNGKey,
                         dist: Distribution,
+                        initial_position: Array, 
                         n_samples: int,
-                        n_burnin: int = 1000,
-                        thin_window: int = 5,
+                        n_warmup: int = 50_000,
+                        n_burnin: int = 0,
+                        thin_window: int = 1,
                         prop_cov: Array | None = None,
                         adapt: bool = True,
                         adapt_kwargs: Mapping[str, Any] | None = None):
     """ MCMC sampling for Distribution objects
 
     Adaptive Metropolis-Hastings with various reasonable defaults for
-    sampling from distributions with densities.
+    sampling from distributions with densities. Specifying `n_warmup > 0`
+    will run an initial warmup run with covariance adaptation for `n_warmup`
+    iterations. The tuned proposal covariance will then be fixed during the
+    main run. `n_burnin` specifies how many samples to drop at the beginning
+    of the main chain. The defaults are set for the workflow where a longer 
+    warmup run is conducted and no burnin is dropped from the main chain.
+    `n_samples` is the number of samples that will be returned by
+    this function. The actual number of samples in the main chain will be 
+    `n_burnin + n_samples * thin_window`.
+
+    Returns:
+        tuple, containing:
+            - positions: (n_samples, dim) array of samples
+            - states: full set of states from the main chain
+            - warmup_samp: full set of states from warmup chain / None if no warmup
+            - prop_cov: full proposal covariance used in main chain
     """
     
-    key_init_position, key_init_kernel, key_warmup, key_sample = jr.split(key, 4)
+    key_warmup_kernel, key_warmup_samp, key_kernel, key_samp = jr.split(key, 4)
 
     # target density
-    logdensity = dist.log_density
+    logdensity = lambda x: dist.log_density(x).squeeze()
 
     # Initialize proposal covariance (will be adapted)
     if prop_cov is None:
         prop_cov = _init_dist_proposal_cov(dist)
-        adapt_state = AdaptationState(cov_prop=prop_cov, times_adapted=0)
-    else:
-        pass
-
+    
     # Warm-up adaptation
-    adapt_kwargs = adapt_kwargs or {}
-    adapt_settings = AdaptationSettings(**adapt_kwargs)
+    if n_warmup > 0:
+        adapt_kwargs = adapt_kwargs or {}
+        adapt_settings = AdaptationSettings(**adapt_kwargs)
+
+        initial_state, warmup_kernel = init_adaptive_rwmh_kernel(key=key_warmup_kernel,
+                                                                 logdensity_fn=logdensity,
+                                                                 initial_position=initial_position,
+                                                                 adapt_settings=adapt_settings,
+                                                                 initial_cov=prop_cov, 
+                                                                 initial_log_scale=0.0)
+
+        warmup_samp = mcmc_loop(key=key_warmup_samp, 
+                                kernel=warmup_kernel, 
+                                initial_state=initial_state, 
+                                num_samples=n_warmup)
+        
+        # extract initial position and proposal covariance from warmup
+        initial_position, prop_cov = _extract_tuned_warmup_quantities(warmup_samp)
+    else:
+        warmup_samp = None
+
+
+    # main chain
+    initial_state, kernel = init_rwmh_kernel(key=key_kernel,
+                                             logdensity=logdensity,
+                                             initial_position=initial_position,
+                                             prop_cov=prop_cov)
+    n_samples_total = n_burnin + thin_window * n_samples
+
+    states = mcmc_loop(key=key_samp, 
+                       kernel=kernel, 
+                       initial_state=initial_state, 
+                       num_samples=n_samples_total)
+    
+    # drop burnin and thin
+    positions = states.position[n_burnin:]
+    positions = positions[::thin_window]
+
+    return positions, states, warmup_samp, prop_cov
 
 
 def _init_dist_proposal_cov(dist: Distribution):
@@ -81,12 +132,27 @@ def _init_dist_proposal_cov(dist: Distribution):
     low, high = dist.support
     infinite_support = jnp.any(jnp.isinf(low) | jnp.isinf(high))
     if infinite_support:
-        prop_cov = jnp.tile(1.0, dist.dim)
+        prop_cov = jnp.identity(dist.dim)
     else:
-        prop_cov = 0.1 * (jnp.broadcast_to(high, dist.dim) - jnp.broadcast_to(low, dist.dim))
-        prop_cov = prop_cov ** 2
+        prop_sd = 0.1 * (jnp.broadcast_to(high, dist.dim) - jnp.broadcast_to(low, dist.dim))
+        prop_cov = jnp.diag(prop_sd ** 2)
 
     return prop_cov
+
+
+def _extract_tuned_warmup_quantities(warmup_samp: AdaptiveRWState):
+
+    # Final position from warmup
+    initial_position = warmup_samp.position[-1]
+
+    # Final proposal covariance from warmup
+    final_log_scale = warmup_samp.adapt_state.log_scale[-1]
+    final_cov = warmup_samp.adapt_state.cov_prop[-1]
+    final_adapt_state = AdaptationState(cov_prop=final_cov, log_scale=final_log_scale, times_adapted=0)
+    L = _proposal_tril_from_adaptation(final_adapt_state)
+    cov_prop = L @ L.T
+
+    return initial_position, cov_prop
 
 
 # -----------------------------------------------------------------------------
@@ -100,15 +166,21 @@ def init_rwmh_kernel(key: PRNGKey,
     """
     Initializes blackjax random walk Metropolis-Hastings kernel with additive
     Gaussian proposals. No adaptation is done.
-    """
-    
-    # blackjax expects scale/standard deviations
-    if prop_cov.ndim == 1:
-        prop_scale = jnp.sqrt(prop_cov)
-    else:
-        prop_scale = jnp.linalg.cholesky(prop_cov, upper=False)
 
-    proposal = blackjax.mcmc.random_walk.normal(prop_scale)
+    Notes:
+        Had some odd issues with blackjax Gaussian proposal, likely due to pytree/array
+        shaping issues. Defining a simpler Gaussian proposal here that uses the fact 
+        all position shapes are flat arrays in our case. Note that `prop_cov` can either
+        be the proposal covariance matrix, or the diagonal of this matrix.
+    """
+
+    # Symmetric Gaussian proposal
+    if(prop_cov.ndim == 1):
+        prop_cov = jnp.diag(prop_cov)
+    L = jnp.linalg.cholesky(prop_cov, upper=False)
+    
+    def proposal(key: PRNGKey, position: Position):
+        return _sample_gaussian_tril(key, m=position, L=L).squeeze()
 
     rmh = blackjax.rmh(logdensity, proposal)
     initial_state = rmh.init(initial_position, key)
@@ -126,7 +198,7 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
                               initial_position: Position,
                               adapt_settings: AdaptationSettings,
                               initial_cov: Array | None = None,
-                              inital_log_scale: float | None = None):
+                              initial_log_scale: float | None = None):
 
     # build kernel function
     def kernel(key: PRNGKey, 
@@ -134,7 +206,7 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
 
         key_proposal, key_accept = jr.split(key, 2)
         u = state.position
-        L = _proposal_tril_from_adaptation(state.adapt_state)
+        L = state.proposal_tril
 
         # Proposal / accept-reject step
         u_prop = _sample_gaussian_tril(key_proposal, m=u, L=L).squeeze()
@@ -163,12 +235,14 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
                 avg_acc, 
                 adapt_settings
             )
-            return new_adapt
+
+            new_L = _proposal_tril_from_adaptation(new_adapt)
+            return new_adapt, new_L
 
         def _no_update(s):
-            return s.adapt_state
+            return s.adapt_state, L
 
-        new_adapt_state = jax.lax.cond(
+        new_adapt_state, L = jax.lax.cond(
             is_update_step,
             _do_update,
             _no_update,
@@ -180,11 +254,12 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
 
         # Updated state and auxiliary info
         next_state = AdaptiveRWState(position=u_next,
-                                       logdensity=lp_next,
-                                       adapt_state=new_adapt_state,
-                                       sample_history=new_sample_history,
-                                       accept_prob_history=new_acc_history,
-                                       step_in_batch=next_step_count)
+                                     logdensity=lp_next,
+                                     proposal_tril=L,
+                                     adapt_state=new_adapt_state,
+                                     sample_history=new_sample_history,
+                                     accept_prob_history=new_acc_history,
+                                     step_in_batch=next_step_count)
         info = AdaptiveRWInfo(acceptance_rate=accept_prob, 
                               is_accepted=accept)
 
@@ -197,10 +272,11 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
 
     adapt_state = init_adaptation_state(dim=dim,
                                         initial_cov=initial_cov,
-                                        initial_log_scale=inital_log_scale)
+                                        initial_log_scale=initial_log_scale)
     
     initial_state = AdaptiveRWState(position=initial_position,
                                     logdensity=logdensity_fn(initial_position),
+                                    proposal_tril=_proposal_tril_from_adaptation(adapt_state),
                                     adapt_state=adapt_state,
                                     sample_history=jnp.zeros((adapt_inverval, dim)),
                                     accept_prob_history=jnp.zeros(adapt_inverval),
@@ -232,21 +308,26 @@ class AdaptiveRWState(NamedTuple):
 
     position
         Current position of the chain.
-    f_at_position
-        Current value of f evaluated at current position.
-    proposal_tril
-        Lower Cholesky factor of proposal covariance for u.
-    rho
-        Correlation parameter for the pCN proposal.
     logdensity
-        Current sampled value of the log density.
+        log density evaluated at the current position.
+    proposal_tril
+        Lower Cholesky factor of the full proposal covariance s^2 C
+    adapt_state
+        The current AdaptationState, storing log(s) and C
+    sample_history
+        Buffer for batch of samples used in adaptation
+    accept_prob_history
+        Buffer for batch of acceptance probabilites used in adaptation
+    step_in_batch
+        Counts from 0 to adapt_interval
     """
     position: Array
     logdensity: float
+    proposal_tril: Array
     adapt_state: AdaptationState
-    sample_history: Array # buffer for batch of samples used in adaptation
-    accept_prob_history: Array # buffer for batch of acceptance probabilities
-    step_in_batch: int # counts from 0 to adapt_interval
+    sample_history: Array
+    accept_prob_history: Array
+    step_in_batch: int
 
 
 class AdaptiveRWInfo(NamedTuple):
@@ -592,7 +673,7 @@ def _mh_accept_reject(key: PRNGKey,
     """ Assumes symmetric proposal """
     log_unif = jnp.log(jr.uniform(key))
 
-    log_alpha = lp_prop - lp_curr + log_correction
+    log_alpha = jnp.squeeze(lp_prop - lp_curr + log_correction)
     log_alpha = jnp.where(jnp.isnan(log_alpha), -jnp.inf, log_alpha)
     accept = log_unif < log_alpha
 
