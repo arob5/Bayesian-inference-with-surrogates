@@ -1,14 +1,16 @@
 # uncprop/models/elliptic_pde/inverse_problem.py
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import matplotlib.pyplot as plt
 
 import gpjax
 from gpjax.kernels.stationary import PoweredExponential
+from numpyro.distributions import LogNormal
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
 from uncprop.core.inverse_problem import Prior, Posterior
@@ -21,11 +23,16 @@ def generate_pde_inv_prob_rep(key: PRNGKey,
                               noise_cov: Array,
                               n_kl_modes: int,
                               obs_locations: Array,
-                              settings: PDESettings | None = None) -> tuple[Posterior, tuple, tuple]:
+                              settings: PDESettings | None = None):
     """ Top-level function for generating instance of the PDE inverse problem
 
     Generates a Posterior object representing the exact posterior corresponding
     to the (discretized) inverse problem.
+
+    Args:
+        n_kl_modes: number of Karhunen-Loeve terms to retain; determines the 
+                    dimension of the parameter space.
+        obs_locations: indices of the grid at which observations occur.
 
     Returns:
         tuple: posterior, KL eigendecomposition info, ground truth quantities
@@ -36,7 +43,7 @@ def generate_pde_inv_prob_rep(key: PRNGKey,
 
     # GP prior on log permeability field
     meanf = gpjax.mean_functions.Constant(1.0)
-    kernel = PoweredExponential(lengthscale=0.3, variance=1.0, power=0.3, n_dims=1)
+    kernel = PoweredExponential(lengthscale=0.3, variance=0.3, power=1.0, n_dims=1)
     gp_prior = gpjax.gps.Prior(mean_function=meanf, kernel=kernel)
 
     kl_info, eig_info = karhunen_loeve(gp=gp_prior,
@@ -50,8 +57,8 @@ def generate_pde_inv_prob_rep(key: PRNGKey,
                                  kl_info=kl_info)
     
     # Simulate synthetic observations
-    true_param, true_observable, observation = simulate_observation(key, prior, forward_model, noise_cov)
-    ground_truth = (true_param, true_observable)
+    true_param, ground_truth, observation = simulate_observation(key, prior, forward_model, noise_cov)
+    ground_truth = tuple(x.squeeze() for x in ground_truth)
 
     # Construct likelihood and posterior
     likelihood = PDELikelihood(observation=observation,
@@ -59,7 +66,7 @@ def generate_pde_inv_prob_rep(key: PRNGKey,
                                forward_model=forward_model)
     posterior = Posterior(prior, likelihood)
 
-    return posterior, eig_info, ground_truth
+    return posterior, gp_prior, eig_info, ground_truth
     
 
 def simulate_observation(key: PRNGKey,
@@ -79,13 +86,14 @@ def simulate_observation(key: PRNGKey,
     key_param, key_obs = jr.split(key, 2)
     noise_cov_tril = jnp.linalg.cholesky(noise_cov, upper=False)
 
-    true_kl_coefs = prior.sample(key_param)
-    true_observable = forward_model(true_kl_coefs)
+    true_kl_coefs = prior.sample(key_param).ravel()
+    ground_truth = forward_model.forward_with_intermediates(true_kl_coefs)
+    true_observable = ground_truth[3]
     observation = _sample_gaussian_tril(key_obs,
                                         m=true_observable,
-                                        L=noise_cov_tril)
+                                        L=noise_cov_tril).ravel()
     
-    return true_kl_coefs.ravel(), true_observable.ravel(), observation.ravel()
+    return true_kl_coefs, ground_truth, observation
 
 
 def karhunen_loeve(gp: gpjax.gps.Prior, 
@@ -100,7 +108,7 @@ def karhunen_loeve(gp: gpjax.gps.Prior,
     """
 
     # Discretized prior
-    prior_grid = gp(settings.xgrid)
+    prior_grid = gp(settings.xgrid.reshape(-1, 1))
 
     # Eigendecomposition - scale to account for grid spacing
     K = settings.dx * prior_grid.covariance_matrix
@@ -113,7 +121,7 @@ def karhunen_loeve(gp: gpjax.gps.Prior,
     eigvecs = eigvecs[:, idx]
 
     # Approximation using truncated basis Phi (n_grid, D)
-    Phi = eigvecs[:n_kl_modes] * jnp.sqrt(eigvals[:n_kl_modes])
+    Phi = eigvecs[:,:n_kl_modes] * jnp.sqrt(eigvals[:n_kl_modes])
     m = prior_grid.mean
 
     return (m, Phi), (eigvals, eigvecs)
@@ -124,7 +132,7 @@ class PDESettings:
     n_grid: int = 100
     left_flux: float = -1.0
     rightbc: float = 1.0
-    source_wells: Array = jnp.array([0.2, 0.4, 0.6, 0.8])
+    source_wells: Array = field(default_factory=lambda: jnp.array([0.2, 0.4, 0.6, 0.8]))
     source_strength: float = 0.8
     source_width: float = 0.05
 
@@ -183,6 +191,7 @@ class ForwardModel:
         self.dim_obs = self.obs_locations.shape[0]
         self.m = m.ravel()
         self.Phi = Phi
+        self.obs_grid = pde_settings.xgrid[obs_locations]
 
     def __call__(self, param: ArrayLike):
         """ Parameter-to-observable map as a function of the KL coefficients
@@ -197,6 +206,15 @@ class ForwardModel:
         pde_solution = self.log_field_to_pde_solution(log_field)
         observable = self.pde_solution_to_observable(pde_solution)
         return observable
+    
+    def forward_with_intermediates(self, param: ArrayLike):
+        """
+        Same as __call__() but returns intermediate quantities.
+        """
+        log_field = self.param_to_log_field(param)
+        pde_solution = self.log_field_to_pde_solution(log_field)
+        observable = self.pde_solution_to_observable(pde_solution)
+        return param, log_field, pde_solution, observable
 
     def param_to_log_field(self, param: ArrayLike):
         """
@@ -232,7 +250,7 @@ class ForwardModel:
         """
         pde_solution = jnp.atleast_2d(pde_solution)
         idx = self.obs_locations
-        return pde_solution[[idx], :]
+        return pde_solution[:, [idx]]
     
 
 class PDELikelihood:
@@ -282,3 +300,60 @@ class PDELikelihood:
         return _gaussian_log_density_tril(x=self.observation,
                                             m=observable,
                                             L=self.noise_cov_tril)
+    
+
+def plot_inverse_problem_setup(key: PRNGKey, 
+                               posterior: Posterior,
+                               ground_truth: tuple,
+                               alpha: float = 0.3, 
+                               n_samp: int = 0):
+    key_trajectories, key_monte_carlo = jr.split(key)
+
+    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 4))
+    axs = axs.ravel()
+    forward_model = posterior.likelihood.forward_model
+    xgrid = forward_model.pde_settings.xgrid
+    true_param, true_log_field, true_pde_solution, true_observable = ground_truth
+
+    # intervals
+    Phi = forward_model.Phi
+    mean_log = forward_model.m
+    scale_log = jnp.sqrt(jnp.diag(Phi @ Phi.T))
+    field_prior = LogNormal(mean_log, scale_log)
+
+    sd = jnp.sqrt(field_prior.variance)
+    lower = field_prior.mean - 2 * sd
+    upper = field_prior.mean + 2 * sd
+
+    # Plot prior over permeability field / true field
+    ax = axs[0]
+    ax.fill_between(xgrid, lower, upper, alpha=alpha, color='lightblue', label='+/- 2 sd')
+    ax.plot(xgrid, field_prior.mean, color='gray', label='mean')
+    ax.plot(xgrid, jnp.exp(true_log_field), color='black', label='true')
+
+    if n_samp > 0:
+        samp = field_prior.sample(key_trajectories, (n_samp,))
+        ax.plot(xgrid, samp.T, alpha=0.7, color='grey')
+    ax.legend()
+
+    # Plot ground truth and prior predictive
+    n_mc = 1000
+    log_field_samp = jnp.log(field_prior.sample(key_monte_carlo, (n_mc,)))
+    solution_samp = forward_model.log_field_to_pde_solution(log_field_samp)
+    prior_pred_mean = jnp.mean(solution_samp, axis=0)
+    prior_pred_sd = jnp.std(solution_samp, axis=0)
+    prior_pred_lower = prior_pred_mean - 2 * prior_pred_sd
+    prior_pred_upper = prior_pred_mean + 2 * prior_pred_sd
+
+    ax = axs[1]
+    ax.fill_between(xgrid, prior_pred_lower, prior_pred_upper, alpha=alpha, color='lightblue', label='+/- 2 sd')
+    ax.plot(xgrid, prior_pred_mean, color='gray', label='mean')
+    ax.plot(xgrid, true_pde_solution, color='black', label='true solution')
+    ax.plot(forward_model.obs_grid, true_observable, 'ro', label='true observable')
+    if n_samp > 0:
+        prior_predictive_samp = forward_model.log_field_to_pde_solution(jnp.log(samp))
+        ax.plot(xgrid, prior_predictive_samp.T, alpha=0.7, color='grey')
+    ax.legend()
+
+    fig.tight_layout()
+    return fig, ax
