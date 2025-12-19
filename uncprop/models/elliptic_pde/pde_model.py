@@ -1,21 +1,14 @@
 # experiments/elliptic_pde/pde_model.py
 """
 JAX implementation of 1-D diffusion steady-state finite-difference solver.
-
-This module provides:
- - get_discrete_source: source term in JAX
- - solve_pde: JAX implementation of the finite-difference solver
- - solve_pde_vmap: vectorized solver across the k-field (first axis)
- - test_compare_two_ks: test that compares JAX outputs to the original NumPy implementation
 """
 
 from __future__ import annotations
-import numpy as np
 
 import jax
 import jax.numpy as jnp
 
-Array = jax.Array | np.ndarray
+from uncprop.custom_types import Array
 
 
 def solve_pde(xgrid: Array,
