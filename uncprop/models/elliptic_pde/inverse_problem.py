@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 import gpjax
 from gpjax.kernels.stationary import PoweredExponential
-from numpyro.distributions import LogNormal
+from numpyro.distributions import MultivariateNormal, LogNormal
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
 from uncprop.core.inverse_problem import Prior, Posterior
@@ -43,7 +43,7 @@ def generate_pde_inv_prob_rep(key: PRNGKey,
 
     # GP prior on log permeability field
     meanf = gpjax.mean_functions.Constant(1.0)
-    kernel = PoweredExponential(lengthscale=0.3, variance=0.3, power=1.0, n_dims=1)
+    kernel = PoweredExponential(lengthscale=0.5, variance=6.0**2, power=1.0, n_dims=1)
     gp_prior = gpjax.gps.Prior(mean_function=meanf, kernel=kernel)
 
     kl_info, eig_info = karhunen_loeve(gp=gp_prior,
@@ -250,8 +250,7 @@ class ForwardModel:
         """
         pde_solution = jnp.atleast_2d(pde_solution)
         idx = self.obs_locations
-        return pde_solution[:, [idx]]
-    
+        return jnp.atleast_2d(pde_solution[:,idx])
 
 class PDELikelihood:
     """ Likelihood map wrapping around the forward model
@@ -296,15 +295,16 @@ class PDELikelihood:
         Returns:
             (n,) array of the log-likelihood evaluations at each observable.
         """
-        observable = jnp.atleast_2d(observable)
+        predicted_observable = jnp.atleast_2d(observable)
         return _gaussian_log_density_tril(x=self.observation,
-                                            m=observable,
-                                            L=self.noise_cov_tril)
+                                          m=predicted_observable,
+                                          L=self.noise_cov_tril)
     
 
 def plot_inverse_problem_setup(key: PRNGKey, 
                                posterior: Posterior,
                                ground_truth: tuple,
+                               observation: Array,
                                alpha: float = 0.3, 
                                n_samp: int = 0):
     key_trajectories, key_monte_carlo = jr.split(key)
@@ -318,8 +318,10 @@ def plot_inverse_problem_setup(key: PRNGKey,
     # intervals
     Phi = forward_model.Phi
     mean_log = forward_model.m
-    scale_log = jnp.sqrt(jnp.diag(Phi @ Phi.T))
+    cov_log = Phi @ Phi.T
+    scale_log = jnp.sqrt(jnp.diag(cov_log))
     field_prior = LogNormal(mean_log, scale_log)
+    log_field_prior = MultivariateNormal(mean_log, cov_log + 1e-6 * jnp.identity(cov_log.shape[0]))
 
     sd = jnp.sqrt(field_prior.variance)
     lower = field_prior.mean - 2 * sd
@@ -332,13 +334,13 @@ def plot_inverse_problem_setup(key: PRNGKey,
     ax.plot(xgrid, jnp.exp(true_log_field), color='black', label='true')
 
     if n_samp > 0:
-        samp = field_prior.sample(key_trajectories, (n_samp,))
+        samp = jnp.exp(log_field_prior.sample(key_trajectories, (n_samp,)))
         ax.plot(xgrid, samp.T, alpha=0.7, color='grey')
     ax.legend()
 
     # Plot ground truth and prior predictive
     n_mc = 1000
-    log_field_samp = jnp.log(field_prior.sample(key_monte_carlo, (n_mc,)))
+    log_field_samp = log_field_prior.sample(key_monte_carlo, (n_mc,))
     solution_samp = forward_model.log_field_to_pde_solution(log_field_samp)
     prior_pred_mean = jnp.mean(solution_samp, axis=0)
     prior_pred_sd = jnp.std(solution_samp, axis=0)
@@ -349,7 +351,7 @@ def plot_inverse_problem_setup(key: PRNGKey,
     ax.fill_between(xgrid, prior_pred_lower, prior_pred_upper, alpha=alpha, color='lightblue', label='+/- 2 sd')
     ax.plot(xgrid, prior_pred_mean, color='gray', label='mean')
     ax.plot(xgrid, true_pde_solution, color='black', label='true solution')
-    ax.plot(forward_model.obs_grid, true_observable, 'ro', label='true observable')
+    ax.plot(forward_model.obs_grid, observation, 'ro', label='observation')
     if n_samp > 0:
         prior_predictive_samp = forward_model.log_field_to_pde_solution(jnp.log(samp))
         ax.plot(xgrid, prior_predictive_samp.T, alpha=0.7, color='grey')
