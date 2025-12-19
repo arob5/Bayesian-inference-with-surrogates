@@ -78,13 +78,16 @@ class DistributionFromDensity(Distribution):
     def __init__(self, 
                  log_dens: LogDensity, 
                  dim: int, 
-                 support: tuple[tuple, tuple] | None = None):
+                 support: tuple[ArrayLike, ArrayLike] | None = None):
         
         if not isinstance(log_dens, LogDensity):
             raise ValueError(f'DistributionFromDensity expects LogDensity, got {type(log_dens)}')
         if not isinstance(dim, int):
             raise ValueError(f'DistributionFromDensity expects integer dimension, got {type(dim)}')
         
+        if support is None:
+            support = (-jnp.inf, jnp.inf)
+
         self._dim = dim
         self._support = support
         self._log_density = log_dens

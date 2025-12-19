@@ -63,6 +63,7 @@ dependencies = [
     { name = "jaxlib" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "ott-jax" },
     { name = "seaborn" },
 ]
 
@@ -81,6 +82,7 @@ requires-dist = [
     { name = "jaxlib", specifier = ">=0.5.0" },
     { name = "matplotlib", specifier = ">=3.7.1" },
     { name = "numpy", specifier = ">=2.0.0" },
+    { name = "ott-jax", specifier = ">=0.6.0" },
     { name = "seaborn", specifier = ">=0.12.2" },
 ]
 provides-extras = ["docs"]
@@ -297,6 +299,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/fa/6d96a0978d19e17b68d634497769987b16c8f4cd0a7a05048bec693caa6b/decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360", size = 56711, upload-time = "2025-02-24T04:41:34.073Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a", size = 9190, upload-time = "2025-02-24T04:41:32.565Z" },
+]
+
+[[package]]
+name = "equinox"
+version = "0.13.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jax" },
+    { name = "jaxtyping" },
+    { name = "typing-extensions" },
+    { name = "wadler-lindig" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/17/96a3b61a80c63c75974bd84318cee2818a23d60628e77fb6ed00eb623a69/equinox-0.13.2.tar.gz", hash = "sha256:509ad744ff99b7c684d45230d6890f9e78eac1a556d7a06db1eff664a3cac74f", size = 139386, upload-time = "2025-10-09T10:15:39.595Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/ce/c3bc53bdda6edb050859939a8e91e206123f96f50906e7ba7c027c6c535f/equinox-0.13.2-py3-none-any.whl", hash = "sha256:bc1ee687e4841945d8b776664403839639a05e2f2c02c1da353ff3386e0e43b0", size = 179235, upload-time = "2025-10-09T10:15:37.991Z" },
 ]
 
 [[package]]
@@ -690,6 +707,21 @@ wheels = [
 ]
 
 [[package]]
+name = "lineax"
+version = "0.0.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "equinox" },
+    { name = "jax" },
+    { name = "jaxtyping" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6f/75/6ad88863640c6213887c8928aef406713ecfa3c61808c563b9a3f2bf0673/lineax-0.0.8.tar.gz", hash = "sha256:bb2778066b8882acc88ff569d8e415bc5aa387f751b14ae262c9f9607d7f25bb", size = 45304, upload-time = "2025-03-27T17:38:54.421Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/a9/2d8d6002eb124e79f7c9ee2311b62f35289fc7e75ee0bbfbe5a4c7295bb9/lineax-0.0.8-py3-none-any.whl", hash = "sha256:1bd21d6c41afda233769d1c1096329ee75181825c9136be65c92b41f6daa1ddb", size = 68045, upload-time = "2025-03-27T17:38:53.394Z" },
+]
+
+[[package]]
 name = "markdown-it-py"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1001,6 +1033,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/26/0a/6cda861d9a9df6681126128c4f8417b692c4e8fbff2d9f643fc99c716679/orbax_checkpoint-0.11.30.tar.gz", hash = "sha256:5395e9fc80b750ee3644ee19f969923c7e3c83369133da5ea256a86d9bb838a6", size = 402806, upload-time = "2025-11-27T07:58:52.736Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/2c/cbfb3e42fbfc2c6b5615d07b922ecb6113f1b0ec8fc4ffd0f370d8cbd82b/orbax_checkpoint-0.11.30-py3-none-any.whl", hash = "sha256:56b15d07af7a4ff655f18d219de850d86944b1552e5143e81f5b15480f240a46", size = 598455, upload-time = "2025-11-27T07:58:51.548Z" },
+]
+
+[[package]]
+name = "ott-jax"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jax" },
+    { name = "jaxopt" },
+    { name = "lineax" },
+    { name = "numpy" },
+    { name = "optax" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/46/a45f351fcfaa456a42bc318d7ee8641ff4cef758aace295ae4a27459ac3a/ott_jax-0.6.0.tar.gz", hash = "sha256:86fda8aea68a6c29c989b1be2fc8bc7e5344e6353d3e486a3edbc36364b07483", size = 233876, upload-time = "2025-11-04T18:09:27.942Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/78/0f66915250058498915b3944ac7eccb0da5ce1f5984664fbb6a448cf73db/ott_jax-0.6.0-py3-none-any.whl", hash = "sha256:89d7ee73ae105a56385b66a43e9acd5ae070e66d991efc56047ab47cc756f3e6", size = 309666, upload-time = "2025-11-04T18:09:26.097Z" },
 ]
 
 [[package]]

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 import jax.numpy as jnp
+import jax.random as jr
+from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -20,7 +22,11 @@ from collections.abc import Sequence, Callable, Mapping
 from jax.scipy.special import logsumexp
 from jax.lax import cumlogsumexp
 
-from uncprop.custom_types import Array, ArrayLike
+from ott.geometry import grid as ott_grid
+from ott.solvers.linear import sinkhorn
+from ott.problems.linear import linear_problem
+
+from uncprop.custom_types import Array, ArrayLike, PRNGKey
 from uncprop.core.inverse_problem import Distribution
 from uncprop.utils.plot import smart_subplots
 
@@ -62,6 +68,7 @@ class Grid:
         self.n_points_per_dim = n_points_per_dim
         self.dx = dx
         self.dim_names = dim_names
+        self.coords = coords
         self.grid_arrays = grid_arrays
         self.flat_grid = flat_grid
 
@@ -117,6 +124,42 @@ class Grid:
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
+    def plot_kde(self, samples: Array, **kwargs):
+        if self.n_dims == 2:
+            return self._plot_2d_kde(samples, **kwargs)
+        else:
+            raise NotImplementedError(f'No plot_kde() method defined for grid with n_dims = {self.n_dims}')
+
+    def _plot_2d_kde(self, samples: Array, contours: bool = False, **kwargs):
+        assert self.n_dims == 2
+
+        # Fit KDE and evaluate on grid
+        kde = gaussian_kde(samples.T)
+        zz = kde(self.flat_grid.T).reshape(self.shape)
+
+        fig, ax = plt.subplots()
+
+        low, high = self.low, self.high
+        im = ax.imshow(
+            zz,
+            origin='lower',
+            extent=(low[0], high[0], low[1], high[1]),
+            aspect='auto',
+        )
+
+        if contours:
+            xx, yy = self.grid_arrays
+            ax.contour(xx, yy, zz, levels=10, linewidths=1.0)
+
+        ax.set_xlim(low[0], high[0])
+        ax.set_ylim(low[1], high[1])
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+
+        fig.colorbar(im, ax=ax, label='Density')
+
+        return fig, ax
+
 
     def _plot_2d(self,
                  z: Array,
@@ -231,6 +274,38 @@ class DensityComparisonGrid:
             plot_vals = [jnp.exp(arr) for arr in plot_vals]
 
         return self.grid.plot(z=plot_vals, titles=dist_names, points=points, **kwargs)
+
+    def calc_wasserstein2(self, dist_name1, dist_name2, epsilon=None, **kwargs):
+        """
+        Discrete approximation of 2-Wasserstein using Sinkhorn.
+        """
+        densities = self.log_dens_norm_grid
+        p_dist = jnp.exp(densities[dist_name1])
+        q_dist = jnp.exp(densities[dist_name2])
+
+        geom = ott_grid.Grid(x=self.grid.coords, epsilon=epsilon)
+        prob = linear_problem.LinearProblem(geom, a=p_dist, b=q_dist)
+
+        solver = sinkhorn.Sinkhorn(**kwargs)
+        out = solver(prob)
+
+        print(out.converged)
+
+        return jnp.sqrt(out.primal_cost)
+    
+
+    def sample_from_grid(self, key: PRNGKey, dist_name: str, num_samples: int):
+
+        probs = jnp.exp(self.log_dens_norm_grid[dist_name])
+
+        idx = jr.choice(
+            key,
+            a=self.grid.n_points,
+            shape=(num_samples,),
+            p=probs,
+            replace=True,
+        )
+        return self.grid.flat_grid[idx]
 
 
 # -----------------------------------------------------------------------------
@@ -593,3 +668,75 @@ def plot_coverage_curve_reps(log_coverage: Array,
         axs[0].legend()
 
     return fig, axs
+
+
+def plot_2d_kde(samp, flat_grid, low, high, contours=True, gridsize=200):
+    """
+    Plot a 2D kernel density estimate as a heatmap, with optional contours.
+
+    Parameters
+    ----------
+    samp : array_like, shape (n, 2)
+        Samples from a 2D distribution.
+    low : array_like, shape (2,)
+        Lower bounds of the support (x_min, y_min).
+    high : array_like, shape (2,)
+        Upper bounds of the support (x_max, y_max).
+    contours : bool, default=True
+        Whether to overlay contour lines on the heatmap.
+    gridsize : int, default=200
+        Number of grid points per dimension used for the KDE evaluation.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    ax : matplotlib.axes.Axes
+        The created axes.
+    """
+    samp = np.asarray(samp)
+    low = np.asarray(low)
+    high = np.asarray(high)
+
+    if samp.ndim != 2 or samp.shape[1] != 2:
+        raise ValueError("samp must have shape (n, 2)")
+    if low.shape != (2,) or high.shape != (2,):
+        raise ValueError("low and high must have shape (2,)")
+
+    # Create evaluation grid
+    x = np.linspace(low[0], high[0], gridsize)
+    y = np.linspace(low[1], high[1], gridsize)
+    xx, yy = np.meshgrid(x, y)
+    grid = np.vstack([xx.ravel(), yy.ravel()])
+
+    # Fit KDE and evaluate on grid
+    kde = gaussian_kde(samp.T)
+    zz = kde(grid).reshape(gridsize, gridsize)
+
+    # Plot
+    fig, ax = plt.subplots()
+
+    im = ax.imshow(
+        zz,
+        origin="lower",
+        extent=(low[0], high[0], low[1], high[1]),
+        aspect="auto",
+    )
+
+    if contours:
+        ax.contour(
+            xx,
+            yy,
+            zz,
+            levels=10,
+            linewidths=1.0,
+        )
+
+    ax.set_xlim(low[0], high[0])
+    ax.set_ylim(low[1], high[1])
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+
+    fig.colorbar(im, ax=ax, label="Density")
+
+    return fig, ax

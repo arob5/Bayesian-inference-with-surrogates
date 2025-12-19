@@ -123,7 +123,7 @@ class SurrogateDistribution(ABC):
 
     @property
     @abstractmethod
-    def support(self) -> tuple[tuple, tuple] | None:
+    def support(self) -> tuple[ArrayLike, ArrayLike]:
         pass
 
     def log_density_from_pred(self, pred: PredDist) -> PredDist:
@@ -193,9 +193,13 @@ class LogDensGPSurrogate(SurrogateDistribution):
 
     def __init__(self, 
                  log_dens: GPJaxSurrogate, 
-                 support: tuple[tuple, tuple] | None = None):
+                 support: tuple[ArrayLike, ArrayLike] | None = None):
         if not isinstance(log_dens, GPJaxSurrogate):
             raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a GPJaxSurrogate, got {type(log_dens)}')
+        
+        if support is None:
+            support = (-jnp.inf, jnp.inf)
+
         self._surrogate = log_dens
         self._support = support
 
@@ -254,9 +258,13 @@ class LogDensClippedGPSurrogate(SurrogateDistribution):
     def __init__(self, 
                  log_dens: GPJaxSurrogate,
                  log_dens_upper_bound: Callable[[ArrayLike], Array],
-                 support: tuple[tuple, tuple] | None = None):
+                 support: tuple[ArrayLike, ArrayLike] | None = None):
         if not isinstance(log_dens, GPJaxSurrogate):
             raise ValueError(f'LogDensGPSurrogate requires `log_dens` to be a GPJaxSurrogate, got {type(log_dens)}')
+        
+        if support is None:
+            support = (-jnp.inf, jnp.inf)
+
         self._surrogate = log_dens
         self._log_dens_upper_bound = log_dens_upper_bound
         self._support = support

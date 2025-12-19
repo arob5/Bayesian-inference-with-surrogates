@@ -1,16 +1,27 @@
 # uncprop/models/vsem/experiment.py
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 import jax.random as jr
 
-from uncprop.custom_types import PRNGKey
+from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.utils.grid import Grid, DensityComparisonGrid
+from uncprop.core.inverse_problem import Posterior
 from uncprop.models.vsem.inverse_problem import generate_vsem_inv_prob_rep
-from uncprop.models.vsem.surrogate import fit_vsem_surrogate
 
+from uncprop.models.vsem.surrogate import (
+    fit_vsem_surrogate, 
+    VSEMPosteriorSurrogate, 
+    LogDensClippedGPSurrogate,
+)
+from uncprop.core.samplers import (
+    sample_distribution, 
+    mcmc_loop, 
+    init_rkpcn_kernel, 
+    _f_update_pcn_proposal,
+)
 
 class VSEMReplicate(Replicate):
     """
@@ -77,7 +88,7 @@ class VSEMReplicate(Replicate):
         self.grid = grid
         self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
 
-    def __call__(self, surrogate_tag: str, **kwargs):
+    def __call__(self, surrogate_tag: str, n_mcmc: int = 20_000, **kwargs):
         # Note that each time this is called for a particular instance will generate the same key_ep.
         key, key_ep = jr.split(self.key, 2)
         post = self.posterior
@@ -94,10 +105,33 @@ class VSEMReplicate(Replicate):
             'eup': surr.expected_density_approx(),
             'ep': surr.expected_normalized_density_approx(key_ep, grid=self.grid)
         }
-
         density_comparison = DensityComparisonGrid(grid=self.grid, distributions=dists)
+
+        # MCMC tests
+        mcmc_keys = jr.split(key, 4)
+        samp_exact, prop_cov = _run_mcmc_exact(mcmc_keys[0], post, n_mcmc)
+        initial_position_idx = jnp.argmax(density_comparison.log_dens_grid['ep'])
+        initial_position = density_comparison.grid.flat_grid[initial_position_idx]
+
+        mcmc_results = {
+            'exact': samp_exact,
+            'rkpcn0': _run_mcmc_rkpcn(mcmc_keys[1], post, surr, 
+                                      initial_position=initial_position, 
+                                      prop_cov=prop_cov,
+                                      n_samples=n_mcmc, 
+                                      rho=0.0),
+            # 'rkpcn90': _run_mcmc_rkpcn(mcmc_keys[2], post, surr, initial_position=initial_position, prop_cov=prop_cov, rho=0.90),
+            # 'rkpcn95': _run_mcmc_rkpcn(mcmc_keys[3], post, surr, initial_position=initial_position, prop_cov=prop_cov, rho=0.95),
+            'rkpcn99': _run_mcmc_rkpcn(mcmc_keys[3], post, surr, 
+                                       initial_position=initial_position, 
+                                       prop_cov=prop_cov,
+                                       n_samples=n_mcmc, 
+                                       rho=0.99),
+        }
+
         self.density_comparison = density_comparison
         self.coverage_results = self.density_comparison.calc_coverage(baseline='exact')
+        self.mcmc_results = mcmc_results
 
         return self
     
@@ -190,6 +224,79 @@ class VSEMExperiment(Experiment):
 # -----------------------------------------------------------------------------
 # Helper functions: plots / analysis
 # -----------------------------------------------------------------------------
+
+def _run_mcmc_exact(key: PRNGKey, posterior: Posterior, n_samples: int):
+    key_init_pos, key_samp = jr.split(key)
+    initial_position = posterior.prior.sample(key_init_pos).squeeze()
+
+    results = sample_distribution(key=key,
+                                  dist=posterior,
+                                  initial_position=initial_position,
+                                  n_samples=n_samples,
+                                  n_warmup=50_000,
+                                  thin_window=3)
+    
+    samp = results[0]
+    prop_cov = results[3]
+
+    return samp, prop_cov
+
+
+def _run_mcmc_rkpcn(key: PRNGKey,
+                    posterior: Posterior,
+                    surrogate_post: VSEMPosteriorSurrogate,
+                    initial_position: Array,
+                    prop_cov: Array,
+                    rho: float,
+                    n_samples: int):
+    
+    key_ker, key_samp = jr.split(key)    
+
+    # correctly enforce clipping operation and prior support
+    low, high = surrogate_post.support
+    upper_bound = lambda u: posterior.prior.log_density(u) + posterior.likelihood.log_density_upper_bound(u)
+
+    if isinstance(surrogate_post, LogDensClippedGPSurrogate):
+        def log_density(f, u):
+            u = jnp.atleast_2d(u)
+            upper = upper_bound(u)
+            lp = jnp.clip(f, max=upper)
+            lp = jnp.where(jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf)
+            return lp.squeeze()
+    else:
+        def log_density(f, u):
+            u = jnp.atleast_2d(u)
+            lp = f
+            lp = jnp.where(jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf)
+            return lp.squeeze()
+
+    # underlying GP model
+    gp = surrogate_post.surrogate
+
+    # settings for f update in sampler
+    class UpdateInfo(NamedTuple):
+        rho: float
+    f_update_info = UpdateInfo(rho=rho)
+
+    initial_state, kernel = init_rkpcn_kernel(key=key_ker,
+                                              log_density=log_density,
+                                              gp=gp,
+                                              initial_position=initial_position,
+                                              u_prop_cov=prop_cov,
+                                              f_update_fn=_f_update_pcn_proposal,
+                                              f_update_info=f_update_info)
+
+    # run sampler
+    n_burnin = 50_000
+    out = mcmc_loop(key=key_samp,
+                    kernel=kernel,
+                    initial_state=initial_state,
+                    num_samples=n_samples + n_burnin)
+
+    samp = out.position[n_burnin:]
+
+    return samp
+
 
 def load_results(out_dir: str | Path, subdir_names: list[str]):
     out_dir = Path(out_dir)
