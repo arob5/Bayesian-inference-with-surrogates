@@ -312,6 +312,15 @@ $\postDensNorm(\Par; \targetEm) = \postDens(\Par; \targetEm) / \normCst(\targetE
 emulator predictions can be computed relatively cheaply, the approximation $\postDens(\Par; \targetEm)$
 can now be fed to standard inference algorithms (e.g., MCMC). 
 
+\begin{remark}
+Throughout this article, we focus on the case where the target $\target$ is a deterministic function.
+This implies the observed simulation outputs $\target(\Par_{\designIdx})$ are noiseless, and hence 
+emulators commonly seek to (approximately) interpolate between design points.
+Many of the ideas here are also relevant to the stochastic case, including to the simulation-based
+inference setting where the likelihood takes the form of a black-box stochastic simulator. We discuss
+connections to these topics in \todo{add reference}.
+\end{remark}
+
 \subsection{Probabilistic Surrogates}
 In practice, fitting a highly accurate surrogate can be challenging, and the induced posterior approximation inherits 
 imperfections from the underlying emulator. This implies the concern that the surrogate-based posterior approximation
@@ -330,11 +339,12 @@ we focus on \textit{probabilistic surrogates}---models that provide predictions 
 distributions.
 
 \begin{remark}
-Conceptually, we typically think of the randomness in the predictive distribution as quantifying \textbf{epistemic uncertainty}, which in principle could be reduced, were it computationally feasible to evaluate 
+Conceptually, we typically think of the randomness in the predictive distribution as quantifying \textbf{epistemic uncertainty} \citep{epistemicAleatoric}, which in principle could be reduced, were it computationally feasible to evaluate 
 $\target$ at any given input. The predictive distribution may also quantify \textbf{aleatoric uncertainty}, 
 irreducible uncertainty stemming from the inability of any parameterization of the surrogate to exactly 
-represent the true target function. \citet{BurknerSurrogate} present a framework that incorporates both
-notions of uncertainty.
+represent the true target function. In the case that the target is stochastic, the predictive distribution will
+also model the aleatoric uncertainty due to the inherent randomness of the simulator.
+\citet{BurknerSurrogate} present a framework that incorporates both notions of uncertainty.
 \end{remark}
 
 \subsubsection{Definitions and Notation}
@@ -365,20 +375,28 @@ the above vectorized notation in the multi-output setting. We make clarifying re
 avoid ambiguity.
 
 \subsection{Common Surrogate Models}
-In this section, we highlight several popular surrogate models that fall 
+In this section, we highlight several popular models that fall under our definition of 
+\textit{probabilistic surrogate}.
 
 \subsubsection{Gaussian Processes}
-Gaussian processes (GPs) are widely used as surrogate models, boasting an extensive literature \todo[inline]{cite}. 
-The typical workflow consists of specifying a GP prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ over the target function $\target$, 
-with $\emMean(\cdot)$ and $\emKer(\cdot, \cdot)$ denoting the prior mean and covariance functions, respectively. The 
-defining property of a GP is that each of the finite-dimensional distributions is Gaussian 
+Gaussian processes (GPs) are widely used as surrogate models, with extensive applications in 
+response surface modeling for computer experiments 
+\citep{design_analysis_computer_experiments,SanterCompExp}, 
+black-box optimization \citep{reviewBayesOpt}, reliability 
+analysis \citep{contourEstimation,cole2021entropybased}, and parameter 
+calibration \citep{KOH,computerModelCalibrationReview}. For in-depth treatments, we refer to
+\citet{gramacy2020surrogates,gpML}.
+
+The typical workflow consists of specifying a GP prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ 
+over the target function $\target$, with $\emMean(\cdot)$ and $\emKer(\cdot, \cdot)$ denoting the prior 
+mean and covariance functions, respectively. The 
+defining property of a GP is that each of the finite-dimensional distributions are Gaussian 
 $\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$.
 
-Gaussian processes (GPs) have emerged as a canonical surrogate model, and provide the 
-basis for examples given throughout this review. GPs have been extensively applied in a
-wide variety of surrogate modeling tasks, including as emulators for solving Bayesian 
-inverse problems (e.g., \citet{GP_PDE_priors,VehtariParallelGP}). The Gaussian predictive distribution of a 
-GP facilitates many convenient closed-form computations. Extensions of the GP methodology
+
+
+
+Extensions of the GP methodology
 can produce more flexible emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
 GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
 typically yield predictions in the form of (infinite) mixtures of Gaussians.
