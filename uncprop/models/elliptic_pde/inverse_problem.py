@@ -7,12 +7,15 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
+from numpy.random import default_rng
+from scipy.stats import qmc
 
 import gpjax
 from gpjax.kernels.stationary import PoweredExponential
 from numpyro.distributions import MultivariateNormal, LogNormal
 
 from uncprop.custom_types import Array, ArrayLike, PRNGKey
+from uncprop.utils.other import _numpy_rng_seed_from_jax_key
 from uncprop.core.inverse_problem import Prior, Posterior
 from uncprop.core.surrogate import GPJaxSurrogate
 from uncprop.models.elliptic_pde.pde_model import get_discrete_source, solve_pde_vmap
@@ -174,6 +177,19 @@ class PDEPrior(Prior):
     
     def sample(self, key: PRNGKey, n: int = 1):
         return jr.normal(key, shape=(n, self.dim))
+    
+    def sample_lhc(self, key: PRNGKey, n: int = 1):
+        """Latin hypercube sample"""
+        rng_key = _numpy_rng_seed_from_jax_key(key)
+        rng = default_rng(seed=rng_key)
+        lhc = qmc.LatinHypercube(d=self.dim, rng=rng)
+
+        # Sample unit hypercube [0, 1)^d
+        samp = lhc.random(n=n)
+
+        # Scale based on Gaussian prior
+        samp = jax.scipy.stats.norm.ppf(samp)
+        return jnp.asarray(samp)
 
 
 class ForwardModel:

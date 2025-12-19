@@ -17,6 +17,7 @@ from jax.scipy.linalg import solve_triangular
 from scipy.stats import qmc
 
 from uncprop.custom_types import Array, PRNGKey
+from uncprop.utils.other import _numpy_rng_seed_from_jax_key
 from uncprop.utils.distribution import (
     _sample_gaussian_tril,
     _gaussian_log_density_tril,
@@ -402,6 +403,3 @@ def visualize_vsem_dgp(true_dgp: DataGeneratingProcess,
     ax.set_ylabel('observable')
 
     return fig, axs
-
-def _numpy_rng_seed_from_jax_key(key: PRNGKey) -> int:
-    return int(jr.randint(key, (), 0, 2**63 - 1))
