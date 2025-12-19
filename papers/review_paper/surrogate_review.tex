@@ -216,7 +216,7 @@ statistical models, this sequential computation renders MCMC infeasible when the
 \subsection{Bayesian Inverse Problems}
 The inference challenge posed by expensive posterior densities commonly arises in the Bayesian approach to 
 inverse problems \citep{Stuart_BIP}. In this setting, the observation $\obs$ typically corresponds to an 
-observable quantity from a complex physical system. The goal is to recover latent parameters of interest
+observable quantity associated with a complex physical system. The goal is to recover latent parameters of interest
 $\Par$ that gave rise to the observed data. The bulk of the modeling effort typically consists of constructing a
 mechanistic model $\fwd: \parSpace \to \obsSpace$ encoding domain knowledge, which describes the forward 
 process by which parameters produce observed quantities. We refer to $\fwd$ as the \textit{forward model}.
@@ -233,26 +233,25 @@ implying the likelihood
 \footnote{We utilize the weighted norm notation $\norm{x}^{2}_{A} \Def x^\top A^{-1}x$, where $A$ is a positive definite matrix.}
 \label{eq:Gaussian-likelihood}
 \end{equation}
-Observe that computing $\lik(\Par; \obs)$ (and thus $\postDens(\Par)$) requires the forward model evaluation $\fwd(\Par)$,
+Computing $\lik(\Par; \obs)$ (and thus $\postDens(\Par)$) requires the forward model evaluation $\fwd(\Par)$,
 which may involve running an expensive computer simulation (e.g., a numerical differential equation solver). Hence, in Bayesian
 inverse problems the posterior density $\postDens(\Par)$ is often a computationally expensive, and potentially black box 
 (i.e., difficult or impossible to differentiate), function. 
 
 \subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
-In modeling the Earth system, complex dynamical models are used to simulate future trajectories
+In modeling the Earth system, complex dynamical models are used to simulate trajectories
 of various physical processes, such as temperature trends and carbon fluxes
  \citep{ESM_modeling_2pt0,paramLSM,idealizedGCM,FATES_CES,CLMBayesianCalibration,FerEmulation}.
 These models often feature empirical parameters with unknown values that must be estimated from data.
 As a simple illustrative example, we consider the problem of parameter estimation for an ordinary 
 differential equation (ODE). While this example is simplified for clarity, the setup is structurally similar to many 
 inverse problems faced in practice, such as parameter estimation for land surface models \citep{paramLSM}. 
- 
 Consider a parameter-dependent initial value problem 
 \begin{align}
 \frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
 \end{align}
 describing the time evolution of $\dimState$ state variables 
-$\state(\Time, \Par) \Def \left[\indexState{\state}(\Time, \Par)\right]_{\stateIndex=1}^{\dimState}$
+$\state(\Time, \Par) \Def \left\{\indexState{\state}(\Time, \Par)\right\}_{\stateIndex=1}^{\dimState}$
 with dynamics depending on $\Par \in \parSpace$. As our focus will be on estimating these parameters 
 from observations, we consider the parameter-to-state map
 \begin{align}
@@ -293,7 +292,7 @@ also use ``emulator'' as a synonym, with ``emulate'' referring to the process of
 \end{remark}
 
 \subsection{Regression-Based Surrogates}
-While there is a vast literature on constructing bespoke surrogates that leverage the structure of a particular model, 
+While there is a vast literature on surrogates designed for specific model structures, 
 we instead focus on the broadly applicable strategy of learning regression-based emulators from black-box model 
 evaluations. Even within this class of surrogates, the regression modeling setup can vary widely, 
 with a key decision being the choice of response variable to approximate with the regression model. 
@@ -309,42 +308,64 @@ A regression-based surrogate is a regression model $\targetEm$ fit to training d
 $\{(\Par_{\designIdx}, \target(\Par_{\designIdx}))\}_{\designIdx=1}^{\Ndesign}$ constructed by evaluating the exact
 target map at a set of \textit{design points} $\design \Def \{\Par_{\designIdx}\}_{\designIdx=1}^{\Ndesign}$.
 Substituting the exact map with its emulator induces an approximation of the posterior density 
-$\postDensNorm(\Par; \targetEm) = \postDens(\Par; \targetEm) / \normCst(\targetEm)$. By eliminating the primary 
-computational bottleneck, the approximate unnormalized density $\postDens(\Par; \targetEm)$ can now be fed to 
-standard inference algorithms (e.g., MCMC).
+$\postDensNorm(\Par; \targetEm) = \postDens(\Par; \targetEm) / \normCst(\targetEm)$. Provided that the 
+emulator predictions can be computed relatively cheaply, the approximation $\postDens(\Par; \targetEm)$
+can now be fed to standard inference algorithms (e.g., MCMC). 
 
 \subsection{Probabilistic Surrogates}
 In practice, fitting a highly accurate surrogate can be challenging, and the induced posterior approximation inherits 
-imperfections from the underlying emulator. We argue that a Bayesian surrogate-based workflow should consist of
-two distinct steps to alleviate the problem of unquantified posterior approximation error: (1) when possible, refine the
-emulator by selecting new design points in a goal-oriented fashion; and (2) when the computational budget is exhausted, 
-construct a final posterior approximation that propagates the surrogate uncertainty. Both of these steps require access to 
-a notion of predictive uncertainty. For this reason, we focus on probabilistic surrogate models, which output predictions 
-in the form of probability distributions. 
+imperfections from the underlying emulator. This implies the concern that the surrogate-based posterior approximation
+can be both biased and overconfident. To address this fundamental challenge and mitigate the problem 
+of unquantified posterior approximation error, we argue that a Bayesian surrogate-based workflow should include
+the following two steps:
+\begin{enumerate}
+\item \textit{Active learning}: while computational resources allow, augment the emulator design with additional 
+runs of the simulator, targeting the design points with the greatest potential for improvement in the posterior
+approximation or an alternative downstream goal.
+\item \textit{Uncertainty propagation}: when the computational budget is exhausted, 
+construct a final posterior approximation that propagates the surrogate uncertainty. 
+\end{enumerate}
+Both of these steps require emulators that are equipped with a notion of predictive uncertainty. For this reason, 
+we focus on \textit{probabilistic surrogates}---models that provide predictions in the form of probability
+distributions.
 
-We write $\targetEm(\Par) \sim \emDist(\Par)$ to denote the predictive distribution
-at a particular input, and $\targetEm \sim \emDist$ to denote the functional distribution over emulator trajectories.
-Let $\emE$ denote expectation with respect to the predictive distribution, with $\emMean(\Par) \Def \emE[\targetEm(\Par)]$ and
-$\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$ denoting the pointwise predictive mean and variance, respectively.
-For a finite set of inputs $\ParBatch \Def \{\Par_b\}_{b=1}^{\Nbatch} \subset \parSpace^{\Nbatch}$, we use the vectorized notation 
-$\target(\ParBatch) \Def [\target(\Par_1), \dots, \target(\Par_\Nbatch)]^\top$. In this case,
-$\targetEm(\ParBatch) \sim \emDist(\ParBatch)$ is the $\Nbatch$-dimensional joint predictive distribution with mean vector 
-$\emMean(\ParBatch)$ and covariance matrix $\emVar(\ParBatch)$.
+\begin{remark}
+Conceptually, we typically think of the randomness in the predictive distribution as quantifying \textbf{epistemic uncertainty}, which in principle could be reduced, were it computationally feasible to evaluate 
+$\target$ at any given input. The predictive distribution may also quantify \textbf{aleatoric uncertainty}, 
+irreducible uncertainty stemming from the inability of any parameterization of the surrogate to exactly 
+represent the true target function. \citet{BurknerSurrogate} present a framework that incorporates both
+notions of uncertainty.
+\end{remark}
 
-Plugging the random emulator in place of the true target map induces a distribution over downstream quantities such as 
-$\postDensNorm(\Par; \targetEm)$. When discussing these pushforward distributions we make use of the 
+\subsubsection{Definitions and Notation}
+Concretely, we adopt the viewpoint of an emulator as a random function $\targetEm \sim \emDist$ that
+approximates $\target$. Let $\emE$ denote expectation with respect to $\emDist$, and $\targetEm(\Par) \sim \emDist(\Par)$ the pointwise marginal predictive distributions of the surrogate. Supposing for the moment that
+the surrogate predicts a scalar-valued quantity, define the pointwise 
+predictive mean $\emMean(\Par) \Def \emE[\targetEm(\Par)]$ and variance 
+$\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$. While some emulators provide only pointwise predictions,
+many also encode correlational structure across input values. We thus denote 
+$\emKer(\Par, \Par^\prime) \Def \Cov_{\emDist}[\targetEm(\Par), \targetEm(\Par^\prime)]$, 
+noting that $\emKer(\Par, \Par) = \emVar(\Par)$.
+For a finite set of inputs $\ParBatch \Def \{\Par_b\}_{b=1}^{\Nbatch} \subset \parSpace^{\Nbatch}$, we use the 
+vectorized notation $\target(\ParBatch) \Def [\target(\Par_1), \dots, \target(\Par_\Nbatch)]^\top$, with
+$\targetEm(\ParBatch) \sim \emDist(\ParBatch)$ denoting the $\Nbatch$-dimensional joint predictive distribution with mean vector $\emMean(\ParBatch)$ and covariance matrix $\emVar(\ParBatch)$. Similarly, given another set
+$\ParBatch^\prime$ of $\Nbatch^\prime$ inputs, we write $\emKer(\ParBatch, \ParBatch^\prime)$ to denote
+the $\Nbatch \times \Nbatch^\prime$ cross covariance.
+
+Of central importance to this work is the manner in which emulator uncertainty propagates to downstream 
+quantities of interest. For example, plugging the random surrogate in place of the true target map induces a distribution over the posterior density $\postDensNorm(\Par; \targetEm)$. 
+When discussing such pushforward distributions we make use of the 
 notation $\postNormEm \Def \postDensNorm(\cdot; \targetEm)$ when explicit reference to the underlying emulator
 is not necessary.
 
-\begin{remark}
-Conceptually, we typically think of the randomness in the predictive distribution as quantifying \textbf{epistemic uncertainty},
-which in principle could be reduced, were it computationally feasible to evaluate $\target$ at any given input. The predictive 
-distribution may also quantify \textbf{aleatoric uncertainty}, irreducible uncertainty stemming from the inability of any 
-parameterization of the surrogate to exactly represent the true target function.
-\todo{cite Burkner here}
-\end{remark}
- 
+In many situations, the target $\target$ is a multi-valued function and hence $\targetEm$ is a multi-output
+model. In this case, $\emMean(\Par)$ and $\emVar(\Par)$ denote the predictive mean vector and 
+covariance matrix, respectively, over the different outputs. To avoid complicating notation, we do not extend
+the above vectorized notation in the multi-output setting. We make clarifying remarks when it is necessary to 
+avoid ambiguity.
+
 \subsection{Common Surrogate Models}
+In this section, we highlight several popular surrogate models that fall 
 
 \subsubsection{Gaussian Processes}
 Gaussian processes (GPs) are widely used as surrogate models, boasting an extensive literature \todo[inline]{cite}. 
