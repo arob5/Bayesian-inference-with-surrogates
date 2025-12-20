@@ -37,22 +37,16 @@ class BatchIndependentGP:
     
     def __init__(self, 
                  posteriors: Sequence[gpx.gps.AbstractPosterior],
-                 bijections: Sequence[Bijection],
                  dataset: Dataset):
         """
         Notes:
             dataset is the shared multi-output dataset across all GPs.
         """
-        
-        if len(posteriors) != len(bijections):
-            raise ValueError('posteriors and bijections length mismatch.')
-
         self.posteriors = posteriors
-        self.bijections = bijections
         self.dataset = dataset
 
     def get_batched_posterior(self):
-        return _stack_posteriors(self.posteriors, self.bijections)
+        return _stack_posteriors(self.posteriors)
 
     @property
     def out_dim(self):
@@ -65,7 +59,6 @@ class BatchedPosterior:
     graphdef: object
     params: object
     static_state: tuple
-    bijection: Sequence[Bijection]
 
 
 def get_batch_gp_from_template(gp_factory: SingleOutputGPFactory,
@@ -78,26 +71,23 @@ def get_batch_gp_from_template(gp_factory: SingleOutputGPFactory,
     """
     out_dim = dataset.y.shape[1]
     posteriors = []
-    bijections = []
     
     for i in range(out_dim):
         dataset_i = _get_single_output_dataset(dataset, i)
-        posterior_i, bijection_i = gp_factory(dataset_i)
+        posterior_i = gp_factory(dataset_i)
         posteriors.append(posterior_i)
-        bijections.append(bijection_i)
     
-    return BatchIndependentGP(posteriors, bijections, dataset)
+    return BatchIndependentGP(posteriors, dataset)
 
 
 def _get_single_output_dataset(dataset: Dataset, output_idx: int):
     return Dataset(dataset.X, dataset.y[:, [output_idx]])
 
 
-def _make_batched_loss(
-    batched: BatchedPosterior,
-    objective,
-    dataset: Dataset,
-):
+def _make_batched_loss(batched_posterior: BatchedPosterior,
+                       bijection: Bijection,
+                       objective,
+                       dataset: Dataset):
     """
     Notes:
     We want to be able to pass a different bijection to each GP.
@@ -108,33 +98,17 @@ def _make_batched_loss(
 
     X = dataset.X
     Y = dataset.y
-    bijections = batched.bijection  # Python list captured in closure
 
     def loss(params):
-        def single_loss(param, bijection, y):
-            param = transform(param, bijection)
-            model = nnx.merge(batched.graphdef, param, *batched.static_state)
+
+        def single_loss(param_constr, y):
+            model = nnx.merge(batched_posterior.graphdef, 
+                              param_constr, *batched_posterior.static_state)
             return objective(model, Dataset(X, y[:, None]))
 
-        return jax.vmap(single_loss)(
-            params,
-            bijections,
-            jnp.moveaxis(Y, 1, 0), # if Y is 2d, equivalent to Y.T
-        )
-
-
-    # def loss(params):
-    #     def single_loss(idx, param):
-    #         param = transform(param, bijections[idx])
-    #         model = nnx.merge(
-    #             batched.graphdef,
-    #             param,
-    #             *batched.static_state,
-    #         )
-    #         single_output_dataset = Dataset(X, Y[:, idx:idx+1])
-    #         return objective(model, single_output_dataset)
-
-    #     return jax.vmap(single_loss)(jnp.arange(Y.shape[1]), params)
+        # transform is already vectorized
+        params_constr = transform(params, bijection)
+        return jax.vmap(single_loss, in_axes=(0, 1))(params_constr, Y)
 
     return loss
 
@@ -142,6 +116,7 @@ def _make_batched_loss(
 def fit_batch_independent_gp(
     batch_gp: BatchIndependentGP,
     objective,
+    bijection: Bijection,
     optim: optax.GradientTransformation,
     *,
     num_iters: int = 100,
@@ -163,31 +138,28 @@ def fit_batch_independent_gp(
         Updated BatchIndependentGP with trained posteriors.
         Training loss history of shape (num_iters, Q).
     """
-    batched = batch_gp.get_batched_posterior()
-    params_uncstr = _params_to_unconstrained(batched.params, batched.bijection)
+    batch_post = batch_gp.get_batched_posterior()
+    params_unconstr = transform(batch_post.params, bijection, inverse=True)
 
     # initialize batch optimizer state and create batch loss
-    opt_state = jax.vmap(optim.init)(params_uncstr)
-    loss_fn = _make_batched_loss(batched, objective, batch_gp.dataset)
+    opt_state = jax.vmap(optim.init)(params_unconstr)
+    loss_fn = _make_batched_loss(batch_post, bijection, objective, batch_gp.dataset)
 
+    @jit
     def step(carry, _):
         params, opt_state = carry
         loss, grads = jax.value_and_grad(loss_fn)(params)
-
-        updates, opt_state = jax.vmap(optim.update)(
-            grads, opt_state, params
-        )
+        updates, opt_state = jax.vmap(optim.update)(grads, opt_state, params)
         params = jax.vmap(optax.apply_updates)(params, updates)
-
         carry = (params, opt_state)
         return carry, loss
 
     # Optimisation loop
     keys = jax.random.split(key, num_iters)
-    (params_uncstr, _), history = jax.lax.scan(step, (params_uncstr, opt_state), keys, unroll=unroll)
+    (params_unconstr, _), history = jax.lax.scan(step, (params_unconstr, opt_state), keys, unroll=unroll)
 
     # Parameters bijection to constrained space
-    params = _params_to_constrained(params_uncstr, batched.bijection)
+    params = transform(params_unconstr, bijection)
 
     # Reconstruct posteriors
     new_posteriors = []
