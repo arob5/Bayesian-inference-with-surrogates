@@ -65,36 +65,6 @@ class BatchIndependentGP:
             self.batch_posterior, self.tree_info = _posterior_list_to_batch(posterior_list)
             self.posterior_list = posterior_list
 
-    def predict(
-        self,
-        test_inputs: Array
-    ) -> MultivariateNormal:
-        """
-        Vectorized prediction for batch-independent GPs.
-
-        Args:
-            Xnew: Array of shape (M, d)
-
-        Returns:
-            numpyro.distributions.MultivariateNormal with:
-                batch_shape = (Q,)
-                event_shape = (M,)
-        """
-        # Predict using the batch posterior directly
-        predictive = self.batch_posterior.predict(Xnew)
-
-        # GPJax returns a distribution-like object with mean/cov
-        mean = predictive.mean()          # (Q, M)
-        cov = predictive.covariance()     # (Q, M, M)
-
-        return dist.MultivariateNormal(
-            loc=mean,
-            covariance_matrix=cov,
-        )
-
-
-
-
     @property
     def graphdef(self):
         return self.tree_info[0]

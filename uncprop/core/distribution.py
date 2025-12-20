@@ -109,15 +109,25 @@ class DistributionFromDensity(Distribution):
 # -----------------------------------------------------------------------------
 
 class GaussianFromNumpyro(Distribution):
+    """
+    Supports a single batch dimension, so this distribution represents either
+    a d-dim multivariate normal or a batch multivariate normal with batch size q.
+    In this case the mean is (q,d) and the covariance is (q,d,d).
+    """
+
     def __init__(self, dist: MultivariateNormal):
         assert isinstance(dist, MultivariateNormal)
-        assert dist.batch_shape == ()
+        assert len(dist.batch_shape) < 2
 
         self._numpyro_mvn = dist
 
     @property
     def dim(self) -> int:
         return self._numpyro_mvn.event_shape[0]
+
+    @property
+    def batch_shape(self) -> int:
+        return self._numpyro_mvn.batch_shape
 
     @property
     def support(self) -> tuple[ArrayLike, ArrayLike]:
@@ -128,24 +138,22 @@ class GaussianFromNumpyro(Distribution):
         return self._numpyro_mvn.sample(key, sample_shape=(n,))
 
     def log_density(self, x: ArrayLike) -> Array:
-        """ In: (n,d) or (d,), Out: (n,)"""
         return self._numpyro_mvn.log_prob(x)
     
     @property
     def mean(self) -> Array:
-        """ Return mean of shape (d,) """
+        """ Return mean of shape (d,) or (q,d)"""
         return self._numpyro_mvn.mean
 
     @property
     def cov(self) -> Array:
-        """ Return covariance matrix of shape (d,d) """
+        """ Return covariance matrix of shape (d,d) or (q,d,d)"""
         return self._numpyro_mvn.covariance_matrix
     
     @property
     def chol(self) -> Array:
         return self._numpyro_mvn.scale_tril
-
     @property
     def variance(self) -> Array:
-        """ Return marginal variances of shape (d,) """
-        return jnp.diag(self.cov)
+        """ Return marginal variances of shape (d,) or (q,d) """
+        return self._numpyro_mvn.variance

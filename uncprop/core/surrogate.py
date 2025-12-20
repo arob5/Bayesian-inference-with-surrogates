@@ -355,12 +355,16 @@ class GPJaxSurrogate(Surrogate):
         self.jitter = jitter
         self.gp = gp
         self.design = design
-        self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.value)
+        self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.get_value())
         self.Sigma_inv = self._compute_kernel_precision()
 
     @property
     def input_dim(self):
         return self.design.in_dim
+    
+    @property
+    def out_dim(self):
+        return self.design.y.shape[1]
     
     def __call__(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self.predict(input)
