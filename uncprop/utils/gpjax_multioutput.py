@@ -98,26 +98,31 @@ def _get_single_output_dataset(dataset: Dataset, output_idx: int):
     return Dataset(dataset.X, dataset.y[:, [output_idx]])
 
 
-def _make_batched_loss(batch_gp: BatchIndependentGP,
-                       objective,
-                       bijection: Bijection,
-                       dataset: Dataset):
+def _make_batched_loss_and_grad(batch_gp: BatchIndependentGP,
+                                objective,
+                                bijection: Bijection,
+                                dataset: Dataset):
     X = dataset.X
     Y = dataset.y
     graphdef = batch_gp.graphdef
     static = batch_gp.static_state
 
-    def loss(params):
+    # loss/grad for a single-output GP
+    def single_loss(param, y):
+        param_constr = transform(param, bijection)
+        model = nnx.merge(graphdef, param_constr, *static)
+        return objective(model, Dataset(X, y[:, None]))
+    
+    single_grad = jax.grad(single_loss, argnums=0)
 
-        def single_loss(param_constr, y):
-            model = nnx.merge(graphdef, param_constr, *static)
-            return objective(model, Dataset(X, y[:, None]))
+    # batched independent loss/gradient computation
+    loss_vect = jax.vmap(single_loss, in_axes=(0, 1))
+    grad_vect = jax.vmap(single_grad, in_axes=(0, 1))
+                         
+    def loss_and_grad(params):
+        return loss_vect(params, Y), grad_vect(params, Y)
 
-        # transform is already vectorized
-        params_constr = transform(params, bijection)
-        return jax.vmap(single_loss, in_axes=(0, 1))(params_constr, Y)
-
-    return loss
+    return loss_and_grad
 
 
 def fit_batch_independent_gp(
@@ -149,12 +154,12 @@ def fit_batch_independent_gp(
 
     # initialize batch optimizer state and create batch loss
     opt_state = jax.vmap(optim.init)(params_unconstr)
-    loss_fn = _make_batched_loss(batch_gp, objective, bijection, batch_gp.dataset)
+    loss_and_grad_fn = _make_batched_loss_and_grad(batch_gp, objective, bijection, batch_gp.dataset)
 
     @jit
     def step(carry, _):
         params, opt_state = carry
-        loss, grads = jax.value_and_grad(loss_fn)(params)
+        loss, grads = loss_and_grad_fn(params)
         updates, opt_state = jax.vmap(optim.update)(grads, opt_state, params)
         params = jax.vmap(optax.apply_updates)(params, updates)
         carry = (params, opt_state)
