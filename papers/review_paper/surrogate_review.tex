@@ -360,7 +360,8 @@ For a finite set of inputs $\ParBatch \Def \{\Par_b\}_{b=1}^{\Nbatch} \subset \p
 vectorized notation $\target(\ParBatch) \Def [\target(\Par_1), \dots, \target(\Par_\Nbatch)]^\top$, with
 $\targetEm(\ParBatch) \sim \emDist(\ParBatch)$ denoting the $\Nbatch$-dimensional joint predictive distribution with mean vector $\emMean(\ParBatch)$ and covariance matrix $\emVar(\ParBatch)$. Similarly, given another set
 $\ParBatch^\prime$ of $\Nbatch^\prime$ inputs, we write $\emKer(\ParBatch, \ParBatch^\prime)$ to denote
-the $\Nbatch \times \Nbatch^\prime$ cross covariance.
+the $\Nbatch \times \Nbatch^\prime$ cross covariance. In particular, we use the shorthand 
+$\{\design, \target(\design)\}$ for the design points and their corresponding outputs.
 
 Of central importance to this work is the manner in which emulator uncertainty propagates to downstream 
 quantities of interest. For example, plugging the random surrogate in place of the true target map induces a distribution over the posterior density $\postDensNorm(\Par; \targetEm)$. 
@@ -387,21 +388,53 @@ analysis \citep{contourEstimation,cole2021entropybased}, and parameter
 calibration \citep{KOH,computerModelCalibrationReview}. For in-depth treatments, we refer to
 \citet{gramacy2020surrogates,gpML}.
 
-The typical workflow consists of specifying a GP prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ 
-over the target function $\target$, with $\emMean(\cdot)$ and $\emKer(\cdot, \cdot)$ denoting the prior 
-mean and covariance functions, respectively. The 
-defining property of a GP is that each of the finite-dimensional distributions are Gaussian 
-$\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$.
-
-
-
-
+A typical GP-based workflow consists of specifying a prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ 
+over the target function $\target$, defined by a prior mean function $\emMean[0](\cdot)$ and 
+covariance function (i.e., kernel) $\emKer[0](\cdot, \cdot)$. The 
+defining property of a GP is its Gaussian finite-dimensional marginal distributions
+$\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$, 
+using the notation $\emKer[0](\ParBatch) \Def \emKer[0](\ParBatch, \ParBatch)$.
+Commonly, the hyperparameters defining the mean and kernel are optimized, though Bayesian 
+treatments are also possible. With fixed hyperparameters, the surrogate is constructed by 
+closed-form conditioning 
+$\targetEm \Def \targetEm[0] \given [\targetEm[0](\design) = \target(\design)] \sim \GP(\emMean, \emKer)$,
+with the conditional mean and kernel given by
+\begin{align}
+\emMean(\ParBatch) 
+&= \emMean[0](\ParBatch) + \emKer[0](\ParBatch, \design) \emKer[0](\design)^{-1}[\target(\design) - \emMean[0](\design)] \\
+\emKer(\ParBatch) 
+&= \emKer[0](\ParBatch) - \emKer[0](\ParBatch, \design) \emKer[0](\design)^{-1} \emKer[0](\design, \ParBatch).
+\nonumber
+\end{align}
+Thus, in their most basic form GPs surrogates are Gaussian predictors 
+$\targetEm(\ParBatch) \sim \Gaussian(\emMean(\ParBatch), \emKer(\ParBatch))$. 
 Extensions of the GP methodology
 can produce more flexible emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
 GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
 typically yield predictions in the form of (infinite) mixtures of Gaussians.
 
 \subsubsection{Polynomials}
+Surrogates that consist of linear combinations of polynomial basis functions are 
+commonly used in the engineering and applied math communities. 
+Polynomial chaos expansions (PCEs; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby 
+a polynomial basis is used to approximate a random variable $\func(\Par)$ as a function of
+a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
+\begin{equation}
+\targetEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
+\end{equation}
+where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
+to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
+approximate moments of $\func(\Par)$. More relevant to our context,
+the map $\targetEm[\dimBasis](\Par)$ can also be used as a surrogate for $\target(\Par)$.
+With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
+within our definition of probabilistic surrogates. We nonetheless highlight them here
+due to their popularity, the fact that they can be converted into random surrogates by 
+considering Bayesian treatments of the coefficients 
+\citep{BayesianPCE1,BayesianPCE2,BurknerSurrogate},
+and their use in conjunction with probabilistic surrogates (e.g., as the mean function
+of a GP; \citet{PCEGPWind,PCEGP2,SinsbeckNowak}). PCE surrogates have been
+employed to accelerate Bayesian inversion in various applications 
+\citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
 
 \subsubsection{Neural Networks}
 
