@@ -173,7 +173,7 @@ def fit_batch_independent_gp(
     params = transform(params_unconstr, bijection)
 
     # Return batch posterior with updated parameters
-    new_tree = nnx.merge(batch_gp.graphdef, params, batch_gp.static_state)
+    new_tree = nnx.merge(batch_gp.graphdef, params, *batch_gp.static_state)
     new_batch_gp = BatchIndependentGP(dataset=batch_gp.dataset, batch_posterior=new_tree)
 
     return new_batch_gp, history
