@@ -15,7 +15,7 @@ from jax import vmap, jit
 import optax
 import gpjax as gpx
 from gpjax import Dataset
-from gpjax.parameters import transform
+from gpjax.parameters import transform, DEFAULT_BIJECTION
 from gpjax.gps import AbstractPosterior
 from numpyro.distributions.transforms import Transform
 
@@ -23,9 +23,10 @@ Bijection = dict
 
 
 class SingleOutputGPFactory(Protocol):
-    def __call__(self, dataset: Dataset) -> tuple[AbstractPosterior, Bijection]:
+    def __call__(self, dataset: Dataset) -> AbstractPosterior:
         """ Returns a gpjax posterior for a single-output GP"""
         pass
+
 
 class BatchIndependentGP:
     """ Stores a set of independent gpjax GP posterior objects
@@ -61,6 +62,18 @@ class BatchIndependentGP:
             self.batch_posterior, self.tree_info = _posterior_list_to_batch(posterior_list)
             self.posterior_list = posterior_list
 
+    @property
+    def graphdef(self):
+        return self.tree_info[0]
+
+    @property
+    def params(self):
+        return self.tree_info[1]
+    
+    @property
+    def static_state(self):
+        return self.tree_info[2]
+
 
 def get_batch_gp_from_template(gp_factory: SingleOutputGPFactory,
                                dataset: Dataset) -> BatchIndependentGP:
@@ -86,21 +99,13 @@ def _get_single_output_dataset(dataset: Dataset, output_idx: int):
 
 
 def _make_batched_loss(batch_gp: BatchIndependentGP,
-                       bijection: Bijection,
                        objective,
+                       bijection: Bijection,
                        dataset: Dataset):
-    """
-    Notes:
-    We want to be able to pass a different bijection to each GP.
-    bijections are dictionaries so cannot be directly vectorized over,
-    so we instead capture the bijection in a closure and vmap over a 
-    static index.
-    """
-
     X = dataset.X
     Y = dataset.y
-    graphdef = batch_gp.tree_info[0]
-    static = batch_gp.tree_info[2]
+    graphdef = batch_gp.graphdef
+    static = batch_gp.static_state
 
     def loss(params):
 
@@ -118,9 +123,9 @@ def _make_batched_loss(batch_gp: BatchIndependentGP,
 def fit_batch_independent_gp(
     batch_gp: BatchIndependentGP,
     objective,
-    bijection: Bijection,
     optim: optax.GradientTransformation,
     *,
+    bijection: Bijection = DEFAULT_BIJECTION,
     num_iters: int = 100,
     key: jax.Array = jax.random.PRNGKey(0),
     unroll: int = 1,
@@ -140,12 +145,11 @@ def fit_batch_independent_gp(
         Updated BatchIndependentGP with trained posteriors.
         Training loss history of shape (num_iters, Q).
     """
-    params = batch_gp.tree_info[1]
-    params_unconstr = transform(params, bijection, inverse=True)
+    params_unconstr = transform(batch_gp.params, bijection, inverse=True)
 
     # initialize batch optimizer state and create batch loss
     opt_state = jax.vmap(optim.init)(params_unconstr)
-    loss_fn = _make_batched_loss(batch_gp, bijection, objective, batch_gp.dataset)
+    loss_fn = _make_batched_loss(batch_gp, objective, bijection, batch_gp.dataset)
 
     @jit
     def step(carry, _):
@@ -164,7 +168,7 @@ def fit_batch_independent_gp(
     params = transform(params_unconstr, bijection)
 
     # Return batch posterior with updated parameters
-    new_tree = nnx.merge(batch_gp.tree_info[0], params, batch_gp.tree_info[2])
+    new_tree = nnx.merge(batch_gp.graphdef, params, batch_gp.static_state)
     new_batch_gp = BatchIndependentGP(dataset=batch_gp.dataset, batch_posterior=new_tree)
 
     return new_batch_gp, history
@@ -224,30 +228,3 @@ def _posterior_list_to_batch(
     info = (graphdef, batch_params, static_state)
     
     return batch_post, info
-
-
-def _make_batch_gp_posterior(posteriors: Sequence[AbstractPosterior]) -> BatchedPosterior:
-    """Split and stack independent GP posteriors into a batched PyTree."""
-    graphdefs = []
-    params = []
-    static_states = []
-
-    for post in posteriors:
-        graphdef, param, *static = nnx.split(post, gpx.parameters.Parameter, ...)
-        graphdefs.append(graphdef)
-        params.append(param)
-        static_states.append(tuple(static))
-
-    # All graphdefs / static states must be identical
-    if not all(g == graphdefs[0] for g in graphdefs):
-        raise ValueError("All GP posteriors must share the same structure.")
-    if not all(s == static_states[0] for s in static_states):
-        raise ValueError("All GP static states must be identical.")
-    
-    graphdef = graphdefs[0]
-    static_state = static_states[0]
-
-    # transpose tree - values of parameter leaves are now batch values
-    batched_params = jax.tree.map(lambda *xs: jnp.stack(xs), *params)
-
-    return BatchedPosterior(graphdef, batched_params, static_state)
