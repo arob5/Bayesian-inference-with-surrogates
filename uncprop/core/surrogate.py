@@ -345,7 +345,8 @@ class GPJaxSurrogate(Surrogate):
         the gpjax jitter is added regardless; this provides an opportunity to increase the 
         jitter if necessary.
     """
-    def __init__(self, gp: ConjugatePosterior, 
+    def __init__(self, 
+                 gp: ConjugatePosterior, 
                  design: Dataset, 
                  jitter: float = 0.0):
         assert isinstance(gp, ConjugatePosterior)
@@ -356,21 +357,21 @@ class GPJaxSurrogate(Surrogate):
         self.gp = gp
         self.design = design
         self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.get_value())
-        self.Sigma_inv = self._compute_kernel_precision()
+        self.P = self._compute_kernel_precision()
 
     @property
     def input_dim(self):
         return self.design.in_dim
     
     @property
-    def out_dim(self):
+    def output_dim(self):
         return self.design.y.shape[1]
     
     def __call__(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self.predict(input)
     
     def predict(self, input: ArrayLike) -> GaussianFromNumpyro:
-        return self._predict_using_precision(input, self.Sigma_inv, self.design)
+        return self._predict_using_precision(input, self.P, self.design)
 
     def condition_then_predict(self, 
                                input: ArrayLike,
@@ -382,34 +383,45 @@ class GPJaxSurrogate(Surrogate):
         return self._predict_using_precision(input, Sigma_inv, design)
 
 
-    def _predict_using_precision(self, x: ArrayLike, Sigma_inv: Array, design: Dataset) -> GaussianFromNumpyro:
+    def _predict_using_precision(self, 
+                                 x: ArrayLike, 
+                                 P: Array, 
+                                 design: Dataset) -> GaussianFromNumpyro:
         """ 
         Compute posterior GP multivariate normal prediction at test inputs `x`, conditional
-        on dataset `design`. `Sigma_inv` is the inverse of the kernel matrix (including the noise covariance)
+        on dataset `design`. `P` is the inverse of the kernel matrix (including the noise covariance)
         evaluated at `design.X`.
 
         Predictions include the observation noise.
         """
         x = jnp.asarray(x).reshape(-1, self.input_dim)
-        x_design, y_design = design.X, design.y
-        k_test_design =  self.gp.prior.kernel.cross_covariance(x, x_design)
-        k_test_design_Sigma_inv = k_test_design @ Sigma_inv
+        X, Y = design.X, design.y
+        n, q = self.input_dim, self.output_dim
+        m = x.shape[0]
 
-        prior_mean_test = self.gp.prior.mean_function(x)
-        prior_mean_design = self.gp.prior.mean_function(x_design)
-        prior_cov_test = self.gp.prior.kernel.gram(x).to_dense()
+        meanf = self.gp.prior.mean_function
+        ker = self.gp.prior.kernel
 
-        pred_mean = prior_mean_test + k_test_design_Sigma_inv @ (y_design - prior_mean_design)
-        pred_cov = prior_cov_test - k_test_design_Sigma_inv @ k_test_design.T
-        n_pred = x.shape[0]
+        # Jitter matrices
+        JX = self._get_jitter_matrix(n)
+        Jx = self._get_jitter_matrix(m)
 
-        # add likelihood noise to latent Gaussian prediction. Following gpjax convention
-        # of also adding jitter here
-        pred_cov = pred_cov.reshape(n_pred, n_pred)
-        noisy_cov = pred_cov.at[jnp.diag_indices(n_pred)].add(self.sig2_obs + self.gp.jitter + self.jitter)
+        # prior means
+        mx = self._flip(meanf(x))
+        mX = self._flip(meanf(X))
 
-        gaussian_pred = MultivariateNormal(loc=pred_mean.squeeze(),
-                                           covariance_matrix=noisy_cov)
+        # prior covariances
+        kX = self._flip(ker.gram(X).to_dense()) + JX
+        kx = self._flip(ker.gram(x).to_dense())
+        kxX = self._flip(ker.cross_covariance(x, X))
+
+        # conditional mean and covariance
+        kxX_P = kxX @ P # (q, m, n)
+        m_pred = mx[..., None] + kxX_P @ (self._flip(Y) - mX)[..., None]
+        m_pred = m_pred.squeeze(-1)
+        k_pred = kx + Jx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
+
+        gaussian_pred = MultivariateNormal(m_pred, k_pred)
         return GaussianFromNumpyro(gaussian_pred)
 
 
@@ -468,7 +480,35 @@ class GPJaxSurrogate(Surrogate):
         Includes the observation noise covariance. 
         """
         X = self.design.X
-        Sigma = add_jitter(self.gp.prior.kernel.gram(X).to_dense(), self.gp.jitter + self.jitter + self.sig2_obs)
-        L_Sigma = jnp.linalg.cholesky(Sigma, upper=False)
-        Sigma_inv = cho_solve((L_Sigma, True), jnp.eye(Sigma.shape[0]))
-        return Sigma_inv
+        J = self._get_jitter_matrix(self.design.n)
+        ker = self.gp.prior.kernel
+
+        # Cholesky factor of kernel matrix
+        K = self._flip(ker.gram(X).to_dense()) + J
+        L = jnp.linalg.cholesky(K, upper=False)
+
+        # Invert kernel matrix
+        I = jnp.eye(K.shape[-1])
+        I = jnp.stack([I, I])
+        P = cho_solve((L, True), I)
+
+        return P
+
+
+    def _get_jitter_matrix(self, size: int):
+        q = self.output_dim
+
+        eye = jnp.eye(size)[None, :, :]
+        eye = jnp.broadcast_to(eye, (q, size, size))
+
+        composite_jitter = self.sig2_obs + self.gp.jitter + self.jitter
+        composite_jitter = jnp.broadcast_to(composite_jitter, (q,))
+
+        J = composite_jitter[:, None, None] * eye # (q, size, size), zeros everywhere except diagonal
+        return J
+    
+
+    @staticmethod
+    def _flip(a):
+        """Move last axis to the first position"""
+        return jnp.moveaxis(a, -1, 0)

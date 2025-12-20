@@ -16,7 +16,7 @@ import optax
 import gpjax as gpx
 from gpjax import Dataset
 from gpjax.parameters import transform, DEFAULT_BIJECTION
-from gpjax.gps import AbstractPosterior
+from gpjax.gps import ConjugatePosterior
 from numpyro.distributions.transforms import Transform
 from numpyro.distributions import MultivariateNormal
 
@@ -26,7 +26,7 @@ Bijection = dict
 
 
 class SingleOutputGPFactory(Protocol):
-    def __call__(self, dataset: Dataset) -> AbstractPosterior:
+    def __call__(self, dataset: Dataset) -> ConjugatePosterior:
         """ Returns a gpjax posterior for a single-output GP"""
         pass
 
@@ -46,8 +46,8 @@ class BatchIndependentGP:
     
     def __init__(self,
                  dataset: Dataset,
-                 posterior_list: Sequence[AbstractPosterior] | None = None,
-                 batch_posterior: AbstractPosterior | None = None):
+                 posterior_list: Sequence[ConjugatePosterior] | None = None,
+                 batch_posterior: ConjugatePosterior | None = None):
         """
         Notes:
             dataset is the shared multi-output dataset across all GPs.
@@ -182,7 +182,7 @@ def fit_batch_independent_gp(
     return new_batch_gp, history
 
 
-def _posterior_batch_to_list(posterior_batch, dim_out) -> tuple[Sequence[AbstractPosterior], tuple]:
+def _posterior_batch_to_list(posterior_batch, dim_out) -> tuple[Sequence[ConjugatePosterior], tuple]:
     """
     dim_out is the number of outputs in the multioutput GP (i.e., the length of
     the batch dimension).
@@ -201,13 +201,13 @@ def _posterior_batch_to_list(posterior_batch, dim_out) -> tuple[Sequence[Abstrac
 
 
 def _posterior_list_to_batch(
-        posterior_list: Sequence[AbstractPosterior]
-) -> tuple[AbstractPosterior, tuple]:
+        posterior_list: Sequence[ConjugatePosterior]
+) -> tuple[ConjugatePosterior, tuple]:
     """Split and stack independent GP posteriors into a batched PyTree.
     
     Returns:
         tuple:
-            - batch posterior: gpjax AbstractPosterior with batch parameters
+            - batch posterior: gpjax ConjugatePosterior with batch parameters
             - info: tuple with graphdef, batch_params, static that can be combined to 
                     form the batch posterior using nnx.merge.
     """
