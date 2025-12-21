@@ -379,6 +379,9 @@ class GPJaxSurrogate(Surrogate):
         """
         Condition on new design points, then predict using conditioned GP.
         """        
+        # Not yet generalized to batch setting
+        assert self.output_dim == 1
+
         Sigma_inv, design = self._update_kernel_precision(given)
         return self._predict_using_precision(input, Sigma_inv, design)
 
@@ -406,20 +409,34 @@ class GPJaxSurrogate(Surrogate):
         JX = self._get_jitter_matrix(n)
         Jx = self._get_jitter_matrix(m)
 
-        # prior means
+        # prior means - gpjax mean always returns (n, q)
         mx = self._flip(meanf(x))
         mX = self._flip(meanf(X))
 
-        # prior covariances
-        kX = self._flip(ker.gram(X).to_dense()) + JX
-        kx = self._flip(ker.gram(x).to_dense())
-        kxX = self._flip(ker.cross_covariance(x, X))
+        # prior covariances - gpjax squeezes in q=1 case
+        kX = ker.gram(X).to_dense()
+        kx = ker.gram(x).to_dense()
+        kxX = ker.cross_covariance(x, X)
+
+        # q is static - safe to jit
+        if q == 1:
+            kX = self._promote_to_batch(kX) + JX
+            kx = self._promote_to_batch(kx)
+            kxX = self._promote_to_batch(kxX)
+        else:
+            kX = self._flip(kX) + JX
+            kx = self._flip(kx)
+            kxX = self._flip(kxX)
 
         # conditional mean and covariance
         kxX_P = kxX @ P # (q, m, n)
         m_pred = mx[..., None] + kxX_P @ (self._flip(Y) - mX)[..., None]
         m_pred = m_pred.squeeze(-1)
         k_pred = kx + Jx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
+
+        if q == 1:
+            m_pred = m_pred.squeeze(0)
+            k_pred = k_pred.squeeze(0)
 
         gaussian_pred = MultivariateNormal(m_pred, k_pred)
         return GaussianFromNumpyro(gaussian_pred)
@@ -433,13 +450,17 @@ class GPJaxSurrogate(Surrogate):
         the newly added points). `given` is either a gpjax `Dataset` containing the 
         new input/output pairs or a tuple (Xnew, ynew) containing the same information.
         """
+
+        # Not yet generalized to batch setting
+        assert self.output_dim == 1
+
         Xnew = given[0].reshape(-1, self.input_dim)
         ynew = given[1].reshape(-1, 1)
         new_dataset = self.design + Dataset(X=Xnew, y=ynew)
         
         # Partitioned matrix inverse updates.
         num_new_points = Xnew.shape[0]
-        Sigma_inv = self.Sigma_inv.copy()
+        Sigma_inv = self.P.squeeze(0) # since we are assuming q=1 here
         Xcurr = self.design.X.copy()
 
         for i in range(num_new_points):
@@ -447,7 +468,8 @@ class GPJaxSurrogate(Surrogate):
             Sigma_inv = self._update_single_point_kernel_precision(Sigma_inv, Xcurr, xnew)
             Xcurr = jnp.vstack([Xcurr, xnew])
 
-        return Sigma_inv, new_dataset
+        # bring back batch dimension
+        return Sigma_inv[None, ...], new_dataset
     
 
     def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
@@ -456,6 +478,10 @@ class GPJaxSurrogate(Surrogate):
         single conditioning point xnew is added. X is the current conditioning 
         set and xnew is the new point to add.
         """
+
+        # Not yet generalized to batch setting
+        assert self.output_dim == 1
+
         xnew = xnew.reshape(1, -1) # (1, 1)
         knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
         Kinv_knm = Sigma_inv @ knm # (n, 1)
@@ -479,17 +505,19 @@ class GPJaxSurrogate(Surrogate):
         
         Includes the observation noise covariance. 
         """
+        n = self.design.n
         X = self.design.X
-        J = self._get_jitter_matrix(self.design.n)
+        J = self._get_jitter_matrix(n)
         ker = self.gp.prior.kernel
 
         # Cholesky factor of kernel matrix
         K = self._flip(ker.gram(X).to_dense()) + J
+        K = K.reshape(self.output_dim, n, n)
         L = jnp.linalg.cholesky(K, upper=False)
 
         # Invert kernel matrix
-        I = jnp.eye(K.shape[-1])
-        I = jnp.stack([I, I])
+        I = jnp.eye(n)
+        I = jnp.broadcast_to(I, (self.output_dim, n, n))
         P = cho_solve((L, True), I)
 
         return P
@@ -507,8 +535,11 @@ class GPJaxSurrogate(Surrogate):
         J = composite_jitter[:, None, None] * eye # (q, size, size), zeros everywhere except diagonal
         return J
     
-
     @staticmethod
     def _flip(a):
         """Move last axis to the first position"""
         return jnp.moveaxis(a, -1, 0)
+    
+    @staticmethod
+    def _promote_to_batch(a):
+        return a[None, ...]
