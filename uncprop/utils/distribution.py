@@ -127,27 +127,49 @@ def _sample_gaussian_tril(key: PRNGKey, L: Array, m: ArrayLike = 0.0, n: int = 1
     samp = L @ jr.normal(key, shape=(d,n))
     return jnp.asarray(m).ravel() + samp.T
 
-def _gaussian_log_density_tril(x, m, L):
-    """
-    x is an input batch of shape (d,) or (n, d).
-    m is the Gaussian mean, either (d,) or (n,d)
-    Output shape: (n,)
+def _gaussian_log_density_tril(x: Array, m: Array, L: Array):
+    """ Batched evaluation of log Gaussian density
+
+    Evaluates d-dimensional multivariate normal log density 
+    log N(x | m, L @ L.T), where x, m, and L can all
+    be batched over n values.
+
+    Args:
+        x: input points with shape (d,) or (n, d)
+        m: Gaussian mean with shape (d,) or (n, d)
+        L: Lower Cholesky factors, with shape (d, d) or (n, d, d).
+
+    Returns:
+        log density evaluations of shape (n,).
     """
     x = jnp.atleast_2d(x) - m
-    Linv_x = solve_triangular(L, x.T, lower=True)
-    mah2 = jnp.sum(Linv_x * Linv_x, axis=0)
-    log_det_term = _gaussian_log_det_term_tril(L)
+    d = x.shape[1]
+    L = jnp.broadcast_to(L, (x.shape[0], d, d))
+    Linv_x = solve_triangular(L, x, lower=True)  # (3, 2, 2) (3, 2)
+    mah2 = jnp.sum(Linv_x ** 2, axis=1)
+    log_det_term = _gaussian_log_det_term_tril(L) # (3,)
     return log_det_term - 0.5 * mah2
+
 
 def _gaussian_log_det_term_tril(L):
     """
     The log of the determinant term in the Gaussian density. 
     log{det(2*pi*C)^{-1/2}} = -0.5 * d * log(2*pi) - 0.5 * log{det(C)},
-    where C = LL^T. 
+    where C = LL^T.
 
-    This term also represents an upper bound on the log density.
+    Vectorized so that L can be (n, d, d), in which case the return value
+    is (n,). If argument is (d, d) then returns 0d array.
+
+    Notes:
+        This term also represents an upper bound on the log density.
     """
-    d = L.shape[0]
+    if L.ndim == 2:
+        L = L[None]
+
+    d = L.shape[-1]
     dim_times_two_pi = d * jnp.log(2.0 * jnp.pi)
-    log_det_cov = 2.0 * jnp.log(jnp.diag(L)).sum()
-    return -0.5 * (dim_times_two_pi + log_det_cov)
+    diag_vmap = jax.vmap(jnp.diag)
+    log_det_cov = 2.0 * jnp.log(diag_vmap(L)).sum(axis=1)
+    result = -0.5 * (dim_times_two_pi + log_det_cov)
+
+    return result.squeeze()

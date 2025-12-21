@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Protocol, TypeAlias
 from collections.abc import Callable
+
+import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import cho_solve
 
@@ -25,6 +27,7 @@ from uncprop.core.distribution import (
 from uncprop.utils.distribution import (
     clipped_gaussian_mean,
     log_clipped_lognormal_mean,
+    _gaussian_log_density_tril
 )
 
 # predictive distribution of a surrogate at set of inputs
@@ -184,6 +187,10 @@ class SurrogateDistribution(ABC):
         raise NotImplementedError
 
 
+# -----------------------------------------------------------------------------
+# Log-Density Surrogates
+# -----------------------------------------------------------------------------
+
 class LogDensGPSurrogate(SurrogateDistribution):
     """
     A SurrogateDistribution defined by a Gaussian log-density surrogate.
@@ -326,6 +333,101 @@ class LogDensClippedGPSurrogate(SurrogateDistribution):
         
         return DistributionFromDensity(log_dens=log_expected_dens,
                                        dim=gp.input_dim)
+
+
+# -----------------------------------------------------------------------------
+# Forward Model Surrogates
+# -----------------------------------------------------------------------------
+
+class FwdModelGaussianSurrogate(SurrogateDistribution):
+    """
+    A random distribution induced by a (potentially multi-output) GP pushed 
+    through a Gaussian likelihood.
+
+    Assumes the model:
+        pi(u; f) = pi_0(u) * N(y | f(u), C), f ~ GP(m, k)
+
+    If y is an (p,) array, then evaluating f(U) on a batch of m inputs should
+    produce a GaussianFromNumpyro with event shape (m,) and batch shape (p,).
+    This implies the mean/variance will be (p,m) and covariance/cholesky
+    will be (p,m,m).
+
+    Notes:
+        If the multi-output GP models correlation across outputs, at present
+        this correlation is not used in this class - for now treats all 
+        GPs as batch independent multioutput models.
+    """
+
+    def __init__(self,
+                 gp: GPJaxSurrogate,
+                 log_prior: Callable,
+                 y: Array,
+                 noise_cov_tril: Array,
+                 support: tuple[ArrayLike, ArrayLike] | None = None):
+        
+        if support is None:
+            support = (-jnp.inf, jnp.inf)
+
+        self._support = support
+        self._surrogate = gp
+        self.log_prior = log_prior
+        self.y = y
+        self.noise_cov_tril = noise_cov_tril
+
+    @property
+    def surrogate(self) -> Surrogate:
+        return self._surrogate
+
+    @property
+    def dim(self) -> int:
+        return self.surrogate.input_dim
+
+    @property
+    def support(self) -> tuple[ArrayLike, ArrayLike]:
+        return self._support
+
+    def expected_surrogate_approx(self) -> Distribution:
+        gp = self.surrogate
+        log_prior = self.log_prior
+        y = self.y
+        noise_cov_tril = self.noise_cov_tril
+
+        def logdensity(x):
+            m_x = gp(x).mean.T
+            log_prior_x = log_prior(x)
+            return log_prior_x + _gaussian_log_density_tril(y, m=m_x, L=noise_cov_tril)
+
+        return DistributionFromDensity(log_dens=logdensity,
+                                       dim=gp.input_dim,
+                                       support=self.support)
+    
+    
+    def expected_density_approx(self) -> Distribution:
+        """
+        The expected likelihood is:
+
+            E[N(y | f(u), C)] = N(y | m(u), C + k(u))
+        """
+        gp = self.surrogate
+        log_prior = self.log_prior
+        y = self.y
+        noise_cov_tril = self.noise_cov_tril
+
+        def logdensity(x):
+            pred = gp(x)
+            sd_x = pred.stdev.T # (n, p)
+            log_prior_x = log_prior(x)
+            L_x = noise_cov_tril[None] + jax.vmap(jnp.diag)(sd_x) # (n, p, p)
+            return log_prior_x + _gaussian_log_density_tril(y, m=pred.mean.T, L=L_x)
+
+        return DistributionFromDensity(log_dens=logdensity,
+                                       dim=gp.input_dim,
+                                       support=self.support)
+
+
+# -----------------------------------------------------------------------------
+# gpjax wrapper used for all GP surrogates
+# -----------------------------------------------------------------------------
 
 
 class GPJaxSurrogate(Surrogate):
