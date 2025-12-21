@@ -26,7 +26,7 @@ from uncprop.core.samplers import (
 class VSEMReplicate(Replicate):
     """
     Replicate in VSEM experiment:
-        - Randomly synthetic data/ground truth for specified inverse problem structure
+        - Randomly generate synthetic data/ground truth for specified inverse problem structure
         - Randomly samples design points and fits a log-posterior surrogate
         - Computes true posterior and surrogate-based approximations on 2d grid
     """
@@ -53,7 +53,7 @@ class VSEMReplicate(Replicate):
                  verbose: bool = True,
                  jitter: float = 0.0,
                  **kwargs):
-        key, key_inv_prob, key_surrogate = jr.split(key, 3)
+        key_inv_prob, key_surrogate = jr.split(key, 2)
         self.inverse_problem_settings['noise_cov_tril'] = noise_sd * jnp.identity(self.n_months)
         self.surrogate_settings['n_design'] = n_design
         self.surrogate_settings['verbose'] = verbose
@@ -88,9 +88,9 @@ class VSEMReplicate(Replicate):
         self.grid = grid
         self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
 
-    def __call__(self, surrogate_tag: str, n_mcmc: int = 20_000, **kwargs):
+    def __call__(self, key: PRNGKey, surrogate_tag: str, n_mcmc: int = 20_000, **kwargs):
         # Note that each time this is called for a particular instance will generate the same key_ep.
-        key, key_ep = jr.split(self.key, 2)
+        key, key_ep = jr.split(key, 2)
         post = self.posterior
         if surrogate_tag == 'gp':
             surr = self.surrogate_posterior_gp
@@ -113,20 +113,18 @@ class VSEMReplicate(Replicate):
         initial_position_idx = jnp.argmax(density_comparison.log_dens_grid['ep'])
         initial_position = density_comparison.grid.flat_grid[initial_position_idx]
 
+        rkpcn_settings = {'posterior': post,
+                          'surrogate_post': surr,
+                          'initial_position': initial_position,
+                          'n_samples': n_mcmc,
+                          'prop_cov': prop_cov}
+
         mcmc_results = {
             'exact': samp_exact,
-            'rkpcn0': _run_mcmc_rkpcn(mcmc_keys[1], post, surr, 
-                                      initial_position=initial_position, 
-                                      prop_cov=prop_cov,
-                                      n_samples=n_mcmc, 
-                                      rho=0.0),
-            # 'rkpcn90': _run_mcmc_rkpcn(mcmc_keys[2], post, surr, initial_position=initial_position, prop_cov=prop_cov, rho=0.90),
-            # 'rkpcn95': _run_mcmc_rkpcn(mcmc_keys[3], post, surr, initial_position=initial_position, prop_cov=prop_cov, rho=0.95),
-            'rkpcn99': _run_mcmc_rkpcn(mcmc_keys[3], post, surr, 
-                                       initial_position=initial_position, 
-                                       prop_cov=prop_cov,
-                                       n_samples=n_mcmc, 
-                                       rho=0.99),
+            'rkpcn0': _run_mcmc_rkpcn(key=mcmc_keys[1], rho=0.0, **rkpcn_settings),
+            'rkpcn90': _run_mcmc_rkpcn(key=mcmc_keys[2], rho=0.9, **rkpcn_settings),
+            'rkpcn95': _run_mcmc_rkpcn(key=mcmc_keys[3], rho=0.95, **rkpcn_settings),
+            'rkpcn99': _run_mcmc_rkpcn(key=mcmc_keys[4], rho=0.99, **rkpcn_settings),
         }
 
         self.density_comparison = density_comparison

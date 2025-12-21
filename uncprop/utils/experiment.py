@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import jax.random as jr
 from uncprop.custom_types import PRNGKey
 
@@ -69,7 +70,8 @@ class Experiment:
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
 
     def run_replicate(self, 
-                      idx: int, 
+                      idx: int,
+                      subdir: Path | None = None, 
                       setup_kwargs: dict | None = None,
                       run_kwargs: dict | None = None):
         print(f'Running replicate {idx}')
@@ -80,8 +82,14 @@ class Experiment:
             run_kwargs = {}
 
         key = self.replicate_keys[idx]
-        rep = self.Replicate(key=key, **setup_kwargs)
-        return rep(**run_kwargs)
+        key_init, key_run = jr.split(key, 2)
+
+        rep = self.Replicate(key=key_init, **setup_kwargs)
+        return rep(key=key_run,
+                   write_to_file=self.write_to_file,
+                   base_out_dir=subdir, 
+                   rep_idx=idx, 
+                   **run_kwargs)
     
     def save_results(self, subdir: Path, *args, **kwargs):
         print('No save_results() methods implemented.')
@@ -136,7 +144,7 @@ class Experiment:
 
         for rep_idx in range(self.num_reps):
             try:
-                rep_result = self.run_replicate(idx=rep_idx,
+                rep_result = self.run_replicate(idx=rep_idx, subdir=subdir,
                                                 setup_kwargs=setup_kwargs,
                                                 run_kwargs=run_kwargs)
                 results.append(rep_result)
@@ -157,4 +165,6 @@ class Experiment:
                         print(f'save_results() failed with error: {save_error}')
 
         print(f'{len(failed_reps)} of {self.num_reps} replicates failed.')
+        np.savetxt(subdir / 'failed_reps.txt', failed_reps, fmt='%d')
+
         return results, failed_reps
