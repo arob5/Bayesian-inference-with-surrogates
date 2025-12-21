@@ -385,6 +385,10 @@ class FwdModelGaussianSurrogate(SurrogateDistribution):
     @property
     def support(self) -> tuple[ArrayLike, ArrayLike]:
         return self._support
+    
+    @property
+    def noise_cov(self):
+        return self.noise_cov_tril @ self.noise_cov_tril.T
 
     def expected_surrogate_approx(self) -> Distribution:
         gp = self.surrogate
@@ -407,17 +411,23 @@ class FwdModelGaussianSurrogate(SurrogateDistribution):
         The expected likelihood is:
 
             E[N(y | f(u), C)] = N(y | m(u), C + k(u))
+
+        Notes:
+            The Cholesky factor for C + k(u) can be updated more efficiently using
+            rank one Cholesky updates, but for simplicity the full Cholesky is 
+            recomputed for now.
         """
         gp = self.surrogate
         log_prior = self.log_prior
         y = self.y
-        noise_cov_tril = self.noise_cov_tril
+        noise_cov = self.noise_cov
 
         def logdensity(x):
             pred = gp(x)
-            sd_x = pred.stdev.T # (n, p)
+            var_x = pred.variance.T # (n, p)
             log_prior_x = log_prior(x)
-            L_x = noise_cov_tril[None] + jax.vmap(jnp.diag)(sd_x) # (n, p, p)
+            C_x = noise_cov[None] + jax.vmap(jnp.diag)(var_x) # (n, p, p)
+            L_x = jnp.linalg.cholesky(C_x, upper=False)
             return log_prior_x + _gaussian_log_density_tril(y, m=pred.mean.T, L=L_x)
 
         return DistributionFromDensity(log_dens=logdensity,

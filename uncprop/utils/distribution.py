@@ -145,9 +145,9 @@ def _gaussian_log_density_tril(x: Array, m: Array, L: Array):
     x = jnp.atleast_2d(x) - m
     d = x.shape[1]
     L = jnp.broadcast_to(L, (x.shape[0], d, d))
-    Linv_x = solve_triangular(L, x, lower=True)  # (3, 2, 2) (3, 2)
+    Linv_x = solve_triangular(L, x, lower=True)
     mah2 = jnp.sum(Linv_x ** 2, axis=1)
-    log_det_term = _gaussian_log_det_term_tril(L) # (3,)
+    log_det_term = _gaussian_log_det_term_tril(L)
     return log_det_term - 0.5 * mah2
 
 
