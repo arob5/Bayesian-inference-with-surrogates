@@ -40,6 +40,8 @@ def construct_design(key: PRNGKey,
 
     Sample design input, then evaluate target function f to
     construct design outputs. Return design as gpjax Dataset object.
+    The target function should return with a (n,) or (n, q) array 
+    when evaluated at a batch of n points.
     """
     x_design = prior_sampler(key, n_design)
 
@@ -333,6 +335,7 @@ class GPJaxSurrogate(Surrogate):
     (1) automatically wrap gpjax Gaussian predictions as GaussianFromNumpyro objects,
         so they are valid Distributions.
     (2) implement an update method for fast GP conditioning at new points.
+    (3) support vectorized prediction for independent multioutput GPs.
 
     The `condition_then_predict()` method is written to return the conditional predictions
     without altering the current GP. This design is motivated by the primary use case in 
@@ -341,9 +344,11 @@ class GPJaxSurrogate(Surrogate):
     functionality is required.
 
     Notes:
-        `jitter` is a value added to the diagonal of any predictive covariance. Note that 
+        - `jitter` is a value added to the diagonal of any predictive covariance. Note that 
         the gpjax jitter is added regardless; this provides an opportunity to increase the 
         jitter if necessary.
+        - At present, the conditioning functionality is only implemented for single output
+          GPs. The other methods work for both single and multioutput models. 
     """
     def __init__(self, 
                  gp: ConjugatePosterior, 
@@ -399,7 +404,7 @@ class GPJaxSurrogate(Surrogate):
         """
         x = jnp.asarray(x).reshape(-1, self.input_dim)
         X, Y = design.X, design.y
-        n, q = self.input_dim, self.output_dim
+        n, q = X.shape[0], self.output_dim
         m = x.shape[0]
 
         meanf = self.gp.prior.mean_function
