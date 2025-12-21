@@ -54,10 +54,10 @@ class PDEReplicate(Replicate):
 
         # fit surrogate
         print('\tFitting surrogate')
-        design, surrogate, opt_history = fit_pde_surrogate(key=key_surrogate,
-                                                           posterior=posterior,
-                                                           n_design=n_design,
-                                                           design_method=design_method)
+        design, surrogate, batchgp, opt_history = fit_pde_surrogate(key=key_surrogate,
+                                                                    posterior=posterior,
+                                                                    n_design=n_design,
+                                                                    design_method=design_method)
         
         # surrogate-based posterior approximation
         posterior_surrogate = FwdModelGaussianSurrogate(gp=surrogate,
@@ -69,6 +69,7 @@ class PDEReplicate(Replicate):
         self.key = key
         self.posterior = posterior
         self.posterior_surrogate = posterior_surrogate
+        self.batchgp = batchgp
         self.ground_truth = ground_truth
         self.design = design
         self.opt_history = opt_history

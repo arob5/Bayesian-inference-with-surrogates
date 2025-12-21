@@ -49,9 +49,9 @@ def fit_pde_surrogate(key: PRNGKey,
                               f=posterior.likelihood.forward_model)
     
     # fit surrogate
-    surrogate, history = fit_batch_rff_gp(design, **fit_kwargs)
+    surrogate, batchgp, history = fit_batch_rff_gp(design, **fit_kwargs)
 
-    return design, surrogate, history
+    return design, surrogate, batchgp, history
 
 
 
@@ -79,4 +79,4 @@ def fit_batch_rff_gp(design: Dataset,
     surrogate = GPJaxSurrogate(gp=batchgp.batch_posterior,
                                design=design)
     
-    return surrogate, history
+    return surrogate, batchgp, history
