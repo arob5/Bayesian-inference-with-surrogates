@@ -250,6 +250,84 @@ from uncprop.core.surrogate import GPJaxSurrogate
 from uncprop.core.distribution import GaussianFromNumpyro
 
 
+def sample_approx_trajectory(basis_fn: Callable, 
+                             noise_realization: Array,
+                             surrogate: GPJaxSurrogate, 
+                             num_rff: int):
+    """ Generate a function representing a surrogate trajectory/sample path
+
+    The trajectory is batched such that it can represent multiple independent
+    trajectories of a batch of independent GPs. The notation used in the
+    function comments is:
+
+    n = number design points
+    q = number of output variables
+    b = total number of basis functions
+    t = number of trajectories being sampled
+
+    Phi and K are used to denote the RFF and canonical bases, respectively.
+    The trajectory can be evaluated at arbitrary batches of inputs, and m 
+    is used to denote the size of the input batch.
+
+    Args:
+        basis_fn:
+            function of the form returned by `_build_batch_basis_funcs()`.
+        noise_realization:
+            shape (n_traj, dim_batch, dim_basis), as returned by the distriution returned
+            by `_build_batch_basis_noise_dist()`.
+        surrogate:
+            GPJaxSurrogate instance
+        num_rff:
+            number of random Fourier features. Note that the dimension of the RFF basis
+            is twice this number.
+
+    Returns:
+        function representing multiple independent surrogate trajectories of a BatchIndependentGP.
+        The function can be evaluated at any inputs.
+    """
+
+    X = surrogate.design.X 
+    Y = surrogate.design.y # (n, q)
+
+    meanf = surrogate.gp.prior.mean_function
+    Y = Y - meanf(X)
+    
+    # separate into two noise sources
+    dim_rff_basis = 2 * num_rff
+    rff_weight = noise_realization[:, :, :dim_rff_basis] # (m, q, dim_rff)
+    likelihood_noise = noise_realization[:, :, dim_rff_basis:] # (m, q, n)
+
+    # basis functions evaluated at design points
+    Phi_X, _ = basis_fn(X) # (q, n, b_rff)
+    Phi_X_w = Phi_X[None] @ rff_weight[..., None]
+    Phi_X_w = Phi_X_w.squeeze(-1) # (t, q, n)
+
+    def trajectory(x: Array) -> Array:
+        """
+        input is shape (m, d) [m points in d dimensions]
+
+        Returns:
+            Array of shape (t, q, m), consisting of the t trajectories
+            of the batch of q independent GPs evaluated at the m 
+            input points.
+        """
+        Phi_x, K_x = basis_fn(x) # (q, m, b_rff), (q, m, n)
+        mx = meanf(x).T
+
+        Phi_x_w = Phi_x[None] @ rff_weight[..., None]
+        Phi_x_w = Phi_x_w.squeeze(-1) # (t, q, m)
+
+        # construct canonical weights
+        Y_term = Y.T[None] + likelihood_noise - Phi_X_w # (t, q, n)
+        canonical_term = K_x[None] @ Y_term[..., None]  # (t, q, m, 1)
+        zero_mean_result = Phi_x_w + canonical_term.squeeze(-1)   # (t, q, m)
+        result = mx[None] + zero_mean_result
+
+        return result
+    
+    return trajectory
+
+
 def _build_batch_basis_funcs(key: PRNGKey,
                              surrogate: GPJaxSurrogate,
                              batchgp: BatchIndependentGP,
@@ -267,7 +345,6 @@ def _build_batch_basis_funcs(key: PRNGKey,
     dim_out = batchgp.dim_out
     keys = jr.split(key, dim_out)
     posteriors = batchgp.posterior_list
-    batch_kernel = surrogate.gp.prior.kernel
 
     single_output_rff_funcs = [
         _build_fourier_features_fn(prior=post.prior, num_features=num_rff, key=k)
@@ -330,4 +407,3 @@ def _build_batch_basis_noise_dist(surrogate: GPJaxSurrogate,
 
     dist = MultivariateNormal(covariance_matrix=combined_cov)
     return GaussianFromNumpyro(dist)
-
