@@ -533,20 +533,18 @@ class GPJaxSurrogate(Surrogate):
         # prior covariances - gpjax squeezes in q=1 case
         kX = ker.gram(X).to_dense()
         kx = ker.gram(x).to_dense()
-        kxX = ker.cross_covariance(x, X)
 
         # q is static - safe to jit
         if q == 1:
             kX = self._promote_to_batch(kX) + JX
             kx = self._promote_to_batch(kx)
-            kxX = self._promote_to_batch(kxX)
         else:
             kX = self._flip(kX) + JX
             kx = self._flip(kx)
-            kxX = self._flip(kxX)
+
+        kxX_P, kxX = self._compute_kxX_P(x, P, design)
 
         # conditional mean and covariance
-        kxX_P = kxX @ P # (q, m, n)
         m_pred = mx[..., None] + kxX_P @ (self._flip(Y) - mX)[..., None]
         m_pred = m_pred.squeeze(-1)
         k_pred = kx + Jx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
@@ -557,6 +555,36 @@ class GPJaxSurrogate(Surrogate):
 
         gaussian_pred = MultivariateNormal(m_pred, k_pred)
         return GaussianFromNumpyro(gaussian_pred)
+
+
+    def _compute_kxX_P(self,
+                       x: ArrayLike, 
+                       P: Array, 
+                       design: Dataset):
+        """
+        Computes k(x, X) @ P, where X are the training inputs and
+        x are m test inputs. P is the inverse kernel matrix k(X)^{-1}.
+
+        Returns:
+            tuple, with:
+                kxX_P: (q, m, n)
+                kxX: (q, m, n)
+        """
+        ker = self.gp.prior.kernel
+        X = design.X
+        q = self.output_dim
+
+        kxX = ker.cross_covariance(x, X)
+
+        # q is static - safe to jit
+        if q == 1:
+            kxX = self._promote_to_batch(kxX)
+        else:
+            kxX = self._flip(kxX)
+
+        kxX_P = kxX @ P # (q, m, n)
+
+        return kxX_P, kxX
 
 
     def _update_kernel_precision(self, given: tuple[ArrayLike, ArrayLike]):

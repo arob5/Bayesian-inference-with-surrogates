@@ -20,7 +20,7 @@ from gpjax.gps import ConjugatePosterior
 from numpyro.distributions.transforms import Transform
 from numpyro.distributions import MultivariateNormal
 
-from uncprop.custom_types import Array
+from uncprop.custom_types import Array, PRNGKey
 
 Bijection = dict
 
@@ -236,3 +236,98 @@ def _posterior_list_to_batch(
     info = (graphdef, batch_params, static_state)
     
     return batch_post, info
+
+
+# -----------------------------------------------------------------------------
+# Helpers for approximate trajectory sampling with batch independent GPs
+#   Uses Matheron pathwise sampling approximation
+# -----------------------------------------------------------------------------
+
+import jax.random as jr
+from gpjax.gps import _build_fourier_features_fn
+
+from uncprop.core.surrogate import GPJaxSurrogate
+from uncprop.core.distribution import GaussianFromNumpyro
+
+
+def _build_batch_basis_funcs(key: PRNGKey,
+                             surrogate: GPJaxSurrogate,
+                             batchgp: BatchIndependentGP,
+                             num_rff: int):
+    """ Evaluate pathwise sampling basis functions at test inputs
+
+    This is partially a generalization of the gpjax function _build_fourier_features_fn 
+    to accept a BatchIndependentGP. However, it also returns the "canonical features"
+    to the RFF, as used in the Matheron/pathwise sampling approach. 
+
+    This is intended to be called one prior to running an inference algorithm. It should
+    not be jitted. Note that `surrogate` and `batchgp` should be in direct correspondence -
+    ideally this function would not require both arguments.
+    """
+    dim_out = batchgp.dim_out
+    keys = jr.split(key, dim_out)
+    posteriors = batchgp.posterior_list
+    batch_kernel = surrogate.gp.prior.kernel
+
+    single_output_rff_funcs = [
+        _build_fourier_features_fn(prior=post.prior, num_features=num_rff, key=k)
+        for post, k, in zip(posteriors, keys)
+    ]
+
+    def basis_fn(test_inputs: Array) -> tuple[Array, Array]:
+        """ Evaluates basis functions at test_inputs
+        Returns (dim_out, m, n_basis) where m is number of test points and n_basis is
+        the number of basis functions. Appends the RFF and canonical bases. Note that
+        the number of RFF basis functions is two times num_rff.
+        """
+        Phi_rff = jnp.stack([fn(test_inputs) for fn in single_output_rff_funcs])
+        Phi_canonical = surrogate._compute_kxX_P(test_inputs, surrogate.P, surrogate.design)
+
+        return Phi_rff, Phi_canonical
+
+    return basis_fn
+
+
+def _build_batch_basis_noise_dist(surrogate: GPJaxSurrogate,
+                                  batchgp: BatchIndependentGP,
+                                  num_rff: int) -> GaussianFromNumpyro:
+    """ Build Gaussian distribution driving noise in pathwise sampling
+
+    The Matheron pathwise sampling approach is driven by finite-dimensional
+    Gaussian noise. This includes the RFF weight and the noise term in the 
+    GP likelihood. This function returns a single multivariate normal
+    distribution that captures these two (independent) noise sources.
+
+    Notes:
+        - building a large Gaussian vector for this is not efficient, but is
+          done for convenience here with regards to use in the rk-pcn implemention,
+          which currently assumes a single Gaussian noise source.
+        - note that this does NOT return a distribution over the weights for the 
+          basis functions. The RFF portion of the distribution is the distribution
+          over the RFF weights. The canonical weights are a deterministic function
+          of the RFF weights and the GP likelihood noise term.
+    """
+    
+    dim_rff_basis = 2 * num_rff
+    dim_canonical_basis = surrogate.design.n
+    dim_batch = batchgp.dim_out
+
+    # rff weights: N(0, I)
+    I_rff = jnp.eye(dim_rff_basis)
+    rff_weight_cov = jnp.broadcast_to(I_rff, (dim_batch, dim_rff_basis, dim_rff_basis))
+
+    # noise in canonical portion: eps ~ N(0, sig2 * I)
+    I_can = jnp.eye(dim_canonical_basis)[None, :, :]
+    I_can = jnp.broadcast_to(I_can, (dim_batch, dim_canonical_basis, dim_canonical_basis))
+    sig2 = jnp.broadcast_to(surrogate.sig2_obs, (dim_batch,))
+    eps_cov = sig2[:, None, None] * I_can
+
+    # combined distribution has dimension dim_rff_basis + dim_canonical_basis
+    combined_dim = dim_rff_basis + dim_canonical_basis
+    combined_cov = jnp.zeros((dim_batch, combined_dim, combined_dim))
+    combined_cov = combined_cov.at[:, :dim_rff_basis, :dim_rff_basis].set(rff_weight_cov)
+    combined_cov = combined_cov.at[:, dim_rff_basis:, dim_rff_basis:].set(eps_cov)
+
+    dist = MultivariateNormal(covariance_matrix=combined_cov)
+    return GaussianFromNumpyro(dist)
+
