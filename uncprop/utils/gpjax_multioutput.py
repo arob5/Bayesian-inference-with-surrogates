@@ -288,6 +288,8 @@ def sample_approx_trajectory(basis_fn: Callable,
 
     X = surrogate.design.X 
     Y = surrogate.design.y # (n, q)
+    t, q, _ = noise_realization.shape
+    n = X.shape[0]
 
     meanf = surrogate.gp.prior.mean_function
     Y = Y - meanf(X)
@@ -302,6 +304,19 @@ def sample_approx_trajectory(basis_fn: Callable,
     Phi_X_w = Phi_X[None] @ rff_weight[..., None]
     Phi_X_w = Phi_X_w.squeeze(-1) # (t, q, n)
 
+    Y_term = Y.T[None] + likelihood_noise - Phi_X_w # (t, q, n)
+    # canonical_weights = surrogate.P[None] @ Y_term[..., None]
+    # canonical_weights = canonical_weights.squeeze(-1) # (t, q, n)
+
+    # Sigma = K + sigma^2 I (already implicit in P, but we need the operator)
+    Sigma = surrogate.prior_gram(X) + surrogate._get_jitter_matrix(X.shape[0]) # (q, n, n)
+
+    canonical_weights = jnp.linalg.solve(
+        jnp.broadcast_to(Sigma, (t, q, n, n)), 
+        Y_term[..., None]
+    ).squeeze(-1) # (t, q, n)
+    
+
     def trajectory(x: Array) -> Array:
         """
         input is shape (m, d) [m points in d dimensions]
@@ -311,15 +326,16 @@ def sample_approx_trajectory(basis_fn: Callable,
             of the batch of q independent GPs evaluated at the m 
             input points.
         """
-        Phi_x, K_x = basis_fn(x) # (q, m, b_rff), (q, m, n)
+        Phi_x, _ = basis_fn(x) # (q, m, b_rff), (q, m, n)
         mx = meanf(x).T
 
         Phi_x_w = Phi_x[None] @ rff_weight[..., None]
         Phi_x_w = Phi_x_w.squeeze(-1) # (t, q, m)
 
         # construct canonical weights
-        Y_term = Y.T[None] + likelihood_noise - Phi_X_w # (t, q, n)
-        canonical_term = K_x[None] @ Y_term[..., None]  # (t, q, m, 1)
+        kxX = surrogate.prior_cross_covariance(x, X) # (q, m, n)
+        canonical_term = kxX[None] @ canonical_weights[..., None] # (t, q, m, n) @ (t, q, n, 1)
+        # canonical_term = K_x[None] @ Y_term[..., None]  # (t, q, m, 1)
         zero_mean_result = Phi_x_w + canonical_term.squeeze(-1)   # (t, q, m)
         result = mx[None] + zero_mean_result
 
@@ -345,8 +361,6 @@ def _build_batch_basis_funcs(key: PRNGKey,
     dim_out = batchgp.dim_out
     keys = jr.split(key, dim_out)
     posteriors = batchgp.posterior_list
-    kernel_variances = surrogate.gp.prior.kernel.variance.get_value()
-    scaling_factor = jnp.sqrt(kernel_variances / num_rff)[:, None, None]
 
     single_output_rff_funcs = [
         _build_fourier_features_fn(prior=post.prior, num_features=num_rff, key=k)
@@ -359,8 +373,6 @@ def _build_batch_basis_funcs(key: PRNGKey,
         test points. Note that the number of RFF basis functions is two times num_rff.
         """
         Phi_rff = jnp.stack([fn(test_inputs) for fn in single_output_rff_funcs])
-        Phi_rff *= scaling_factor
-
         Phi_canonical, _ = surrogate._compute_kxX_P(test_inputs, surrogate.P, surrogate.design)
 
         return Phi_rff, Phi_canonical

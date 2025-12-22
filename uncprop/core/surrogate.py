@@ -487,6 +487,31 @@ class GPJaxSurrogate(Surrogate):
     def __call__(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self.predict(input)
     
+    def prior_gram(self, x: Array):
+        """
+        Exposes the gram() method of the prior kernel of the underlying GP.
+        Wraps so that the result always has a batch dimension in the 
+        first dimension. In addition converts to dense, rather than returning
+        a linear operator.
+        """
+        gram = self.gp.prior.kernel.gram(x).to_dense()
+
+        if self.output_dim == 1:
+            return self._promote_to_batch(gram)
+        else:
+            return self._flip(gram)
+
+    def prior_cross_covariance(self, x: Array, z: Array):
+        """
+        Same as prior_gram() except for cross covariance.
+        """
+        cross_cov = self.gp.prior.kernel.cross_covariance(x, z)
+
+        if self.output_dim == 1:
+            return self._promote_to_batch(cross_cov)
+        else:
+            return self._flip(cross_cov)
+
     def predict(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self._predict_using_precision(input, self.P, self.design)
 
@@ -518,9 +543,7 @@ class GPJaxSurrogate(Surrogate):
         X, Y = design.X, design.y
         n, q = X.shape[0], self.output_dim
         m = x.shape[0]
-
         meanf = self.gp.prior.mean_function
-        ker = self.gp.prior.kernel
 
         # Jitter matrices
         JX = self._get_jitter_matrix(n)
@@ -530,17 +553,9 @@ class GPJaxSurrogate(Surrogate):
         mx = self._flip(meanf(x))
         mX = self._flip(meanf(X))
 
-        # prior covariances - gpjax squeezes in q=1 case
-        kX = ker.gram(X).to_dense()
-        kx = ker.gram(x).to_dense()
-
-        # q is static - safe to jit
-        if q == 1:
-            kX = self._promote_to_batch(kX) + JX
-            kx = self._promote_to_batch(kx)
-        else:
-            kX = self._flip(kX) + JX
-            kx = self._flip(kx)
+        # prior covariances
+        kX = self.prior_gram(X) + JX
+        kx = self.prior_gram(x)
 
         kxX_P, kxX = self._compute_kxX_P(x, P, design)
 
@@ -574,14 +589,7 @@ class GPJaxSurrogate(Surrogate):
         X = design.X
         q = self.output_dim
 
-        kxX = ker.cross_covariance(x, X)
-
-        # q is static - safe to jit
-        if q == 1:
-            kxX = self._promote_to_batch(kxX)
-        else:
-            kxX = self._flip(kxX)
-
+        kxX = self.prior_cross_covariance(x, X)
         kxX_P = kxX @ P # (q, m, n)
 
         return kxX_P, kxX
