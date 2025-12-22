@@ -281,7 +281,7 @@ def _build_batch_basis_funcs(key: PRNGKey,
         the number of RFF basis functions is two times num_rff.
         """
         Phi_rff = jnp.stack([fn(test_inputs) for fn in single_output_rff_funcs])
-        Phi_canonical = surrogate._compute_kxX_P(test_inputs, surrogate.P, surrogate.design)
+        Phi_canonical, _ = surrogate._compute_kxX_P(test_inputs, surrogate.P, surrogate.design)
 
         return Phi_rff, Phi_canonical
 
