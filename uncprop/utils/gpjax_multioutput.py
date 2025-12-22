@@ -345,6 +345,8 @@ def _build_batch_basis_funcs(key: PRNGKey,
     dim_out = batchgp.dim_out
     keys = jr.split(key, dim_out)
     posteriors = batchgp.posterior_list
+    kernel_variances = surrogate.gp.prior.kernel.variance.get_value()
+    scaling_factor = jnp.sqrt(kernel_variances / num_rff)[:, None, None]
 
     single_output_rff_funcs = [
         _build_fourier_features_fn(prior=post.prior, num_features=num_rff, key=k)
@@ -353,11 +355,12 @@ def _build_batch_basis_funcs(key: PRNGKey,
 
     def basis_fn(test_inputs: Array) -> tuple[Array, Array]:
         """ Evaluates basis functions at test_inputs
-        Returns (dim_out, m, n_basis) where m is number of test points and n_basis is
-        the number of basis functions. Appends the RFF and canonical bases. Note that
-        the number of RFF basis functions is two times num_rff.
+        Returns (dim_out, m, n_basis_rff), (dim_out, m, n) where m is number of 
+        test points. Note that the number of RFF basis functions is two times num_rff.
         """
         Phi_rff = jnp.stack([fn(test_inputs) for fn in single_output_rff_funcs])
+        Phi_rff *= scaling_factor
+
         Phi_canonical, _ = surrogate._compute_kxX_P(test_inputs, surrogate.P, surrogate.design)
 
         return Phi_rff, Phi_canonical
