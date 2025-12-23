@@ -18,6 +18,7 @@ from numpyro.distributions import (
 )
 
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
+from uncprop.utils.gpjax_multioutput import BatchedStationaryKernel
 from uncprop.core.distribution import (
     Distribution, 
     DistributionFromDensity, 
@@ -455,6 +456,13 @@ class GPJaxSurrogate(Surrogate):
     method can easily be added to return an updated conditional GPJaxSurrogate when this
     functionality is required.
 
+    IMPORTANT: 
+        gpjax kernels do not correctly batch over kernel hyperparameters. This
+        class requires that the GP prior kernel inherit from BatchedStationaryKernel
+        to ensure proper batching. For now, we do not pose any such restrictions on
+        the mean function - the constant mean function returns (n, q) so we simply 
+        transpose. Not guaranteed that other mean functions follow this convention.
+
     Notes:
         - `jitter` is a value added to the diagonal of any predictive covariance. Note that 
         the gpjax jitter is added regardless; this provides an opportunity to increase the 
@@ -469,6 +477,7 @@ class GPJaxSurrogate(Surrogate):
         assert isinstance(gp, ConjugatePosterior)
         assert isinstance(design, Dataset)
         assert isinstance(gp.likelihood, GPJaxGaussianLikelihood)
+        assert isinstance(gp.prior.kernel, BatchedStationaryKernel)
 
         self.gp = gp
         self.design = design
@@ -493,31 +502,6 @@ class GPJaxSurrogate(Surrogate):
     
     def __call__(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self.predict(input)
-    
-    def prior_gram(self, x: Array):
-        """
-        Exposes the gram() method of the prior kernel of the underlying GP.
-        Wraps so that the result always has a batch dimension in the 
-        first dimension. In addition converts to dense, rather than returning
-        a linear operator.
-        """
-        gram = self.gp.prior.kernel.gram(x).to_dense()
-
-        if self.output_dim == 1:
-            return self._promote_to_batch(gram)
-        else:
-            return self._flip(gram)
-
-    def prior_cross_covariance(self, x: Array, z: Array):
-        """
-        Same as prior_gram() except for cross covariance.
-        """
-        cross_cov = self.gp.prior.kernel.cross_covariance(x, z)
-
-        if self.output_dim == 1:
-            return self._promote_to_batch(cross_cov)
-        else:
-            return self._flip(cross_cov)
 
     def predict(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self._predict_using_precision(input, self.P, self.design)
@@ -557,13 +541,17 @@ class GPJaxSurrogate(Surrogate):
         mX = self._flip(meanf(X))
 
         # prior covariances
-        kx = self.prior_gram(x) + self.jittered_noise_cov(m)
+        ker = self.gp.prior.kernel
+        kx = ker.gram(x).to_dense()
         kxX_P, kxX = self._compute_kxX_P(x, P, design)
 
         # conditional mean and covariance
         m_pred = mx[..., None] + kxX_P @ (Y - mX)[..., None]
         m_pred = m_pred.squeeze(-1)
         k_pred = kx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
+
+        # add observation noise to latent variance predictions
+        k_pred = k_pred + self.jittered_noise_cov(m)
 
         if q == 1:
             m_pred = m_pred.squeeze(0)
@@ -588,7 +576,7 @@ class GPJaxSurrogate(Surrogate):
         """
         X = design.X
 
-        kxX = self.prior_cross_covariance(x, X)
+        kxX = self.gp.prior.kernel.cross_covariance(x, X)
         kxX_P = kxX @ P # (q, m, n)
 
         return kxX_P, kxX
@@ -664,7 +652,7 @@ class GPJaxSurrogate(Surrogate):
         ker = self.gp.prior.kernel
 
         # Cholesky factor of kernel matrix
-        K = self.prior_gram(X) + self.jittered_noise_cov(n)
+        K = ker.gram(X).to_dense() + self.jittered_noise_cov(n)
         L = jnp.linalg.cholesky(K, upper=False)
 
         # Invert kernel matrix
@@ -714,12 +702,7 @@ class GPJaxSurrogate(Surrogate):
 
         return batch_diagonal_matrix
 
-
     @staticmethod
     def _flip(a):
         """Move last axis to the first position"""
         return jnp.moveaxis(a, -1, 0)
-    
-    @staticmethod
-    def _promote_to_batch(a):
-        return a[None, ...]
