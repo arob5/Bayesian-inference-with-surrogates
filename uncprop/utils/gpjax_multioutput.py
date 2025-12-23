@@ -17,12 +17,170 @@ import gpjax as gpx
 from gpjax import Dataset
 from gpjax.parameters import transform, DEFAULT_BIJECTION
 from gpjax.gps import ConjugatePosterior
+from gpjax.kernels import AbstractKernel
+from gpjax.kernels.computations import AbstractKernelComputation
+from gpjax.parameters import NonNegativeReal, PositiveReal
+
 from numpyro.distributions.transforms import Transform
 from numpyro.distributions import MultivariateNormal
 
-from uncprop.custom_types import Array, PRNGKey
+from uncprop.custom_types import Array, ArrayLike, PRNGKey
 
 Bijection = dict
+
+
+# ----------------------------------------------------------------------------
+# Batched kernels
+#
+#   gpjax does not natively support kernels batching over hyperparameters.
+#   As I found out the hard way, gpjax kernels will still run without error
+#   with batched parameters, but silently give the wrong result.
+#
+#   Here we define a batch kernel as a function k(x, y) that returns a 
+#   (q,) vector, where q is the batch size. BatchDenseKernelComputation
+#   does nothing more than take such a function and vectorize it to 
+#   return (q, n, m) when x, y have leading batch dimensions n and 
+#   m, respectively.
+#
+#   We then generalize gpjax's stationary kernels to support batched 
+#   hyperparameters, such that it can be used with 
+#   BatchDenseKernelComputation.
+# ----------------------------------------------------------------------------
+
+
+class BatchDenseKernelComputation(AbstractKernelComputation):
+    """
+    Dense kernel computation for vector-valued kernels; i.e., kernels
+    that return shape (q,) when evaluated at a single pair of points.
+    Batch dimension is always the leading dimension.
+
+    Notes: 
+        Identical to gpjax DenseKernelComputation but explicitly assumes
+        q-valued kernel, always returns 3d array, and moves batch index
+        to leading dimension.
+    """
+
+    def _cross_covariance(
+        self,
+        kernel,
+        x: Array,
+        y: Array,
+    ) -> Array:
+        """
+        For x (n,d) and y (m, d) returns (q, n, m). Note that even if kernel 
+        is scalar-valued, return shape will be (1, n, m).
+        """
+        x = jnp.atleast_2d(x)
+        y = jnp.atleast_2d(y)
+
+        kxy = vmap(lambda x: vmap(lambda y: kernel(x, y))(y))(x) # (n, m, b) or (n, m)
+
+        kxy = jnp.atleast_3d(kxy) # (n, m, b)
+        return jnp.moveaxis(kxy, -1, 0)
+
+
+def batched_squared_distance(x, y):
+    """
+    x, y: (..., D)
+    returns: (...)
+    """
+    return jnp.sum((x - y) ** 2, axis=-1)
+
+
+class BatchedStationaryKernel(AbstractKernel):
+    """
+    A batched version of gpjax's stationary kernel. To keep things simple,
+    we require users to specify the batch dimension q and input dimension
+    d. The lengthscale and variance parameters must be broadcastable to 
+    (q, d) and (q,), respectively.
+    """
+
+    def __init__(
+        self,
+        batch_dim: int,
+        input_dim: int, 
+        active_dims=None,
+        lengthscale: ArrayLike | nnx.Variable = 1.0,
+        variance: ArrayLike | nnx.Variable = 1.0,
+        compute_engine: AbstractKernelComputation = BatchDenseKernelComputation(),
+    ):
+        """Initializes the kernel.
+
+        Args:
+            active_dims: The indices of the input dimensions that the kernel operates on.
+            lengthscale: the lengthscale(s) of the kernel ℓ. If a scalar or an array of
+                length 1, the kernel is isotropic, meaning that the same lengthscale is
+                used for all input dimensions. If an array with length > 1, the kernel is
+                anisotropic, meaning that a different lengthscale is used for each input.
+            variance: the variance of the kernel σ.
+            n_dims: The number of input dimensions. If `lengthscale` is an array, this
+                argument is ignored.
+            compute_engine: The computation engine that the kernel uses to compute the
+                covariance matrix.
+        """
+
+        super().__init__(active_dims, input_dim, compute_engine)
+
+        lengthscale, variance = _validate_batch_kernel_params(
+            batch_dim=batch_dim,
+            input_dim=input_dim,
+            lengthscale=lengthscale,
+            variance=variance,
+        )
+
+        self.batch_dim = batch_dim
+        self.n_dims = input_dim
+        self.lengthscale: nnx.Variable = lengthscale
+        self.variance: nnx.Variable  = variance
+
+
+    def _scaled_squared_distance(self, x, y):
+        """
+        x, y: (..., D)
+        returns: (...)
+        """
+        x = self.slice_input(x)
+        y = self.slice_input(y)
+        return batched_squared_distance(x / self.lengthscale.value,
+                                        y / self.lengthscale.value)
+
+
+def _validate_batch_kernel_params(batch_dim, input_dim, lengthscale, variance):
+
+    # broadcast lengthscale shape
+    if isinstance(lengthscale, nnx.Variable):
+        val = lengthscale.get_value()
+        val = jnp.broadcast_to(val, (batch_dim, input_dim))
+        lengthscale.set_value(val)
+    else:
+        lengthscale = jnp.broadcast_to(lengthscale, (batch_dim, input_dim))
+        lengthscale = PositiveReal(lengthscale)
+
+
+    # broadcast variance shape
+    if isinstance(variance, nnx.Variable):
+        val = variance.get_value()
+        val = jnp.broadcast_to(val, (batch_dim,))
+        variance.set_value(val)
+    else:
+        variance = jnp.broadcast_to(variance, (batch_dim,))
+        variance = NonNegativeReal(variance)
+
+    return lengthscale, variance
+
+
+class BatchedRBF(BatchedStationaryKernel):
+    """
+    Generalization of gpjax RBF kernel that supports batched kernel
+    parameters. The kernel variance and lengthscales are (q,) and
+    (q, d) respectively.
+    """
+    name = "BatchedRBF"
+
+    def __call__(self, x, y):
+        sqdist = self._scaled_squared_distance(x, y)
+        return self.variance.get_value() * jnp.exp(-0.5 * sqdist)
+
 
 
 class SingleOutputGPFactory(Protocol):

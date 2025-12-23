@@ -470,10 +470,17 @@ class GPJaxSurrogate(Surrogate):
         assert isinstance(design, Dataset)
         assert isinstance(gp.likelihood, GPJaxGaussianLikelihood)
 
-        self.jitter = jitter
         self.gp = gp
         self.design = design
-        self.sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.get_value())
+
+        # jitter is sum of gp jitters and additional jitter
+        self.jitter = jnp.broadcast_to(jitter + gp.jitter, self.output_dim)
+
+        # ensure noise covariances are (q,) array
+        sig2_obs = jnp.square(self.gp.likelihood.obs_stddev.get_value())
+        self.sig2_obs = sig2_obs.reshape(self.output_dim)
+
+        # inverse kernel matrix
         self.P = self._compute_kernel_precision()
 
     @property
@@ -540,29 +547,23 @@ class GPJaxSurrogate(Surrogate):
         Predictions include the observation noise.
         """
         x = jnp.asarray(x).reshape(-1, self.input_dim)
-        X, Y = design.X, design.y
+        X, Y = design.X, self._flip(design.y)
         n, q = X.shape[0], self.output_dim
         m = x.shape[0]
-        meanf = self.gp.prior.mean_function
-
-        # Jitter matrices
-        JX = self._get_jitter_matrix(n)
-        Jx = self._get_jitter_matrix(m)
 
         # prior means - gpjax mean always returns (n, q)
+        meanf = self.gp.prior.mean_function
         mx = self._flip(meanf(x))
         mX = self._flip(meanf(X))
 
         # prior covariances
-        kX = self.prior_gram(X) + JX
-        kx = self.prior_gram(x)
-
+        kx = self.prior_gram(x) + self.jittered_noise_cov(m)
         kxX_P, kxX = self._compute_kxX_P(x, P, design)
 
         # conditional mean and covariance
-        m_pred = mx[..., None] + kxX_P @ (self._flip(Y) - mX)[..., None]
+        m_pred = mx[..., None] + kxX_P @ (Y - mX)[..., None]
         m_pred = m_pred.squeeze(-1)
-        k_pred = kx + Jx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
+        k_pred = kx - kxX_P @ jnp.transpose(kxX, axes=(0, 2, 1))
 
         if q == 1:
             m_pred = m_pred.squeeze(0)
@@ -585,9 +586,7 @@ class GPJaxSurrogate(Surrogate):
                 kxX_P: (q, m, n)
                 kxX: (q, m, n)
         """
-        ker = self.gp.prior.kernel
         X = design.X
-        q = self.output_dim
 
         kxX = self.prior_cross_covariance(x, X)
         kxX_P = kxX @ P # (q, m, n)
@@ -639,55 +638,83 @@ class GPJaxSurrogate(Surrogate):
         knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
         Kinv_knm = Sigma_inv @ knm # (n, 1)
         k_new_new = self.gp.prior.kernel.gram(xnew).to_dense().squeeze() # scalar
-        kappa = k_new_new + self.sig2_obs + self.gp.jitter + self.jitter - (knm.T @ Kinv_knm).squeeze() # scalar
+        kappa = k_new_new + self.sig2_obs + self.jitter - (knm.T @ Kinv_knm).squeeze() # scalar
         
         outer = Kinv_knm @ Kinv_knm.T  # (n,1) @ (1,n) -> (n,n)
         top_left= Sigma_inv + outer / kappa # (n,n)
         top_right = -Kinv_knm / kappa
         bottom_left = top_right.T
-        bottom_right = jnp.array([[1.0 / kappa]]) # (1,1)
+        bottom_right = jnp.array([[1.0 / kappa]]).reshape(1, 1) # (1,1)
 
-        top = jnp.hstack([top_left, top_right])       # shape (n, n+1)
+        top = jnp.hstack([top_left, top_right])           # shape (n, n+1)
         bottom = jnp.hstack([bottom_left, bottom_right])  # shape (1, n+1)
 
         return jnp.vstack([top, bottom]) # (n+1, n+1)
 
 
     def _compute_kernel_precision(self):
-        """ Inverse of the kernel matrix evaluated at the design points in self.design.X 
-        
-        Includes the observation noise covariance. 
+        """ 
+        Batch inverse of the prior kernel evaluated at self.design.X.
+        Includes the jitter and likelihood noise covariance.
+
+        Return shape: (q, n, n)
         """
         n = self.design.n
         X = self.design.X
-        J = self._get_jitter_matrix(n)
         ker = self.gp.prior.kernel
 
         # Cholesky factor of kernel matrix
-        K = self._flip(ker.gram(X).to_dense()) + J
-        K = K.reshape(self.output_dim, n, n)
+        K = self.prior_gram(X) + self.jittered_noise_cov(n)
         L = jnp.linalg.cholesky(K, upper=False)
 
         # Invert kernel matrix
-        I = jnp.eye(n)
-        I = jnp.broadcast_to(I, (self.output_dim, n, n))
+        I = self._batch_diagonal_matrix(1.0, n)
         P = cho_solve((L, True), I)
 
         return P
 
 
-    def _get_jitter_matrix(self, size: int):
-        q = self.output_dim
+    def noise_cov(self, size):
+        """ 
+        Batch of GP likelihood noise covariance matrices, each diagonal:
+            [sig2_1 * I_size, ..., sig2_q * I_size]
 
+            Return shape: (q, size, size)
+        """
+        return self._batch_diagonal_matrix(self.sig2_obs, size)
+    
+
+    def jitter_matrix(self, size):
+        """ 
+        Batch of jitter matrices, each diagonal:
+            [jitter_1 * I_size, ..., jitter_q * I_size]
+
+            Return shape: (q, size, size)
+        """
+        return self._batch_diagonal_matrix(self.jitter, size)
+    
+
+    def jittered_noise_cov(self, size):
+        return self.noise_cov(size) + self.jitter_matrix(size)
+    
+
+    def _batch_diagonal_matrix(self, diagonal, size):
+        """ 
+        Given array `diagonal` broadcastable to (q,) creates batch diagonal matrix:
+            [d1 * I_size, ..., dq * I_size]
+
+            Return shape: (q, size, size)
+        """
+        q = self.output_dim
+        diagonal = jnp.broadcast_to(diagonal, (q,))
+        
         eye = jnp.eye(size)[None, :, :]
         eye = jnp.broadcast_to(eye, (q, size, size))
+        batch_diagonal_matrix = diagonal[:, None, None] * eye
 
-        composite_jitter = self.sig2_obs + self.gp.jitter + self.jitter
-        composite_jitter = jnp.broadcast_to(composite_jitter, (q,))
+        return batch_diagonal_matrix
 
-        J = composite_jitter[:, None, None] * eye # (q, size, size), zeros everywhere except diagonal
-        return J
-    
+
     @staticmethod
     def _flip(a):
         """Move last axis to the first position"""
