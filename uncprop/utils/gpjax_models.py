@@ -21,6 +21,8 @@ from gpjax.parameters import (
     DEFAULT_BIJECTION,
 )
 
+from uncprop.utils.gpjax_multioutput import BatchedRBF
+
 
 def construct_gp(design, set_bounds=True):
     """
@@ -37,11 +39,7 @@ def construct_gp(design, set_bounds=True):
 
     # gp prior
     gp_prior = gpx.gps.Prior(mean_function=meanf, kernel=kernel)
-
-    # likelihood
     gp_likelihood = gpx.likelihoods.Gaussian(num_datapoints=design.n, obs_stddev=gp_prior.jitter)
-
-    # gp posterior (with untuned hyperparameters)
     gp_posterior = gp_prior * gp_likelihood
 
     # set bound constraints based on design data
@@ -51,6 +49,36 @@ def construct_gp(design, set_bounds=True):
         bijection = DEFAULT_BIJECTION
 
     return gp_posterior, bijection
+
+
+def construct_batch_gp(design):
+    """
+    Constructs a GP representing a batch of independent GPs, with independent
+    hyperparameters.
+    """
+    Y = design.y
+    batch_dim = Y.shape[1]
+    constants_init = gpx.parameters.Real(value=Y.mean(axis=0))
+    meanf = gpx.mean_functions.Constant(constants_init)
+
+    # prior (batch) kernel
+    dist_stats = _get_distance_stats_from_design(design)
+    lengthscale_init = dist_stats['mean']
+    vars_init = Y.var(axis=0)
+
+    kernel = BatchedRBF(batch_dim=batch_dim,
+                        input_dim=design.in_dim,
+                        lengthscale=lengthscale_init, 
+                        variance=vars_init)
+
+    gp_prior = gpx.gps.Prior(mean_function=meanf, kernel=kernel)
+
+    obs_sd_init = jnp.tile(gp_prior.jitter, (batch_dim,))
+    gp_likelihood = gpx.likelihoods.Gaussian(num_datapoints=design.n, 
+                                             obs_stddev=obs_sd_init)
+    gp_posterior = gp_prior * gp_likelihood
+
+    return gp_posterior
 
 
 def train_gp_hyperpars(model, bijection, design, max_iters: int = 400):

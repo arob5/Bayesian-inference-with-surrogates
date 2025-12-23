@@ -32,7 +32,7 @@ from uncprop.core.distribution import GaussianFromNumpyro
 
 Bijection = dict
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Batched kernels
 #
 #   gpjax does not natively support kernels batching over hyperparameters.
@@ -48,7 +48,7 @@ Bijection = dict
 #   We then generalize gpjax's stationary kernels to support batched 
 #   hyperparameters, such that it can be used with 
 #   BatchDenseKernelComputation.
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 
 class BatchDenseKernelComputation(AbstractKernelComputation):
@@ -185,6 +185,9 @@ class BatchedRBF(BatchedStationaryKernel):
         return self.variance.get_value() * jnp.exp(-0.5 * sqdist)
 
 
+# -----------------------------------------------------------------------------
+# Utilities for batched hyperparameter optimization
+# -----------------------------------------------------------------------------
 
 class SingleOutputGPFactory(Protocol):
     def __call__(self, dataset: Dataset) -> ConjugatePosterior:
@@ -309,6 +312,13 @@ def fit_batch_independent_gp(
         num_iters: Number of optimisation steps.
         key: PRNGKey.
         unroll: Scan unroll factor.
+
+    Notes:
+        This function is defined specifically for a BatchIndependentGP, which uses 
+        a standard gpjax kernel with batched parameters. Vectorized evaluation of 
+        gram/cross covariance matrices will not work properly for such a kernel, but
+        this function 
+        
 
     Returns:
         Updated BatchIndependentGP with trained posteriors.
