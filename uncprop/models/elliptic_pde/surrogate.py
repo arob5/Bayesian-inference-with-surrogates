@@ -1,6 +1,7 @@
 # uncprop/models/elliptic_pde/surrogate.py
 from __future__ import annotations
 
+from copy import deepcopy
 import jax
 import jax.random as jr
 
@@ -14,6 +15,7 @@ from uncprop.core.inverse_problem import Posterior
 from uncprop.core.surrogate import construct_design, GPJaxSurrogate
 from uncprop.utils.gpjax_models import construct_gp
 from uncprop.utils.gpjax_multioutput import (
+    BatchedRBF,
     fit_batch_independent_gp,
     get_batch_gp_from_template,
 )
@@ -49,16 +51,16 @@ def fit_pde_surrogate(key: PRNGKey,
                               f=posterior.likelihood.forward_model)
     
     # fit surrogate
-    surrogate, batchgp, history = fit_batch_rff_gp(design, **fit_kwargs)
+    surrogate, batchgp, history = fit_pde_experiment_batch_gp(design, **fit_kwargs)
 
     return design, surrogate, batchgp, history
 
 
 
-def fit_batch_rff_gp(design: Dataset,
-                     learning_rate: float = 0.1,
-                     num_iters: int = 1000,
-                     bijection: dict = DEFAULT_BIJECTION):
+def fit_pde_experiment_batch_gp(design: Dataset,
+                                learning_rate: float = 0.1,
+                                num_iters: int = 1000,
+                                bijection: dict = DEFAULT_BIJECTION):
     
     optim = optax.adam(learning_rate)
     objective = lambda p, d: -gpx.objectives.conjugate_mll(p, d)
@@ -76,7 +78,25 @@ def fit_batch_rff_gp(design: Dataset,
     )
 
     # surrogate model
-    surrogate = GPJaxSurrogate(gp=batchgp.batch_posterior,
-                               design=design)
+    surrogate = convert_gp_to_batch_kernel(batchgp.batch_posterior, design)
     
     return surrogate, batchgp, history
+
+
+def convert_gp_to_batch_kernel(gp: gpx.gps.ConjugatePosterior, design: Dataset):
+    gp = deepcopy(gp)
+    batch_dim = design.y.shape[1]
+    kernel = gp.prior.kernel
+    meanf = gp.prior.mean_function
+    likelihood = gp.likelihood
+
+    batched_kernel = BatchedRBF(batch_dim=batch_dim,
+                                input_dim=design.in_dim,
+                                lengthscale=kernel.lengthscale, 
+                                variance=kernel.variance)
+
+    batched_prior = gpx.gps.Prior(mean_function=meanf, kernel=batched_kernel)
+    batched_posterior = batched_prior * likelihood
+    surrogate = GPJaxSurrogate(batched_posterior, design)
+
+    return surrogate
