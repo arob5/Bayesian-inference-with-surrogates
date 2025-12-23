@@ -596,126 +596,104 @@ class GPJaxSurrogate(Surrogate):
                 Pnew: (q, n+m, n+m), the updated batched inverse kernel matrix
                 dataset_new: the updated set of training data
         """
+        # update dataset
         Xnew = given[0].reshape(-1, self.input_dim)
         ynew = given[1].reshape(-1, self.output_dim)
         new_dataset = self.design + Dataset(X=Xnew, y=ynew)
+
+        n = self.design.n
+        X_all = new_dataset.X
+        n_all = X_all.shape[0]
         
-        # Partitioned matrix inverse updates.
-        num_new_points = Xnew.shape[0]
-        P = self.P.squeeze(0) # (q, n, n)
-        Xcurr = self.design.X.copy()
-
+        # update inverse kernel matrix
         def _step(carry, xnew):
-            P_curr, X_curr = carry
-            P_new = self._update_single_point_kernel_precision(P_curr, X_curr, xnew)
-            X_new = jnp.vstack([X_curr, xnew])
-            return (P_new, X_new), None
+            P_curr, idx = carry
+            P_new = self._update_single_point_kernel_precision(P_curr, X_all, xnew, idx)
+            return (P_new, idx+1), None
 
-        (P_final, X_final), _ = jax.lax.scan(_step, Xnew)
+        P_pad = jnp.zeros((self.output_dim, n_all, n_all))
+        P_pad = P_pad.at[:, :n, :n].set(self.P)
+        carry0 = (P_pad, n)
+        (P_final, _), _ = jax.lax.scan(_step, carry0, Xnew)
 
         return P_final, new_dataset
 
-
-    def _update_conditioning_cache_old(self, given: tuple[ArrayLike, Dataset]):
-        """ 
-        Updates the inverse kernel matrix P = (K + sig2*I)^{-1} and the set
-        of design points when a batch of new conditioning points is added.
-        
-        Args:
-            tuple, containing:
-                Xnew: (m, d) set of new conditioning inputs
-                ynew: (m, q) response values at the conditioning inputs
-
-        Returns:
-            tuple, containing:
-                Pnew: (q, n+m, n+m), the updated batched inverse kernel matrix
-                dataset_new: the updated set of training data
-        """
-
-        # Not yet generalized to batch setting
-        assert self.output_dim == 1
-
-        Xnew = given[0].reshape(-1, self.input_dim)
-        ynew = given[1].reshape(-1, 1)
-        new_dataset = self.design + Dataset(X=Xnew, y=ynew)
-        
-        # Partitioned matrix inverse updates.
-        num_new_points = Xnew.shape[0]
-        Sigma_inv = self.P.squeeze(0) # since we are assuming q=1 here
-        Xcurr = self.design.X.copy()
-
-        for i in range(num_new_points):
-            xnew = Xnew[i]
-            Sigma_inv = self._update_single_point_kernel_precision(Sigma_inv, Xcurr, xnew)
-            Xcurr = jnp.vstack([Xcurr, xnew])
-
-        # bring back batch dimension
-        return Sigma_inv[None, ...], new_dataset
     
+    def _update_single_point_kernel_precision(self, P, X, x, idx):
+        """
+        JAX-safe update of the inverse kernel matrix when a single conditioning
+        point is added.
 
-    def _update_single_point_kernel_precision(self, P, X, x):
-        """ 
-        Updates the inverse kernel matrix P = (K + sig2*I)^{-1} when a 
-        single conditioning point is added.
-        
+        This function performs a rank-1 block update of the precision matrix
+        corresponding to appending a new design point, **without changing array
+        shapes**. The full precision matrix `P` is assumed to have static shape
+        `(q, N, N)`, where only the top-left `idx × idx` block is currently active.
+
+        The update activates row/column `idx` and leaves all other inactive
+        entries untouched. This makes the function compatible with `jit`,
+        `vmap`, and `lax.scan`.
+
         Args:
-            P: (q, n, n), the current batched inverse kernel matrix
-            X: (n, d), the current conditioning inputs
-            x: (d,) or (1, d), the single new conditioning input
-        
+            P:
+                (q, N, N) array.
+                Current batched inverse kernel matrix, with only the top-left
+                `idx × idx` block active.
+            X:
+                (N, d) array.
+                The current conditioning inputs, where only the first `idx` rows are active.
+            x:
+                (d,) or (1, d) array.
+                New conditioning input to be added.
+            idx:
+                int scalar.
+                Number of active conditioning points before the update.
+
         Returns:
-            (q, n+1, n+1), the updated batched inverse kernel matrix.
+            P_new:
+                (q, N, N) array.
+                Updated inverse kernel matrix with row/column `idx` activated.
         """
         q = self.output_dim
+        N = P.shape[-1]
+
         x = x.reshape(1, -1)
         kernel = self.gp.prior.kernel
 
-        kXx = kernel.cross_covariance(X, x) # (q, n, 1)
-        P_kXx = P @ kXx                     # (q, n, 1)
-        kxX = jnp.transpose(kXx, (0, 2, 1)) # (q, 1, n)
+        # Masks selecting active points
+        mask = jnp.arange(N) < idx                      # (N,)
+        mask_col = mask[None, :, None]                  # (1, N, 1)
+        mask_row = mask[None, None, :]                  # (1, 1, N)
+        P = P * mask_row * mask_col
 
-        kx = kernel.gram(x).to_dense().reshape(q)                           # (q,)
-        kappa = kx + self.sig2_obs + self.jitter - (kxX @ P_kXx).reshape(q) # (q,)
-        kappa = kappa[:, None, None]                                        # (q, 1, 1)
+        # Kernel vector between existing points and new point
+        kXx = kernel.cross_covariance(X, x)              # (q, N, 1)
+        kXx = kXx * mask_col                             # zero out inactive rows
+        P_kXx = P @ kXx                                  # (q, N, 1)
+        kxX = jnp.transpose(kXx, (0, 2, 1))              # (q, 1, N)
 
-        outer = P_kXx @ jnp.transpose(P_kXx, (0, 2, 1))   # (q, n, n)
-        top_left = P + outer / kappa                      # (q, n, n)
-        top_right = -P_kXx / kappa                        # (q, n, 1)
-        bottom_left = jnp.transpose(top_right, (0, 2, 1)) # (q, 1, n)
-        bottom_right = kappa                              # (q, 1, 1)
+        kx = kernel.gram(x).to_dense().reshape(q)        # (q,)
+        kappa = (
+            kx
+            + self.sig2_obs
+            + self.jitter
+            - (kxX @ P_kXx).reshape(q)
+        )                                                # (q,)
+        kappa = kappa[:, None, None]                     # (q, 1, 1)
 
-        top = jnp.concatenate([top_left, top_right], axis=-1)          # (q, n, n+1)
-        bottom = jnp.concatenate([bottom_left, bottom_right], axis=-1) # (q, 1, n+1)
+        # Rank-1 update for top-left block
+        outer = P_kXx @ jnp.transpose(P_kXx, (0, 2, 1))  # (q, N, N)
+        P_updated = P + outer / kappa
 
-        return jnp.concatenate([top, bottom], axis=1) # (q, n+1, n+1)
+        # New final column / row
+        col = -P_kXx / kappa                             # (q, N, 1)
+        row = jnp.transpose(col, (0, 2, 1))              # (q, 1, N)
+        inv_kappa = 1 / kappa
 
+        P_updated = P_updated.at[:, :, idx].set(col.squeeze(-1))
+        P_updated = P_updated.at[:, idx, :].set(row.squeeze(1))
+        P_updated = P_updated.at[:, idx, idx].set(inv_kappa.reshape(q))
 
-    def _update_single_point_kernel_precision_old(self, Sigma_inv, X, xnew):
-        """ 
-        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
-        single conditioning point xnew is added. X is the current conditioning 
-        set and xnew is the new point to add.
-        """
-
-        # Not yet generalized to batch setting
-        assert self.output_dim == 1
-
-        xnew = xnew.reshape(1, -1) # (1, 1)
-        knm = self.gp.prior.kernel.cross_covariance(X, xnew) # (n, 1)
-        Kinv_knm = Sigma_inv @ knm # (n, 1)
-        k_new_new = self.gp.prior.kernel.gram(xnew).to_dense().squeeze() # scalar
-        kappa = k_new_new + self.sig2_obs + self.jitter - (knm.T @ Kinv_knm).squeeze() # scalar
-        
-        outer = Kinv_knm @ Kinv_knm.T  # (n,1) @ (1,n) -> (n,n)
-        top_left= Sigma_inv + outer / kappa # (n,n)
-        top_right = -Kinv_knm / kappa
-        bottom_left = top_right.T
-        bottom_right = jnp.array([[1.0 / kappa]]).reshape(1, 1) # (1,1)
-
-        top = jnp.hstack([top_left, top_right])           # shape (n, n+1)
-        bottom = jnp.hstack([bottom_left, bottom_right])  # shape (1, n+1)
-
-        return jnp.vstack([top, bottom]) # (n+1, n+1)
+        return P_updated
 
 
     def _compute_kernel_precision(self):
