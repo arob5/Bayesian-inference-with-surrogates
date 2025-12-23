@@ -512,11 +512,8 @@ class GPJaxSurrogate(Surrogate):
         """
         Condition on new design points, then predict using conditioned GP.
         """        
-        # Not yet generalized to batch setting
-        assert self.output_dim == 1
-
-        Sigma_inv, design = self._update_kernel_precision(given)
-        return self._predict_using_precision(input, Sigma_inv, design)
+        P_new, design_new = self._update_conditioning_cache(given)
+        return self._predict_using_precision(input, P_new, design_new)
 
 
     def _predict_using_precision(self, 
@@ -528,7 +525,9 @@ class GPJaxSurrogate(Surrogate):
         on dataset `design`. `P` is the inverse of the kernel matrix (including the noise covariance)
         evaluated at `design.X`.
 
-        Predictions include the observation noise.
+        Notes:
+            - Predictions include the observation noise (predictive distribution of y, not f).
+            - In single-output case, the batch dimension is dropped in the predictive distribution.
         """
         x = jnp.asarray(x).reshape(-1, self.input_dim)
         X, Y = design.X, self._flip(design.y)
@@ -580,15 +579,57 @@ class GPJaxSurrogate(Surrogate):
         kxX_P = kxX @ P # (q, m, n)
 
         return kxX_P, kxX
+    
 
-
-    def _update_kernel_precision(self, given: tuple[ArrayLike, ArrayLike]):
+    def _update_conditioning_cache(self, given: tuple[ArrayLike, Dataset]):
         """ 
-        Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
-        batch of new conditioning points Xnew are added. Returns the updated inverse 
-        kernel matrix as well as the updated dataset (union of the old dataset and 
-        the newly added points). `given` is either a gpjax `Dataset` containing the 
-        new input/output pairs or a tuple (Xnew, ynew) containing the same information.
+        Updates the inverse kernel matrix P = (K + sig2*I)^{-1} and the set
+        of design points when a batch of new conditioning points is added.
+        
+        Args:
+            tuple, containing:
+                Xnew: (m, d) set of new conditioning inputs
+                ynew: (m, q) response values at the conditioning inputs
+
+        Returns:
+            tuple, containing:
+                Pnew: (q, n+m, n+m), the updated batched inverse kernel matrix
+                dataset_new: the updated set of training data
+        """
+        Xnew = given[0].reshape(-1, self.input_dim)
+        ynew = given[1].reshape(-1, self.output_dim)
+        new_dataset = self.design + Dataset(X=Xnew, y=ynew)
+        
+        # Partitioned matrix inverse updates.
+        num_new_points = Xnew.shape[0]
+        P = self.P.squeeze(0) # (q, n, n)
+        Xcurr = self.design.X.copy()
+
+        def _step(carry, xnew):
+            P_curr, X_curr = carry
+            P_new = self._update_single_point_kernel_precision(P_curr, X_curr, xnew)
+            X_new = jnp.vstack([X_curr, xnew])
+            return (P_new, X_new), None
+
+        (P_final, X_final), _ = jax.lax.scan(_step, Xnew)
+
+        return P_final, new_dataset
+
+
+    def _update_conditioning_cache_old(self, given: tuple[ArrayLike, Dataset]):
+        """ 
+        Updates the inverse kernel matrix P = (K + sig2*I)^{-1} and the set
+        of design points when a batch of new conditioning points is added.
+        
+        Args:
+            tuple, containing:
+                Xnew: (m, d) set of new conditioning inputs
+                ynew: (m, q) response values at the conditioning inputs
+
+        Returns:
+            tuple, containing:
+                Pnew: (q, n+m, n+m), the updated batched inverse kernel matrix
+                dataset_new: the updated set of training data
         """
 
         # Not yet generalized to batch setting
@@ -612,7 +653,44 @@ class GPJaxSurrogate(Surrogate):
         return Sigma_inv[None, ...], new_dataset
     
 
-    def _update_single_point_kernel_precision(self, Sigma_inv, X, xnew):
+    def _update_single_point_kernel_precision(self, P, X, x):
+        """ 
+        Updates the inverse kernel matrix P = (K + sig2*I)^{-1} when a 
+        single conditioning point is added.
+        
+        Args:
+            P: (q, n, n), the current batched inverse kernel matrix
+            X: (n, d), the current conditioning inputs
+            x: (d,) or (1, d), the single new conditioning input
+        
+        Returns:
+            (q, n+1, n+1), the updated batched inverse kernel matrix.
+        """
+        q = self.output_dim
+        x = x.reshape(1, -1)
+        kernel = self.gp.prior.kernel
+
+        kXx = kernel.cross_covariance(X, x) # (q, n, 1)
+        P_kXx = P @ kXx                     # (q, n, 1)
+        kxX = jnp.transpose(kXx, (0, 2, 1)) # (q, 1, n)
+
+        kx = kernel.gram(x).to_dense().reshape(q)                           # (q,)
+        kappa = kx + self.sig2_obs + self.jitter - (kxX @ P_kXx).reshape(q) # (q,)
+        kappa = kappa[:, None, None]                                        # (q, 1, 1)
+
+        outer = P_kXx @ jnp.transpose(P_kXx, (0, 2, 1))   # (q, n, n)
+        top_left = P + outer / kappa                      # (q, n, n)
+        top_right = -P_kXx / kappa                        # (q, n, 1)
+        bottom_left = jnp.transpose(top_right, (0, 2, 1)) # (q, 1, n)
+        bottom_right = kappa                              # (q, 1, 1)
+
+        top = jnp.concatenate([top_left, top_right], axis=-1)          # (q, n, n+1)
+        bottom = jnp.concatenate([bottom_left, bottom_right], axis=-1) # (q, 1, n+1)
+
+        return jnp.concatenate([top, bottom], axis=1) # (q, n+1, n+1)
+
+
+    def _update_single_point_kernel_precision_old(self, Sigma_inv, X, xnew):
         """ 
         Updates the inverse kernel matrix Sigma_inv = (K + sig2*I)^{-1} when a 
         single conditioning point xnew is added. X is the current conditioning 
