@@ -216,8 +216,9 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
                               logdensity_fn: Callable,
                               initial_position: Position,
                               adapt_settings: AdaptationSettings,
-                              initial_cov: Array | None = None,
-                              initial_log_scale: float | None = None):
+                              initial_cov: Array,
+                              initial_log_scale: float | None = None,
+                              n_chains: int = 1):
 
     # build kernel function
     def kernel(key: PRNGKey, 
@@ -285,21 +286,34 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
         return next_state, info
 
     # Initialize state
-    initial_position = initial_position.squeeze()
     dim = initial_cov.shape[-1]
     adapt_inverval = adapt_settings.adapt_interval
-
+    initial_position = initial_position.reshape(n_chains, dim)
+    sample_history_buffer = jnp.zeros((n_chains, adapt_inverval, dim))
+    accept_prob_history_buffer = jnp.zeros((n_chains, adapt_inverval))
+    step_in_batch = jnp.zeros(n_chains, dtype=jnp.int64)
+    
     adapt_state = init_adaptation_state(dim=dim,
                                         initial_cov=initial_cov,
-                                        initial_log_scale=initial_log_scale)
-    
+                                        initial_log_scale=initial_log_scale,
+                                        n_chains=n_chains)
+
+    if n_chains == 1:
+        initial_position = initial_position.squeeze(0)
+        sample_history_buffer = sample_history_buffer.squeeze(0)
+        accept_prob_history_buffer = accept_prob_history_buffer.squeeze(0)
+        init_prop_tril = _proposal_tril_from_adaptation(adapt_state)
+        step_in_batch = step_in_batch.squeeze()
+    else:
+        init_prop_tril = jax.vmap(_proposal_tril_from_adaptation)(adapt_state)
+
     initial_state = AdaptiveRWState(position=initial_position,
                                     logdensity=logdensity_fn(initial_position),
-                                    proposal_tril=_proposal_tril_from_adaptation(adapt_state),
+                                    proposal_tril=init_prop_tril,
                                     adapt_state=adapt_state,
-                                    sample_history=jnp.zeros((adapt_inverval, dim)),
-                                    accept_prob_history=jnp.zeros(adapt_inverval),
-                                    step_in_batch=0)
+                                    sample_history=sample_history_buffer,
+                                    accept_prob_history=accept_prob_history_buffer,
+                                    step_in_batch=step_in_batch)
 
     return initial_state, kernel
 
@@ -376,7 +390,8 @@ class AdaptationSettings(NamedTuple):
 def init_adaptation_state(
     dim: int, 
     initial_cov: Array | None = None, 
-    initial_log_scale: float | None = None
+    initial_log_scale: float | None = None,
+    n_chains: int = 1
 ) -> AdaptationState:
     """Initializes the adaptation state."""
     
@@ -386,11 +401,18 @@ def init_adaptation_state(
     if initial_log_scale is None:
         # Gelman-Roberts-Gilks heuristic: 2.38^2 / d
         initial_log_scale = jnp.log(2.38) - 0.5 * jnp.log(dim)
-        
+    
+    times_adapted = jnp.array(0, dtype=jnp.int64)
+
+    if n_chains > 1:
+        initial_cov = jnp.broadcast_to(initial_cov, (n_chains, dim, dim))
+        initial_log_scale = jnp.broadcast_to(initial_log_scale, (n_chains,))
+        times_adapted = jnp.broadcast_to(times_adapted, (n_chains,))
+
     return AdaptationState(
         cov_prop=initial_cov,
         log_scale=initial_log_scale,
-        times_adapted=0
+        times_adapted=times_adapted
     )
 
 
