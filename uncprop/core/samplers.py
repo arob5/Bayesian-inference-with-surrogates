@@ -285,8 +285,8 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
         return next_state, info
 
     # Initialize state
-    initial_position = initial_position.ravel()
-    dim = initial_position.shape[0]
+    initial_position = initial_position.squeeze()
+    dim = initial_cov.shape[-1]
     adapt_inverval = adapt_settings.adapt_interval
 
     adapt_state = init_adaptation_state(dim=dim,
