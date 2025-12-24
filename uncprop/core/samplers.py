@@ -44,6 +44,25 @@ def mcmc_loop(key: PRNGKey,
     return states
 
 
+def mcmc_loop_multiple_chains(key: PRNGKey,
+                              kernel: UpdateFn,
+                              initial_states: State,
+                              num_samples: int = 4000,
+                              num_chains: int = 4):
+    """Vectorized MCMC loop over multiple chains"""
+
+    @jax.jit
+    def one_step(states, key):
+        keys = jr.split(key, num_chains)
+        states, _ = jax.vmap(kernel)(keys, states)
+        return states, states
+    
+    keys = jr.split(key, num_samples)
+    _, states = jax.lax.scan(one_step, initial_states, keys)
+    
+    return states
+
+
 def sample_distribution(key: PRNGKey,
                         dist: Distribution,
                         initial_position: Array, 
