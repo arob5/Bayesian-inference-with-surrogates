@@ -268,6 +268,7 @@ class ForwardModel:
         idx = self.obs_locations
         return jnp.atleast_2d(pde_solution[:,idx])
 
+
 class PDELikelihood:
     """ Likelihood map wrapping around the forward model
 
