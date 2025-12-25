@@ -141,7 +141,7 @@ def sample_distribution(key: PRNGKey,
                                               logdensity_fn=logdensity)
     prop_tril = jnp.linalg.cholesky(prop_cov, upper=False)
     initial_state = jax.vmap(init_fn, in_axes=(0, 0))(initial_position, prop_tril)
-    
+
     n_samples_total = n_burnin + thin_window * n_samples
 
     states = mcmc_loop_multiple_chains(key=key_samp, 
@@ -358,9 +358,10 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
                                         initial_cov=initial_cov,
                                         initial_log_scale=initial_log_scale,
                                         n_chains=n_chains)
+    logdensity_init = jnp.atleast_1d(logdensity_fn(initial_position))
 
     initial_state = AdaptiveRWState(position=initial_position,
-                                    logdensity=logdensity_fn(initial_position),
+                                    logdensity=logdensity_init,
                                     proposal_tril=_proposal_tril_from_adaptation(adapt_state),
                                     adapt_state=adapt_state,
                                     sample_history=jnp.zeros((n_chains, adapt_interval, dim)),
