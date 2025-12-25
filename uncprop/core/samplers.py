@@ -46,7 +46,7 @@ def mcmc_loop(key: PRNGKey,
 
 def mcmc_loop_multiple_chains(key: PRNGKey,
                               kernel: UpdateFn,
-                              initial_states: State,
+                              initial_state: State,
                               num_samples: int = 4000,
                               num_chains: int = 4):
     """Vectorized MCMC loop over multiple chains"""
@@ -58,15 +58,16 @@ def mcmc_loop_multiple_chains(key: PRNGKey,
         return states, states
     
     keys = jr.split(key, num_samples)
-    _, states = jax.lax.scan(one_step, initial_states, keys)
+    _, states = jax.lax.scan(one_step, initial_state, keys)
     
     return states
 
 
 def sample_distribution(key: PRNGKey,
-                        dist: Distribution,
-                        initial_position: Array, 
+                        dist: Distribution, 
                         n_samples: int,
+                        initial_position: Array | None = None,
+                        n_chains: int = 1, 
                         n_warmup: int = 50_000,
                         n_burnin: int = 0,
                         thin_window: int = 1,
@@ -96,6 +97,13 @@ def sample_distribution(key: PRNGKey,
     
     key_warmup_kernel, key_warmup_samp, key_kernel, key_samp = jr.split(key, 4)
 
+    if initial_position is None:
+        key, key_init_pos = jr.split(key)
+        initial_position = dist.sample(key_init_pos, n_chains)
+    
+    if initial_position.shape[0] != n_chains:
+        raise ValueError(f'initial_position should have leadning batch index of length n_chains = {n_chains}')
+
     # target density
     logdensity = lambda x: dist.log_density(x).squeeze()
 
@@ -113,12 +121,14 @@ def sample_distribution(key: PRNGKey,
                                                                  initial_position=initial_position,
                                                                  adapt_settings=adapt_settings,
                                                                  initial_cov=prop_cov, 
-                                                                 initial_log_scale=0.0)
+                                                                 initial_log_scale=0.0,
+                                                                 n_chains=n_chains)
 
-        warmup_samp = mcmc_loop(key=key_warmup_samp, 
-                                kernel=warmup_kernel, 
-                                initial_state=initial_state, 
-                                num_samples=n_warmup)
+        warmup_samp = mcmc_loop_multiple_chains(key=key_warmup_samp,
+                                                kernel=warmup_kernel,
+                                                initial_state=initial_state,
+                                                num_samples=n_warmup,
+                                                num_chains=n_chains)
         
         # extract initial position and proposal covariance from warmup
         initial_position, prop_cov = _extract_tuned_warmup_quantities(warmup_samp)
@@ -127,16 +137,18 @@ def sample_distribution(key: PRNGKey,
 
 
     # main chain
-    initial_state, kernel = init_rwmh_kernel(key=key_kernel,
-                                             logdensity=logdensity,
-                                             initial_position=initial_position,
-                                             prop_cov=prop_cov)
+    init_fn, kernel = init_custom_rwmh_kernel(key=key_kernel,
+                                              logdensity_fn=logdensity)
+    prop_tril = jnp.linalg.cholesky(prop_cov, upper=False)
+    initial_state = jax.vmap(init_fn, in_axes=(0, 0))(initial_position, prop_tril)
+    
     n_samples_total = n_burnin + thin_window * n_samples
 
-    states = mcmc_loop(key=key_samp, 
-                       kernel=kernel, 
-                       initial_state=initial_state, 
-                       num_samples=n_samples_total)
+    states = mcmc_loop_multiple_chains(key=key_samp, 
+                                       kernel=kernel,
+                                       initial_state=initial_state,
+                                       num_samples=n_samples_total,
+                                       num_chains=n_chains)
     
     # drop burnin and thin
     positions = states.position[n_burnin:]
@@ -160,6 +172,7 @@ def _init_dist_proposal_cov(dist: Distribution):
 
 
 def _extract_tuned_warmup_quantities(warmup_samp: AdaptiveRWState):
+    """Valid for single and multi-chain. For latter assumes leading batch index."""
 
     # Final position from warmup
     initial_position = warmup_samp.position[-1]
@@ -167,9 +180,14 @@ def _extract_tuned_warmup_quantities(warmup_samp: AdaptiveRWState):
     # Final proposal covariance from warmup
     final_log_scale = warmup_samp.adapt_state.log_scale[-1]
     final_cov = warmup_samp.adapt_state.cov_prop[-1]
-    final_adapt_state = AdaptationState(cov_prop=final_cov, log_scale=final_log_scale, times_adapted=0)
+    final_adapt_state = AdaptationState(cov_prop=final_cov, 
+                                        log_scale=final_log_scale, 
+                                        times_adapted=0)
     L = _proposal_tril_from_adaptation(final_adapt_state)
-    cov_prop = L @ L.T
+
+    perm = jnp.arange(L.ndim, dtype=jnp.int64)
+    perm = perm.at[-2:].set(jnp.array([perm[-1], perm[-2]]))
+    cov_prop = L @ jnp.transpose(L, perm)
 
     return initial_position, cov_prop
 
@@ -189,13 +207,10 @@ def init_rwmh_kernel(key: PRNGKey,
     Notes:
         Had some odd issues with blackjax Gaussian proposal, likely due to pytree/array
         shaping issues. Defining a simpler Gaussian proposal here that uses the fact 
-        all position shapes are flat arrays in our case. Note that `prop_cov` can either
-        be the proposal covariance matrix, or the diagonal of this matrix.
+        all positions are arrays in our case (not arbitrary pytrees)
     """
 
     # Symmetric Gaussian proposal
-    if(prop_cov.ndim == 1):
-        prop_cov = jnp.diag(prop_cov)
     L = jnp.linalg.cholesky(prop_cov, upper=False)
     
     def proposal(key: PRNGKey, position: Position):
@@ -206,6 +221,57 @@ def init_rwmh_kernel(key: PRNGKey,
     kernel = rmh.step
 
     return initial_state, kernel
+
+
+class CustomRWState(NamedTuple):
+    position: ArrayLike
+    logdensity: ArrayLike
+    proposal_tril: ArrayLike
+
+class CustomRWInfo(NamedTuple):
+    acceptance_rate: float
+    is_accepted: bool
+
+
+def init_custom_rwmh_kernel(key: PRNGKey, logdensity_fn: Callable):
+    """
+    Alternative to blackjax random walk Metropolis-Hastings, that also stores
+    the proposal Cholesky factor in the state. This is useful for vectorizing
+    over multiple chains, each of which should have its own proposal.
+    """
+
+    # build kernel function
+    def kernel(key: PRNGKey, state: CustomRWState):
+
+        key_proposal, key_accept = jr.split(key, 2)
+        u = state.position
+        L = state.proposal_tril
+
+        proposal = _sample_gaussian_tril(key_proposal, 
+                                         m=state.position, 
+                                         L=state.proposal_tril).squeeze()
+
+        pos_next, lp_next, accept_prob, accept = _mh_accept_reject(key_accept,
+                                                                   lp_curr=state.logdensity, 
+                                                                   lp_prop=logdensity_fn(proposal),
+                                                                   u_curr=state.position, u_prop=proposal)
+
+        next_state = CustomRWState(position=pos_next,
+                                   logdensity=lp_next,
+                                   proposal_tril=state.proposal_tril)
+        info = CustomRWInfo(acceptance_rate=accept_prob, 
+                            is_accepted=accept)
+
+        return next_state, info
+
+
+    # build init function
+    def init_fn(position, proposal_tril):
+        return CustomRWState(position=position,
+                             logdensity=logdensity_fn(position),
+                             proposal_tril=proposal_tril)
+
+    return init_fn, kernel
 
 
 # -----------------------------------------------------------------------------
@@ -285,35 +351,21 @@ def init_adaptive_rwmh_kernel(key: PRNGKey,
 
         return next_state, info
 
-    # Initialize state
+    # Initialize state    
     dim = initial_cov.shape[-1]
-    adapt_inverval = adapt_settings.adapt_interval
-    initial_position = initial_position.reshape(n_chains, dim)
-    sample_history_buffer = jnp.zeros((n_chains, adapt_inverval, dim))
-    accept_prob_history_buffer = jnp.zeros((n_chains, adapt_inverval))
-    step_in_batch = jnp.zeros(n_chains, dtype=jnp.int64)
-    
+    adapt_interval = adapt_settings.adapt_interval
     adapt_state = init_adaptation_state(dim=dim,
                                         initial_cov=initial_cov,
                                         initial_log_scale=initial_log_scale,
                                         n_chains=n_chains)
 
-    if n_chains == 1:
-        initial_position = initial_position.squeeze(0)
-        sample_history_buffer = sample_history_buffer.squeeze(0)
-        accept_prob_history_buffer = accept_prob_history_buffer.squeeze(0)
-        init_prop_tril = _proposal_tril_from_adaptation(adapt_state)
-        step_in_batch = step_in_batch.squeeze()
-    else:
-        init_prop_tril = jax.vmap(_proposal_tril_from_adaptation)(adapt_state)
-
     initial_state = AdaptiveRWState(position=initial_position,
                                     logdensity=logdensity_fn(initial_position),
-                                    proposal_tril=init_prop_tril,
+                                    proposal_tril=_proposal_tril_from_adaptation(adapt_state),
                                     adapt_state=adapt_state,
-                                    sample_history=sample_history_buffer,
-                                    accept_prob_history=accept_prob_history_buffer,
-                                    step_in_batch=step_in_batch)
+                                    sample_history=jnp.zeros((n_chains, adapt_interval, dim)),
+                                    accept_prob_history=jnp.zeros((n_chains, adapt_interval)),
+                                    step_in_batch=jnp.zeros(n_chains, dtype=jnp.int64))
 
     return initial_state, kernel
 
@@ -398,21 +450,17 @@ def init_adaptation_state(
     if initial_cov is None:
         initial_cov = jnp.eye(dim)
     
+    
     if initial_log_scale is None:
         # Gelman-Roberts-Gilks heuristic: 2.38^2 / d
         initial_log_scale = jnp.log(2.38) - 0.5 * jnp.log(dim)
     
     times_adapted = jnp.array(0, dtype=jnp.int64)
 
-    if n_chains > 1:
-        initial_cov = jnp.broadcast_to(initial_cov, (n_chains, dim, dim))
-        initial_log_scale = jnp.broadcast_to(initial_log_scale, (n_chains,))
-        times_adapted = jnp.broadcast_to(times_adapted, (n_chains,))
-
     return AdaptationState(
-        cov_prop=initial_cov,
-        log_scale=initial_log_scale,
-        times_adapted=times_adapted
+        cov_prop=jnp.broadcast_to(initial_cov, (n_chains, dim, dim)),
+        log_scale=jnp.broadcast_to(initial_log_scale, (n_chains,)),
+        times_adapted=jnp.broadcast_to(times_adapted, (n_chains,))
     )
 
 
@@ -466,10 +514,12 @@ def _proposal_tril_from_adaptation(state: AdaptationState) -> Array:
     Reconstructs the Cholesky decomposition of the full proposal matrix.
     Sigma = exp(2 * log_scale) * cov_prop
     L = exp(log_scale) * cholesky(cov_prop)
+
+    Works for both single and multiple chains.
     """
     scale = jnp.exp(state.log_scale)
     L_cov = jnp.linalg.cholesky(state.cov_prop, upper=False)
-    return scale * L_cov
+    return jnp.asarray(scale)[..., None, None] * L_cov
 
 
 # -----------------------------------------------------------------------------
