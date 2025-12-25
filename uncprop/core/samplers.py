@@ -66,7 +66,7 @@ def mcmc_loop_multiple_chains(key: PRNGKey,
 def sample_distribution(key: PRNGKey,
                         dist: Distribution, 
                         n_samples: int,
-                        initial_position: Array | None = None,
+                        initial_position: Array,
                         n_chains: int = 1, 
                         n_warmup: int = 50_000,
                         n_burnin: int = 0,
@@ -96,10 +96,6 @@ def sample_distribution(key: PRNGKey,
     """
     
     key_warmup_kernel, key_warmup_samp, key_kernel, key_samp = jr.split(key, 4)
-
-    if initial_position is None:
-        key, key_init_pos = jr.split(key)
-        initial_position = dist.sample(key_init_pos, n_chains)
     
     if initial_position.shape[0] != n_chains:
         raise ValueError(f'initial_position should have leadning batch index of length n_chains = {n_chains}')
@@ -144,17 +140,24 @@ def sample_distribution(key: PRNGKey,
 
     n_samples_total = n_burnin + thin_window * n_samples
 
-    states = mcmc_loop_multiple_chains(key=key_samp, 
-                                       kernel=kernel,
-                                       initial_state=initial_state,
-                                       num_samples=n_samples_total,
-                                       num_chains=n_chains)
+    states = jax.block_until_ready(
+        mcmc_loop_multiple_chains(key=key_samp, 
+                                  kernel=kernel,
+                                  initial_state=initial_state,
+                                  num_samples=n_samples_total,
+                                  num_chains=n_chains)
+    )
     
     # drop burnin and thin
     positions = states.position[n_burnin:]
     positions = positions[::thin_window]
 
-    return positions, states, warmup_samp, prop_cov
+    return {'positions': positions,
+            'states': states,
+            'warmup_samp': warmup_samp,
+            'prop_cov': prop_cov,
+            'kernel': kernel,
+            'initial_state': initial_state}
 
 
 def _init_dist_proposal_cov(dist: Distribution):

@@ -98,14 +98,14 @@ class PDEReplicate(Replicate):
             'eup': self.posterior_surrogate.expected_density_approx()
         }
 
-        initial_position = self.posterior.prior.sample(key_init_mcmc).squeeze()
+        initial_position = self.posterior.prior.sample(key_init_mcmc)
         mcmc_keys = jr.split(key, len(dists))
 
         mcmc_samp = {}
         mcmc_info = {}
         print('\tRunning samplers')
         for key, (dist_name, dist) in zip(mcmc_keys, dists.items()):
-            positions, states, warmup_samp, prop_cov = sample_distribution(
+            mcmc_results = sample_distribution(
                 key=key,
                 dist=dist,
                 initial_position=initial_position,
@@ -114,8 +114,8 @@ class PDEReplicate(Replicate):
                 thin_window=thin_window
             )
 
-            mcmc_samp[dist_name] = positions
-            mcmc_info[dist_name] = (states, warmup_samp, prop_cov)
+            mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
+            mcmc_info[dist_name] = mcmc_results
 
 
         # write results
