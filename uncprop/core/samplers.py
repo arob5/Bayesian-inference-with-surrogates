@@ -585,7 +585,7 @@ def init_rkpcn_kernel(key: PRNGKey,
                       initial_position: Array,
                       u_prop_cov: Array,
                       f_update_fn: Callable[..., tuple[RKPCNState, Array]],
-                      f_update_info: Any) -> tuple[RKPCNState, Callable]:
+                      f_update_info: Any) -> tuple[Callable, Callable]:
     """
     An MCMC sampler to *approximately* sample from the expectation of the random
     measure pi(u; f) with random log density of the form log_p(f(u)), where f ~ GP(m, k).
@@ -656,24 +656,19 @@ def init_rkpcn_kernel(key: PRNGKey,
 
         return next_state, info
 
-    #
-    # build initial state
-    #
-    proposal_tril = jnp.linalg.cholesky(u_prop_cov, upper=False)
-    key_init, key_quad = jr.split(key, 2)
+    # init function
+    def init_fn(key, initial_position, prop_cov):
+        prop_cov_tril = jnp.linalg.cholesky(prop_cov, upper=False)
+        f_init = gp(initial_position).sample(key).squeeze()
+        lp_init = log_density(f_init, initial_position)
 
-    # initial position
-    f_init = gp(initial_position).sample(key_init).squeeze()
-    lp_init = log_density(f_init, initial_position)
+        return RKPCNState(position=initial_position,
+                          f_position=f_init,
+                          logdensity=lp_init,
+                          proposal_tril=prop_cov_tril, 
+                          f_update_info=f_update_info)
 
-    # build initial state
-    initial_state = RKPCNState(position=initial_position,
-                               f_position=f_init,
-                               logdensity=lp_init,
-                               proposal_tril=proposal_tril, 
-                               f_update_info=f_update_info)
-
-    return initial_state, kernel
+    return init_fn, kernel
 
 
 def _f_update_pcn_proposal(key: PRNGKey,

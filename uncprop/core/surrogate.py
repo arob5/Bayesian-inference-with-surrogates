@@ -157,7 +157,7 @@ class SurrogateDistribution(ABC):
         """
         return self.surrogate(input).sample(key, n=n)
 
-    def sample_trajectory(self) -> Distribution:
+    def sample_trajectory(self, key: PRNGKey, **kwargs) -> Distribution:
         """ Returns a Distribution representing a trajectory of the random distribution 
         
         Since a SurrogateDistribution is a random distribution, a trajectory of a 

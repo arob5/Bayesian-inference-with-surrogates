@@ -1,5 +1,6 @@
 # uncprop/models/elliptic_pde/surrogate.py
 from __future__ import annotations
+from collections.abc import Callable
 
 from copy import deepcopy
 import jax
@@ -13,10 +14,11 @@ from gpjax.parameters import DEFAULT_BIJECTION
 from gpjax.gps import _build_fourier_features_fn
 from numpyro.distributions import MultivariateNormal
 
-from uncprop.custom_types import PRNGKey
+from uncprop.custom_types import PRNGKey, Array, ArrayLike
+from uncprop.core.distribution import DistributionFromDensity
 from uncprop.core.surrogate import GaussianFromNumpyro
 from uncprop.core.inverse_problem import Posterior
-from uncprop.core.surrogate import construct_design, GPJaxSurrogate
+from uncprop.core.surrogate import construct_design, GPJaxSurrogate, FwdModelGaussianSurrogate
 from uncprop.utils.gpjax_models import construct_gp
 from uncprop.utils.gpjax_multioutput import (
     BatchedRBF,
@@ -105,6 +107,57 @@ def convert_gp_to_batch_kernel(gp: gpx.gps.ConjugatePosterior, design: Dataset):
     surrogate = GPJaxSurrogate(batched_posterior, design)
 
     return surrogate
+
+
+class PDEFwdModelGaussianSurrogate(FwdModelGaussianSurrogate):
+    """
+    A FwdModelGaussianSurrogate specialized for the PDE experiment surrogate.
+    Requires additional arguments related to the approximation of surrogate
+    trajectories using random Fourier features/pathwise sampling.
+    """
+    
+    def __init__(self,
+                 gp: GPJaxSurrogate,
+                 batchgp: BatchIndependentGP,
+                 observable_to_logdensity: Callable,
+                 num_rff: int,
+                 key_rff: PRNGKey,
+                 log_prior: Callable,
+                 y: Array,
+                 noise_cov_tril: Array,
+                 support: tuple[ArrayLike, ArrayLike] | None = None):
+
+        super().__init__(gp=gp, 
+                         log_prior=log_prior, 
+                         y=y, 
+                         noise_cov_tril=noise_cov_tril,
+                         support=support)
+        
+        self.batchgp = batchgp
+        self.observable_to_logdensity = observable_to_logdensity
+        self.num_rff = num_rff
+
+        # finite-dimensional basis and distribution over basis coefficients for sampling
+        # approximate trajectories
+        self.basis_fn = _build_batch_basis_funcs(key=key_rff, 
+                                                 surrogate=self.surrogate,
+                                                 batchgp=self.batchgp,
+                                                 num_rff=self.num_rff)
+        self.basis_coef_dist = _build_batch_basis_noise_dist(surrogate=self.surrogate,
+                                                             batchgp=self.batchgp,
+                                                             num_rff=self.num_rff)
+
+
+    def sample_trajectory(self, key: PRNGKey, **kwargs):
+         
+        basis_coef = self.basis_coef_dist.sample(key)
+        trajectory = sample_approx_trajectory(self.basis_fn, basis_coef, self.surrogate, self.num_rff)
+
+        def logdensity(u):
+            fu = trajectory(u).squeeze(0).T # (dim_u, dim_output)
+            return self.observable_to_logdensity(fu) # (dim_u,)
+        
+        return DistributionFromDensity(logdensity, dim=self.dim, support=self.support)
 
 
 # -----------------------------------------------------------------------------

@@ -8,9 +8,8 @@ import jax.random as jr
 from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.core.inverse_problem import Posterior
-from uncprop.core.surrogate import FwdModelGaussianSurrogate
 from uncprop.core.samplers import sample_distribution
-from uncprop.models.elliptic_pde.surrogate import fit_pde_surrogate
+from uncprop.models.elliptic_pde.surrogate import fit_pde_surrogate, PDEFwdModelGaussianSurrogate
 from uncprop.models.elliptic_pde.inverse_problem import (
     generate_pde_inv_prob_rep,
     PDESettings,
@@ -28,9 +27,10 @@ class PDEReplicate(Replicate):
     def __init__(self, 
                  key: PRNGKey,
                  n_design: int,
+                 num_rff: int,
                  design_method: str = 'lhc',
                  **kwargs):
-        key_inv_prob, key_surrogate = jr.split(key, 2)
+        key_inv_prob, key_surrogate, key_rff = jr.split(key, 3)
 
         # default settings
         noise_sd = 1e-2
@@ -60,16 +60,19 @@ class PDEReplicate(Replicate):
                                                                     design_method=design_method)
         
         # surrogate-based posterior approximation
-        posterior_surrogate = FwdModelGaussianSurrogate(gp=surrogate,
-                                                        log_prior=posterior.prior.log_density,
-                                                        y=posterior.likelihood.observation,
-                                                        noise_cov_tril=posterior.likelihood.noise_cov_tril,
-                                                        support=posterior.support)
+        posterior_surrogate = PDEFwdModelGaussianSurrogate(gp=surrogate,
+                                                           batchgp=batchgp,
+                                                           observable_to_logdensity=posterior.likelihood.observable_to_logdensity,
+                                                           num_rff=num_rff,
+                                                           key_rff=key_rff,
+                                                           log_prior=posterior.prior.log_density,
+                                                           y=posterior.likelihood.observation,
+                                                           noise_cov_tril=posterior.likelihood.noise_cov_tril,
+                                                           support=posterior.support)
 
         self.key = key
         self.posterior = posterior
         self.posterior_surrogate = posterior_surrogate
-        self.batchgp = batchgp
         self.ground_truth = ground_truth
         self.design = design
         self.opt_history = opt_history
