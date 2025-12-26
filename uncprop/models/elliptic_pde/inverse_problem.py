@@ -169,8 +169,8 @@ class PDEPrior(Prior):
     
     @property
     def truncated_support(self):
-        """Useful for some surrogate-based approximations that may 
-        otherwise blow up in the tails.
+        """Useful for some surrogate-based approximations that induce 
+        posterior approximations that level off in the tails.
         """
         bound = jnp.abs(jax.scipy.stats.norm.ppf(0.01))
         lower = jnp.tile(-bound, self.dim)
