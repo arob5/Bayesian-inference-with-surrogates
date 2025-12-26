@@ -68,6 +68,81 @@ def sample_distribution(key: PRNGKey,
                         n_samples: int,
                         initial_position: Array,
                         n_chains: int = 1, 
+                        n_burnin: int = 0,
+                        thin_window: int = 1,
+                        prop_cov: Array | None = None,
+                        adapt: bool = True,
+                        adapt_kwargs: Mapping[str, Any] | None = None):
+    """ MCMC sampling for Distribution objects
+
+    Adaptive Metropolis-Hastings with various reasonable defaults for
+    sampling from distributions with densities. Specifying `n_warmup > 0`
+    will run an initial warmup run with covariance adaptation for `n_warmup`
+    iterations. The tuned proposal covariance will then be fixed during the
+    main run. `n_burnin` specifies how many samples to drop at the beginning
+    of the main chain. The defaults are set for the workflow where a longer 
+    warmup run is conducted and no burnin is dropped from the main chain.
+    `n_samples` is the number of samples that will be returned by
+    this function. The actual number of samples in the main chain will be 
+    `n_burnin + n_samples * thin_window`.
+
+    Returns:
+        tuple, containing:
+            - positions: (n_samples, dim) array of samples
+            - states: full set of states from the main chain
+            - warmup_samp: full set of states from warmup chain / None if no warmup
+            - prop_cov: full proposal covariance used in main chain
+    """
+    
+    key_warmup_kernel, key_warmup_samp, key_kernel, key_samp = jr.split(key, 4)
+    
+    if initial_position.shape[0] != n_chains:
+        raise ValueError(f'initial_position should have leadning batch index of length n_chains = {n_chains}')
+
+    # target density
+    logdensity = lambda x: dist.log_density(x).squeeze()
+
+    # Initialize proposal covariance (will be adapted)
+    if prop_cov is None:
+        prop_cov = _init_dist_proposal_cov(dist)
+    
+    # run mcmc
+    adapt_kwargs = adapt_kwargs or {}
+    adapt_settings = AdaptationSettings(**adapt_kwargs)
+
+    initial_state, kernel = init_adaptive_rwmh_kernel(key=key_warmup_kernel,
+                                                      logdensity_fn=logdensity,
+                                                      initial_position=initial_position,
+                                                      adapt_settings=adapt_settings,
+                                                      initial_cov=prop_cov, 
+                                                      initial_log_scale=0.0,
+                                                      n_chains=n_chains)
+    
+    n_samples_total = n_burnin + thin_window * n_samples
+    states = jax.block_until_ready(
+        mcmc_loop_multiple_chains(key=key_warmup_samp,
+                                  kernel=kernel,
+                                  initial_state=initial_state,
+                                  num_samples=n_samples_total,
+                                  num_chains=n_chains)
+    )
+        
+    # drop burnin and thin
+    positions = states.position[n_burnin:]
+    positions = positions[::thin_window]
+
+    return {'positions': positions,
+            'states': states,
+            'prop_cov': prop_cov,
+            'kernel': kernel,
+            'initial_state': initial_state}
+
+
+def sample_distribution_old(key: PRNGKey,
+                        dist: Distribution, 
+                        n_samples: int,
+                        initial_position: Array,
+                        n_chains: int = 1, 
                         n_warmup: int = 50_000,
                         n_burnin: int = 0,
                         thin_window: int = 1,
@@ -469,7 +544,7 @@ def init_adaptation_state(
 
 
 def update_adaptation(
-    state: AdaptationState, 
+    adapt_state: AdaptationState, 
     batch_history: Array, 
     batch_accept_rate: float,
     settings: AdaptationSettings = AdaptationSettings()
@@ -478,7 +553,7 @@ def update_adaptation(
     Performs one step of adaptation based on a batch of MCMC history.
     
     Args:
-        state: Current AdaptationState.
+        adapt_state: Current AdaptationState.
         batch_history: Array of shape (batch_size, dim) containing recent samples.
         batch_accept_rate: Scalar, average acceptance probability of the batch.
         settings: Hyperparameters.
@@ -488,19 +563,19 @@ def update_adaptation(
     """
     
     # Calculate decay factor: gamma = (N + 3)^(-gamma_exponent)
-    gamma = 1.0 / ((state.times_adapted + 3.0) ** settings.gamma_exponent)
+    gamma = 1.0 / ((adapt_state.times_adapted + 3.0) ** settings.gamma_exponent)
     
     # Update Scale (Robbins-Monro)
     # l_new = l_old + eta * gamma * (acc - target)
     diff = batch_accept_rate - settings.target_accept
     scale_adjustment = settings.scale_numerator * gamma * diff
-    new_log_scale = state.log_scale + scale_adjustment
+    new_log_scale = adapt_state.log_scale + scale_adjustment
 
     # Update Covariance (Stochastic Approximation / exponential moving average)
     # C_new = (1-gamma)*C_old + gamma*C_batch
     batch_cov = jnp.cov(batch_history, rowvar=False)
     batch_cov = jnp.atleast_2d(batch_cov)
-    new_cov = state.cov_prop + gamma * (batch_cov - state.cov_prop)
+    new_cov = adapt_state.cov_prop + gamma * (batch_cov - adapt_state.cov_prop)
     
     # Enforce symmetry and regularize to ensure positive definiteness
     new_cov = 0.5 * (new_cov + new_cov.T)
@@ -509,11 +584,11 @@ def update_adaptation(
     return AdaptationState(
         cov_prop=new_cov,
         log_scale=new_log_scale,
-        times_adapted=state.times_adapted + 1
+        times_adapted=adapt_state.times_adapted + 1
     )
 
 
-def _proposal_tril_from_adaptation(state: AdaptationState) -> Array:
+def _proposal_tril_from_adaptation(adapt_state: AdaptationState) -> Array:
     """
     Reconstructs the Cholesky decomposition of the full proposal matrix.
     Sigma = exp(2 * log_scale) * cov_prop
@@ -521,8 +596,8 @@ def _proposal_tril_from_adaptation(state: AdaptationState) -> Array:
 
     Works for both single and multiple chains.
     """
-    scale = jnp.exp(state.log_scale)
-    L_cov = jnp.linalg.cholesky(state.cov_prop, upper=False)
+    scale = jnp.exp(adapt_state.log_scale)
+    L_cov = jnp.linalg.cholesky(adapt_state.cov_prop, upper=False)
     return jnp.asarray(scale)[..., None, None] * L_cov
 
 

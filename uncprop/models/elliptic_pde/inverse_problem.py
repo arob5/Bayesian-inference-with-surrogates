@@ -168,6 +168,17 @@ class PDEPrior(Prior):
         return (-jnp.inf, jnp.inf)
     
     @property
+    def truncated_support(self):
+        """Useful for some surrogate-based approximations that may 
+        otherwise blow up in the tails.
+        """
+        bound = jnp.abs(jax.scipy.stats.norm.ppf(0.01))
+        lower = jnp.tile(-bound, self.dim)
+        upper = jnp.tile(bound, self.dim)
+
+        return lower, upper        
+
+    @property
     def par_names(self):
         return [f'u{i}' for i in range(self.dim)]
     

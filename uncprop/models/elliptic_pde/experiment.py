@@ -62,7 +62,7 @@ class PDEReplicate(Replicate):
         # surrogate-based posterior approximation
         posterior_surrogate = PDEFwdModelGaussianSurrogate(gp=surrogate,
                                                            batchgp=batchgp,
-                                                           observable_to_logdensity=posterior.likelihood.observable_to_logdensity,
+                                                           posterior=posterior,
                                                            num_rff=num_rff,
                                                            key_rff=key_rff,
                                                            log_prior=posterior.prior.log_density,
@@ -88,7 +88,7 @@ class PDEReplicate(Replicate):
                  thin_window: int = 5, 
                  **kwargs):
         
-        key, key_init_mcmc = jr.split(key)
+        key, key_init_mcmc, key_seed_mcmc = jr.split(key, 3)
 
         if write_to_file:
             out_dir = base_out_dir / f'rep{rep_idx}'
@@ -102,7 +102,7 @@ class PDEReplicate(Replicate):
         }
 
         initial_position = self.posterior.prior.sample(key_init_mcmc)
-        mcmc_keys = jr.split(key, len(dists))
+        mcmc_keys = jr.split(key_seed_mcmc, len(dists))
 
         mcmc_samp = {}
         mcmc_info = {}
@@ -113,12 +113,34 @@ class PDEReplicate(Replicate):
                 dist=dist,
                 initial_position=initial_position,
                 n_samples=n_mcmc,
-                n_warmup=n_warmup,
+                n_burnin=n_warmup,
                 thin_window=thin_window
             )
 
             mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
             mcmc_info[dist_name] = mcmc_results
+
+        # expected posterior: MCwMH
+        # samp_mcwmh = sample_mcwmh(key=key,
+        #                           posterior_surrogat=self.posterior_surrogate,
+        #                           n_chains=10,
+        #                           n_samp_per_chain=10,
+        #                           n_burnin=50_000,
+        #                           thin_window=1000)
+
+        key, key_traj, key_traj_samp = jr.split(key, 3)
+        post_traj = self.posterior_surrogate.sample_trajectory(key_traj)
+        sample_traj_results = sample_distribution(
+            key=key_traj_samp,
+            dist=post_traj,
+            initial_position=initial_position,
+            n_samples=n_mcmc,
+            n_burnin=n_warmup,
+            thin_window=thin_window,
+            prop_cov=mcmc_info['mean']['prop_cov'][0]
+        )
+        mcmc_samp['traj'] = sample_traj_results['positions'].squeeze(1)
+        mcmc_info['traj'] = sample_traj_results
 
 
         # write results
@@ -130,3 +152,28 @@ class PDEReplicate(Replicate):
 
         return self
 
+
+
+
+def sample_mcwmh(key: PRNGKey,
+                 posterior_surrogate: PDEFwdModelGaussianSurrogate,
+                 n_chains: int,
+                 n_samp_per_chain: int,
+                 n_burnin: int,
+                 thin_window: int):
+    key_seed_trajectory, key_seed_mcmc = jr.split(key, 2)
+
+    trajectory_keys = jr.split(key_seed_trajectory, n_chains)
+    mcmc_keys = jr.split(key_seed_mcmc, n_chains)
+
+    post_traj = posterior_surrogate.sample_trajectory(key_traj)
+
+    sample_traj_results = sample_distribution(
+        key=key_traj_samp,
+        dist=post_traj,
+        initial_position=initial_position,
+        n_samples=n_mcmc,
+        n_burnin=n_warmup,
+        thin_window=thin_window,
+        prop_cov=mcmc_info['mean']['prop_cov'][0]
+    )

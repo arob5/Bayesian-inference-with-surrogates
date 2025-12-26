@@ -119,7 +119,7 @@ class PDEFwdModelGaussianSurrogate(FwdModelGaussianSurrogate):
     def __init__(self,
                  gp: GPJaxSurrogate,
                  batchgp: BatchIndependentGP,
-                 observable_to_logdensity: Callable,
+                 posterior: Posterior,
                  num_rff: int,
                  key_rff: PRNGKey,
                  log_prior: Callable,
@@ -134,7 +134,7 @@ class PDEFwdModelGaussianSurrogate(FwdModelGaussianSurrogate):
                          support=support)
         
         self.batchgp = batchgp
-        self.observable_to_logdensity = observable_to_logdensity
+        self.posterior = posterior
         self.num_rff = num_rff
 
         # finite-dimensional basis and distribution over basis coefficients for sampling
@@ -153,11 +153,17 @@ class PDEFwdModelGaussianSurrogate(FwdModelGaussianSurrogate):
         basis_coef = self.basis_coef_dist.sample(key)
         trajectory = sample_approx_trajectory(self.basis_fn, basis_coef, self.surrogate, self.num_rff)
 
+        observable_to_loglik = self.posterior.likelihood.observable_to_logdensity
+        log_prior = lambda u: self.posterior.prior.log_density(u).squeeze()
+
         def logdensity(u):
+            u = jnp.atleast_2d(u)
             fu = trajectory(u).squeeze(0).T # (dim_u, dim_output)
-            return self.observable_to_logdensity(fu) # (dim_u,)
+            return observable_to_loglik(fu) + log_prior(u)
         
-        return DistributionFromDensity(logdensity, dim=self.dim, support=self.support)
+        return DistributionFromDensity(logdensity, 
+                                       dim=self.dim, 
+                                       support=self.posterior.prior.truncated_support)
 
 
 # -----------------------------------------------------------------------------
