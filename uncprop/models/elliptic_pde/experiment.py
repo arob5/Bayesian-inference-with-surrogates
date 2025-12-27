@@ -83,12 +83,16 @@ class PDEReplicate(Replicate):
                  write_to_file: bool = True,
                  base_out_dir: Path | None = None, 
                  rep_idx: Any = None, 
-                 n_mcmc: int = 5_000,
-                 n_warmup: int = 10_000,
-                 thin_window: int = 5, 
+                 mcmc_settings: dict[str, Any] | None = None,
+                 mcwmh_settings: dict[str, Any] | None = None,  
                  **kwargs):
         
         key, key_init_mcmc, key_seed_mcmc = jr.split(key, 3)
+
+        if mcmc_settings is None:
+            mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
+        if mcwmh_settings is None:
+            mcwmh_settings = {'n_chains': 10, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 1000}
 
         if write_to_file:
             out_dir = base_out_dir / f'rep{rep_idx}'
@@ -112,37 +116,19 @@ class PDEReplicate(Replicate):
                 key=key,
                 dist=dist,
                 initial_position=initial_position,
-                n_samples=n_mcmc,
-                n_burnin=n_warmup,
-                thin_window=thin_window
+                prop_cov=0.3**2 * jnp.eye(self.posterior.dim),
+                **mcmc_settings
             )
 
             mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
             mcmc_info[dist_name] = mcmc_results
 
         # expected posterior: MCwMH
-        samp_mcwmh = sample_mcwmh(key=key,
-                                  posterior_surrogate=self.posterior_surrogate,
-                                  n_chains=10,
-                                  n_samp_per_chain=10,
-                                  n_burnin=50_000,
-                                  thin_window=1000,
-                                  prop_cov_init=mcmc_info['mean']['prop_cov'][0])
-        mcmc_samp['ep_mcwmh'] = samp_mcwmh
-
-        # key, key_traj, key_traj_samp = jr.split(key, 3)
-        # post_traj = self.posterior_surrogate.sample_trajectory(key_traj)
-        # sample_traj_results = sample_distribution(
-        #     key=key_traj_samp,
-        #     dist=post_traj,
-        #     initial_position=initial_position,
-        #     n_samples=n_mcmc,
-        #     n_burnin=n_warmup,
-        #     thin_window=thin_window,
-        #     prop_cov=mcmc_info['mean']['prop_cov'][0]
-        # )
-        # mcmc_samp['traj'] = sample_traj_results['positions'].squeeze(1)
-        # mcmc_info['traj'] = sample_traj_results
+        # samp_mcwmh = sample_mcwmh(key=key,
+        #                           posterior_surrogate=self.posterior_surrogate,
+        #                           prop_cov_init=mcmc_info['mean']['prop_cov'][0],
+        #                           **mcwmh_settings)
+        # mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
 
         # write results
         if write_to_file:
@@ -161,6 +147,8 @@ def sample_mcwmh(key: PRNGKey,
                  n_burnin: int,
                  thin_window: int,
                  prop_cov_init: Array | None = None):
+    """Monte Carlo within Metropolis-Hastings approximation of the expected posterior"""
+
     key_seed_trajectory, key_seed_mcmc, key_init_positions = jr.split(key, 3)
 
     trajectory_keys = jr.split(key_seed_trajectory, n_chains)
