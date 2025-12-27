@@ -164,7 +164,8 @@ class Experiment:
                  setup_kwargs: dict | None = None,
                  run_kwargs: dict | None = None,
                  subdir_name: str | Path | None = None,
-                 write_to_log_file: bool = True):
+                 write_to_log_file: bool = True,
+                 overwrite: bool = False):
         """ Top-level execution of the experiment
 
         Runs the replicates indexed by `rep_idx`, with the default None
@@ -193,7 +194,8 @@ class Experiment:
         experiment_run_kwargs = {'rep_idx': rep_idx, 
                                  'setup_kwargs': setup_kwargs,
                                  'run_kwargs': run_kwargs,
-                                 'subdir': subdir}
+                                 'subdir': subdir,
+                                 'overoverwriteride': overwrite}
 
         if write_to_log_file:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -201,11 +203,12 @@ class Experiment:
             
             with open(logfile_path, 'w') as log_file:
                 with redirect_stdout(log_file):
-                    results, failed_reps = self._run_experiment(**experiment_run_kwargs)
+                    results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
         else:
-            results, failed_reps = self._run_experiment(**experiment_run_kwargs)
+            results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
 
         np.savetxt(subdir / 'failed_reps.txt', failed_reps, fmt='%d')
+        np.savetxt(subdir / 'skipped_reps.txt', failed_reps, fmt='%d')
         return results, failed_reps
 
 
@@ -213,7 +216,8 @@ class Experiment:
                         rep_idx: Sequence[int],                 
                         setup_kwargs: dict,
                         run_kwargs: dict,
-                        subdir: Path):
+                        subdir: Path,
+                        overwrite: bool):
         """Lower-level function for experiment execution
 
         Intended to be called by __call__().
@@ -221,11 +225,16 @@ class Experiment:
         
         results: list[Any] = []
         failed_reps: list[int] = []
+        skipped_reps: list[int] = []
 
         for idx in rep_idx:
-            rep_subdir = subdir / f'rep{idx}'
-
             try:
+                rep_subdir, skip = self._make_and_validate_rep_subdir(subdir, idx, overwrite)
+                if skip:
+                    print(f'Skipping iteration {idx}')
+                    skipped_reps.append(idx)
+                    continue
+
                 rep = self.init_replicate(idx, setup_kwargs, rep_subdir)
                 rep_result = self.run_replicate(rep, idx, run_kwargs, rep_subdir)
                 results.append(rep_result)
@@ -236,5 +245,39 @@ class Experiment:
                 results.append(e)
 
         print(f'{len(failed_reps)} of {self.num_reps} replicates failed.')
+        print(f'{len(skipped_reps)} of {self.num_reps} replicates skipped.')
 
-        return results, failed_reps 
+        return results, failed_reps, skipped_reps
+    
+
+    def _make_and_validate_rep_subdir(self, subdir: Path, rep_idx: int, overwrite: bool):
+        """
+        If rep subdir does not exist, creates it and saves rep key to file.
+        If it already exists and overwrite is False, returns bool indicating 
+        rep should be skipped. If it already exists and overwrite is True, 
+        ensures that the rep key agrees with the current key.
+        """
+
+        rep_subdir = subdir / f'rep{rep_idx}'
+
+        if not rep_subdir.exists():
+            rep_subdir.mkdir()
+
+        rep_key_path = rep_subdir / 'rep_key.npy'
+
+        if not overwrite and rep_key_path.exists():
+            return rep_subdir, True
+        
+        if rep_key_path.exists():
+            key_data = jnp.load(rep_key_path)
+            rep_key = jr.wrap_key_data(key_data)
+            if rep_key != self.replicate_keys[rep_idx]:
+                raise ValueError(
+                    f'rep key for rep {rep_idx} does not match existing key'
+                    f'Either the underlying code changed or iteration numbers were mixed up.'
+                )
+            print(f'Overwriting results for rep {rep_idx}')
+        else:
+            jnp.save(rep_key_path, jr.key_data(self.replicate_keys[rep_idx]))
+
+        return rep_subdir, False

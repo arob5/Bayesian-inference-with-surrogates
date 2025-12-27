@@ -26,6 +26,7 @@ class PDEReplicate(Replicate):
 
     def __init__(self, 
                  key: PRNGKey,
+                 out_dir: Path,
                  n_design: int,
                  num_rff: int,
                  design_method: str = 'lhc',
@@ -81,9 +82,7 @@ class PDEReplicate(Replicate):
 
     def __call__(self, 
                  key: PRNGKey,
-                 write_to_file: bool = True,
-                 base_out_dir: Path | None = None, 
-                 rep_idx: Any = None, 
+                 out_dir: Path,
                  mcmc_settings: dict[str, Any] | None = None,
                  mcwmh_settings: dict[str, Any] | None = None,  
                  **kwargs):
@@ -94,10 +93,6 @@ class PDEReplicate(Replicate):
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
         if mcwmh_settings is None:
             mcwmh_settings = {'n_chains': 10, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 1000}
-
-        if write_to_file:
-            out_dir = base_out_dir / f'rep{rep_idx}'
-            out_dir.mkdir()
 
         # sampling distributions
         dists = {
@@ -132,14 +127,10 @@ class PDEReplicate(Replicate):
         mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
 
         # write results
-        if write_to_file:
-            jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
-            jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
+        jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
+        jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
 
-        self.samples = mcmc_samp
-        self.mcmc_info = mcmc_info
-
-        return self
+        return None
 
 
 def sample_mcwmh(key: PRNGKey,
