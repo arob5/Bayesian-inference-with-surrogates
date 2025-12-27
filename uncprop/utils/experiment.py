@@ -176,6 +176,7 @@ class Experiment:
         Replicates are run sequentially in a loop. Exceptions are caught
         so that execution is not stopped if a replicate fails. 
         """
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
         # replicates to run
         if isinstance(rep_idx, int):
@@ -190,16 +191,18 @@ class Experiment:
         subdir = self.create_subdir(setup_kwargs=setup_kwargs, 
                                     run_kwargs=run_kwargs,
                                     name=subdir_name)
+        subdir_logs = subdir / 'log'
+        if not subdir_logs.exists():
+            subdir_logs.mkdir()
         
         experiment_run_kwargs = {'rep_idx': rep_idx, 
                                  'setup_kwargs': setup_kwargs,
                                  'run_kwargs': run_kwargs,
                                  'subdir': subdir,
-                                 'overoverwriteride': overwrite}
+                                 'overwrite': overwrite}
 
         if write_to_log_file:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            logfile_path = subdir / f'output_{timestamp}.log'
+            logfile_path = subdir_logs / f'experiment_call_{timestamp}.log'
             
             with open(logfile_path, 'w') as log_file:
                 with redirect_stdout(log_file):
@@ -207,9 +210,9 @@ class Experiment:
         else:
             results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
 
-        np.savetxt(subdir / 'failed_reps.txt', failed_reps, fmt='%d')
-        np.savetxt(subdir / 'skipped_reps.txt', failed_reps, fmt='%d')
-        return results, failed_reps
+        np.savetxt(subdir_logs / f'failed_reps_{timestamp}.txt', failed_reps, fmt='%d')
+        np.savetxt(subdir_logs / f'skipped_reps_{timestamp}.txt', skipped_reps, fmt='%d')
+        return results, failed_reps, skipped_reps
 
 
     def _run_experiment(self,
@@ -222,6 +225,11 @@ class Experiment:
 
         Intended to be called by __call__().
         """
+
+        print('Experiment call info:')
+        print(f'\toutput directory: {subdir}')
+        print(f'\toverwrite existing output: {overwrite}')
+        print(f'\trep indices: {rep_idx}')
         
         results: list[Any] = []
         failed_reps: list[int] = []

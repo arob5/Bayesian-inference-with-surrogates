@@ -57,7 +57,6 @@ run_kwargs = {
 }
 
 
-
 # -----------------------------------------------------------------------------
 # Run experiment 
 # -----------------------------------------------------------------------------
@@ -67,16 +66,19 @@ def run_pde_experiment():
                             **experiment_settings)
     all_results = []
     all_failed_reps = []
+    all_skipped_reps = []
 
     for n_design in design_sizes:
         setup_kwargs['n_design'] = n_design
 
-        results, failed_reps = experiment(setup_kwargs=setup_kwargs, 
-                                          run_kwargs=run_kwargs)
+        results, failed_reps, skipped_reps = experiment(rep_idx=[0, 8],
+                                                        setup_kwargs=setup_kwargs, 
+                                                        run_kwargs=run_kwargs)
         all_results.append(results)
         all_failed_reps.append(failed_reps)
+        all_skipped_reps.append(skipped_reps)
 
-    return all_results, all_failed_reps
+    return all_results, all_failed_reps, all_skipped_reps
 
 
 if __name__ == '__main__':
