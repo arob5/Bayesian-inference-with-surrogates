@@ -9,8 +9,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import time
 
 import numpy as np
+import jax.numpy as jnp
 import jax.random as jr
 from uncprop.custom_types import PRNGKey
 
@@ -68,6 +70,7 @@ class Experiment:
 
         # create base prng key for each replicate
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
+        jnp.save(self.base_out_dir / 'base_key.npy', jr.key_data(self.base_key))
 
     def run_replicate(self, 
                       idx: int,
@@ -84,13 +87,23 @@ class Experiment:
         key = self.replicate_keys[idx]
         key_init, key_run = jr.split(key, 2)
 
+        start = time.perf_counter()
         rep = self.Replicate(key=key_init, **setup_kwargs)
-        return rep(key=key_run,
-                   write_to_file=self.write_to_file,
-                   base_out_dir=subdir, 
-                   rep_idx=idx, 
-                   **run_kwargs)
+        end = time.perf_counter()
+        print(f'\tSetup time: {end - start:.6f} seconds')
+
+        start = time.perf_counter()
+        rep_results = rep(key=key_run,
+                          write_to_file=self.write_to_file,
+                          base_out_dir=subdir, 
+                          rep_idx=idx, 
+                          **run_kwargs)
+        end = time.perf_counter()
+        print(f'\tRun time: {end - start:.6f} seconds')
+
+        return rep_results
     
+
     def save_results(self, subdir: Path, *args, **kwargs):
         print('No save_results() methods implemented.')
 

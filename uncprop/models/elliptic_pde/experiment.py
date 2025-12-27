@@ -30,6 +30,7 @@ class PDEReplicate(Replicate):
                  num_rff: int,
                  design_method: str = 'lhc',
                  **kwargs):
+        
         key_inv_prob, key_surrogate, key_rff = jr.split(key, 3)
 
         # default settings
@@ -70,7 +71,7 @@ class PDEReplicate(Replicate):
                                                            noise_cov_tril=posterior.likelihood.noise_cov_tril,
                                                            support=posterior.support)
 
-        self.key = key
+        self.keys = {'init': key, 'inv_prob': key_inv_prob, 'surrogate': key_surrogate, 'rff': key_rff}
         self.posterior = posterior
         self.posterior_surrogate = posterior_surrogate
         self.ground_truth = ground_truth
@@ -87,7 +88,7 @@ class PDEReplicate(Replicate):
                  mcwmh_settings: dict[str, Any] | None = None,  
                  **kwargs):
         
-        key, key_init_mcmc, key_seed_mcmc = jr.split(key, 3)
+        key, key_init_mcmc, key_seed_mcmc, key_mcwmh = jr.split(key, 4)
 
         if mcmc_settings is None:
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
@@ -124,15 +125,16 @@ class PDEReplicate(Replicate):
             mcmc_info[dist_name] = mcmc_results
 
         # expected posterior: MCwMH
-        # samp_mcwmh = sample_mcwmh(key=key,
-        #                           posterior_surrogate=self.posterior_surrogate,
-        #                           prop_cov_init=mcmc_info['mean']['prop_cov'][0],
-        #                           **mcwmh_settings)
-        # mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
+        samp_mcwmh = sample_mcwmh(key=key_mcwmh,
+                                  posterior_surrogate=self.posterior_surrogate,
+                                  prop_cov_init=mcmc_info['mean']['prop_cov'][0],
+                                  **mcwmh_settings)
+        mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
 
         # write results
         if write_to_file:
             jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
+            jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
 
         self.samples = mcmc_samp
         self.mcmc_info = mcmc_info
@@ -146,7 +148,8 @@ def sample_mcwmh(key: PRNGKey,
                  n_samp_per_chain: int,
                  n_burnin: int,
                  thin_window: int,
-                 prop_cov_init: Array | None = None):
+                 prop_cov_init: Array | None = None,
+                 adapt_kwargs=None):
     """Monte Carlo within Metropolis-Hastings approximation of the expected posterior"""
 
     key_seed_trajectory, key_seed_mcmc, key_init_positions = jr.split(key, 3)
@@ -167,7 +170,8 @@ def sample_mcwmh(key: PRNGKey,
             n_samples=n_samp_per_chain,
             n_burnin=n_burnin,
             thin_window=thin_window,
-            prop_cov=prop_cov_init
+            prop_cov=prop_cov_init,
+            adapt_kwargs=adapt_kwargs
         )
 
         samp = samp.at[i].set(
