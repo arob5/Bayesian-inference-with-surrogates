@@ -5,7 +5,9 @@ approximation experiment.
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from contextlib import redirect_stdout
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,56 +60,79 @@ class Experiment:
     write_to_file: bool = True
 
     def __post_init__(self):
-        self.base_out_dir = Path(self.base_out_dir)
+        self.base_out_dir: Path = Path(self.base_out_dir)
 
-        # create output directory
-        if self.write_to_file: 
-            if self.base_out_dir.exists():
-                print(f'Using existing base output directory: {self.base_out_dir}')
-            else:
-                print(f'Creating new output directory: {self.base_out_dir}')
-                self.base_out_dir.mkdir(parents=True)
+        # create output directory 
+        if self.base_out_dir.exists():
+            self._validate_existing_experiment()
+            print(f'Continuing existing experiment: {self.base_out_dir}')
+        else:
+            self._init_new_experiment()
 
-        # create base prng key for each replicate
+        # generate keys for each replicate
         self.replicate_keys = jr.split(self.base_key, self.num_reps)
+
+
+    def _validate_existing_experiment(self):
+        """
+        Load an existing experiment with base directory `base_out_dir`.
+        Ensures that the current base PRNG key matches the key data saved
+        for the existing experiment.
+        """
+        base_key_data_path = self.base_out_dir / 'base_key.npy'
+
+        if not base_key_data_path.exists():
+            raise FileNotFoundError(f'Existing experiment missing key data: {base_key_data_path}')
+        
+        key_data = jnp.load(base_key_data_path)
+        base_key = jr.wrap_key_data(key_data)
+
+        if base_key != self.base_key:
+            raise ValueError('Existing experiment base key does not match current base key.')
+
+
+    def _init_new_experiment(self):
+        print(f'Creating new experiment: {self.base_out_dir}')
+        self.base_out_dir.mkdir(parents=True)
+
+        # save key data
         jnp.save(self.base_out_dir / 'base_key.npy', jr.key_data(self.base_key))
 
-    def run_replicate(self, 
-                      idx: int,
-                      subdir: Path | None = None, 
-                      setup_kwargs: dict | None = None,
-                      run_kwargs: dict | None = None):
-        print(f'Running replicate {idx}')
 
-        if setup_kwargs is None:
-            setup_kwargs = {}
-        if run_kwargs is None:
-            run_kwargs = {}
-
-        key = self.replicate_keys[idx]
-        key_init, key_run = jr.split(key, 2)
+    def init_replicate(self, 
+                       rep_idx: int,
+                       setup_kwargs: dict,
+                       rep_subdir: Path):
+        print(f'Initializing replicate {rep_idx}')
+        key = self.replicate_keys[rep_idx]
 
         start = time.perf_counter()
-        rep = self.Replicate(key=key_init, **setup_kwargs)
+        rep = self.Replicate(key=key, out_dir=rep_subdir, **setup_kwargs)
         end = time.perf_counter()
         print(f'\tSetup time: {end - start:.6f} seconds')
 
+        return rep
+        
+
+    def run_replicate(self,
+                      rep: Replicate, 
+                      rep_idx: int,
+                      run_kwargs: dict,
+                      rep_subdir: Path):
+        print(f'Running replicate {rep_idx}')
+        key = self.replicate_keys[rep_idx]
+        _, key_run = jr.split(key)
+
         start = time.perf_counter()
-        rep_results = rep(key=key_run,
-                          write_to_file=self.write_to_file,
-                          base_out_dir=subdir, 
-                          rep_idx=idx, 
-                          **run_kwargs)
+        rep_results = rep(key=key_run, out_dir=rep_subdir, **run_kwargs)
         end = time.perf_counter()
         print(f'\tRun time: {end - start:.6f} seconds')
 
         return rep_results
-    
 
-    def save_results(self, subdir: Path, *args, **kwargs):
-        print('No save_results() methods implemented.')
 
     def make_subdir_name(self, setup_kwargs: dict, run_kwargs: dict) -> str | Path:
+        """Create subdirectory name as function of {setup_kwargs, run_kwargs}"""
         return self.subdir_name_fn(setup_kwargs, run_kwargs)
 
     def create_subdir(self, 
@@ -115,8 +140,7 @@ class Experiment:
                       setup_kwargs: dict, 
                       run_kwargs: dict, 
                       name: str | Path | None = None):
-        if not self.write_to_file:
-            return None
+        """Create subdirectory for current experiment call"""
 
         if name is None:
             subdir = self.make_subdir_name(setup_kwargs, run_kwargs)
@@ -127,57 +151,90 @@ class Experiment:
 
         # create output directory
         if subdir.exists():
-            raise FileExistsError(f'Experiment sub-directory already exists: {subdir}')
-        print(f'Creating experiment sub-directory: {subdir}')
-        subdir.mkdir(parents=True)
+            print(f'Working in existing experiment sub-directory: {subdir}')
+        else:
+            print(f'Creating experiment sub-directory: {subdir}')        
+            subdir.mkdir(parents=True)
 
         return subdir
 
+
     def __call__(self,
+                 rep_idx: Sequence[int] | int | None = None,                 
                  setup_kwargs: dict | None = None,
                  run_kwargs: dict | None = None,
-                 backup_frequency: int | None = None,
-                 subdir_name: str | Path | None = None):
-        """Top-level execution of the experiment
-        
-        Default method iterates over each replicate and call `run_replicate()`, 
-        optionally saving results periodically by calling `save_results()`.
-        Some experiments may want to subclass and override to handle specialty
-        batching/parallelization.
+                 subdir_name: str | Path | None = None,
+                 write_to_log_file: bool = True):
+        """ Top-level execution of the experiment
 
-        `subdir` allows manually specifying the subdirectory for this call,
-        overriding the default behavior of using `make_subdir_name()`.
+        Runs the replicates indexed by `rep_idx`, with the default None
+        running all replicates. The output subdirectory for this call is
+        determined by {setup_kwargs, run_kwargs, subdir_name}
+        (see `create_subdir()` method).
+
+        Replicates are run sequentially in a loop. Exceptions are caught
+        so that execution is not stopped if a replicate fails. 
         """
+
+        # replicates to run
+        if isinstance(rep_idx, int):
+            rep_idx = [rep_idx]
+        elif rep_idx is None:
+            rep_idx = list(range(self.num_reps))
+
+        setup_kwargs = setup_kwargs or {}
+        run_kwargs = run_kwargs or {}
+
+        # subdirectory name for outputs
         subdir = self.create_subdir(setup_kwargs=setup_kwargs, 
                                     run_kwargs=run_kwargs,
                                     name=subdir_name)
+        
+        experiment_run_kwargs = {'rep_idx': rep_idx, 
+                                 'setup_kwargs': setup_kwargs,
+                                 'run_kwargs': run_kwargs,
+                                 'subdir': subdir}
 
+        if write_to_log_file:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            logfile_path = subdir / f'output_{timestamp}.log'
+            
+            with open(logfile_path, 'w') as log_file:
+                with redirect_stdout(log_file):
+                    results, failed_reps = self._run_experiment(**experiment_run_kwargs)
+        else:
+            results, failed_reps = self._run_experiment(**experiment_run_kwargs)
+
+        np.savetxt(subdir / 'failed_reps.txt', failed_reps, fmt='%d')
+        return results, failed_reps
+
+
+    def _run_experiment(self,
+                        rep_idx: Sequence[int],                 
+                        setup_kwargs: dict,
+                        run_kwargs: dict,
+                        subdir: Path):
+        """Lower-level function for experiment execution
+
+        Intended to be called by __call__().
+        """
+        
         results: list[Any] = []
         failed_reps: list[int] = []
 
-        for rep_idx in range(self.num_reps):
+        for idx in rep_idx:
+            rep_subdir = subdir / f'rep{idx}'
+
             try:
-                rep_result = self.run_replicate(idx=rep_idx, subdir=subdir,
-                                                setup_kwargs=setup_kwargs,
-                                                run_kwargs=run_kwargs)
+                rep = self.init_replicate(idx, setup_kwargs, rep_subdir)
+                rep_result = self.run_replicate(rep, idx, run_kwargs, rep_subdir)
                 results.append(rep_result)
             except Exception as e:
-                print(f'Iteration {rep_idx} failed with error: {e}')
-                failed_reps.append(rep_idx)
+                print(f'Iteration {idx} failed with error:')
+                print(e)
+                failed_reps.append(idx)
                 results.append(e)
-            finally:
-                final_iteration = (rep_idx == self.num_reps-1)
-                backup_iteration = ((backup_frequency is not None) and 
-                                    (rep_idx % backup_frequency == 0) and 
-                                    (rep_idx != 0))               
-
-                if self.write_to_file and (final_iteration or backup_iteration):
-                    try:
-                        self.save_results(subdir, results, failed_reps)
-                    except Exception as save_error:
-                        print(f'save_results() failed with error: {save_error}')
 
         print(f'{len(failed_reps)} of {self.num_reps} replicates failed.')
-        np.savetxt(subdir / 'failed_reps.txt', failed_reps, fmt='%d')
 
-        return results, failed_reps
+        return results, failed_reps 

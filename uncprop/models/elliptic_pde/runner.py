@@ -22,7 +22,7 @@ experiment_name = 'pde_experiment'
 experiment_settings = {
     'name': experiment_name,
     'base_out_dir': base_dir / 'out' / experiment_name,
-    'num_reps': 1,
+    'num_reps': 100,
     'base_key': key,
     'Replicate': PDEReplicate,
     'write_to_file': True,
