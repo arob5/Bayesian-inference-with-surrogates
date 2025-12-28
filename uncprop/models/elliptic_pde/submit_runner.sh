@@ -7,6 +7,7 @@
 #$ -l buyin
 #$ -pe omp 1
 #$ -t 1-30
+#$ -o /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/out/pde_experiment/logs
 #
 # Array job for executing PDE experiment. It is the users responsibility
 # for setting the task IDs (e.g., `-t 1-30`) and the batch size 
