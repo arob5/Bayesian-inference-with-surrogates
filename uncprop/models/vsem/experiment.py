@@ -46,7 +46,8 @@ class VSEMReplicate(Replicate):
     }
 
     def __init__(self, 
-                 key: PRNGKey, 
+                 key: PRNGKey,
+                 out_dir: Path,
                  n_design: int, 
                  noise_sd: float,
                  n_grid: int = 50,
@@ -88,9 +89,24 @@ class VSEMReplicate(Replicate):
         self.grid = grid
         self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
 
-    def __call__(self, key: PRNGKey, surrogate_tag: str, n_mcmc: int = 20_000, **kwargs):
-        # Note that each time this is called for a particular instance will generate the same key_ep.
-        key, key_ep = jr.split(key, 2)
+
+    def __call__(self, 
+                 key: PRNGKey, 
+                 out_dir: PRNGKey,
+                 surrogate_tag: str,
+                 rkpcn_rho_vals: dict[str, float],
+                 mcmc_settings: dict[str, Any] | None = None,
+                 rkpcn_settings: dict[str, Any] | None = None,
+                 **kwargs):
+        
+        key, key_ep, key_init_mcmc, key_seed_mcmc, key_seed_rkpcn = jr.split(key, 5)
+
+        if mcmc_settings is None:
+            mcmc_settings = {'n_samples': 1000, 'n_burnin': 50_000, 'thin_window': 5}
+        if rkpcn_settings is None:
+            rkpcn_settings = {'n_samples': 1000, 'n_burnin': 50_000, 'thin_window': 5}
+
+        # each call is specific to either GP or clipped GP surrogate
         post = self.posterior
         if surrogate_tag == 'gp':
             surr = self.surrogate_posterior_gp
@@ -99,6 +115,7 @@ class VSEMReplicate(Replicate):
         else:
             raise ValueError(f'surrogate_tag must be `gp` or `clip_gp`; got {surrogate_tag}')
 
+        # exact and approximate posteriors
         dists = {
             'exact': post,
             'mean': surr.expected_surrogate_approx(),
@@ -107,25 +124,35 @@ class VSEMReplicate(Replicate):
         }
         density_comparison = DensityComparisonGrid(grid=self.grid, distributions=dists)
 
-        # MCMC tests
-        mcmc_keys = jr.split(key, 4)
-        samp_exact, prop_cov = _run_mcmc_exact(mcmc_keys[0], post, n_mcmc)
-        initial_position_idx = jnp.argmax(density_comparison.log_dens_grid['ep'])
-        initial_position = density_comparison.grid.flat_grid[initial_position_idx]
+        # run samplers
+        initial_position = self.posterior.prior.sample(key_init_mcmc)
+        mcmc_keys = jr.split(key_seed_mcmc, len(dists))
 
-        rkpcn_settings = {'posterior': post,
-                          'surrogate_post': surr,
-                          'initial_position': initial_position,
-                          'n_samples': n_mcmc,
-                          'prop_cov': prop_cov}
+        mcmc_samp = {}
+        mcmc_info = {}
+        print('\tRunning samplers')
+        for key, (dist_name, dist) in zip(mcmc_keys, dists.items()):
+            mcmc_results = sample_distribution(
+                key=key,
+                dist=dist,
+                initial_position=initial_position,
+                **mcmc_settings
+            )
 
-        mcmc_results = {
-            'exact': samp_exact,
-            'rkpcn0': _run_mcmc_rkpcn(key=mcmc_keys[1], rho=0.0, **rkpcn_settings),
-            'rkpcn90': _run_mcmc_rkpcn(key=mcmc_keys[2], rho=0.9, **rkpcn_settings),
-            'rkpcn95': _run_mcmc_rkpcn(key=mcmc_keys[3], rho=0.95, **rkpcn_settings),
-            'rkpcn99': _run_mcmc_rkpcn(key=mcmc_keys[4], rho=0.99, **rkpcn_settings),
-        }
+            mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
+            mcmc_info[dist_name] = mcmc_results
+
+        rkpcn_keys = jr.split(key_seed_rkpcn, len(rkpcn_rho_vals))
+        rkpcn_samp = {}
+        
+        for i, alg_name in enumerate(rkpcn_rho_vals.keys()):
+            mcmc_samp[alg_name] = _run_mcmc_rkpcn(key=rkpcn_keys[i], 
+                                                  rho=rkpcn_rho_vals[alg_name],
+                                                  posterior=self.posterior,
+                                                  surrogate_post=surr,
+                                                  initial_position=initial_position,
+                                                  **rkpcn_settings)
+
 
         self.density_comparison = density_comparison
         self.coverage_results = self.density_comparison.calc_coverage(baseline='exact')
@@ -246,7 +273,9 @@ def _run_mcmc_rkpcn(key: PRNGKey,
                     initial_position: Array,
                     prop_cov: Array,
                     rho: float,
-                    n_samples: int):
+                    n_samples: int,
+                    n_burnin: int = 50_000,
+                    thin_window: int = 5):
     
     key_ker, key_samp = jr.split(key)    
 
@@ -285,15 +314,15 @@ def _run_mcmc_rkpcn(key: PRNGKey,
                                               f_update_info=f_update_info)
 
     # run sampler
-    n_burnin = 50_000
+    n_samples_total = n_burnin + thin_window * n_samples
     out = mcmc_loop(key=key_samp,
                     kernel=kernel,
                     initial_state=initial_state,
-                    num_samples=n_samples + n_burnin)
+                    num_samples=n_samples_total)
 
     samp = out.position[n_burnin:]
 
-    return samp
+    return samp[::thin_window]
 
 
 def load_results(out_dir: str | Path, subdir_names: list[str]):
