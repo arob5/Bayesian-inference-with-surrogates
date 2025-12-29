@@ -72,7 +72,7 @@ class PDEReplicate(Replicate):
                                                            log_prior=posterior.prior.log_density,
                                                            y=posterior.likelihood.observation,
                                                            noise_cov_tril=posterior.likelihood.noise_cov_tril,
-                                                           support=posterior.support)
+                                                           support=posterior.prior.truncated_support)
 
         self.keys = {'init': key, 'inv_prob': key_inv_prob, 'surrogate': key_surrogate, 'rff': key_rff}
         self.posterior = posterior
@@ -80,6 +80,9 @@ class PDEReplicate(Replicate):
         self.ground_truth = ground_truth
         self.design = design
         self.opt_history = opt_history
+
+        # save to disk
+        jnp.savez(out_dir / 'design.npz', X=self.design.X, y=self.design.y)
 
 
     def __call__(self, 
@@ -94,7 +97,7 @@ class PDEReplicate(Replicate):
         if mcmc_settings is None:
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
         if mcwmh_settings is None:
-            mcwmh_settings = {'n_chains': 10, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 1000}
+            mcwmh_settings = {'n_chains': 100, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 100}
 
         # sampling distributions
         dists = {

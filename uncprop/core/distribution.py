@@ -73,7 +73,8 @@ class LogDensity(Protocol):
 class DistributionFromDensity(Distribution):
     """
     Convenience class for constructing a Distribution given its (unnormalized)
-    log density.
+    log density. Passing non-infinite `support` will simply zero out the density
+    outside of the support bounds.
     """
     def __init__(self, 
                  log_dens: LogDensity, 
@@ -93,7 +94,11 @@ class DistributionFromDensity(Distribution):
         self._log_density = log_dens
 
     def log_density(self, x: ArrayLike) -> Array:
-        return self._log_density(x)
+        x = jnp.atleast_2d(x)
+        low, high = self.support
+        lp = self._log_density(x)
+        lp = jnp.where(jnp.all((x >= low) & (x <= high), axis=1), lp, -jnp.inf)
+        return lp
     
     @property
     def dim(self):

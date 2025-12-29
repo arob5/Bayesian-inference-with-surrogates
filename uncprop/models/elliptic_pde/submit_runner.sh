@@ -21,10 +21,11 @@
 
 source /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/.venv/bin/activate
 
-# Debug info
+# Debug and version info
 echo "JOB_ID=$JOB_ID SGE_TASK_ID=$SGE_TASK_ID"
 hostname
 python --version
+echo "Git commit: $(git rev-parse HEAD)"
 
 # Scratch space for XLA
 export TMPDIR=/scratch/$USER/$JOB_ID.$SGE_TASK_ID

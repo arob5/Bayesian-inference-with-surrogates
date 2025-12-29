@@ -163,7 +163,7 @@ class PDEFwdModelGaussianSurrogate(FwdModelGaussianSurrogate):
         
         return DistributionFromDensity(logdensity, 
                                        dim=self.dim, 
-                                       support=self.posterior.prior.truncated_support)
+                                       support=self.support)
 
 
 # -----------------------------------------------------------------------------

@@ -15,18 +15,22 @@ from uncprop.utils.experiment import Experiment
 
 
 base_dir = Path('/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates')
+base_out_dir = base_dir / 'out'
 
 # -----------------------------------------------------------------------------
 # Experiment settings 
+#    Settings here are considered fixed global state. Settings that may vary
+#    across job submissions are explicitly passed.
 # -----------------------------------------------------------------------------
 
 key = jr.key(85455)
 
-# top level experiment settings
-experiment_name = 'pde_experiment'
-experiment_settings = {
-    'name': experiment_name,
-    'base_out_dir': base_dir / 'out' / experiment_name,
+# top level experiment settings; None values filled in per job
+# Note that `num_reps` is the total number of replicates for the 
+# experiment, not the number executed for any particular job
+base_experiment_settings = {
+    'name': None,
+    'base_out_dir': None,
     'num_reps': 100,
     'base_key': key,
     'Replicate': PDEReplicate,
@@ -60,25 +64,29 @@ run_kwargs = {
                        'adapt_kwargs': {'gamma_exponent': 0.5}}
 }
 
+# reps that satisfy this condition will be skipped (if overwrite is False) 
+def rep_skip_fn(rep_subdir, rep_idx):
+    samp_path = rep_subdir / 'samples.npz'
+    return samp_path.exists()
+
 
 # -----------------------------------------------------------------------------
 # Batching utilities for cluster array job
 # -----------------------------------------------------------------------------
 
-def get_batch(design_idx, chunk_idx, rep_chunk_size):
+def get_batch(design_idx, chunk_idx, num_reps, rep_chunk_size):
     """Return (n_design, rep_idx) for a given batch."""
-    n_reps = experiment_settings['num_reps']
 
     rep_start = chunk_idx * rep_chunk_size
-    rep_stop = min(n_reps, (chunk_idx + 1) * rep_chunk_size)
+    rep_stop = min(num_reps, (chunk_idx + 1) * rep_chunk_size)
 
-    if rep_start >= n_reps:
+    if rep_start >= num_reps:
         return None, []
 
     return design_sizes[design_idx], list(range(rep_start, rep_stop))
 
 
-def task_id_to_indices(task_id, rep_chunk_size):
+def task_id_to_indices(task_id, num_reps, rep_chunk_size):
     """ Map array job task ID to a chunk of experiment runs
 
     Let C := ceil(num_reps / rep_chunk_size). Then the total number of
@@ -88,7 +96,7 @@ def task_id_to_indices(task_id, rep_chunk_size):
         chunk_idx := task_id % C
     """
 
-    n_chunks = math.ceil(experiment_settings['num_reps'] / rep_chunk_size)
+    n_chunks = math.ceil(num_reps / rep_chunk_size)
 
     design_idx = task_id // n_chunks
     chunk_idx = task_id % n_chunks
@@ -103,9 +111,9 @@ def task_id_to_indices(task_id, rep_chunk_size):
 # Main execution
 # -----------------------------------------------------------------------------
 
-def run_task(task_id, rep_chunk_size):
-    design_idx, chunk_idx = task_id_to_indices(task_id, rep_chunk_size)
-    n_design, rep_idx = get_batch(design_idx, chunk_idx, rep_chunk_size)
+def run_task(experiment_name, task_id, num_reps, rep_chunk_size):
+    design_idx, chunk_idx = task_id_to_indices(task_id, num_reps, rep_chunk_size)
+    n_design, rep_idx = get_batch(design_idx, chunk_idx, num_reps, rep_chunk_size)
 
     if not rep_idx:
         print(f"[task {task_id}] No replicates to run — exiting.")
@@ -114,8 +122,14 @@ def run_task(task_id, rep_chunk_size):
     setup_kwargs = dict(base_setup_kwargs)
     setup_kwargs['n_design'] = n_design
 
+    experiment_settings = dict(base_experiment_settings)
+    experiment_settings['name'] = experiment_name
+    experiment_settings['base_out_dir'] = base_out_dir / experiment_name
+
     print(
         f'[task {task_id}] '
+        f'experiment={experiment_name}, '
+        f'num_reps={experiment_settings['num_reps']}, '
         f'design_idx={design_idx}, n_design={n_design}, '
         f'chunk_idx={chunk_idx}, reps={rep_idx}'
     )
@@ -130,28 +144,39 @@ def run_task(task_id, rep_chunk_size):
         setup_kwargs=setup_kwargs,
         run_kwargs=run_kwargs,
         write_to_log_file=True,
+        rep_skip_fn=rep_skip_fn,
     )
-
-    if failed_reps:
-        print(f'[task {task_id}] Failed reps: {failed_reps}', file=sys.stderr)
 
 
 def main():
+    """For running through a cluster array job"""
     parser = argparse.ArgumentParser()
+    parser.add_argument('--experiment-name', type=str, required=True)
     parser.add_argument('--task-id', type=int, required=True)
     parser.add_argument('--rep-chunk-size', type=int, default=10)
 
     args = parser.parse_args()
 
-    run_task(args.task_id, args.rep_chunk_size)
+    run_task(experiment_name=args.experiment_name, 
+             task_id=args.task_id, 
+             num_reps=base_experiment_settings['num_reps'],
+             rep_chunk_size=args.rep_chunk_size)
 
 
-def main_manual(n_design, rep_idx, write_to_log_file):
+def main_manual(experiment_name, n_design, rep_idx, write_to_log_file, overwrite=False):
+    """Manually specify n_design and the replicate indices to run"""
+
+    experiment_settings = dict(base_experiment_settings)
+    experiment_settings['name'] = experiment_name
+    experiment_settings['base_out_dir'] = base_out_dir / experiment_name
+
     setup_kwargs = dict(base_setup_kwargs)
     setup_kwargs['n_design'] = n_design
 
     print(
         f'[manual run] '
+        f'experiment={experiment_name}, '
+        f'num_reps={experiment_settings['num_reps']}, '
         f'n_design={n_design}, '
         f'reps={rep_idx}'
     )
@@ -165,8 +190,9 @@ def main_manual(n_design, rep_idx, write_to_log_file):
         rep_idx=rep_idx,
         setup_kwargs=setup_kwargs,
         run_kwargs=run_kwargs,
-        overwrite=True,
+        overwrite=overwrite,
         write_to_log_file=write_to_log_file,
+        rep_skip_fn=rep_skip_fn,
     )
 
 

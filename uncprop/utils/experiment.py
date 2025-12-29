@@ -6,12 +6,13 @@ approximation experiment.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from contextlib import redirect_stdout
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 import time
+import sys
 
 import numpy as np
 import jax.numpy as jnp
@@ -165,7 +166,8 @@ class Experiment:
                  run_kwargs: dict | None = None,
                  subdir_name: str | Path | None = None,
                  write_to_log_file: bool = True,
-                 overwrite: bool = False):
+                 overwrite: bool = False,
+                 rep_skip_fn: Callable[[Path, int], bool] | None = None):
         """ Top-level execution of the experiment
 
         Runs the replicates indexed by `rep_idx`, with the default None
@@ -174,7 +176,12 @@ class Experiment:
         (see `create_subdir()` method).
 
         Replicates are run sequentially in a loop. Exceptions are caught
-        so that execution is not stopped if a replicate fails. 
+        so that execution is not stopped if a replicate fails. If 
+        overwrite is True, then will run all specified reps. If not, 
+        then reps satisfying the rep skip condition will be skipped.
+        By default, the condition implemented in `self.skip_rep()` is 
+        used, but this can be overrided by passing the `rep_skip_fn`
+        argument.
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -199,19 +206,17 @@ class Experiment:
                                  'setup_kwargs': setup_kwargs,
                                  'run_kwargs': run_kwargs,
                                  'subdir': subdir,
-                                 'overwrite': overwrite}
+                                 'overwrite': overwrite,
+                                 'rep_skip_fn': rep_skip_fn}
 
         if write_to_log_file:
             logfile_path = subdir_logs / f'experiment_call_{timestamp}.log'
             
-            with open(logfile_path, 'w') as log_file:
-                with redirect_stdout(log_file):
-                    results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
+            with TeeLogger(logfile_path):
+                results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
         else:
             results, failed_reps, skipped_reps = self._run_experiment(**experiment_run_kwargs)
 
-        np.savetxt(subdir_logs / f'failed_reps_{timestamp}.txt', failed_reps, fmt='%d')
-        np.savetxt(subdir_logs / f'skipped_reps_{timestamp}.txt', skipped_reps, fmt='%d')
         return results, failed_reps, skipped_reps
 
 
@@ -220,7 +225,8 @@ class Experiment:
                         setup_kwargs: dict,
                         run_kwargs: dict,
                         subdir: Path,
-                        overwrite: bool):
+                        overwrite: bool,
+                        rep_skip_fn: Callable[[Path, int], bool] | None = None):
         """Lower-level function for experiment execution
 
         Intended to be called by __call__().
@@ -235,9 +241,11 @@ class Experiment:
         failed_reps: list[int] = []
         skipped_reps: list[int] = []
 
+        rep_skip_fn = rep_skip_fn or self.skip_rep
+
         for idx in rep_idx:
             try:
-                rep_subdir, skip = self._make_and_validate_rep_subdir(subdir, idx, overwrite)
+                rep_subdir, skip = self._make_and_validate_rep_subdir(subdir, idx, overwrite, rep_skip_fn)
                 if skip:
                     print(f'Skipping iteration {idx}')
                     skipped_reps.append(idx)
@@ -255,10 +263,20 @@ class Experiment:
         print(f'{len(failed_reps)} of {self.num_reps} replicates failed.')
         print(f'{len(skipped_reps)} of {self.num_reps} replicates skipped.')
 
+        print('failed reps:')
+        print(failed_reps)
+
+        print('skipped reps:')
+        print(skipped_reps)
+
         return results, failed_reps, skipped_reps
     
 
-    def _make_and_validate_rep_subdir(self, subdir: Path, rep_idx: int, overwrite: bool):
+    def _make_and_validate_rep_subdir(self, 
+                                      subdir: Path, 
+                                      rep_idx: int, 
+                                      overwrite: bool,
+                                      rep_skip_fn: Callable[[Path, int], bool]):
         """
         If rep subdir does not exist, creates it and saves rep key to file.
         If it already exists and overwrite is False, returns bool indicating 
@@ -273,14 +291,8 @@ class Experiment:
 
         rep_key_path = rep_subdir / 'rep_key.npy'
 
-        # TODO: temp hack for PDE experiment
-        # if not overwrite and rep_key_path.exists():
-        #     return rep_subdir, True
-
-        samp_path = rep_subdir / 'samples.npz'
-        if not overwrite and samp_path.exists():
+        if not overwrite and rep_skip_fn(rep_subdir, rep_idx):
             return rep_subdir, True
-        ###
         
         if rep_key_path.exists():
             key_data = jnp.load(rep_key_path)
@@ -295,3 +307,62 @@ class Experiment:
             jnp.save(rep_key_path, jr.key_data(self.replicate_keys[rep_idx]))
 
         return rep_subdir, False
+    
+
+    def skip_rep(self, rep_subdir, rep_idx):
+        """
+        Default skip condition for a rep: skip if rep key is already saved
+        to disk.
+        """
+        rep_key_path = rep_subdir / 'rep_key.npy'
+        return rep_key_path.exists()
+    
+
+class TeeLogger:
+    """
+    Context manager that redirects stdout and stderr to a file 
+    while also keeping the original stdout/stderr streams active.
+    The class name comes from the unix "tee" command.
+    """
+    def __init__(self, filepath, mode='w'):
+        self.filepath = filepath
+        self.mode = mode
+        self.file = None
+        self.orig_stdout = sys.stdout
+        self.orig_stderr = sys.stderr
+
+    def __enter__(self):
+        # buffering=1 forces line buffering (flushes on \n)
+        self.file = open(self.filepath, self.mode, buffering=1)
+        
+        # Replace system streams with redirectors
+        sys.stdout = self._StreamRedirector(self.orig_stdout, self.file)
+        sys.stderr = self._StreamRedirector(self.orig_stderr, self.file)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Restore original streams
+        sys.stdout = self.orig_stdout
+        sys.stderr = self.orig_stderr
+        if self.file:
+            self.file.close()
+
+    class _StreamRedirector:
+        """Internal helper to write to both the original stream and the file"""
+        def __init__(self, stream, file_handle):
+            self.stream = stream
+            self.file_handle = file_handle
+
+        def write(self, data):
+            # Write to original stream (e.g., qsub log)
+            self.stream.write(data)
+            # Write to log file
+            self.file_handle.write(data)
+            
+            # Flush both to ensure real-time logging
+            self.stream.flush()
+            self.file_handle.flush()
+
+        def flush(self):
+            self.stream.flush()
+            self.file_handle.flush()
