@@ -1234,6 +1234,74 @@ with a greater portion of the replicates resulting in significant under or over-
     \label{fig:vsem_coverage_clip_gp}
 \end{figure}
 
+
+% Elliptic PDE Model
+\subsection{Elliptic PDE Model} \label{sec:pde}
+We next consider PDE-constrained estimation of a latent spatial field. This experiment is motivated by hydrological
+applications in which a permeability field must be estimated from pressure observations at a set of spatial locations.
+\todo[inline]{add some citations}
+
+\subsubsection{Experimental Setup}
+\paragraph{Mechanistic Model.}
+Assume that the permeability $\perm(\state)$ and pressure $\pressure(\state)$ fields are related by the elliptic PDE
+\begin{equation}
+\frac{\partial}{\partial \state} \left\{\perm(\state)\frac{\partial\pressure(\state)}{\partial \state} \right\} = -\source(\state),
+\qquad \state \in [0, 1]
+\end{equation}
+subject to the boundary conditions $\pressure(1) = 1$ and $\perm(0)\frac{\partial\pressure}{\partial \state}(0) = 1$.
+The source term is defined as 
+\begin{equation}
+\source(\state) = \sum_{i=1}^{4} \frac{0.8}{\delta\sqrt{2\pi}} \exp\left\{-\frac{1}{2\delta^2}(\state - c_r)^2 \right\}
+\end{equation}
+with $\delta = 0.05$ and $(c_1, \dots, c_4) = (0.2, 0.4, 0.6, 0.8)$. We discretize the spatial dimension over an 
+evenly-spaced grid $X = \{\state_m\}_{m=1}^{100}$ and solve the PDE with 
+a finite difference scheme. Henceforth, we write $\pressure(X) \in \R^{100}$ to denote the output of the 
+solver over the grid, given the discretized input field $\perm(X) \in \R^{100}$.
+
+\paragraph{Statistical Model.}
+We assume that noisy pressure measurements are obtained at four of the grid points 
+$X^{\mathrm{obs}} = \{\stateObs_1, \dots, \stateObs_4\} \subset X$. 
+The goal is to recover the permeability field given these measurements. We assume the observation model 
+$\obs = \pressure(X^{\mathrm{obs}}) + \noise$, $\noise \sim \Gaussian(0, \sigma^2 I)$ with 
+$\sigma = 0.001$. The log-permeability field is given a GP prior $\log \perm \sim \GP(1, k_\kappa)$
+with a constant mean of one and an exponential kernel. This implies the Gaussian prior 
+$\log \perm(X) \sim \Gaussian(1, k_\kappa(X, X))$ for the discretized model. 
+To reduce the parameter dimension, we approximate this Gaussian prior by retaining only the dominant six
+principal components of $k_\kappa(X, X)$. This tends to capture upwards of 95\% of the prior variance under 
+our experimental setup, and mimics the common approach of invoking Karhunen-Loève approximations in 
+spatial inverse problems \citep{uribeKL,dimRedPolyChaos}. Letting $\{(\lambda_r, \varphi_r)\}_{r=1}^{6}$ denote 
+the dominant eigenpairs, we thus adopt the rank-reduced prior model 
+\begin{equation}
+\log \perm(X) \Def 1 + \sum_{r=1}^{6} \sqrt{\lambda_r} \Par_j \psi_j, \qquad \Par_j \overset{\mathrm{iid}}{\sim} \Gaussian(0, 1),
+\end{equation}
+noting that the six parameters $\Par \Def (\Par_1, \dots, \Par_6)^\top$ now control the permeability field.
+Letting $\fwd: \R^{6} \to \R^{4}$ denote the map from $\Par$ to 
+$\pressure(X^{\mathrm{obs}}) \in \R^{4}$, the final inverse problem can be written as
+\begin{equation}
+\obs \given \Par \sim \Gaussian(\fwd(\Par), \sigma^2 I), \qquad \Par \sim \Gaussian(0, I).
+\label{eq:pde-inv-prop}
+\end{equation}
+While the effects of the spatial discretization and prior approximation are of interest, we neglect such questions 
+and treat \Cref{eq:pde-inv-prop} as the baseline ``exact'' model in order to focus on questions of surrogate uncertainty propagation.
+
+
+We consider estimating the parameters $\Par \Def (\alphaV, \vegInit)$ given noisy monthly averages of LAI over a 
+one year period. We assume an additive Gaussian noise model
+\begin{align}
+&\obs = \fwd(\Par) + \noise,
+&&\noise \sim \Gaussian(0, \sigma^2 I)
+\label{eq:vsem-likelihood}
+\end{align}
+where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
+and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
+Ground truth values $\Par_{\circ}$ are sampled from the prior (the fixed parameters not being calibrated are also 
+assigned independent uniform priors). The mechanistic model is assumed to be well-specified, such that $\fwd$
+uses the correct ground truth values for the fixed parameters.
+Synthetic data $\obs$ is simulated from the model in \Cref{eq:vsem-likelihood} with $\Par = \Par_{\circ}$.
+
+
+
+% Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
 \begin{comment}
 \todo[inline]{intro paragraph summarizing paper}
@@ -1250,6 +1318,7 @@ vs. reducing error).
 Situation can be more complicated: might prefer ep when likelihood is misspecified. But might prefer eup if surrogate
 correlation structure is misspecified
 \end{comment}
+
 
 % Appendix
 \section{Appendix}
