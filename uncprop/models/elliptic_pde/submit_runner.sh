@@ -3,10 +3,9 @@
 #$ -j y
 #$ -l h_rt=12:00:00
 #$ -l mem_per_core=12G
-#$ -P dietzelab 
-#$ -l buyin
+#$ -P gpsurr
 #$ -pe omp 1
-#$ -t 1-30 -tc 2    # cap number run concurrently to reduce chance of XLA compilation issues
+#$ -t 1-30 -tc 1    # cap number run concurrently to reduce chance of XLA compilation issues
 #
 # Array job for executing PDE experiment. It is the users responsibility
 # for setting the task IDs (e.g., `-t 1-30`) and the batch size 
@@ -50,6 +49,9 @@ trap "rm -rf $TMPDIR $JAX_CACHE_DIR" EXIT
 # convert to 0-based Python indexing
 TASK_ID=$((SGE_TASK_ID - 1))
 
-exec python /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/uncprop/models/elliptic_pde/runner.py \
+# sleep between 0-30 seconds - trying to avoid JAX compilation issues due to concurrency
+sleep $((RANDOM % 30))
+
+exec python -u /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/uncprop/models/elliptic_pde/runner.py \
     --task-id ${TASK_ID} \
     --rep-chunk-size 10

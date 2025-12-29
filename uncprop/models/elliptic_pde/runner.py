@@ -129,6 +129,7 @@ def run_task(task_id, rep_chunk_size):
         rep_idx=rep_idx,
         setup_kwargs=setup_kwargs,
         run_kwargs=run_kwargs,
+        write_to_log_file=True,
     )
 
     if failed_reps:
@@ -143,6 +144,30 @@ def main():
     args = parser.parse_args()
 
     run_task(args.task_id, args.rep_chunk_size)
+
+
+def main_manual(n_design, rep_idx, write_to_log_file):
+    setup_kwargs = dict(base_setup_kwargs)
+    setup_kwargs['n_design'] = n_design
+
+    print(
+        f'[manual run] '
+        f'n_design={n_design}, '
+        f'reps={rep_idx}'
+    )
+
+    experiment = Experiment(
+        subdir_name_fn=make_subdir_name,
+        **experiment_settings,
+    )
+
+    results, failed_reps, skipped_reps = experiment(
+        rep_idx=rep_idx,
+        setup_kwargs=setup_kwargs,
+        run_kwargs=run_kwargs,
+        overwrite=True,
+        write_to_log_file=write_to_log_file,
+    )
 
 
 if __name__ == "__main__":

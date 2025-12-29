@@ -2,6 +2,7 @@
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -32,6 +33,7 @@ class PDEReplicate(Replicate):
                  design_method: str = 'lhc',
                  **kwargs):
         
+        jax.clear_caches()
         key_inv_prob, key_surrogate, key_rff = jr.split(key, 3)
 
         # default settings
@@ -170,3 +172,8 @@ def sample_mcwmh(key: PRNGKey,
         )
 
     return samp
+
+
+# -----------------------------------------------------------------------------
+# Helper functions for post-run analysis/plotting
+# -----------------------------------------------------------------------------

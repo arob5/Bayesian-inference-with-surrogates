@@ -273,8 +273,14 @@ class Experiment:
 
         rep_key_path = rep_subdir / 'rep_key.npy'
 
-        if not overwrite and rep_key_path.exists():
+        # TODO: temp hack for PDE experiment
+        # if not overwrite and rep_key_path.exists():
+        #     return rep_subdir, True
+
+        samp_path = rep_subdir / 'samples.npz'
+        if not overwrite and samp_path.exists():
             return rep_subdir, True
+        ###
         
         if rep_key_path.exists():
             key_data = jnp.load(rep_key_path)

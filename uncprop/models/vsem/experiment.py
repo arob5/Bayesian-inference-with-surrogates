@@ -247,7 +247,7 @@ class VSEMExperiment(Experiment):
 
 
 # -----------------------------------------------------------------------------
-# Helper functions: plots / analysis
+# Helper functions for running experiment
 # -----------------------------------------------------------------------------
 
 def _run_mcmc_exact(key: PRNGKey, posterior: Posterior, n_samples: int):
@@ -324,6 +324,9 @@ def _run_mcmc_rkpcn(key: PRNGKey,
 
     return samp[::thin_window]
 
+# -----------------------------------------------------------------------------
+# Helper functions for analysis/plotting
+# -----------------------------------------------------------------------------
 
 def load_results(out_dir: str | Path, subdir_names: list[str]):
     out_dir = Path(out_dir)
