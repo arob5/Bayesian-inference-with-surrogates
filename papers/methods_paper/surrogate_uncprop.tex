@@ -778,6 +778,41 @@ and then approximating the trajectory as the GP mean, conditional on the
 sampled values at these points. This approach has the downside of 
 requiring the difficult choice of an appropriate conditioning set.
 
+\subsection{Exact Metropolis-within-Gibbs} \label{sec:mwg}
+Given the downsides of the MCwM approach, a natural alternative is to seek an MCMC
+algorithm that targets the EP asymptotically. This offers the potential for computational 
+savings---running one chain instead of a large ensemble---and avoids the need
+to sample trajectories. We first introduce an exact, but impractical, Metropolis-within-Gibbs (MwG) 
+algorithm that targets the EP. We then consider several approximations that yield practical approximate
+samplers.
+
+We aim to target the joint distribution 
+$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits $\postApproxEP$ 
+as a marginal. We consider MwG schemes that alternate between $\Par$ and $\targetTraj$ updates, which 
+must leave their respective conditional distributions invariant. The $\Par$ update must leave 
+$\postDens(\Par; \targetTraj) d\Par$ invariant, which is accomplished with a standard Metropolis-Hastings (MH)
+step. The $\targetTraj$ update must leave 
+ $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
+ care due to the fact that $\targetTraj$ may be infinite-dimensional.
+ Proceeding in the spirit of function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
+a $\emDist$-reversible proposal distribution $\propDistTarget(\targetTraj, \cdot)$, resulting in 
+the acceptance probability 
+\begin{equation}
+\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
+= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
+\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right)
+= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
+\label{eq:MH-ratio-mwg}
+\end{equation}
+Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure. 
+\footnote{More generally, the emulator predictive distribution itself need not be Gaussian. By simply re-defining
+$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.}
+This is typical in the infinite-dimensional setting we seek to address. Generalization to the non-Gaussian setting is 
+straightforward when $\emDist$ is finite-dimensional.
+
+
+
+
 \subsection{Random Kernel Metropolis-Hastings}
 To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
 MCMC algorithm that produces approximate EP samples. Our method avoids the challenges 
@@ -1265,31 +1300,31 @@ The goal is to recover the permeability field given these measurements. We assum
 $\obs = \pressure(X^{\mathrm{obs}}) + \noise$, $\noise \sim \Gaussian(0, \sigma^2 I)$ with 
 $\sigma = 0.001$. The log-permeability field is given a GP prior $\log \perm \sim \GP(1, k_\kappa)$
 with a constant mean of one and an exponential kernel. This implies the Gaussian prior 
-$\log \perm(X) \sim \Gaussian(1, k_\kappa(X, X))$ for the discretized model. 
+$\log \perm(X) \sim \Gaussian(1, k_\kappa(X, X))$ for the discretized field. 
 To reduce the parameter dimension, we approximate this Gaussian prior by retaining only the dominant six
 principal components of $k_\kappa(X, X)$. This tends to capture upwards of 95\% of the prior variance under 
 our experimental setup, and mimics the common approach of invoking Karhunen-Loève approximations in 
-spatial inverse problems \citep{uribeKL,dimRedPolyChaos}. Letting $\{(\lambda_r, \varphi_r)\}_{r=1}^{6}$ denote 
-the dominant eigenpairs, we thus adopt the rank-reduced prior model 
+spatial inverse problems \citep{uribeKL,dimRedPolyChaos}. Letting $\{(\lambda_r, \psi_r)\}_{r=1}^{6}$ denote 
+the dominant eigenpairs, the rank-reduced prior model is
 \begin{equation}
 \log \perm(X) \Def 1 + \sum_{r=1}^{6} \sqrt{\lambda_r} \Par_j \psi_j, \qquad \Par_j \overset{\mathrm{iid}}{\sim} \Gaussian(0, 1),
 \end{equation}
-noting that the six parameters $\Par \Def (\Par_1, \dots, \Par_6)^\top$ now control the permeability field.
+so that the six parameters $\Par \Def (\Par_1, \dots, \Par_6)^\top$ now control the permeability field.
 Letting $\fwd: \R^{6} \to \R^{4}$ denote the map from $\Par$ to 
 $\pressure(X^{\mathrm{obs}}) \in \R^{4}$, the final inverse problem can be written as
 \begin{equation}
 \obs \given \Par \sim \Gaussian(\fwd(\Par), \sigma^2 I), \qquad \Par \sim \Gaussian(0, I).
 \label{eq:pde-inv-prob}
 \end{equation}
-While the effects of the spatial discretization and prior approximation are of interest, we neglect such questions 
+While the effects of spatial discretization and prior approximation are of interest, we neglect such questions 
 and treat \Cref{eq:pde-inv-prob} as the baseline ``exact'' model in order to focus on questions of surrogate uncertainty propagation.
 Ground truth values $\Par_{\circ}$ are sampled from the prior, and synthetic data is generated from the model in 
 \Cref{eq:pde-inv-prob} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
-We fit a GP to target the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to predict each of
-the four outputs. The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling 
-a latin hypercube design from the unit hypercube, mapping the points through the standard Gaussian 
+We fit a multi-output GP to the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to predict each of
+the four scalar outputs. The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by 
+mapping latin hypercube samples through the standard Gaussian 
 quantile function to obtain the design inputs, and then evaluating $\fwd$ at each design input.
 Each univariate GP is defined by a constant mean function and a Gaussian kernel, with hyperparameters
 optimized by maximum marginal likelihood using \verb+gpjax+ \citep{gpjax}.
@@ -1297,20 +1332,20 @@ Conditioning the optimized GP on the training data yields the multi-output forwa
 $\targetEm \sim \GP(\gpMean, \gpKer)$. For all of the surrogate-based posterior approximations, we 
 truncate the prior support to $[-\alpha, \alpha]^6$, where $\alpha$ is the 99.9\% percentile of the 
 standard normal distribution. This captures about 99\% of the prior mass, and is done to avoid pathological 
-behavior stemming from the GP surrogate's reversion to the prior in the tails. Similar practical tactics are
+behavior stemming from the surrogate's reversion to the GP prior in the tails. Similar practical tactics are
 employed in \citet{gp_surrogates_random_exploration,FerEmulation} when fitting surrogates over 
 an unbounded support.
 
 \paragraph{Experiment Replications.}
 We repeat one hundred replications of the above setup. Each replicate varies in the sampled ground 
 truth $\Par_{\circ}$, synthetic observations $\obs$, and design points for the emulator. This entire procedure 
-is repeated for different numbers of design points $\Ndesign \in \{10, 30, 50\}$. Inference for the exact, 
+is repeated for different numbers of design points $\Ndesign \in \{10, 20, 30\}$. Inference for the exact, 
 plug-in mean, and EUP distributions is conducted via Metropolis-Hastings, retaining 5000 samples 
-each after dropping burn-in and thinning. Approximate EP samples are obtained using the RKpCN algorithm
-in \Cref{alg:rk-pcn-infinite}. It is difficult to obtain an exact EP baseline in this higher dimensional example
+each after dropping burn-in and thinning. Approximate EP samples are obtained using RKpCN 
+(\Cref{alg:rk-pcn-infinite}). It is difficult to obtain an exact EP baseline in this higher dimensional example
 with an infinite-dimensional surrogate. We construct an EP baseline by first obtaining a finite-dimensional 
 GP approximation using the pathwise sampling approach described in 
-\citet{pathwiseConditioning,samplingGPPosts}, with the GP prior term approximated using 1000 random 
+\citet{pathwiseConditioning,samplingGPPosts}, with the GP prior approximated using 1000 random 
 Fourier features \citep{RFF}. Preliminary experiments showed that this approximation was typically very
 accurate. Using the resulting finite-dimensional basis, we run a Monte Carlo within Metropolis scheme;
 in particular, we sample 100 surrogate replicates, run 
