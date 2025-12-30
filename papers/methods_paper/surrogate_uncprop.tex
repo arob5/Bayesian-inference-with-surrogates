@@ -811,8 +811,6 @@ This is typical in the infinite-dimensional setting we seek to address. Generali
 straightforward when $\emDist$ is finite-dimensional.
 
 
-
-
 \subsection{Random Kernel Metropolis-Hastings}
 To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
 MCMC algorithm that produces approximate EP samples. Our method avoids the challenges 
@@ -1286,7 +1284,7 @@ Assume that the permeability $\perm(\state)$ and pressure $\pressure(\state)$ fi
 subject to the boundary conditions $\pressure(1) = 1$ and $\perm(0)\frac{\partial\pressure}{\partial \state}(0) = 1$.
 The source term is defined as 
 \begin{equation}
-\source(\state) = \sum_{i=1}^{4} \frac{0.8}{\delta\sqrt{2\pi}} \exp\left\{-\frac{1}{2\delta^2}(\state - c_r)^2 \right\}
+\source(\state) = \sum_{i=1}^{4} \frac{0.8}{\delta\sqrt{2\pi}} \exp\left\{-\frac{1}{2\delta^2}(\state - c_i)^2 \right\}
 \end{equation}
 with $\delta = 0.05$ and $(c_1, \dots, c_4) = (0.2, 0.4, 0.6, 0.8)$. We discretize the spatial dimension over an 
 evenly-spaced grid $X = \{\state_m\}_{m=1}^{100}$ and solve the PDE with 
@@ -1352,6 +1350,16 @@ in particular, we sample 100 surrogate replicates, run
 Metropolis-Hastings on the induced posterior trajectories, and retain 10 samples from each trajectory.
 The choice of 100 replicates was chosen to keep computation time reasonable; this may be inadequate
 for a complete characterization of the EP, so should not be viewed as an exact baseline in this experiment.
+
+\subsubsection{Results}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{./../../out/final/pde_coverage.png}
+    \caption{Coverage results for PDE experiment.}
+    \label{fig:pde_coverage}
+\end{figure}
+
 
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
