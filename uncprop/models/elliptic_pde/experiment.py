@@ -14,6 +14,7 @@ import seaborn as sns
 from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.core.inverse_problem import Posterior
+from uncprop.core.distribution import DistributionFromDensity
 from uncprop.core.samplers import sample_distribution
 from uncprop.models.elliptic_pde.surrogate import fit_pde_surrogate, PDEFwdModelGaussianSurrogate
 from uncprop.models.elliptic_pde.inverse_problem import (
@@ -191,6 +192,56 @@ def sample_mcwmh(key: PRNGKey,
         )
 
     return samp
+
+
+def sample_rkpcn(key: PRNGKey,
+                 posterior: Posterior,
+                 surrogate_post: PDEFwdModelGaussianSurrogate,
+                 initial_position: Array,
+                 prop_cov: Array,
+                 rho: float,
+                 n_samples: int,
+                 n_burnin: int = 50_000,
+                 thin_window: int = 5):
+    """rk-pcn algorithm for approximate EP inference"""
+    
+    key_ker, key_samp = jr.split(key)    
+
+    # log-density as a function of target function output
+    observable_to_logdensity = posterior.likelihood.observable_to_logdensity
+    truncated_log_prior = DistributionFromDensity(log_dens=posterior.prior.log_density,
+                                                  dim=posterior.dim, support=posterior.truncated_support)
+    truncated_log_prior_density = truncated_log_prior.log_density
+
+    def log_density(f, u):
+        return observable_to_logdensity(f) + truncated_log_prior_density(u)
+
+    # underlying GP model
+    gp = surrogate_post.surrogate
+
+    # settings for f update in sampler
+    class UpdateInfo(NamedTuple):
+        rho: float
+    f_update_info = UpdateInfo(rho=rho)
+
+    initial_state, kernel = init_rkpcn_kernel(key=key_ker,
+                                              log_density=log_density,
+                                              gp=gp,
+                                              initial_position=initial_position,
+                                              u_prop_cov=prop_cov,
+                                              f_update_fn=_f_update_pcn_proposal,
+                                              f_update_info=f_update_info)
+
+    # run sampler
+    n_samples_total = n_burnin + thin_window * n_samples
+    out = mcmc_loop(key=key_samp,
+                    kernel=kernel,
+                    initial_state=initial_state,
+                    num_samples=n_samples_total)
+
+    samp = out.position[n_burnin:]
+
+    return samp[::thin_window]
 
 
 # -----------------------------------------------------------------------------
@@ -393,3 +444,25 @@ def estimate_mahalanobis_coverage(
         results[name] = coverage
 
     return results
+
+
+def assemble_coverage_reps(base_out_dir, experiment_name, n_design, probs, 
+                           approx_dist_names, baseline='exact'):
+    """Returns (n_reps, n_approx_dists, n_probs) array of coverage values"""
+
+    dist_order = [baseline] + approx_dist_names
+    coverage_list = []
+
+    out_dir = base_out_dir / experiment_name / f'n_design_{n_design}'
+    subdirs = [p for p in out_dir.iterdir() if p.is_dir() and p.name.startswith('rep')]
+    rep_idcs = [int(p.name.replace('rep', '')) for p in subdirs if (p / 'samples.npz').exists()]
+    
+    for rep_idx in rep_idcs:
+        samples = read_samp(base_out_dir, experiment_name, n_design, rep_idx)
+        samples = {nm: samples[nm] for nm in dist_order}
+        coverage = estimate_mahalanobis_coverage(samples=samples, 
+                                                 baseline=baseline,
+                                                 probs=probs)
+        coverage_list.append(jnp.stack(list(coverage.values())))
+
+    return jnp.stack(coverage_list)

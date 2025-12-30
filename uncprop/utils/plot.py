@@ -1,7 +1,17 @@
+# uncprop/utils/plot.py
+
+from collections.abc import Mapping
+
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 import seaborn as sns
+
+import jax.numpy as jnp
 import numpy as np
 import math
+
+from uncprop.custom_types import Array
 
 def set_plot_theme():
     sns.set_theme(style='white', palette='colorblind')
@@ -86,3 +96,107 @@ def smart_subplots(
         return fig, out_axs
     else:
         return fig, axs
+    
+
+def plot_coverage_curve(log_coverage: Array, 
+                        probs: Array, 
+                        names: list[str] | None = None):
+    """
+    Args:
+        log_coverage: (n, n_prob) array, where the (i,j) element is the log coverage of the ith
+                      distribution at probability level probs[j].
+        probs: coverage levels in [0, 1], array of shape (n_prob,)
+    """
+    log_coverage = jnp.atleast_2d(log_coverage)
+    n_curves = log_coverage.shape[0]
+
+    if names is None:
+        names = [f'dist{i}' for i in range(n_curves)]
+
+    # coverage curves
+    fig, ax = plt.subplots()
+    for i in range(n_curves):
+        ax.plot(probs, jnp.exp(log_coverage[i]), label=names[i])
+
+    # Add line y = x
+    xmin, xmax = ax.get_xlim()
+    x = np.linspace(xmin, xmax, 100)
+    y = x
+    ax.plot(x, y, linestyle='--')
+
+    ax.set_xlabel('nominal coverage')
+    ax.set_ylabel('actual coverage')
+    ax.legend()
+
+    return fig, ax
+
+
+def plot_coverage_curve_reps(log_coverage: Array, 
+                             probs: Array, 
+                             names: list[str] | None = None,
+                             colors: Mapping[str, str] | None = None,
+                             qmin: float = 0.05,
+                             qmax: float = 0.95,
+                             single_plot: bool = False,
+                             alpha: float = 0.3,
+                             xlabel: str = 'nominal coverage',
+                             ylabel: str = 'actual coverage',
+                             set_title: bool = True,
+                             ax: Axes | None = None,
+                             **kwargs) -> tuple[Figure, Axes]:
+    """
+    Summarizes an ensemble of coverage curves, typically from multiple replicates
+    of an experiment. Arguments are the same as `plot_coverage_curve`
+    except that `log_coverage` has a leading batch access; i.e., it is shape
+    (n_reps, n_dists, n_probs). `qmin` and `qmax` specify the quantiles defining
+    the width of the confidence band.
+
+    Optionally plots lines on single plot, or splits into multiple plots.
+    """
+    if ax is not None and not single_plot:
+        raise ValueError('currently only allows passing `ax` for `single_plot = True`')
+
+    log_coverage = jnp.atleast_3d(log_coverage)
+    n_curves = log_coverage.shape[1]
+    
+    if names is None:
+        names = [f'dist{i}' for i in range(n_curves)]
+
+    # compute quantiles for each distribution
+    q = jnp.array([qmin, 0.5, qmax])
+    quantiles = jnp.quantile(jnp.exp(log_coverage), q=q, axis=0) # (3, n_dists, n_probs)
+
+    if ax is not None:
+        fig = ax.figure
+        axs = [ax] * n_curves
+    elif single_plot:
+        fig, ax = plt.subplots()
+        axs = [ax] * n_curves
+    else:
+        fig, axs = smart_subplots(nplots=n_curves, **kwargs)
+
+    for i, ax in enumerate(axs):
+        label = names[i]
+        color = colors[label] if (colors is not None and label in colors) else None
+        ax.fill_between(probs, quantiles[0,i,:], quantiles[2,i,:], 
+                        label=label, color=color, alpha=alpha)
+        ax.plot(probs, quantiles[1,i,:], color=color)
+
+        if not single_plot and set_title:
+            ax.set_title(names[i])
+
+        # Add line y = x
+        if i == 0 or not single_plot:
+            xmin, xmax = ax.get_xlim()
+            x = np.linspace(xmin, xmax, 100)
+            y = x
+            aux_color = colors['aux'] if (colors is not None and 'aux' in colors) else None
+            ax.plot(x, y, linestyle='--', color=aux_color)
+
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+  
+    if single_plot:
+        axs[0].legend()
+
+    return fig, axs
