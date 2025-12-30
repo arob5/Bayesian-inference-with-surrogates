@@ -942,8 +942,8 @@ $\targetTraj$-chain to control the approximation error.
 \section{Numerical Experiments} \label{sec:experiments}
 We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
 plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
-quality of the random kernel pCN (rk-pcn) approximation to the EP. For the latter, we evaluate the
-rk-pcn schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
+quality of the random kernel pCN (RKpCN) approximation to the EP. For the latter, we evaluate the
+RKpCN schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
 correlation parameter $\pcnCor$. We compare these MCMC approximations against the EUP as 
 well as a version of the naive cut algorithm described in \citet{PlummerCut}.
 \todo[inline]{need to more precisely describe this comparison baseline; here or in appendix?}
@@ -1103,7 +1103,7 @@ distributions for the exact posterior and surrogate predictive distribution for 
 		  via the Gaussian coverage ellipsoids at the different probability levels. 
 		  \textit{(Right)} The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
     		 variability over the 100 replicates. For the EUP the distance is computed
-    		 in closed-form, as both distributions are Gaussian. The remaining approximations include the rk-pcn
+    		 in closed-form, as both distributions are Gaussian. The remaining approximations include the RKpCN
 		 algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
 		 For these algorithms,
 		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
@@ -1111,10 +1111,10 @@ distributions for the exact posterior and surrogate predictive distribution for 
 \end{figure}
 
 \paragraph{MCMC Evaluation.} \Cref{fig:lin-gauss-mcmc} compares the MCMC-based approximations against the 
-closed-form EP and EUP distributions. Each of the rk-pcn algorithms accurately represent the EP, with the $\rho = 0.99$
+closed-form EP and EUP distributions. Each of the RKpCN algorithms accurately represent the EP, with the $\rho = 0.99$
 setting driving the approximation error near zero. The EUP exhibits more variability, while the cut approximation consistently 
 deviates from the EP target. Note that these algorithms are operating over a high-dimensional ($\dimPar = 100$)
-parameter space in this example. The rk-pcn algorithm is well-equipped for this situation, as the pCN proposal is 
+parameter space in this example. The RKpCN algorithm is well-equipped for this situation, as the pCN proposal is 
 designed for high-dimensional latent Gaussian models \citep{functionSpaceMCMC}.
 
 % Ecosystem Model Calibration
@@ -1279,27 +1279,44 @@ Letting $\fwd: \R^{6} \to \R^{4}$ denote the map from $\Par$ to
 $\pressure(X^{\mathrm{obs}}) \in \R^{4}$, the final inverse problem can be written as
 \begin{equation}
 \obs \given \Par \sim \Gaussian(\fwd(\Par), \sigma^2 I), \qquad \Par \sim \Gaussian(0, I).
-\label{eq:pde-inv-prop}
+\label{eq:pde-inv-prob}
 \end{equation}
 While the effects of the spatial discretization and prior approximation are of interest, we neglect such questions 
-and treat \Cref{eq:pde-inv-prop} as the baseline ``exact'' model in order to focus on questions of surrogate uncertainty propagation.
+and treat \Cref{eq:pde-inv-prob} as the baseline ``exact'' model in order to focus on questions of surrogate uncertainty propagation.
+Ground truth values $\Par_{\circ}$ are sampled from the prior, and synthetic data is generated from the model in 
+\Cref{eq:pde-inv-prob} with $\Par = \Par_{\circ}$.
 
+\paragraph{Surrogate Model.}
+We fit a GP to target the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to predict each of
+the four outputs. The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling 
+a latin hypercube design from the unit hypercube, mapping the points through the standard Gaussian 
+quantile function to obtain the design inputs, and then evaluating $\fwd$ at each design input.
+Each univariate GP is defined by a constant mean function and a Gaussian kernel, with hyperparameters
+optimized by maximum marginal likelihood using \verb+gpjax+ \citep{gpjax}.
+Conditioning the optimized GP on the training data yields the multi-output forward model surrogate
+$\targetEm \sim \GP(\gpMean, \gpKer)$. For all of the surrogate-based posterior approximations, we 
+truncate the prior support to $[-\alpha, \alpha]^6$, where $\alpha$ is the 99.9\% percentile of the 
+standard normal distribution. This captures about 99\% of the prior mass, and is done to avoid pathological 
+behavior stemming from the GP surrogate's reversion to the prior in the tails. Similar practical tactics are
+employed in \citet{gp_surrogates_random_exploration,FerEmulation} when fitting surrogates over 
+an unbounded support.
 
-We consider estimating the parameters $\Par \Def (\alphaV, \vegInit)$ given noisy monthly averages of LAI over a 
-one year period. We assume an additive Gaussian noise model
-\begin{align}
-&\obs = \fwd(\Par) + \noise,
-&&\noise \sim \Gaussian(0, \sigma^2 I)
-\label{eq:vsem-likelihood}
-\end{align}
-where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
-and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
-Ground truth values $\Par_{\circ}$ are sampled from the prior (the fixed parameters not being calibrated are also 
-assigned independent uniform priors). The mechanistic model is assumed to be well-specified, such that $\fwd$
-uses the correct ground truth values for the fixed parameters.
-Synthetic data $\obs$ is simulated from the model in \Cref{eq:vsem-likelihood} with $\Par = \Par_{\circ}$.
-
-
+\paragraph{Experiment Replications.}
+We repeat one hundred replications of the above setup. Each replicate varies in the sampled ground 
+truth $\Par_{\circ}$, synthetic observations $\obs$, and design points for the emulator. This entire procedure 
+is repeated for different numbers of design points $\Ndesign \in \{10, 30, 50\}$. Inference for the exact, 
+plug-in mean, and EUP distributions is conducted via Metropolis-Hastings, retaining 5000 samples 
+each after dropping burn-in and thinning. Approximate EP samples are obtained using the RKpCN algorithm
+in \Cref{alg:rk-pcn-infinite}. It is difficult to obtain an exact EP baseline in this higher dimensional example
+with an infinite-dimensional surrogate. We construct an EP baseline by first obtaining a finite-dimensional 
+GP approximation using the pathwise sampling approach described in 
+\citet{pathwiseConditioning,samplingGPPosts}, with the GP prior term approximated using 1000 random 
+Fourier features \citep{RFF}. Preliminary experiments showed that this approximation was typically very
+accurate. Using the resulting finite-dimensional basis, we run a Monte Carlo within Metropolis scheme;
+in particular, we sample 100 surrogate replicates, run 
+Metropolis-Hastings on the induced posterior trajectories, and retain 10 samples from each trajectory.
+The choice of 100 replicates was chosen to keep computation time reasonable; this may be inadequate
+for a complete characterization of the EP, so should not be viewed as an exact baseline in this experiment.
 
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
