@@ -139,7 +139,7 @@ class GaussianFromNumpyro(Distribution):
         return -jnp.inf, jnp.inf
 
     def sample(self, key: PRNGKey, n: int = 1) -> Array:
-        """ Out: (n,d)"""
+        """ Out: (n,d) or (n,q,d)"""
         return self._numpyro_mvn.sample(key, sample_shape=(n,))
 
     def log_density(self, x: ArrayLike) -> Array:

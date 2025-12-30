@@ -121,8 +121,39 @@ def log_clipped_lognormal_mean(m: ArrayLike, s2: ArrayLike, b: ArrayLike) -> Arr
     return result
 
     
+def _sample_batch_gaussian_tril(key: PRNGKey, L: Array, m: ArrayLike = 0.0, n: int = 1):
+    """Return n samples from N(m, LL^T), where m and L can be batched.
+
+    L: shape (b, d, d) or (d, d)
+    m: shape (d,), (b, d), or scalar
+    Returns: shape (n, b, d) [n samples from batch of b d-dimensional Gaussians]
+    """
+    L = jnp.asarray(L)
+
+    # Promote (d, d) to (1, d, d)
+    if L.ndim == 2:
+        L = L[None, :, :]
+    elif L.ndim != 3:
+        raise ValueError('L must have shape (d, d) or (b, d, d)')
+
+    b = L.shape[0]
+    d = L.shape[1]
+    m = jnp.broadcast_to(jnp.asarray(m), (b, d))
+
+    samp = L @ jr.normal(key, shape=(b, d, n)) # (b, d, n)
+    samp = m[:, :, None] + samp
+
+    return jnp.transpose(samp, axes=(2, 0, 1)) # (n, b, d)
+
+
 def _sample_gaussian_tril(key: PRNGKey, L: Array, m: ArrayLike = 0.0, n: int = 1):
-    """Return n samples from N(0, LL^T). Out shape: (n, d)"""
+    """Return n samples from N(m, LL^T). Out shape: (n, d)
+    
+    Notes:
+        _sample_batch_gaussian_tril() is intended to replace this function with
+        a batched generalization. This function is maintained for backwards 
+        compatibility.
+    """
     d = L.shape[0]
     samp = L @ jr.normal(key, shape=(d,n))
     return jnp.asarray(m).ravel() + samp.T

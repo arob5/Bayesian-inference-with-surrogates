@@ -15,7 +15,7 @@ from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.core.inverse_problem import Posterior
 from uncprop.core.distribution import DistributionFromDensity
-from uncprop.core.samplers import sample_distribution
+from uncprop.core.samplers import sample_distribution, init_rkpcn_kernel, mcmc_loop
 from uncprop.models.elliptic_pde.surrogate import fit_pde_surrogate, PDEFwdModelGaussianSurrogate
 from uncprop.models.elliptic_pde.inverse_problem import (
     generate_pde_inv_prob_rep,
