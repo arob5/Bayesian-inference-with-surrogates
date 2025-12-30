@@ -804,11 +804,27 @@ the acceptance probability
 = \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
 \label{eq:MH-ratio-mwg}
 \end{equation}
-Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure. 
+Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \emKer)$. 
 \footnote{More generally, the emulator predictive distribution itself need not be Gaussian. By simply re-defining
 $\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.}
 This is typical in the infinite-dimensional setting we seek to address. Generalization to the non-Gaussian setting is 
 straightforward when $\emDist$ is finite-dimensional.
+
+\begin{algorithm}[H]
+    \caption{Metropolis-within-Gibbs for EP (single iteration)}
+    \label{alg:mwg}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
+    \State $\xi \sim \Gaussian(0, \gpKer), v_{\targetTraj} \sim \mathrm{Unif}(0, 1)$
+    \State $\tilde{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{pCN proposal}
+    \State $\alpha_{\targetTraj} \gets \min\left\{1, \postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \right\}$ 
+    \State $\nextstate{\targetTraj} \gets \tilde{\targetTraj} \indicator{v_{\targetTraj} \leq \alpha_{\targetTraj}} + \targetTraj \indicator{v_{\targetTraj} > \alpha_{\targetTraj}}$ \Comment{$\targetTraj$ update}
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v_\Par \sim \mathrm{Unif}(0,1)$
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
+    \State $\nextstate{\Par} \gets \propPar \indicator{v_\Par \leq \alpha_{\Par}} + \Par \indicator{v_\Par > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \end{algorithmic}
+\end{algorithm}
 
 
 \subsection{Random Kernel Metropolis-Hastings}
