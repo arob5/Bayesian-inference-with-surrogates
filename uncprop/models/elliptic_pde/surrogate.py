@@ -73,7 +73,7 @@ def fit_pde_experiment_batch_gp(design: Dataset,
     objective = lambda p, d: -gpx.objectives.conjugate_mll(p, d)
 
     def gp_factory(dataset):
-        return construct_gp(dataset, set_bounds=False)[0]
+        return construct_gp(dataset, set_bounds=False, prior_mean='constant')[0]
     
     # hyperparameter optimization
     batchgp = get_batch_gp_from_template(gp_factory, design)

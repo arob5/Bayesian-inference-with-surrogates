@@ -24,14 +24,20 @@ from gpjax.parameters import (
 from uncprop.utils.gpjax_multioutput import BatchedRBF
 
 
-def construct_gp(design, set_bounds=True):
+def construct_gp(design, set_bounds=True, prior_mean='constant'):
     """
     Returns GP conjugate posterior object. Does not perform hyperparameter tuning.
     """
 
     # prior mean
-    constant_param = gpx.parameters.Real(value=design.y.mean())
-    meanf = gpx.mean_functions.Constant(constant_param)
+    if prior_mean == 'constant':
+        constant_param = gpx.parameters.Real(value=design.y.mean())
+        meanf = gpx.mean_functions.Constant(constant_param)
+    elif prior_mean == 'linear':
+        meanf = LinearMeanFunction(intercept=design.y.mean(),
+                                   slope=jnp.zeros(design.in_dim))
+    else:
+        raise ValueError(f'Invalid GP prior mean: {prior_mean}')
 
     # prior kernel
     stats = _get_distance_stats_from_design(design)
@@ -194,3 +200,39 @@ def _make_interval_bijector(low, high):
     scale = jnp.asarray(high) - jnp.asarray(low)
     return npt.ComposeTransform([npt.SigmoidTransform(), 
                                  npt.AffineTransform(jnp.asarray(low), scale)])
+
+
+# -------------------------------------------------------------------------------
+# Linear GP mean function
+# -------------------------------------------------------------------------------
+
+import typing as tp
+from jaxtyping import Num
+from gpjax.typing import ScalarFloat, Float, Array
+from gpjax.parameters import Parameter, Real
+from gpjax.mean_functions import AbstractMeanFunction
+
+
+class LinearMeanFunction(AbstractMeanFunction):
+    """
+    Note that the batch output dimension is defined as the leading dimension,
+    but the output of evaluating the mean function puts the batch dimension
+    last. This is to align with the batch GP conventions in gpjax_multioutput.py
+    """
+    def __init__(
+        self,
+        intercept: tp.Union[ScalarFloat, Float[Array, " O"], Parameter] = 0.0,
+        slope: tp.Union[ScalarFloat, Float[Array, " O D"], Parameter] = 0.0
+    ):
+        if isinstance(intercept, Parameter):
+            self.intercept = intercept
+        else:
+            self.intercept = Real(jnp.array(intercept))
+
+        if isinstance(slope, Parameter):
+            self.slope = slope
+        else:
+            self.slope = Real(jnp.array(slope))
+
+    def __call__(self, x: Num[Array, "N D"]) -> Float[Array, "N O"]:
+        return self.intercept.get_value() + jnp.dot(x, self.slope.get_value().T)

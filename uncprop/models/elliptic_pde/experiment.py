@@ -5,6 +5,11 @@ from typing import Any, NamedTuple
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+from jax.scipy.linalg import solve_triangular
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
@@ -31,9 +36,19 @@ class PDEReplicate(Replicate):
                  n_design: int,
                  num_rff: int,
                  design_method: str = 'lhc',
+                 write_to_file: bool = True,
                  **kwargs):
         
         jax.clear_caches()
+        if write_to_file:
+            jnp.savez(out_dir / 'init_settings.npz', 
+                      key_init=jr.key_data(key),
+                      out_dir=out_dir,
+                      n_design=n_design,
+                      num_rff=num_rff,
+                      design_method=design_method,
+                      write_to_file=write_to_file)
+
         key_inv_prob, key_surrogate, key_rff = jr.split(key, 3)
 
         # default settings
@@ -82,7 +97,8 @@ class PDEReplicate(Replicate):
         self.opt_history = opt_history
 
         # save to disk
-        jnp.savez(out_dir / 'design.npz', X=self.design.X, y=self.design.y)
+        if write_to_file:
+            jnp.savez(out_dir / 'design.npz', X=self.design.X, y=self.design.y)
 
 
     def __call__(self, 
@@ -180,3 +196,200 @@ def sample_mcwmh(key: PRNGKey,
 # -----------------------------------------------------------------------------
 # Helper functions for post-run analysis/plotting
 # -----------------------------------------------------------------------------
+
+def summarize_status(base_out_dir, experiment_name, n_design):
+    if isinstance(n_design, int):
+        n_design = [n_design]
+
+    for n in n_design:
+        out_dir = base_out_dir / experiment_name / f'n_design_{n}'
+        subdirs = [p for p in out_dir.iterdir() if p.is_dir() and p.name.startswith('rep')]
+        completed = [(p / 'samples.npz').exists() for p in subdirs]
+        print(f'n_design = {n}: {sum(completed)} of {len(completed)} completed.')
+
+def read_samp(base_out_dir, experiment_name, n_design, rep_idx):
+    out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
+    samp = dict(jnp.load(out_dir / 'samples.npz'))
+    return samp
+
+def load_rep(base_out_dir, experiment_name, n_design, rep_idx):
+    out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
+    init_settings = jnp.load(out_dir / 'init_settings.npz')
+    key_init = jr.wrap_key_data(init_settings['key_init'])
+
+    rep = PDEReplicate(key=key_init,
+                       out_dir=out_dir,
+                       n_design=n_design,
+                       num_rff=init_settings['num_rff'].item(),
+                       design_method=init_settings['design_method'].item(),
+                       write_to_file=False)
+    
+    return rep
+
+def samp_trace(base_out_dir, experiment_name, n_design, rep_idx):
+    samp = read_samp(base_out_dir, experiment_name, n_design, rep_idx)
+    for nm, vals in samp.items():
+        for i in range(vals.shape[1]):
+            plt.plot(vals[:,i])
+        plt.title(nm)
+        plt.show()
+
+def samp_pair_plot(base_out_dir, experiment_name, n_design, rep_idx, dist_names=None, key=jr.key(0)):
+    samp = read_samp(base_out_dir, experiment_name, n_design, rep_idx)
+    samp['prior'] = jr.normal(key, samp['exact'].shape) # N(0, I) prior
+
+    if dist_names is None:
+        dist_names = ['prior', 'ep_mcwmh', 'eup', 'mean', 'exact']
+    par_names = [f'u{i}' for i in range(1, samp['exact'].shape[1]+1)]
+
+    df_list = []
+    for name in dist_names:
+        df = pd.DataFrame(samp[name], columns=par_names)
+        df['dist'] = name
+        df_list.append(df)
+    samp_df = pd.concat(df_list, ignore_index=True)
+
+    sns.pairplot(samp_df, hue='dist', diag_kind='kde')
+
+def plot_surrogate_pred(base_out_dir, 
+                        experiment_name, 
+                        n_design, 
+                        rep_idx,
+                        key=jr.key(0), 
+                        n_test=500):
+
+    rep = load_rep(base_out_dir, experiment_name, n_design, rep_idx)
+    test_inputs = rep.posterior.prior.sample_lhc(key, n_test)
+
+    posterior = rep.posterior
+    posterior_surrogate = rep.posterior_surrogate
+
+    # ground truth values at test points
+    true_forward = posterior.likelihood.forward(test_inputs)
+    true_log_post = posterior.likelihood.observable_to_logdensity(true_forward) + posterior.prior.log_density(test_inputs)
+
+    # surrogate predictions at test points
+    pred = posterior_surrogate.surrogate(test_inputs)
+    mean_forward = pred.mean.T
+    sd_forward = pred.stdev.T
+
+    # plug-in mean and marginal predictions
+    mean_approx = posterior_surrogate.expected_surrogate_approx()
+    eup_approx = posterior_surrogate.expected_density_approx()
+    mean_approx_pred = mean_approx.log_density(test_inputs)
+    eup_approx_pred = eup_approx.log_density(test_inputs)
+
+    # plot surrogate forward model predictions
+    for i in range(true_forward.shape[1]):
+        sns.scatterplot(x=true_forward[:,i], y=mean_forward[:,i], color='blue', label='Predictions')
+        plt.errorbar(true_forward[:,i], mean_forward[:,i], yerr=2*sd_forward[:,i], fmt='none', ecolor='blue', alpha=0.5)
+        plt.plot(true_forward[:,i], true_forward[:,i], 'r--', label='Ground truth')
+        plt.xlabel('True Value')
+        plt.ylabel('Predicted Mean')
+        plt.legend()
+        plt.title(f'output {i}')
+        plt.show()
+
+    # plug-in mean log-posterior predictions
+    sns.scatterplot(x=true_log_post, y=mean_approx_pred, color='blue')
+    plt.plot(true_log_post, true_log_post, 'r--')
+    plt.xlabel('True log post')
+    plt.ylabel('Plug-in mean')
+    plt.title('Plug-In Mean Predictions')
+    plt.show()
+
+
+def estimate_mahalanobis_coverage(
+    samples: dict[str, Array],
+    baseline: str,
+    probs: Array,
+    jitter: float = 1e-8
+) -> dict[str, Array]:
+    """
+    Estimate joint (ellipsoidal) coverage using Mahalanobis distance.
+
+    This function evaluates how well each approximating distribution in
+    `samples` captures the joint uncertainty of a designated baseline
+    distribution. Coverage regions are defined as empirical ellipsoids
+    induced by the mean and covariance of each approximating distribution.
+
+    For each distribution X and each probability level p in `probs`,
+    coverage is computed as follows:
+
+    1. Let X be samples from an approximating distribution with shape
+       (n_x, d). Compute the sample mean μ_X and covariance Σ_X.
+
+    2. For each sample x in X, compute the squared Mahalanobis distance:
+           r_X^2(x) = (x - μ_X)^T Σ_X^{-1} (x - μ_X)
+
+    3. Define the ellipsoidal p-coverage region as:
+           R_p(X) = {x : r_X^2(x) ≤ q_p}
+       where q_p is the empirical p-quantile of r_X^2 evaluated on X.
+
+    4. Evaluate coverage with respect to the baseline samples B by
+       computing the fraction of baseline points that lie inside R_p(X):
+           coverage(p) = mean_{b in B}[ r_X^2(b) ≤ q_p ]
+
+    Args:
+        samples:
+            Dictionary mapping distribution names to sample arrays.
+            Each array must have shape `(n_i, d)`, where `d` is the common
+            dimensionality across all distributions.
+        baseline:
+            Key in `samples` identifying which distribution serves as the
+            baseline (ground-truth) distribution.
+        probs:
+            JAX array of shape `(m,)` containing probability levels in `(0, 1]`.
+            Each value defines the nominal coverage level of the ellipsoid.
+
+    Returns:
+        A dictionary mapping distribution names to coverage arrays.
+        For each key `k != baseline`, the value is a JAX array of shape `(m,)`,
+        where entry `i` is the empirical ellipsoidal coverage at level
+        `probs[i]`, evaluated against the baseline samples.
+
+        The baseline distribution itself is excluded from the output.
+
+    Example:
+        >>> samples = {
+        ...     "truth": jnp.random.normal(size=(2000, 6)),
+        ...     "approx": jnp.random.normal(size=(1000, 6)),
+        ... }
+        >>> probs = jnp.array([0.5, 0.9])
+        >>> cov = estimate_mahalanobis_coverage(samples, "truth", probs)
+        >>> cov["approx"].shape
+        (2,)
+    """
+    baseline_samples = samples[baseline]
+    d = baseline_samples.shape[1]
+
+    def mahalanobis_sq(x, mean, chol):
+        """
+        x: (..., d); mean: (d,); chol: lower Cholesky, (d, d)
+        """
+        diff = x - mean
+        y = solve_triangular(chol, diff.T, lower=True).T
+        return jnp.sum(y**2, axis=-1)
+
+    results = {}
+
+    for name, x in samples.items():
+        if name == baseline:
+            continue
+
+        # Mean and covariance of approximating distribution
+        mean_x = jnp.mean(x, axis=0)
+        cov_x = jnp.cov(x, rowvar=False) + jitter * jnp.eye(d)
+        chol_x = jnp.linalg.cholesky(cov_x, upper=False)
+
+        # Squared Mahalanobis distances
+        r2_x = mahalanobis_sq(x, mean_x, chol_x)
+        r2_baseline = mahalanobis_sq(baseline_samples, mean_x, chol_x)
+
+        # Ellipsoidal coverage for each probability level
+        thresholds = jnp.quantile(r2_x, probs)
+        coverage = jnp.mean(r2_baseline[:, None] <= thresholds[None, :], axis=0)
+
+        results[name] = coverage
+
+    return results

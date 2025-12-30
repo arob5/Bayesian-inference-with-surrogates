@@ -37,7 +37,7 @@ base_experiment_settings = {
 }
 
 # Different experimental setups
-design_sizes = [4, 10, 20]
+design_sizes = [10, 20, 30]
 
 # replicate setup settings
 noise_sd = 1e-3
@@ -59,8 +59,8 @@ def make_subdir_name(setup_kwargs, run_kwargs):
 run_kwargs = {
     'mcmc_settings': {'n_samples': 5_000, 'n_burnin': 50_000, 
                       'thin_window': 1, 'adapt_kwargs': {'gamma_exponent': 0.5}},
-    'mcwmh_settings': {'n_chains': 100, 'n_samp_per_chain': 50, 
-                       'n_burnin': 10_000, 'thin_window': 100,
+    'mcwmh_settings': {'n_chains': 100, 'n_samp_per_chain': 10, 
+                       'n_burnin': 10_000, 'thin_window': 500,
                        'adapt_kwargs': {'gamma_exponent': 0.5}}
 }
 
