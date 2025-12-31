@@ -850,77 +850,45 @@ random series (e.g., \citet{yvesCut}), such methods are difficult to implement i
 seek practical approximate heuristics that exploit the structure of the pCN proposal. 
 
 \subsection{Random Kernel Metropolis-Hastings}
-To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
-MCMC algorithm that produces approximate EP samples. Our method avoids the challenges 
-associated with discretization and repeated just-in-time sampling.
-The sampler targets the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
-which admits $\postApproxEP$ as a marginal. At a high level, we consider algorithms that alternate between 
-$\Par$ and $\targetTraj$ updates, which update the current MCMC state $(\Par, \targetTraj)$ like
-\begin{align}
-\nextstate{\targetTraj} &\sim \MarkovKerTarget(\targetTraj, \cdot) \label{eq:f-update} \\
-\nextstate{\Par} &\sim \MarkovKerPar(\Par, \cdot \given \nextstate{\targetTraj}), \label{eq:u-update}
-\end{align}
-where $\MarkovKerTarget$ and $\MarkovKerPar$ are Markov kernels. 
-We refer to algorithms of this form as \textit{random kernel MCMC}, motivated by the view of 
-$\MarkovKerPar(\Par, \cdot \given \targetEm)$ as a random surrogate-based approximation 
-to the exact kernel $\MarkovKerPar(\Par, \cdot \given \target)$.
-Throughout this section we fix $\MarkovKerPar$ to be an MH kernel defined with respect to a 
-proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by sampling a proposal 
-$\propPar \sim \propDistPar(\Par, \cdot)$ and setting the next state $\nextstate{\Par}$ to $\propPar$
-with probability 
-\begin{equation}
-\accProbMH_{\Par}(\Par, \propPar)
-= \min\left(1, \frac{\postDens(\propPar; \nextstate{\targetTraj})}{\postDens(\Par; \nextstate{\targetTraj})} \cdot 
-\frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right);
-\label{eq:MH-ratio-u}
-\end{equation}
-otherwise $\nextstate{\Par}$ is assigned the current state $\Par$. Here $\propDensPar(\Par, \cdot)$ denotes the density of 
-$\propDistPar(\Par, \cdot)$. Provided the unnormalized density $\postDens(\Par; \nextstate{\targetTraj})$
+We now consider approximating the $\targetTraj$ update in the MwG scheme, leaving
+the $\Par$ update unchanged. Intuitively, by setting the pCN correlation parameter $\pcnCor \approx 1$
+the proposal $\tilde{\targetTraj}$ will be close to the current state $\targetTraj$, increasing the acceptance
+probability $\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})$. Following this intuition, we consider invoking the 
+simple approximation $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$, 
+thus removing the accept-reject correction and instead allowing the $\targetTraj$ chain 
+to follow a random walk. The notion of slowing the mixing speed of the $\targetTraj$-chain
+is noted in \citet{PlummerCut}, though it is discounted on the basis of inducing artificially slow mixing.
+By contrast, this slow mixing is quite natural in the present high-dimensional context, where large values of 
+$\pcnCor$ are already typically required to prevent excessively high rejection rates 
+\citep{functionSpaceMCMC, corrPM}. The resulting algorithm, which we call 
+\textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, is summarized in \Cref{alg:rk-pcn-finite}.
+Though it is stated for conceptual clarity in infinite dimensions, we emphasize that the algorithm can be 
+implemented exactly by only realizing finite-dimensional projections of the functions. See \Cref{alg:rk-pcn-infinite}
+in the appendix for details.
+
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN (single iteration)}
+    \label{alg:rk-pcn-finite}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
+    \State $\xi \sim \Gaussian(0, \gpKer)$
+    \State $\nextstate{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v_\Par \sim \mathrm{Unif}(0,1)$
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
+    \State $\nextstate{\Par} \gets \propPar \indicator{v_\Par \leq \alpha_{\Par}} + \Par \indicator{v_\Par > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \end{algorithmic}
+\end{algorithm}
+
+
+
+
+Provided the unnormalized density $\postDens(\Par; \nextstate{\targetTraj})$
 depends on $\nextstate{\targetTraj}$ only through $\nextstate{\targetTraj}(\Par)$, then the MH update for $\Par$ only requires 
-realizing the finite-dimensional projection $[\nextstate{\targetTraj}(\Par), \nextstate{\targetTraj}(\propPar)]$ of the 
-function $\nextstate{\targetTraj}$.
+realizing the 
 
 \subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
-Having established the MH update for $\Par$, we now focus on specifying the kernel $\MarkovKerTarget$
-in \Cref{eq:f-update}. To motivate our choice, first consider the requirements for an exact
-Metropolis-within-Gibbs scheme targeting the joint 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$. The $\Par$ update
-must leave $\postDens(\Par; \targetTraj) d\Par$ invariant, which is accomplished via the MH 
-kernel $\MarkovKerPar(\Par, \cdot \given \targetTraj)$ specified above. The $\targetTraj$ update must leave 
- $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
- care due to the fact that $\targetTraj$ may be infinite-dimensional. Proceeding in the spirit of 
- function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
-a $\emDist$-reversible proposal distribution $\propDistTarget(\targetTraj, \cdot)$, resulting in 
-the acceptance probability 
-\begin{equation}
-\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
-= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
-\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right)
-= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
-\label{eq:MH-ratio-mwg}
-\end{equation}
-If $\targetEm \sim \GP(\gpMean, \gpKer)$ 
-\footnote{More generally, this applies when the random density $\postEm$ arises as a transformation
-of an underlying Gaussian measure. The emulator predictive distribution itself need not be Gaussian.}
-then we may define $\propDistTarget(\targetTraj, \cdot)$ via the
-preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
-\begin{equation}
-\tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
-\qquad \xi \sim \GP(0, \gpKer). \label{eq:pcn-proposal}
-\end{equation}
-This Metropolis-within-Gibbs algorithm generally cannot be practically implemented due to the intractable normalizing 
-constant ratio $\normCst(\targetTraj)/\normCst(\tilde{\targetTraj})$ in \Cref{eq:MH-ratio-mwg}. 
-At first glance, it appears that techniques from the doubly intractable MCMC literature 
-\citet{doublyIntractableReview,exchangeAlg} may circumvent this issue, but such methods
- typically require the ability to directly sample $\postDensNorm(\cdot; \tilde{\targetTraj})$,
-which is infeasible in this context.
-To avoid the challenging task of estimating the 
-normalizing constant ratio\todo{cite paper that does try this here?}, 
-we instead invoke the simple approximation 
-$\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$, 
-thus removing the accept-reject correction and instead allowing the $\targetTraj$ chain 
-to follow a random walk. This approximation is reasonable when the proposal $\tilde{\targetTraj}$ does 
+This approximation is reasonable when the proposal $\tilde{\targetTraj}$ does 
 not differ significantly  from the current state $\targetTraj$. We can control the error in the approximation by 
 restricting the scale of $\propDistTarget$, thus slowing down the mixing speed of the $\targetTraj$-chain.
 For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
@@ -937,38 +905,6 @@ setting. \Cref{alg:rk-pcn-infinite} states the practical implementation for infi
 Additional implementation details are provided in the appendix.
 \todo[inline]{Add section in appendix}
 
-\begin{algorithm}[H]
-    \caption{Random Kernel pCN, Finite Dimensional (single iteration)}
-    \label{alg:rk-pcn-finite}
-    \begin{algorithmic}[1]
-    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
-    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
-    \State $\xi \sim \Gaussian(0, \gpKer)$
-    \State $\nextstate{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
-    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
-    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
-    \end{algorithmic}
-\end{algorithm}
-
-\begin{algorithm}[H]
-    \caption{Random Kernel pCN, Infinite Dimensional  (single iteration)}
-    \label{alg:rk-pcn-infinite}
-    \begin{algorithmic}[1]
-    \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
-    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj}_{\nextstate{\Par}})$
-    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
-    \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
-    \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
-    \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
-    \State $(\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar})^\top \gets 
-    	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$ 
-    	\Comment{Compute using $\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar}$}
-    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
-    \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v > \alpha_{\Par}}$
-    \end{algorithmic}
-\end{algorithm}
 
 \begin{rmk}
 The approximate Metropolis-within-Gibbs scheme above is derived by invoking the approximation
@@ -1521,6 +1457,38 @@ triangle inequality, integrating over $\parSpace$, and applying Tonelli's theore
 \int \emE[\postEm(\Par)] \refMeas(\d\Par) = \emE \int \postEm(\Par) \refMeas(\d\Par) = \emE[\normCstEm]
 \qquad \blacksquare
 \end{equation*} 
+
+\subsection{MCMC Details}
+The below algorithm provides a practical implementation of \Cref{alg:rk-pcn-finite} that only requires the realization
+of finite dimensional projections of the surrogate trajectories. This relies on the fact that $\postDens(\Par; \targetTraj)$
+is a function of $\targetTraj$ only through $\targetTraj(\Par)$. The algorithm requires one just-in-time GP sample 
+each iteration. However, additional conditioning points are not accumulated across iterations, avoiding the numerical
+issues associated with repeated just-in-time sampling required by MCwM methods (\Cref{alg:ep}) or the tempered 
+transitions strategy of \citet{PlummerCut}.
+
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN, Practical Implementation  (single iteration)}
+    \label{alg:rk-pcn-infinite}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj}_{\nextstate{\Par}})$
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v_\Par \sim \mathrm{Unif}(0,1)$
+    \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
+    \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
+    \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
+    \State $(\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar})^\top \gets 
+    	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$ 
+    	\Comment{Compute using $\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar}$}
+    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v_\Par \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v_\Par > \alpha_{\Par}}$
+    \end{algorithmic}
+\end{algorithm}
+
+
+
+
+
  
 \bibliography{./../shared/surrogates} 
 % \bibliographystyle{ieeetr}
