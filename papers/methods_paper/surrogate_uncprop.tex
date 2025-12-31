@@ -804,9 +804,11 @@ the acceptance probability
 = \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
 \label{eq:MH-ratio-mwg}
 \end{equation}
-Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \emKer)$. 
+Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \gpKer)$. 
 \footnote{More generally, the emulator predictive distribution itself need not be Gaussian. By simply re-defining
-$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.}
+$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.} We focus on this setting due to the 
+fact that EP-based inference is challenged by 
+
 This is typical in the infinite-dimensional setting we seek to address. Generalization to the non-Gaussian setting is 
 straightforward when $\emDist$ is finite-dimensional.
 
