@@ -864,7 +864,26 @@ $\pcnCor$ are already typically required to prevent excessively high rejection r
 \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, is summarized in \Cref{alg:rk-pcn-finite}.
 Though it is stated for conceptual clarity in infinite dimensions, we emphasize that the algorithm can be 
 implemented exactly by only realizing finite-dimensional projections of the functions. See \Cref{alg:rk-pcn-infinite}
-in the appendix for details.
+in the appendix for details. We illustrate the effect of the normalizing constant approximation 
+approximation through experiments; a complete theoretical analysis is beyond the scope of this paper.
+
+\begin{rmk}
+The RKpCN scheme is derived by invoking the approximation
+$\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$.
+A natural alternative is to consider the approximation 
+$\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$,
+which yields the acceptance probability
+\begin{equation}
+\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
+= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)}\right).
+\label{eq:MH-ratio-cpm}
+\end{equation}
+This is precisely a correlated psuedo-marginal algorithm that exactly targets $\postApproxEUPNorm$.
+This provides an alternative algorithmic derivation of the EUP based on a heuristic modification of 
+an algorithm targeting the EP.
+See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
+for background on pseudo-marginal MCMC.
+\end{rmk}
 
 \begin{algorithm}[H]
     \caption{Random Kernel pCN (single iteration)}
@@ -879,50 +898,6 @@ in the appendix for details.
     \State $\nextstate{\Par} \gets \propPar \indicator{v_\Par \leq \alpha_{\Par}} + \Par \indicator{v_\Par > \alpha_{\Par}}$ \Comment{$\Par$ update}
     \end{algorithmic}
 \end{algorithm}
-
-
-
-
-Provided the unnormalized density $\postDens(\Par; \nextstate{\targetTraj})$
-depends on $\nextstate{\targetTraj}$ only through $\nextstate{\targetTraj}(\Par)$, then the MH update for $\Par$ only requires 
-realizing the 
-
-\subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
-This approximation is reasonable when the proposal $\tilde{\targetTraj}$ does 
-not differ significantly  from the current state $\targetTraj$. We can control the error in the approximation by 
-restricting the scale of $\propDistTarget$, thus slowing down the mixing speed of the $\targetTraj$-chain.
-For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
-between $\targetTraj$ and $\tilde{\targetTraj}$, implying that setting $\pcnCor$ close to one ensures 
-$\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. We illustrate the effect of this 
-approximation through experiments; a complete theoretical analysis is beyond the scope of the present paper.
-
-As currently stated, the pCN update in \Cref{eq:pcn-proposal} is practically implementable only when 
-$\targetEm$ admits a finite-dimensional representation. However, the algorithm can still be implemented
-exactly (i.e., without discretization) when $\targetEm$ is function-valued by tracking only the 
-bivariate projections of the surrogate at the current and proposed parameter values $(\Par, \propPar)$.
-\Cref{alg:rk-pcn-finite} summarizes the conceptual implementation, which is realizable in the finite-dimensional
-setting. \Cref{alg:rk-pcn-infinite} states the practical implementation for infinite-dimensional surrogates.
-Additional implementation details are provided in the appendix.
-\todo[inline]{Add section in appendix}
-
-
-\begin{rmk}
-The approximate Metropolis-within-Gibbs scheme above is derived by invoking the approximation
-$\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$.
-A natural alternative is to invoke the approximation 
-$\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$,
-which yields the acceptance probability
-\begin{equation}
-\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
-= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)}\right).
-\label{eq:MH-ratio-cpm}
-\end{equation}
-This is precisely a correlated psuedo-marginal algorithm that exactly targets $\postApproxEUPNorm$.
-This provides an alternative algorithmic derivation of the EUP based on a heuristic modification of 
-an algorithm targeting the EP.
-See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
-for background on pseudo-marginal MCMC.
-\end{rmk}
  
 \paragraph{Related work.}
 Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
@@ -930,7 +905,7 @@ for EP-based inference. They appear to implicitly assume the use of finite-dimen
 as difficulties related to sampling trajectories are not addressed.
 \citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstep{\targetTraj}_{\Par}$ and 
 $\nextstep{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
-Addressing pathologies in this approach were a primary motivation for our proposed method. 
+Addressing pathologies in this approach was a primary motivation for our proposed method. 
 
 There has been interest in the modular Bayes community in designing approximate MCMC 
 schemes as an alternative to MwMC for cut posterior inference. \citet{PlummerCut} describes 
@@ -949,11 +924,11 @@ $\targetTraj$-chain to control the approximation error.
 \section{Numerical Experiments} \label{sec:experiments}
 We consider several numerical experiments, with the dual aims of \emph{(i)} comparing the EP, EUP, and
 plug-in mean approximation under various surrogate modeling setups, and \emph{(ii)} assessing the 
-quality of the random kernel pCN (RKpCN) approximation to the EP. For the latter, we evaluate the
-RKpCN schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
-correlation parameter $\pcnCor$. We compare these MCMC approximations against the EUP as 
-well as a version of the naive cut algorithm described in \citet{PlummerCut}.
-\todo[inline]{need to more precisely describe this comparison baseline; here or in appendix?}
+quality of the RKpCN approximation to the EP. For the latter, we evaluate the
+RKpCN algorithm at different values of the correlation parameter $\pcnCor$. 
+We compare these MCMC approximations against the EUP as well as the RKpCN scheme with
+$\rho = 0$. The latter implies sampling independent realizations of the surrogate at 
+each MCMC iteration, similar to the approach in \citep[Section 3]{PlummerCut}.
 
 % Linear Gaussian Example
 \subsection{Linear Gaussian Example}
