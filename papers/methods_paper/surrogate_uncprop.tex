@@ -812,12 +812,17 @@ the acceptance probability
 \end{equation}
 Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \gpKer)$. 
 \footnote{More generally, the emulator predictive distribution itself need not be Gaussian. By simply re-defining
-$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.} We focus on this setting due to the 
-fact that EP-based inference is challenged by 
-
-This is typical in the infinite-dimensional setting we seek to address. Generalization to the non-Gaussian setting is 
-straightforward when $\emDist$ is finite-dimensional.
-
+$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.} This covers many 
+practical applications where the surrogate is constructed as some function of a GP, a setting that currently 
+raises challenges for EP-based inference. Generalization to the non-Gaussian setting is straightforward when 
+$\emDist$ is finite-dimensional. In the Gaussian setting, a well-known $\emDist$-reversible proposal is given
+by the preconditioned Crank-Nicolson (pCN; \citet{functionSpaceMCMC}) update 
+\begin{equation}
+\tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
+\qquad \xi \sim \Gaussian(0, \gpKer). \label{eq:pcn-proposal}
+\end{equation}
+\Cref{alg:mwg} summarizes the complete MwG algorithm with the pCN proposal. 
+ 
 \begin{algorithm}[H]
     \caption{Metropolis-within-Gibbs for EP (single iteration)}
     \label{alg:mwg}
@@ -834,6 +839,15 @@ straightforward when $\emDist$ is finite-dimensional.
     \end{algorithmic}
 \end{algorithm}
 
+This algorithm generally cannot be implemented due to the intractable normalizing 
+constant ratio $\normCst(\targetTraj)/\normCst(\tilde{\targetTraj})$ in \Cref{eq:MH-ratio-mwg}. 
+At first glance, it appears that techniques from the doubly intractable MCMC literature 
+\citet{doublyIntractableReview,exchangeAlg} may circumvent this issue, but such methods
+ typically require the ability to directly sample $\postDensNorm(\cdot; \tilde{\targetTraj})$,
+which is infeasible in this context. An exact pseudo-marginal implementation is possible, but requires
+an unbiased estimator for $\normCst(\targetTraj)^{-1}$. While this is in principle possible using truncated
+random series (e.g., \citet{yvesCut}), such methods are difficult to implement in practice. We instead
+seek practical approximate heuristics that exploit the structure of the pCN proposal. 
 
 \subsection{Random Kernel Metropolis-Hastings}
 To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
