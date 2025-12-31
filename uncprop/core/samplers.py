@@ -657,8 +657,6 @@ class RKPCNInfo(NamedTuple):
 def init_rkpcn_kernel(key: PRNGKey,
                       log_density: Callable[[Array, Array], Array],
                       gp: GPJaxSurrogate,
-                      initial_position: Array,
-                      u_prop_cov: Array,
                       f_update_fn: Callable[..., tuple[RKPCNState, Array]],
                       f_update_info: Any) -> tuple[Callable, Callable]:
     """
@@ -734,11 +732,11 @@ def init_rkpcn_kernel(key: PRNGKey,
     # init function
     def init_fn(key, initial_position, prop_cov):
         prop_cov_tril = jnp.linalg.cholesky(prop_cov, upper=False)
-        f_init = gp(initial_position).sample(key).squeeze(0)
-        lp_init = log_density(f_init, initial_position)
+        f_init = gp(initial_position).sample(key).reshape(gp.output_dim)
+        lp_init = log_density(f_init, initial_position).squeeze()
 
         return RKPCNState(position=initial_position,
-                          f_position=f_init.reshape(gp.output_dim),
+                          f_position=f_init,
                           logdensity=lp_init,
                           proposal_tril=prop_cov_tril, 
                           f_update_info=f_update_info)
@@ -775,7 +773,7 @@ def _f_update_pcn_proposal(key: PRNGKey,
     # Update state
     gu = gU[:, 0]
     gv = gU[:, 1]
-    state = state._replace(f_position=gu, logdensity=log_density(gu, u))
+    state = state._replace(f_position=gu.reshape(gp.output_dim), logdensity=log_density(gu, u))
 
     return state, gv
 
