@@ -24,7 +24,7 @@ from blackjax.base import (
 from uncprop.custom_types import Array, PRNGKey, ArrayLike
 from uncprop.core.distribution import Distribution
 from uncprop.core.surrogate import GPJaxSurrogate, SurrogateDistribution
-from uncprop.utils.distribution import _sample_gaussian_tril
+from uncprop.utils.distribution import _sample_gaussian_tril, _sample_batch_gaussian_tril
 
 
 def mcmc_loop(key: PRNGKey, 
@@ -627,7 +627,7 @@ class RKPCNState(NamedTuple):
     position
         Current position of the chain.
     f_at_position
-        Current value of f evaluated at current position.
+        Current value of f evaluated at current position. Shape (q,).
     proposal_tril
         Lower Cholesky factor of proposal covariance for u.
     rho
@@ -657,8 +657,6 @@ class RKPCNInfo(NamedTuple):
 def init_rkpcn_kernel(key: PRNGKey,
                       log_density: Callable[[Array, Array], Array],
                       gp: GPJaxSurrogate,
-                      initial_position: Array,
-                      u_prop_cov: Array,
                       f_update_fn: Callable[..., tuple[RKPCNState, Array]],
                       f_update_info: Any) -> tuple[Callable, Callable]:
     """
@@ -734,8 +732,8 @@ def init_rkpcn_kernel(key: PRNGKey,
     # init function
     def init_fn(key, initial_position, prop_cov):
         prop_cov_tril = jnp.linalg.cholesky(prop_cov, upper=False)
-        f_init = gp(initial_position).sample(key).squeeze()
-        lp_init = log_density(f_init, initial_position)
+        f_init = gp(initial_position).sample(key).reshape(gp.output_dim)
+        lp_init = log_density(f_init, initial_position).squeeze()
 
         return RKPCNState(position=initial_position,
                           f_position=f_init,
@@ -773,9 +771,9 @@ def _f_update_pcn_proposal(key: PRNGKey,
                                        rho=rho)
 
     # Update state
-    gu = gU[0]
-    gv = gU[1]
-    state = state._replace(f_position=gu, logdensity=log_density(gu, u))
+    gu = gU[:, 0]
+    gv = gU[:, 1]
+    state = state._replace(f_position=gu.reshape(gp.output_dim), logdensity=log_density(gu, u))
 
     return state, gv
 
@@ -809,8 +807,8 @@ def _f_update_eup_cpm(key: PRNGKey,
                                         given=(u, fu),
                                         u_jit=u_prop,
                                         rho=rho)
-    gu = gU[0]
-    gv = gU[1]
+    gu = gU[:, 0]
+    gv = gU[:, 1]
 
     # Accept-Reject with EUP target
     fnext_u, lnext_u, accept_prob, accept = _mh_accept_reject(key_accept,
@@ -860,10 +858,18 @@ def _pcn_proposal(key: PRNGKey,
                   mean: Array, 
                   cov_tril: Array, 
                   rho: float) -> Array:
+    """
+    x, mean: (q, d) or (d,)
+    cov_tril: (q, d, d) or (d, d)
+    rho: scalar
+
+    Returns:
+        (q, d), batch of q d-dimensional pCN proposals.
+    """
     pcn_mean = mean + rho * (x - mean)
     pcn_tril = jnp.sqrt(1 - rho**2) * cov_tril
 
-    return _sample_gaussian_tril(key, m=pcn_mean, L=pcn_tril)
+    return _sample_batch_gaussian_tril(key, m=pcn_mean, L=pcn_tril).squeeze(0)
 
 
 def _just_in_time_pcn_proposal(key: PRNGKey,
@@ -881,23 +887,23 @@ def _just_in_time_pcn_proposal(key: PRNGKey,
 
     Returns:
         tuple:
-            fU_prop: the pCN proposal at inputs (u, u_jit)
-            f_jit: the just in time sample f_jit at input u_jit
+            fU_prop: (q, 2), the pCN proposal at inputs (u, u_jit)
+            f_jit: (q,), the just-in-time sample f_jit at input u_jit
     """
 
     key_jit, key_proposal = jr.split(key, 2)
 
-    # just-in-time sample
-    f_jit = gp.condition_then_predict(u_jit, given=given).sample(key_jit).squeeze()
+    # just-in-time sample [squeeze leading sample dimension]
+    f_jit = gp.condition_then_predict(u_jit, given=given).sample(key_jit).squeeze(0)
 
     # pCN proposal, realized at points (u, u_jit)
     u, fu = given
     U = jnp.vstack([u, u_jit])
-    fU = jnp.concatenate([jnp.reshape(fu, -1), jnp.reshape(f_jit, -1)])
+    fU = jnp.hstack([jnp.reshape(fu, (gp.output_dim, 1)), jnp.reshape(f_jit, (gp.output_dim, 1))])
     fU_dist = gp(U)
-    fU_prop = _pcn_proposal(key_proposal, fU, fU_dist.mean, fU_dist.chol, rho=rho).squeeze()
+    fU_prop = _pcn_proposal(key_proposal, fU, fU_dist.mean, fU_dist.chol, rho=rho)
 
-    return fU_prop, f_jit
+    return fU_prop, f_jit.reshape(gp.output_dim)
 
 
 def _logZ_approx(logw: ArrayLike, lp_U: ArrayLike, axis=None):

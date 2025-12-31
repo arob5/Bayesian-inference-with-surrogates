@@ -7,6 +7,10 @@ import jax.numpy as jnp
 import jax.random as jr
 from jax.scipy.linalg import solve_triangular
 
+from ott.geometry import pointcloud
+from ott.solvers.linear import sinkhorn
+from ott.problems.linear import linear_problem
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -15,7 +19,12 @@ from uncprop.custom_types import PRNGKey, Array
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.core.inverse_problem import Posterior
 from uncprop.core.distribution import DistributionFromDensity
-from uncprop.core.samplers import sample_distribution
+from uncprop.core.samplers import (
+    _f_update_pcn_proposal,
+    sample_distribution, 
+    init_rkpcn_kernel, 
+    mcmc_loop,
+)
 from uncprop.models.elliptic_pde.surrogate import fit_pde_surrogate, PDEFwdModelGaussianSurrogate
 from uncprop.models.elliptic_pde.inverse_problem import (
     generate_pde_inv_prob_rep,
@@ -205,16 +214,16 @@ def sample_rkpcn(key: PRNGKey,
                  thin_window: int = 5):
     """rk-pcn algorithm for approximate EP inference"""
     
-    key_ker, key_samp = jr.split(key)    
+    key_ker, key_init_state, key_samp = jr.split(key, 3)    
 
     # log-density as a function of target function output
     observable_to_logdensity = posterior.likelihood.observable_to_logdensity
     truncated_log_prior = DistributionFromDensity(log_dens=posterior.prior.log_density,
-                                                  dim=posterior.dim, support=posterior.truncated_support)
+                                                  dim=posterior.dim, support=surrogate_post.support)
     truncated_log_prior_density = truncated_log_prior.log_density
 
     def log_density(f, u):
-        return observable_to_logdensity(f) + truncated_log_prior_density(u)
+        return observable_to_logdensity(f).squeeze() + truncated_log_prior_density(u).squeeze()
 
     # underlying GP model
     gp = surrogate_post.surrogate
@@ -224,14 +233,15 @@ def sample_rkpcn(key: PRNGKey,
         rho: float
     f_update_info = UpdateInfo(rho=rho)
 
-    initial_state, kernel = init_rkpcn_kernel(key=key_ker,
-                                              log_density=log_density,
-                                              gp=gp,
-                                              initial_position=initial_position,
-                                              u_prop_cov=prop_cov,
-                                              f_update_fn=_f_update_pcn_proposal,
-                                              f_update_info=f_update_info)
-
+    init_fn, kernel = init_rkpcn_kernel(key=key_ker,
+                                        log_density=log_density,
+                                        gp=gp,
+                                        f_update_fn=_f_update_pcn_proposal,
+                                        f_update_info=f_update_info)
+    initial_state = init_fn(key=key_init_state,
+                            initial_position=initial_position,
+                            prop_cov=prop_cov)                                         
+    
     # run sampler
     n_samples_total = n_burnin + thin_window * n_samples
     out = mcmc_loop(key=key_samp,
@@ -248,28 +258,32 @@ def sample_rkpcn(key: PRNGKey,
 # Helper functions for post-run analysis/plotting
 # -----------------------------------------------------------------------------
 
-def summarize_status(base_out_dir, experiment_name, n_design):
+def summarize_status(base_out_dir, experiment_name, n_design, 
+                     required_files=('samples.npz', 'rkpcn_samples.npz')):
     if isinstance(n_design, int):
         n_design = [n_design]
 
     for n in n_design:
         out_dir = base_out_dir / experiment_name / f'n_design_{n}'
         subdirs = [p for p in out_dir.iterdir() if p.is_dir() and p.name.startswith('rep')]
-        completed = [(p / 'samples.npz').exists() for p in subdirs]
+        completed = [
+            all((p / file).exists() for file in required_files)
+            for p in subdirs
+        ]
         print(f'n_design = {n}: {sum(completed)} of {len(completed)} completed.')
 
 def read_samp(base_out_dir, experiment_name, n_design, rep_idx):
-    out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
-    samp = dict(jnp.load(out_dir / 'samples.npz'))
+    rep_out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
+    samp = dict(jnp.load(rep_out_dir / 'samples.npz'))
     return samp
 
 def load_rep(base_out_dir, experiment_name, n_design, rep_idx):
-    out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
-    init_settings = jnp.load(out_dir / 'init_settings.npz')
+    rep_out_dir = base_out_dir / experiment_name / f'n_design_{n_design}' / f'rep{rep_idx}'
+    init_settings = jnp.load(rep_out_dir / 'init_settings.npz')
     key_init = jr.wrap_key_data(init_settings['key_init'])
 
     rep = PDEReplicate(key=key_init,
-                       out_dir=out_dir,
+                       out_dir=rep_out_dir,
                        n_design=n_design,
                        num_rff=init_settings['num_rff'].item(),
                        design_method=init_settings['design_method'].item(),
@@ -466,3 +480,81 @@ def assemble_coverage_reps(base_out_dir, experiment_name, n_design, probs,
         coverage_list.append(jnp.stack(list(coverage.values())))
 
     return jnp.stack(coverage_list)
+
+
+def wasserstein2_sinkhorn(
+    x_ref: jnp.ndarray,
+    x_approx: jnp.ndarray,
+    epsilon: float = 0.05,
+    **kwargs
+):
+    """
+    Compute entropic-regularized W2 distance between two empirical distributions.
+
+    Args:
+        x_ref:     (N, d) reference samples
+        x_approx:  (M, d) approximating samples
+        epsilon:   Sinkhorn regularization strength
+        **kwargs:  forwarded to Sinkhorn()
+
+    Returns:
+        Scalar W2 distance
+    """
+    geom = pointcloud.PointCloud(x_ref, x_approx, epsilon=epsilon)
+    prob = linear_problem.LinearProblem(geom)
+    solver = sinkhorn.Sinkhorn(**kwargs)
+    out = solver(prob)
+    return jnp.sqrt(out.reg_ot_cost)
+
+
+def compute_wasserstein_comparison(
+    samples: dict,
+    reference_key: str,
+    subsample: int | None = None,
+    key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+    sinkhorn_kwargs: dict | None = None
+):
+    sinkhorn_kwargs = sinkhorn_kwargs or {}
+    ref_samples = samples[reference_key]
+    n, d = ref_samples.shape
+    
+    # whitening matrix (Mahalanobis): Cov[(X-mu) @ W] = I
+    mu_ref = jnp.mean(ref_samples, axis=0)
+    cov_ref = jnp.cov(ref_samples, rowvar=False) + 1e-8 * jnp.eye(d)
+    L = jax.scipy.linalg.cholesky(cov_ref, lower=True)
+    W = jax.scipy.linalg.solve_triangular(L.T, jnp.eye(d), lower=False)
+
+    def whiten(samples):
+        centered = samples - mu_ref
+        return jnp.dot(centered, W)
+
+    # Transform all chains using the reference's geometry
+    samples = {
+        k: whiten(v) for k, v in samples.items()
+    }
+
+    # choose regularization level using reference geometry
+    ref_geom = pointcloud.PointCloud(
+        samples[reference_key], 
+        samples[reference_key], 
+        epsilon=None
+    )
+    fixed_epsilon = ref_geom.epsilon
+
+    # optional subsampling
+    if subsample is not None:
+        for k, v in samples.items():
+            key_choice, key, = jr.split(key)
+            idx = jr.choice(key_choice, v.shape[0], (subsample,), replace=False)
+            samples[k] = v[idx]
+
+    results = {}
+
+    for name, x in samples.items():
+        if name == reference_key:
+            continue
+
+        w2 = wasserstein2_sinkhorn(samples[reference_key], x, epsilon=fixed_epsilon, **sinkhorn_kwargs)
+        results[name] = w2
+
+    return results, fixed_epsilon

@@ -625,8 +625,8 @@ class GPJaxSurrogate(Surrogate):
         point is added.
 
         This function performs a rank-1 block update of the precision matrix
-        corresponding to appending a new design point, **without changing array
-        shapes**. The full precision matrix `P` is assumed to have static shape
+        corresponding to appending a new design point, without changing array
+        shapes. The full precision matrix `P` is assumed to have static shape
         `(q, N, N)`, where only the top-left `idx × idx` block is currently active.
 
         The update activates row/column `idx` and leaves all other inactive
