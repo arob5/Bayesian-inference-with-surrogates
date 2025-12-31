@@ -90,25 +90,27 @@ with computationally expensive forward models. A common solution is to
 replace the model with a cheaper surrogate. To avoid overconfident 
 conclusions, it is essential to acknowledge the surrogate approximation by propagating 
 its uncertainty. At present, a variety of distinct uncertainty propagation methods 
-have been suggested, with little guidance on how their performance can vary.
-To fill this gap, we start by proposing a particular baseline uncertainty-aware posterior
-approximation, justified by decision theoretic and modular Bayesian inference arguments.
-We then investigate a popular computationally convenient alternative, highlighting when 
-it may differ from the baseline. Finally, we develop a Markov chain Monte Carlo
-algorithm that is shown to produce a superior approximation to the baseline across a variety
-of experiments. Our numerical experiments are motivated by problems of parameter 
-estimation for dynamical models, with particular emphasis on Gaussian process surrogates
-trained to emulate either the underlying forward model or the log likelihood of the Bayesian model.
+have been suggested, with little understanding of how they vary.
+To fill this gap, we propose a mixture distribution termed the \textit{expected posterior (EP)} 
+as a general baseline for uncertainty-aware posterior approximation, justified by decision theoretic 
+and modular Bayesian inference arguments. We then investigate the 
+\textit{expected unnormalized posterior (EUP)}, a popular heuristic alternative, analyzing when 
+it may deviate from the EP baseline. Our results show that this heuristic can break down when 
+the surrogate uncertainty is highly non-uniform over the design space, as can be the case when
+the log-likelihood is emulated by a Gaussian process. Finally, we present 
+\textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an approximate 
+Markov chain Monte Carlo algorithm that is shown to produce reasonable EP approximations
+across a variety of experiments.
 \end{abstract}
 
 \section{Introduction}
 Simulation-based computer models are key tools for studying complex systems within 
 the physical, biological, and engineering sciences. Such models often have 
-uncertain parameters that must be estimated (i.e., calibrated) using observational data.
+unknown parameters that must be estimated (i.e., calibrated) using observational data.
 Quantifying the uncertainty in these estimated values is crucial for downstream 
 decision making. While Bayesian methods are particularly well-suited to this task, 
 standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
-are hindered by the computational cost of the simulation model. A popular solution 
+are hindered by the computational cost of many simulation models. A popular solution 
 is to use a small set of expensive simulations to train a statistical approximation 
 of the simulator. This surrogate (i.e., emulator) is then used as a drop-in replacement 
 for the true computer model, enabling the application of algorithms like MCMC. 
@@ -117,7 +119,7 @@ a variety of applications \citep{FerEmulation,FadikarAgentBased,idealizedGCM,
 trainDynamics,FATES_CES,CLMBayesianCalibration}.
 
 Despite significant advances in surrogate modeling, fitting a 
-highly accurate emulator under a limited computational budget remains a challenging task,
+highly accurate emulator under a limited computational budget is typically impossible,
 invariably implying the presence of errors in the surrogate-based posterior approximation.
 Ignoring these errors can lead to overconfident results 
 with miscalibrated uncertainties \citep{BilionisBayesSurrogates,BurknerSurrogate}.
@@ -140,17 +142,21 @@ BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, previous studies have
 explicitly cited computational challenges as a key factor in determining their 
 approach \citep{VehtariParallelGP,StuartTeck2}. In this paper, we start by setting 
 aside the computational considerations in order to identify a theoretically-justified 
-baseline posterior approximation. While in general computation for this distribution 
-is difficult, one can consider (1) exactly targeting a non-optimal distribution using standard
-inference methods, or (2) approximately targeting the optimal baseline using
-approximate inference methods.
-We show that existing uncertainty propagation schemes can be viewed as 
-implementations of the former approach, and provide a characterization of the approximation
-error for a commonly-used heuristic. We then adopt the latter perspective,
-introducing a new approximate MCMC algorithm that is shown to outperform 
-competing approaches.
- 
+baseline posterior approximation termed the \textit{expected posterior (EP)}. In general, 
+EP-based inference is computationally demanding and difficult to implement for 
+infinite-dimensional surrogates such as GPs. To alleviate these 
+challenges, one can consider either (1) abandoning the EP in favor of convenient heuristic
+alternatives, or (2) developing approximate inference methods that directly target the EP.
+We analyze the \textit{expected unnormalized posterior (EUP)}, a commonly-used heuristic
+falling under the former category. While the EUP approximation is often reasonable, we 
+demonstrate that it can be unstable when the uncertainty in the surrogate-induced approximation 
+of the posterior density is highly variable over the parameter space. We then show that the latter
+approximate computation viewpoint can be fruitful in achieving a more robust EP approximation.
+In particular, we present \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an
+approximate MCMC algorithm targeting the EP that is well-defined for GP surrogates.
+
 \paragraph{Contributions.}
+\todo[inline]{update or remove}
 \begin{enumerate}
 \item We formalize the problem of surrogate uncertainty propagation in Bayesian inverse problems.
 Adopting a Bayesian decision theoretic framework, we identify a particular mixture distribution, 
@@ -192,14 +198,14 @@ The goal is then to summarize the posterior distribution
 &&\normCst = \int_{\parSpace} \priorDens(\Par) \lik(\Par; \obs) d\Par. \label{eq:post_dens_generic}
 \end{align}
 While closed-form characterizations are typically thwarted by the intractable normalizing constant
-$\normCst$, posterior samples can be simulated using MCMC algorithms, which only require 
+$\normCst$, approximate posterior samples can be simulated using MCMC algorithms, which only require 
 access to pointwise evaluations of the unnormalized density 
 $\postDens(\Par) \Def \priorDens(\Par) \lik(\Par; \obs)$.
 However, such methods commonly require $10^5 - 10^7$ iterations, with each iteration 
-involving a query to the density $\postDens(\Par)$.
+involving at least one query to the density $\postDens(\Par)$.
 In various engineering and scientific applications, computing $\lik(\Par; \obs)$ (and thus
 $\postDens(\Par)$) requires running an expensive computer simulation. 
-This renders MCMC infeasible in this setting, motivating the need for inference schemes
+This renders MCMC infeasible, motivating the need for inference schemes
 that use only a small set of evaluations of $\postDens(\Par)$.
  
 \subsection{Bayesian Inverse Problems} \label{sec:bip}
@@ -234,16 +240,17 @@ on which $\postDens(\Par)$ depends. To make this explicit, let
 $\target: \parSpace \to \targetRange$ be the underlying map targeted for emulation. 
 A regression model $\targetEm$ is fit to a set of exact simulator runs 
 $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$, such that $\targetEm(\Par)$ provides at 
-prediction of $\target(\Par)$. \Cref{ex:fwd-em} and \Cref{ex:ldens-em} describe the common strategies 
+prediction of $\target(\Par)$. \Cref{ex:fwd-em,ex:ldens-em} describe the common strategies 
 where $\target$ is chosen to be the forward model or log-likelihood, respectively.
 
 In order to quantify the uncertainty introduced via this approximation, we consider 
 emulators that provide predictions in the form of a probability distribution; 
-i.e., $\targetEm(\Par)$ is a random vector, implying $\targetEm$ is a random function.
+i.e., $\targetEm(\Par)$ is a random vector and $\targetEm$ is a random function.
 Let $\emDist(\cdot \given \Par)$ and $\emDist$ denote the distributions of 
 $\targetEm(\Par)$ and $\targetEm$, respectively, and $\emE$ the expectation with respect to $\emDist$.
 The randomness in $\targetEm$ typically quantifies the epistemic (reducible) uncertainty
-due to the limited computational budget. Common models that provide predictive distributions include
+due to the limited computational budget \citep{epistemicAleatoric}. 
+Common models that provide predictive distributions include
 Gaussian processes (GPs; \citep{gramacy2020surrogates}), 
 Bayesian neural networks \citep{BayesOptNN}, deep ensembles \citep{deepEnsembles}, 
 and Bayesian additive regression trees \citep{BARTReview}.
@@ -251,7 +258,7 @@ and Bayesian additive regression trees \citep{BARTReview}.
 We consider the common surrogate modeling workflow in which $\targetEm$ is fit only to data generated by 
 the simulator, and then substituted for $\target$ to approximate the original Bayesian model. This two-stage 
 \textit{modular} pipeline (as opposed to fitting a joint Bayesian model) is practically convenient, and 
-has been shown to outperform the joint Bayesian approach in the presence of model misspecification
+has been shown to outperform the joint Bayesian approach in the presence of likelihood misspecification
 \citep{modularization, PlummerCut}. Using $\targetEm$ as a drop-in replacement for 
 $\target$ induces predictive distributions over $\postDens$ and $\normCst$. To emphasize the dependence
 of these quantities on $\target$, we write $\postDens(\Par; \target)$ and $\normCst(\target)$ and assume 
@@ -293,16 +300,15 @@ or (unnormalized) log-posterior
 $\Par \mapsto \log \left\{\priorDens(\Par)\lik(\Par; \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
 landslideCalibration}.
-
 We collectively refer to these strategies as \textbf{log-density emulation}. In the 
 log-likelihood case, an emulator $\targetEm$ is fit to a design 
 $\{(\Par_n, \log \lik(\Par_n; \obs)\}_{n=1}^{\Ndesign}$
-and induces a posterior density surrogate 
+and induces an unnormalized posterior density surrogate 
 \begin{align}
 \postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
 \end{align}
 The log-posterior case is similar, except that the effect of the prior is also 
-approximated by the emulator, so the induced posterior surrogate takes 
+approximated by the emulator, so the induced unnormalized posterior surrogate takes 
 the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 \end{ex}
 
@@ -325,7 +331,7 @@ conditioning. Consequently, various uncertainty propagation methods have been
 proposed, each resulting in different posterior inferences 
 \citep{BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,BurknerSurrogate,
 FerEmulation}.
-We identify and justify a mixture distribution termed the 
+We identify and justify a mixture distribution named the 
 \textit{expected posterior (EP)} as the correct distribution to target in 
 modular surrogate-based inference. 
 
@@ -349,7 +355,7 @@ theoretic viewpoint and select an optimal distribution from a set of candidates 
 minimizes an expected loss $\emE[\loss(\postNormEm, q)]$. In other words, we seek a Bayes'
 estimator 
 \begin{equation}
-\qDensOpt \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)],
+\qDensOpt \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)]
 \label{eq:variational-opt}
 \end{equation}
 with respect to a particular loss $\loss$ and space of densities $\qSpace$ over $\parSpace$. 
@@ -504,7 +510,7 @@ rather than the full emulator $\targetEm$. The EUP is defined by computing
 a pointwise expectation of $\postEm(\Par)$ and then normalizing post-hoc:
 \begin{equation}
 \postApproxEUPNorm(\Par) \Def 
-\frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] d\Par}
+\frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] \d\Par}
 = \frac{\emE\left[\postEm(\Par) \right]}{\emE[\normCstEm]}. \label{eq:post-approx-EUP} 
 \end{equation}
 The equality in \Cref{eq:post-approx-EUP} follows from
@@ -543,15 +549,15 @@ written as a posterior mixture
 \label{eq:eup-mixture} 
 \end{equation}
 where $\emDist(\d\targetTraj \given \obs) \propto \normCst(\targetTraj) \emDist(\d\targetTraj)$.
-Note that the plug-in mean, EP, and EUP can all be written in this mixture form with the respective
-weights $\delta_{\emE[\targetEm]}(\d\targetTraj)$, $\emDist(\d\targetTraj)$, and $\emDist(\d\targetTraj \given \obs)$.
+Hence, the plug-in mean, EP, and EUP can all be written in this mixture form with the respective
+weights $\delta_{\Em{\bar{\targetTraj}}}(\d\targetTraj)$, $\emDist(\d\targetTraj)$, and $\emDist(\d\targetTraj \given \obs)$.
 
 \subsection{Comparison of the EP and EUP}
 Notice in \Cref{eq:post-approx-EUP} that the EUP is a ratio estimator, and differs from 
 the EP due to the nonlinearity of the normalization operation. The EUP can thus 
 be derived from the EP by invoking two approximations: 
-(i.) treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
-(ii.) assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
+\emph{(i)} treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
+\emph{(ii)} assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
 The below result quantifies the effect of these two approximations.
 
 \begin{prop} \label{prop:ep-eup-pw-err}
@@ -621,7 +627,7 @@ trajectories in the second stage.
 We return to \Cref{ex:fwd-em,ex:ldens-em} to highlight concrete characterizations of the EUP
 in two common practical settings. 
 
-\begin{ex}[Example 1 Continued]
+\begin{ex}[Forward Model GP Surrogate]
 \label{ex:fwd-em-cont}
 Consider the setup from example \Cref{ex:fwd-em} with approximate density 
 $\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$. We now 
@@ -629,10 +635,10 @@ additionally assume that the surrogate has Gaussian pointwise predictions
 $\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. Such predictions might come from 
 a (potentially multi-output) GP emulator, though note that the EUP is defined only by the 
 pointwise predictions, and ignores any correlational structure in the surrogate.
-
 This setup is commonly considered in the Bayesian 
 inverse problem literature \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
 idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
+
 Under these assumptions, the EUP assumes the form
 \begin{equation}
 \postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \emMean(\Par), \likPar + \emVar(\Par)),
@@ -647,7 +653,7 @@ high uncertainty. Since the Gaussian likelihood is bounded above, when $\emMean(
 then an increase in $\emVar(\Par)$ may actually deflate the density at $\Par$.
 \end{ex}
 
-\begin{ex}[Example 2 Continued]
+\begin{ex}[Log-Density GP Surrogate]
 \label{ex:ldens-em-cont}
 Consider the setup from \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 We again assume an emulator with Gaussian predictions $\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. 
@@ -658,7 +664,7 @@ This setup has been considered in several applications
 ActiveLearningMCMC,FerEmulation,StuartTeck1,StuartTeck2,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}.
 
-Under these assumptions, the pushforward predictive distributions for $\postEm(\Par)$ are log-normal
+Under these assumptions, the pushforward predictive distribution for $\postEm(\Par)$ is log-normal
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \emVar(\Par))$, implying
 \begin{equation}
 \postApproxEUPNorm(\Par) 
@@ -755,7 +761,7 @@ MCMC runs, but this may be less of an issue in modern parallel computing environ
 Moreover, methods have been developed to reduce the number of sampled trajectories $\NSample$ 
 required to adequately characterize the EP \citep{BurknerTwoStep}. 
 
-The more significant issue is the outer sampling step, which requires simulating surrogate 
+Another issue is the outer sampling step, which requires simulating surrogate 
 trajectories $\targetEm \sim \emDist$. While not a problem for finite-dimensional 
 surrogate models (e.g., linear models), this presents major challenges for surrogates 
 derived from GPs. Given the popularity of GP surrogates, 
@@ -991,8 +997,8 @@ We opt to avoid normalizing constant estimation and instead slow down the mixing
 $\targetTraj$-chain to control the approximation error.
 
 \section{Numerical Experiments} \label{sec:experiments}
-We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
-plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
+We consider several numerical experiments, with the dual aims of \emph{(i)} comparing the EP, EUP, and
+plug-in mean approximation under various surrogate modeling setups, and \emph{(ii)} assessing the 
 quality of the random kernel pCN (RKpCN) approximation to the EP. For the latter, we evaluate the
 RKpCN schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
 correlation parameter $\pcnCor$. We compare these MCMC approximations against the EUP as 
