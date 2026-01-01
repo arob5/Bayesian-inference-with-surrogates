@@ -1318,9 +1318,27 @@ GPs with realistic degrees of bias.
 
 \paragraph{MCMC Evaluation.}
 
-
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
+We provide theoretical arguments that generally favor the EP as the correct target for surrogate-based Bayesian inference.
+We compare this baseline to the EUP, a computationally-convenient alternative, and demonstrate that the two distributions
+can significantly deviate when the surrogate-based posterior density approximation approximation has highly non-uniform
+uncertainty over the parameter space. In particular, this occurs when the normalizing constant $\normCst(\targetEm)$ is highly 
+correlated with $\targetEm(\Par)$ in small regions of the parameter space.
+This problem is exemplified by applications where GPs are used to emulate 
+log-densities, but can sometimes be mitigated by practical safeguards (e.g., enforcing bound constraints). In our experiments,
+the EUP and EP tend to exhibit closer agreement in the forward model emulation setting. This is likely due to the fact
+that our numerical experiments consider Gaussian likelihoods, which are bounded and thus dampen the effects of high 
+surrogate uncertainty in small regions of the parameter space. 
+Caution is warranted when performing surrogate-based Bayesian inference with unbounded likelihoods.
+We also highlight different computational strategies for EP-based inference, and present the RKpCN algorithm, an easy-to-implement 
+approximate EP sampler that naturally handles the infinite-dimensionality of GP surrogates.
+
+There are several avenues for future research. 
+
+
+
+
 \begin{comment}
 \todo[inline]{intro paragraph summarizing paper}
 
