@@ -1301,9 +1301,29 @@ for a complete characterization of the EP, so should not be viewed as an exact b
     \centering
     \includegraphics[width=\linewidth]{./../../out/final/pde_coverage.png}
     \caption{Coverage results for the surrogate-based posteriors in the PDE experiment.
-    		 Coverage is computed from MCMC samples by estimating ellipsoidal coverage regions based on Mahalanobis distance.
+    		 Computed by estimating ellipsoidal coverage regions based on Mahalanobis distance using MCMC samples.
 		 The shaded regions summarize the middle 90\% of the replicates.}
     \label{fig:pde_coverage}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_10.png}
+        \caption{$N = 10$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_20.png}
+        \caption{$N = 20$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_30.png}
+        \caption{$N = 30$}
+    \end{subfigure}
+    \caption{EP approximations in the PDE experiments.}
+    \label{fig:pde_wasserstein}
 \end{figure}
 
 \paragraph{Approximate Posterior Comparison.} \Cref{fig:pde_coverage} summarizes the joint ellipsoidal coverage of
@@ -1316,7 +1336,15 @@ the EUP replicates continues to completely miss the support of the true posterio
 can always be improved by improving the calibration of the underlying surrogate. We sought to fit reasonably well-calibrated
 GPs with realistic degrees of bias.
 
-\paragraph{MCMC Evaluation.}
+\paragraph{MCMC Evaluation.} \Cref{fig:pde_wasserstein} summarizes the distance between various sample-based
+approximations to the MCwM EP baseline. We use entropic-regularized 2-Wasserstein distance,
+computed using the Sinkhorn algorithm in \verb+ott-jax+ \citep{ottjax}. Each distribution is represented by 1000 sub-samples
+from an MCMC algorithm. A whitening transformation is applied to the samples using the empirical mean and covariance of 
+the MCwM so that the distances are computed in the baseline MCwM geometry. The Sinkhorn regularization parameter is 
+selected using the \citep{ottjax} JAX applied to the MCwM points, and the same value is used for all Wasserstein computations
+for a fixed design size. The results show that both RKpCN with $\rho = 0.99$ and the EUP provide the best EP approximations, 
+with the median EUP replicate performing slightly better. 
+
 
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
@@ -1351,9 +1379,12 @@ Conversely, it may also be fruitful to investigate the effects of misspecificati
 model. If the surrogate correlation structure over the parameter space is highly misspecified, then the EUP 
 (which ignores predictive correlations) may be more robust in such cases.
 
-
-
-
+Finally, there is significant potential to further refine the RKpCN algorithm. We justify the algorithm with 
+heuristic and empirical justifications in this work to demonstrate that a simple approximation can provide 
+a reasonable characterization of the EP. Rigorous theoretical analysis of this algorithm would likely draw
+upon results from both the noisy MCMC \citep{noisyMCSurvey,stabilityNoisyMH,corrPM} and function-space MCMC
+\citep{functionSpaceMCMC} literatures. There is likely room for improving the naive normalizing constant ratio 
+estimate used in RKpCN while maintaining a practical, easily implemented algorithm.
 
 \begin{comment}
 \todo[inline]{intro paragraph summarizing paper}
