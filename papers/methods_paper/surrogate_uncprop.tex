@@ -1004,7 +1004,7 @@ fourth grid point. The data space is thus of dimension $\dimObs=25$. We consider
 with $\sigma = 0.2$ and define $\priorCov$ as a Gaussian kernel matrix, encoding a smoothness 
 assumption for the signal.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
 
     % First row
@@ -1103,7 +1103,7 @@ ordinary differential equations
 \end{align}
 where the model driver $\forcing(\Time)$ is given by photosynthetically active radiation 
 (\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
-Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day})
 \begin{align}
 \NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
 \GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
@@ -1125,16 +1125,14 @@ one year period. We assume an additive Gaussian noise model
 \end{align}
 where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
 and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
-Ground truth values $\Par_{\circ}$ are sampled from the prior (the fixed parameters not being calibrated are also 
-assigned independent uniform priors). The mechanistic model is assumed to be well-specified, such that $\fwd$
-uses the correct ground truth values for the fixed parameters.
+Ground truth values $\Par_{\circ}$ are sampled from the prior and $\fwd$ is assumed to be well-specified.
 Synthetic data $\obs$ is simulated from the model in \Cref{eq:vsem-likelihood} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
 We consider two different emulators for the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) \lik(\Par; \obs)\}$.
 The first is a conjugate GP surrogate with GP prior defined by a constant mean function and a Gaussian kernel.
 The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of 
-points using a latin hypercube design and then evaluating the exact log-posterior density at these points. 
+points using a Latin hypercube design and then evaluating the exact log-posterior density at these points. 
 The GP mean constant and kernel hyperparameters are optimized by maximum marginal likelihood 
 using the \verb+gpjax+ Python package \citep{gpjax}. We constrain the kernel lengthscales to avoid pathologically 
 high or low values, and constrain the variance parameter of the GP likelihood to be small to encourage interpolation 
@@ -1149,13 +1147,44 @@ $\targetEm^{\mathrm{clip}}(\Par) \Def \min\{\targetEm(\Par), b(\Par)\}$. \citet{
 observation and instead truncate the predictive distribution, but we find that the clipped Gaussian is more appropriate here.
 
 \paragraph{Experiment Replications.}
-We repeat one hundred replications of the above setup. Each replicate varies in the sampled driver data, ground 
-truth $\Par_{\circ}$, synthetic observations $\obs$, and design points for the emulator. Both the GP and clipped GP
-surrogates are used for each replicate. This entire procedure is repeated for different numbers of design points
-$\Ndesign \in \{4, 8, 16\}$. As the parameter space here is two-dimensional, we approximate all probability distributions
-over a dense grid.
+We repeat one hundred replications of the above setup, testing both the GP and clipped GP for each replicate.
+The replicates vary in the sampled driver data, ground truth $\Par_{\circ}$, synthetic observations $\obs$, 
+and design points for the emulator. In addition, the values of 
+the VSEM parameters that are not being calibrated are randomly sampled from uniform distributions, yielding
+a different parameterization of the forward model for each replicate. This entire procedure is repeated for different 
+numbers of design points $\Ndesign \in \{4, 8, 16\}$. As the parameter space here is two-dimensional, 
+we approximate all probability distributions and coverage metrics over a dense grid.
 
 \subsubsection{Results}
+
+ \begin{figure}[htbp]
+    \centering
+    % top
+    \begin{subfigure}[b]{0.85\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
+        \caption{Coverage results using $\targetEm$}
+        \label{fig:vsem_coverage_gp}
+    \end{subfigure}
+    
+    % bottom
+    \begin{subfigure}[b]{0.85\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
+        \caption{Coverage results using $\targetEm^{\mathrm{clip}}$}
+        \label{fig:vsem_coverage_clip_gp}
+    \end{subfigure}
+
+    \caption{
+        Coverage metrics for the surrogate-based posteriors in the VSEM experiment, using the
+    	GP emulator $\targetEm$ \emph{(top)} and clipped GP emulator 
+	$\targetEm^{\mathrm{clip}}$ \emph{(bottom)}. Coverage is computed using masks over a
+	dense two-dimensional grid. The shaded regions summarize the middle 90\% of the replicates.
+    }
+    \label{fig:combined-vsem-coverage}
+\end{figure}
+
+
 \paragraph{GP Surrogate.}
 \Cref{fig:vsem_coverage_gp} summarizes the coverage of the posterior approximations derived using the GP 
 emulator $\targetEm$. The mean and EUP approximations systematically under-cover, while the EP is better 
@@ -1180,27 +1209,14 @@ The plug-in mean still systematically under-covers, but both the EUP and EP are 
 The clipping transform avoids the EUP pathologies stemming form the log-normal tails of $\postEm(\Par)$.
 However, we do still observe evidence (especially for $\Ndesign = 16$) of EUP instability relative to the EP,
 with a greater portion of the replicates resulting in significant under or over-calibration.
- 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
-    \caption{Coverage results using $\targetEm$}
-    \label{fig:vsem_coverage_gp}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
-    \caption{Coverage results using $\targetEm^{\mathrm{clip}}$}
-    \label{fig:vsem_coverage_clip_gp}
-\end{figure}
-
 
 % Elliptic PDE Model
-\subsection{Elliptic PDE Model} \label{sec:pde}
+\subsection{Spatial PDE-Constrained Inversion} \label{sec:pde}
 We next consider PDE-constrained estimation of a latent spatial field. This experiment is motivated by hydrological
-applications in which a permeability field must be estimated from pressure observations at a set of spatial locations.
-\todo[inline]{add some citations}
+applications in which a heterogeneous permeability field must be estimated from pressure observations at a set of 
+spatial locations \citep{conditionPermToPressure,mcmcHydrology,precondMCMCKL}.
+Challenges of such inverse problems include the infinite dimensionality of the parameter and the high cost of
+the forward model \citep{dimRedPolyChaos}.
 
 \subsubsection{Experimental Setup}
 \paragraph{Mechanistic Model.}
@@ -1230,7 +1246,7 @@ $\log \perm(X) \sim \Gaussian(1, k_\kappa(X, X))$ for the discretized field.
 To reduce the parameter dimension, we approximate this Gaussian prior by retaining only the dominant six
 principal components of $k_\kappa(X, X)$. This tends to capture upwards of 95\% of the prior variance under 
 our experimental setup, and mimics the common approach of invoking Karhunen-Loève approximations in 
-spatial inverse problems \citep{uribeKL,dimRedPolyChaos}. Letting $\{(\lambda_r, \psi_r)\}_{r=1}^{6}$ denote 
+spatial inverse problems \citep{uribeKL,dimRedPolyChaos,KLInvProbs}. Letting $\{(\lambda_r, \psi_r)\}_{r=1}^{6}$ denote 
 the dominant eigenpairs, the rank-reduced prior model is
 \begin{equation}
 \log \perm(X) \Def 1 + \sum_{r=1}^{6} \sqrt{\lambda_r} \Par_j \psi_j, \qquad \Par_j \overset{\mathrm{iid}}{\sim} \Gaussian(0, 1),
@@ -1248,9 +1264,9 @@ Ground truth values $\Par_{\circ}$ are sampled from the prior, and synthetic dat
 \Cref{eq:pde-inv-prob} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
-We fit a multi-output GP to the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to predict each of
+We fit a multi-output GP to the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to each of
 the four scalar outputs. The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by 
-mapping latin hypercube samples through the standard Gaussian 
+mapping Latin hypercube samples through the standard Gaussian 
 quantile function to obtain the design inputs, and then evaluating $\fwd$ at each design input.
 Each univariate GP is defined by a constant mean function and a Gaussian kernel, with hyperparameters
 optimized by maximum marginal likelihood using \verb+gpjax+ \citep{gpjax}.
@@ -1281,12 +1297,26 @@ for a complete characterization of the EP, so should not be viewed as an exact b
 
 \subsubsection{Results}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{./../../out/final/pde_coverage.png}
-    \caption{Coverage results for PDE experiment.}
+    \caption{Coverage results for the surrogate-based posteriors in the PDE experiment.
+    		 Coverage is computed from MCMC samples by estimating ellipsoidal coverage regions based on Mahalanobis distance.
+		 The shaded regions summarize the middle 90\% of the replicates.}
     \label{fig:pde_coverage}
 \end{figure}
+
+\paragraph{Approximate Posterior Comparison.} \Cref{fig:pde_coverage} summarizes the joint ellipsoidal coverage of
+the surrogate-based posteriors relative to the exact baseline. Ellipsoidal coverage (based only on the empirical mean and 
+covariance of MCMC samples from the approximating distributions) was deemed reasonable upon observing that 
+the samples tended to have roughly elliptical shape across experimental replicates. The EP is seen to be well-calibrated on
+average across the three design sizes, while the plug-in mean significantly under-covers. The EUP tends to under-cover, 
+but the median replicate is nearly well-calibrated at the largest design size. Even at this design size, a significant portion of 
+the EUP replicates continues to completely miss the support of the true posterior. Naturally, the calibration of the posteriors
+can always be improved by improving the calibration of the underlying surrogate. We sought to fit reasonably well-calibrated
+GPs with realistic degrees of bias.
+
+\paragraph{MCMC Evaluation.}
 
 
 % Discussion and conclusions
@@ -1447,7 +1477,7 @@ transitions strategy of \citet{PlummerCut}.
 \Cref{prop:linear-gaussian-analytical}, using the linear forward model from the 
 example in \Cref{sec:deconvolution}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.7\linewidth}
         \centering
