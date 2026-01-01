@@ -155,18 +155,6 @@ approximate computation viewpoint can be fruitful in achieving a more robust EP 
 In particular, we present \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an
 approximate MCMC algorithm targeting the EP that is well-defined for GP surrogates.
 
-\paragraph{Contributions.}
-\todo[inline]{update or remove}
-\begin{enumerate}
-\item We formalize the problem of surrogate uncertainty propagation in Bayesian inverse problems.
-Adopting a Bayesian decision theoretic framework, we identify a particular mixture distribution, 
-termed the \textit{expected posterior (EP)}, as the optimal target for approximate inference.
-\item We analyze a popular heuristic, the \textit{expected unnormalized posterior (EUP)},
-providing results that elucidate when the EUP and EP may diverge.
-\item We introduce an approximate preconditioned Crank-Nicolson MCMC algorithm that 
-directly targets the EP, which is shown to perform favorably against alternatives.
-\end{enumerate}
-
 \subsection{Outline}
 \Cref{sec:surrogates-intro} introduces the modular surrogate-based Bayesian workflow.
 In \Cref{sec:EP} we derive the EP as a Bayes' estimator, and discuss connections 
@@ -692,7 +680,6 @@ of the second term in \Cref{eq:ep-eup-pw-err} at points where the distribution o
 $\postEm(\Par)$ is heavy-tailed.
 As illustrated in the experiment in \Cref{sec:vsem}, the EP tends to be more robust, 
 though not immune, to the sensitivity exhibited by posterior estimates under GP log-density surrogates.
-\todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
 \end{ex}
 
 \paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
@@ -928,15 +915,15 @@ quality of the RKpCN approximation to the EP. For the latter, we evaluate the
 RKpCN algorithm at different values of the correlation parameter $\pcnCor$. 
 We compare these MCMC approximations against the EUP as well as the RKpCN scheme with
 $\rho = 0$. The latter implies sampling independent realizations of the surrogate at 
-each MCMC iteration, similar to the approach in \citep[Section 3]{PlummerCut}.
+each MCMC iteration, similar to the approach in \citet[Section 3]{PlummerCut}.
 
 % Linear Gaussian Example
-\subsection{Linear Gaussian Example}
+\subsection{Linear Gaussian Example} \label{sec:linear-gaussian}
 We start with a toy linear Gaussian model in which the exact posterior, EP, and EUP are all 
 Gaussian and available in closed-form. A similar example is considered in
 \citet{garegnani2021NoisyMCMC}. Consider the linear Gaussian inverse problem
 \begin{align}
-\obs &= \fwdLin \Par + \noise
+\obs &= \fwdLin \Par + \noise,
 &&\noise \sim \Gaussian(0, \noiseCov) \label{eq:lin-Gauss-inv-prob} \\
 \Par &\sim \Gaussian(\priorMean, \priorCov). \nonumber
 \end{align}
@@ -952,18 +939,19 @@ We consider a forward model emulator of the form
 corresponding to an additive Gaussian shift of the true model, with bias $\emBias$.
 The covariance $\emCov$ quantifies the surrogate uncertainty regarding the magnitude of the bias.
 In this toy example, the surrogate randomness does not vary with $\Par$, in contrast to the 
-emulators considered in the following more realistic experiments.
-The following result characterizes the EP and EUP in this setting. See the appendix for derivations.
+emulators considered in our subsequent, more realistic, experiments.
+The following result characterizes the EP and EUP in this setting.
 
 \begin{prop}
 Under the linear Gaussian model in \Cref{eq:lin-Gauss-inv-prob} with the emulator in \Cref{eq:lin-Gauss-em},
 the EP is given by $\postApproxEP(\Par) = \Gaussian(\Par \given \postMeanEP, \postCovEP)$, where
+for $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$,
 \begin{align}
 \postMeanEP &= \postMean - \epGain \emBias,
-&&\postCovEP = \postCov + \epGain \emCov \epGain^\top,
+&&\postCovEP = \postCov + \epGain \emCov \epGain^\top.
 \label{eq:lin-gauss-ep}
 \end{align}
-and $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$. The quantities $\postMean, \postCov$ are the 
+The quantities $\postMean, \postCov$ are the 
 exact posterior moments given in \Cref{eq:lin-Gauss-post-moments}. Under the same setup, the 
 EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, \postCovEUP)$, where
 \begin{align}
@@ -982,7 +970,7 @@ parameter space that are well-informed by the data. We investigate the posterior
 the EUP and EP in the $V$ basis to understand the influence of the surrogate noise. To simplify matters, consider
 the special case $\noiseCov = \sigma^2 I$, $\priorCov = c_0^2 I$, $\emCov = q^2 I$. The following results give
 the expressions for the exact, EUP, and EP posterior moments in the $V$ basis.
-\begin{prop}
+\begin{prop} \label{prop:linear-gaussian-analytical}
 Under the above assumptions $\postCov$, $\postCovEUP$, and $\postCovEP$ are diagonalized in the 
 $V$ basis, with respective eigenvalues given by 
 \begin{align}
@@ -993,42 +981,15 @@ $V$ basis, with respective eigenvalues given by
 Moreover, the posterior means of each distribution can be written as linear combination of the $v_j$. The 
 coefficients in these linear combinations in directions with $s_j \neq 0$ are given by
 \begin{align*}
-&\alpha_j = \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, 
-&&\alpha_j^{\eup} = \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \\
-&\alpha_j^{\ep} = \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
+&\alpha_j = \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \\ 
+&\alpha_j^{\eup} = \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle,
+&&\alpha_j^{\ep} = \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
 \end{align*}
 \end{prop}
-\todo[inline]{how best to format this? looks awkard}
-
-\begin{figure}[htbp]
-    \centering
-    \begin{subfigure}{0.7\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
-        \label{fig:plot1a}
-    \end{subfigure}
-
-    \begin{subfigure}{0.7\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
-        \label{fig:plot1b}
-    \end{subfigure}
-    \vspace{0.5em}
-
-    \caption{Scaling behavior as a function of $q / \sigma$, with $c_0 = 1.0$, $\sigma=1.0$, $r = (2.5, \dots, 2.5)^\top$.
-    The forward model $G$ is the convolution operator used in \Cref{sec:deconvolution}, with parameter and 
-    data dimensions $\dimPar = 100$, $\dimObs = 25$.
-    The plots show the variance and mean coordinates along certain $v_j$ directions (smaller $j$ indicating directions better informed by data),
-    relative to the exact (no surrogate) posterior analogs. Starting from the top-left in clockwise
-    order, the plots display $\lambda_j^{\eup} / \lambda_j$, $\lambda_j^{\ep} / \lambda_j$, 
-    $\alpha_j^{\eup} - \alpha_j$, and $\alpha_j^{\ep} - \alpha_j$ as a function of $q / \sigma$.}
-    \label{fig:lin-gauss-svd-plots}
-\end{figure}
-
 The behavior of the EUP and EP as the surrogate uncertainty increases is markedly different. As $q \to \infty$, the EUP 
 reverts to the $\Gaussian(\priorMean, \priorCov)$ prior, while the EP tends toward a flat distribution centered
-on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and 
-$\postMeanEP$ most significantly along directions well-informed by the data ($v_j$ with $s_j$ large). These 
+on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both the EP and EUP 
+variance most significantly along directions well-informed by the data ($v_j$ with $s_j$ large). These 
 trends are illustrated for a concrete numerical example in \Cref{fig:lin-gauss-svd-plots}. Note that $\postMeanEP$
 is independent of $\emCov$ and thus does not vary with the level of surrogate uncertainty.
 
@@ -1040,14 +1001,72 @@ of a linear convolution with a Gaussian kernel, with an observation operator tha
 fourth grid point. The data space is thus of dimension $\dimObs=25$. We consider $\Sigma = \sigma^2 I$
 with $\sigma = 0.2$ and define $\priorCov$ as a Gaussian kernel matrix, encoding a smoothness 
 assumption for the signal. Finally, we consider a surrogate with $\emCov = G \priorCov G^\top$, 
-which assumes the surrogate bias follows the same smoothness as the underlying signal.
+thus assuming the surrogate bias follows the same smoothness as the underlying signal.
 We run one hundred replicate experiments with this setup, with each replicate sampling a 
 ground truth parameter $\Par_{\circ}$ from the prior, generating synthetic data using this parameter, and 
-sampling the emulator bias $r$ from $\Gaussian(0, \emCov)$. Thus, each surrogate replicate is 
-biased but well-calibrated on average. \Cref{fig:lin-gauss-replicate-summary} displays the marginal 
-distributions for the exact posterior and surrogate predictive distribution for a single replicate.
+sampling the emulator bias $r$ from $\Gaussian(0, \emCov)$.
 
-\begin{figure}[ht]
+\begin{figure}[H]
+    \centering
+
+    % First row
+    \begin{subfigure}[b]{\textwidth}
+        \centering
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_exact_post.png}
+             \caption{Exact Posterior}
+             \label{fig:lin-gauss-exact-post}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_surrogate.png}
+            \caption{Surrogate Predictive Distribution}
+          \label{fig:lin-gauss-surrogate-pred}
+        \end{subfigure}
+    \end{subfigure}
+
+    \vspace{1em} % space between rows
+
+    % Second row
+    \begin{subfigure}[b]{\textwidth}
+        \centering
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
+            \caption{Coverage}
+            \label{fig:lin-gauss-coverage}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
+            \caption{EP Approximation}
+            \label{fig:lin-gauss-mcmc}
+        \end{subfigure}
+    \end{subfigure}
+
+    \caption{
+    	\emph{(a)} Summary of the exact posterior for a single replicate: true posterior mean, $\pm 2$ standard deviations (shaded blue), 
+			 $\pm 2$ prior standard deviations, and observations (red).
+	\emph{(b)} Summary of the surrogate predictive distribution for a single replicate: 
+			 
+        \textbf{Top row:} Summary of the exact posterior and surrogate marginal distributions for a single replicate in the experiment.
+        \textit{(Left)} The true posterior mean, $\pm 2$ standard deviations (shaded blue), $\pm 2$ prior standard deviations, and observations (red).
+        \textit{(Right)} Marginal distributions of $\targetEm(\Par_{\circ})$, the surrogate evaluated at the ground truth parameter. The shaded region encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the observation locations (points on the plot).
+        \\[0.5em]
+        \textbf{Bottom row:} \textit{(Left)} Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
+        The shaded regions summarize the middle 90\% of the replicates. Joint coverage is defined via the Gaussian coverage ellipsoids at the different probability levels. 
+        \textit{(Right)} The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
+        variability over the 100 replicates. For the EUP the distance is computed
+        in closed-form, as both distributions are Gaussian. The remaining approximations include the RKpCN
+        algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
+        For these algorithms,
+        burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
+        which is then used in the closed-form distance formula.
+    }
+    \label{fig:lin-gauss-combined}
+\end{figure}
+
+\begin{comment}
+\begin{figure}[H]
     \centering
     \begin{subfigure}[b]{0.45\textwidth}
         \centering
@@ -1061,7 +1080,7 @@ distributions for the exact posterior and surrogate predictive distribution for 
     \caption{Summary of the exact posterior and surrogate marginal distributions for a single replicate in the experiment.
     \textit{(Left)} The true posterior mean, $\pm 2$ standard deviations (shaded blue), $\pm 2$ prior standard deviations, and observations (red).
     \textit{(Right)} Marginal distributions of $\targetEm(\Par_{\circ})$, the surrogate evaluated at the ground truth parameter. The shaded region
-    encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the observation locations.}
+    encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the observation locations (points on the plot).}
     \label{fig:lin-gauss-replicate-summary}
 \end{figure}
 
@@ -1091,6 +1110,11 @@ distributions for the exact posterior and surrogate predictive distribution for 
 		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
 		 which is then used in the closed-form distance formula.}
 \end{figure}
+\end{comment}
+
+Thus, each surrogate replicate is 
+biased but well-calibrated on average. \Cref{fig:lin-gauss-replicate-summary} displays the marginal 
+distributions for the exact posterior and surrogate predictive distribution for a single replicate.
 
 \paragraph{MCMC Evaluation.} \Cref{fig:lin-gauss-mcmc} compares the MCMC-based approximations against the 
 closed-form EP and EUP distributions. Each of the RKpCN algorithms accurately represent the EP, with the $\rho = 0.99$
@@ -1459,6 +1483,41 @@ transitions strategy of \citet{PlummerCut}.
     \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v_\Par \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v_\Par > \alpha_{\Par}}$
     \end{algorithmic}
 \end{algorithm}
+
+
+\subsection{Additional Results from Numerical Experiments}
+
+\subsubsection{Linear Gaussian Example}
+\Cref{fig:lin-gauss-svd-plots} provides a visualization of the analytical results from 
+\Cref{prop:linear-gaussian-analytical}, using the linear forward model from the 
+example in \Cref{sec:deconvolution}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
+        \label{fig:plot1a}
+    \end{subfigure}
+
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
+        \label{fig:plot1b}
+    \end{subfigure}
+    \vspace{0.5em}
+
+    \caption{Scaling behavior as a function of $q / \sigma$, with $c_0 = 1.0$, $\sigma=1.0$, $r = (2.5, \dots, 2.5)^\top$.
+    The forward model $G$ is the convolution operator used in \Cref{sec:deconvolution}, with parameter and 
+    data dimensions $\dimPar = 100$, $\dimObs = 25$.
+    The plots show the variance and mean coordinates along certain $v_j$ directions (smaller $j$ indicating directions better informed by data),
+    relative to the exact (no surrogate) posterior analogs. Starting from the top-left in clockwise
+    order, the plots display $\lambda_j^{\eup} / \lambda_j$, $\lambda_j^{\ep} / \lambda_j$, 
+    $\alpha_j^{\eup} - \alpha_j$, and $\alpha_j^{\ep} - \alpha_j$ as a function of $q / \sigma$.}
+    \label{fig:lin-gauss-svd-plots}
+\end{figure}
+
+
 
 
 
