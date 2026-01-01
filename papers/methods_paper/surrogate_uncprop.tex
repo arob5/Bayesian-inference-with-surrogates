@@ -1334,7 +1334,23 @@ Caution is warranted when performing surrogate-based Bayesian inference with unb
 We also highlight different computational strategies for EP-based inference, and present the RKpCN algorithm, an easy-to-implement 
 approximate EP sampler that naturally handles the infinite-dimensionality of GP surrogates.
 
-There are several avenues for future research. 
+There are several avenues for future research. First, it may be beneficial to explore alternative conceptual frameworks
+other than the Bayesian decision-theoretic framework considered here. One option is to consider regularizing the
+optimization problem in \Cref{prop:EP-variational} to yield an EP-like target that exhibits prior-reversion when surrogate
+uncertainty is high. This would naturally lead to connections with generalized Bayesian inference 
+(e.g., \citet{generalizedCut}). Expanding on our discussion of connections with cut posterior inference could also be 
+interesting. While the EP can be viewed as a cut posterior, surrogate-based uncertainty propagation 
+problems often have specific structure that differs from typical examples considered in the modular Bayes
+literature; e.g., the surrogate (the parameter in the first stage of the cut model) may be high or infinite
+dimensional, can be directly sampled, and may exhibit significant variation in its conditional distributions
+(i.e., surrogate variation over the parameter space). As a starting point, we considered experiments with 
+well-specified inverse problem likelihoods. Given that the cut posterior is designed for joint distributions 
+in which the second-stage model may be misspecified, it would be interesting to investigate whether the benefits of 
+the EP over the EUP become more pronounced under the presence of likelihood misspecification.
+Conversely, it may also be fruitful to investigate the effects of misspecification in the (first-stage) surrogate
+model. If the surrogate correlation structure over the parameter space is highly misspecified, then the EUP 
+(which ignores predictive correlations) may be more robust in such cases.
+
 
 
 
