@@ -24,12 +24,13 @@ from uncprop.core.surrogate import (
 
 
 def fit_vsem_surrogate(key: PRNGKey,
+                       surrogate_tag: str,
                        posterior: Posterior,
                        n_design: int,
                        design_method: str,
                        gp_train_args: dict | None = None,
                        verbose: bool = True,
-                       jitter: float = 0.0) -> tuple[VSEMPosteriorSurrogate, VSEMPosteriorSurrogate, dict]:
+                       jitter: float = 0.0) -> tuple[VSEMPosteriorSurrogate, dict]:
     """ Top-level function for fitting VSEM log posterior surrogate
 
     Note that `posterior` represents the posterior of the exact inverse problem that 
@@ -65,19 +66,21 @@ def fit_vsem_surrogate(key: PRNGKey,
     # wrap gpjax object as a GPJAXSurrogate
     log_density_surrogate = GPJaxSurrogate(gp=gp, design=design, jitter=jitter)
 
-    # random posteriors induced by GP surrogate and clipped GP surrogate
-    def log_dens_upper_bound(x: ArrayLike) -> Array:
-        return posterior.likelihood.log_density_upper_bound(x) + posterior.prior.log_density(x)
+    # surrogate-induced posterior approximation
+    if surrogate_tag == 'gp':
+        post_surrogate = LogDensGPSurrogate(log_dens=log_density_surrogate,
+                                            support=posterior.support)
+    elif surrogate_tag == 'clip_gp':
+        def log_dens_upper_bound(x: ArrayLike) -> Array:
+            return posterior.likelihood.log_density_upper_bound(x) + posterior.prior.log_density(x)
 
-    post_surrogate_gp = LogDensGPSurrogate(log_dens=log_density_surrogate,
-                                           support=posterior.support)
-    post_surrogate_clip_gp = LogDensClippedGPSurrogate(log_dens=log_density_surrogate,
-                                                       log_dens_upper_bound=log_dens_upper_bound,
-                                                       support=posterior.support)
+        post_surrogate = LogDensClippedGPSurrogate(log_dens=log_density_surrogate,
+                                                   log_dens_upper_bound=log_dens_upper_bound,
+                                                   support=posterior.support)
+    else:
+        raise ValueError(f'Invalid surrogate tag: {surrogate_tag}')
     
-    return (VSEMPosteriorSurrogate(post_surrogate_gp), 
-            VSEMPosteriorSurrogate(post_surrogate_clip_gp), 
-            opt_info)
+    return post_surrogate, opt_info
 
 
 def _print_gp_fit_info(gp, opt_info):

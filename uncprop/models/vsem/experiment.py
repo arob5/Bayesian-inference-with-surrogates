@@ -1,6 +1,8 @@
 # uncprop/models/vsem/experiment.py
 from pathlib import Path
 from typing import Any, NamedTuple
+from types import MappingProxyType
+from collections.abc import Mapping
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -31,34 +33,44 @@ class VSEMReplicate(Replicate):
         - Computes true posterior and surrogate-based approximations on 2d grid
     """
 
-    # fixed settings across all experiments
-    n_months: int = 12
-
-    inverse_problem_settings: dict[str, Any] = {
-        'par_names': ['av', 'veg_init'],
-        'n_windows': n_months,
+    _DEFAULT_INVERSE_PROBLEM_SETTINGS = MappingProxyType({
+        'par_names': ('av', 'veg_init'),
+        'n_windows': 12,
+        'noise_cov_tril': jnp.identity(12),
         'n_days_per_window': 30,
-        'observed_variable': 'lai'
-    }
+        'observed_variable': 'lai',
+    })
 
-    surrogate_settings: dict[str, Any] = {
-        'design_method': 'lhc'
-    }
+    _DEFAULT_SURROGATE_SETTINGS = MappingProxyType({
+        'design_method': 'lhc',
+        'jitter' : 0.0,
+        'verbose': True,
+    })
 
     def __init__(self, 
                  key: PRNGKey,
                  out_dir: Path,
-                 n_design: int, 
-                 noise_sd: float,
+                 n_design: int,
+                 surrogate_tag: str, 
                  n_grid: int = 50,
-                 verbose: bool = True,
-                 jitter: float = 0.0,
+                 inverse_problem_settings: Mapping[str, Any] | None = None,
+                 surrogate_settings: Mapping[str, Any] | None = None,
                  **kwargs):
+        
         key_inv_prob, key_surrogate = jr.split(key, 2)
-        self.inverse_problem_settings['noise_cov_tril'] = noise_sd * jnp.identity(self.n_months)
-        self.surrogate_settings['n_design'] = n_design
-        self.surrogate_settings['verbose'] = verbose
-        self.surrogate_settings['jitter'] = jitter
+
+        # Per-instance copies
+        self.inverse_problem_settings = {
+            **self._DEFAULT_INVERSE_PROBLEM_SETTINGS,
+            **(inverse_problem_settings or {}),
+        }
+
+        self.surrogate_settings = {
+            **self._DEFAULT_SURROGATE_SETTINGS,
+            **(surrogate_settings or {}),
+            'n_design': n_design,
+            'surrogate_tag': surrogate_tag,
+        }
         
         # exact posterior
         posterior = generate_vsem_inv_prob_rep(key=key_inv_prob,
@@ -68,9 +80,9 @@ class VSEMReplicate(Replicate):
         vsem_param_names = list(vsem_params_dict.keys())
         
         # surrogate posterior
-        surrogate_post_gp, surrogate_post_clip, fit_info = fit_vsem_surrogate(key=key_surrogate, 
-                                                                              posterior=posterior,
-                                                                              **self.surrogate_settings)
+        surrogate_post, fit_info = fit_vsem_surrogate(key=key_surrogate, 
+                                                      posterior=posterior,
+                                                      **self.surrogate_settings)
         
         # grid points for grid-based metrics
         grid = Grid(low=posterior.support[0],
@@ -80,20 +92,18 @@ class VSEMReplicate(Replicate):
         
         self.key = key
         self.posterior = posterior
+        self.posterior_surrogate = surrogate_post
         self.vsem_params = vsem_params
         self.vsem_param_names = vsem_param_names
-        self.surrogate_posterior_gp = surrogate_post_gp
-        self.surrogate_posterior_clip_gp = surrogate_post_clip
-        self.design = self.surrogate_posterior_gp.surrogate.design
+        self.design = self.posterior_surrogate.surrogate.design
         self.fit_info = fit_info
         self.grid = grid
-        self.surrogate_pred = surrogate_post_gp.surrogate(grid.flat_grid)
+        self.surrogate_pred = self.posterior_surrogate.surrogate(grid.flat_grid)
 
 
     def __call__(self, 
                  key: PRNGKey, 
                  out_dir: PRNGKey,
-                 surrogate_tag: str,
                  rkpcn_rho_vals: dict[str, float],
                  mcmc_settings: dict[str, Any] | None = None,
                  rkpcn_settings: dict[str, Any] | None = None,
@@ -106,18 +116,10 @@ class VSEMReplicate(Replicate):
         if rkpcn_settings is None:
             rkpcn_settings = {'n_samples': 1000, 'n_burnin': 50_000, 'thin_window': 5}
 
-        # each call is specific to either GP or clipped GP surrogate
-        post = self.posterior
-        if surrogate_tag == 'gp':
-            surr = self.surrogate_posterior_gp
-        elif surrogate_tag == 'clip_gp':
-            surr = self.surrogate_posterior_clip_gp
-        else:
-            raise ValueError(f'surrogate_tag must be `gp` or `clip_gp`; got {surrogate_tag}')
-
         # exact and approximate posteriors
+        surr = self.posterior_surrogate
         dists = {
-            'exact': post,
+            'exact': self.posterior,
             'mean': surr.expected_surrogate_approx(),
             'eup': surr.expected_density_approx(),
             'ep': surr.expected_normalized_density_approx(key_ep, grid=self.grid)
