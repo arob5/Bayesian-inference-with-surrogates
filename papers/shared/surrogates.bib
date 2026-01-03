@@ -31,6 +31,16 @@
       url={https://arxiv.org/abs/2002.06038}, 
 }
 
+@misc{ottjax,
+      title={Optimal Transport Tools (OTT): A JAX Toolbox for all things Wasserstein}, 
+      author={Marco Cuturi and Laetitia Meng-Papaxanthos and Yingtao Tian and Charlotte Bunne and Geoff Davis and Olivier Teboul},
+      year={2022},
+      eprint={2201.12324},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2201.12324}, 
+}
+
 % Reinforcement learning
 @misc{LiuRL,
       title={Decoupling Exploration and Exploitation for Meta-Reinforcement Learning without Sacrifices}, 
@@ -430,6 +440,62 @@ author = {Youssef M. Marzouk and Habib N. Najm},
 keywords = {Inverse problems, Bayesian inference, Dimensionality reduction, Polynomial chaos, Markov chain Monte Carlo, Galerkin projection, Gaussian processes, Karhunen–Loève expansion, RKHS},
 abstract = {We consider a Bayesian approach to nonlinear inverse problems in which the unknown quantity is a spatial or temporal field, endowed with a hierarchical Gaussian process prior. Computational challenges in this construction arise from the need for repeated evaluations of the forward model (e.g., in the context of Markov chain Monte Carlo) and are compounded by high dimensionality of the posterior. We address these challenges by introducing truncated Karhunen–Loève expansions, based on the prior distribution, to efficiently parameterize the unknown field and to specify a stochastic forward problem whose solution captures that of the deterministic forward model over the support of the prior. We seek a solution of this problem using Galerkin projection on a polynomial chaos basis, and use the solution to construct a reduced-dimensionality surrogate posterior density that is inexpensive to evaluate. We demonstrate the formulation on a transient diffusion equation with prescribed source terms, inferring the spatially-varying diffusivity of the medium from limited and noisy data.}
 }
+
+@article{KLInvProbs,
+author = {Li, Wei and Cirpka, Olaf A.},
+title = {Efficient geostatistical inverse methods for structured and unstructured grids},
+journal = {Water Resources Research},
+volume = {42},
+number = {6},
+pages = {},
+keywords = {geostatistical inference, Karhunen-Loève expansion, periodic embeddding},
+doi = {https://doi.org/10.1029/2005WR004668},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2005WR004668},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2005WR004668},
+year = {2006}
+}
+
+@article{precondMCMCKL,
+author = {Efendiev, Y. and Hou, T. and Luo, W.},
+title = {Preconditioning Markov Chain Monte Carlo Simulations Using Coarse-Scale Models},
+journal = {SIAM Journal on Scientific Computing},
+volume = {28},
+number = {2},
+pages = {776-803},
+year = {2006},
+doi = {10.1137/050628568},
+URL = {https://doi.org/10.1137/050628568},
+eprint = {https://doi.org/10.1137/050628568}}
+
+@article{mcmcHydrology,
+author = {Laloy, Eric and Vrugt, Jasper A.},
+title = {High-dimensional posterior exploration of hydrologic models using multiple-try DREAM(ZS) and high-performance computing},
+journal = {Water Resources Research},
+volume = {48},
+number = {1},
+pages = {},
+keywords = {DREAM, MCMC, high parameter dimensionality, multiple-try, parallel computing},
+doi = {https://doi.org/10.1029/2011WR010608},
+url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2011WR010608},
+eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2011WR010608},
+year = {2012}
+}
+
+@ARTICLE{conditionPermToPressure,
+       author = {{Oliver}, Dean S. and {Cunha}, Luciane B. and {Reynolds}, Albert C.},
+        title = "{Markov chain Monte Carlo methods for conditioning a permeability field to pressure data}",
+      journal = {Mathematical Geology},
+     keywords = {conditional simulation, Markov chain, Monte Carlo, sampling, pressure data, sensitivity, well test},
+         year = 1997,
+        month = mar,
+       volume = {29},
+       number = {1},
+        pages = {61-91},
+          doi = {10.1007/BF02769620},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/1997MatG...29...61O},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+
 
 @ARTICLE{polyChaosReview,
   author={Shen, Danfeng and Wu, Hao and Xia, Bingqing and Gan, Deqiang},
@@ -2150,6 +2216,16 @@ month = {08},
 pages = {},
 title = {Better together? Statistical learning in models made of modules},
 doi = {10.48550/arXiv.1708.08719}
+}
+
+@misc{generalizedCut,
+      title={Cutting feedback and modularized analyses in generalized Bayesian inference}, 
+      author={David T. Frazier and David J. Nott},
+      year={2023},
+      eprint={2202.09968},
+      archivePrefix={arXiv},
+      primaryClass={math.ST},
+      url={https://arxiv.org/abs/2202.09968}, 
 }
 
 % Variational semi-modular inference

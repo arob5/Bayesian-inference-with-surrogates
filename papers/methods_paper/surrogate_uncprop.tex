@@ -90,25 +90,27 @@ with computationally expensive forward models. A common solution is to
 replace the model with a cheaper surrogate. To avoid overconfident 
 conclusions, it is essential to acknowledge the surrogate approximation by propagating 
 its uncertainty. At present, a variety of distinct uncertainty propagation methods 
-have been suggested, with little guidance on how their performance can vary.
-To fill this gap, we start by proposing a particular baseline uncertainty-aware posterior
-approximation, justified by decision theoretic and modular Bayesian inference arguments.
-We then investigate a popular computationally convenient alternative, highlighting when 
-it may differ from the baseline. Finally, we develop a Markov chain Monte Carlo
-algorithm that is shown to produce a superior approximation to the baseline across a variety
-of experiments. Our numerical experiments are motivated by problems of parameter 
-estimation for dynamical models, with particular emphasis on Gaussian process surrogates
-trained to emulate either the underlying forward model or the log likelihood of the Bayesian model.
+have been suggested, with little understanding of how they vary.
+To fill this gap, we propose a mixture distribution termed the \textit{expected posterior (EP)} 
+as a general baseline for uncertainty-aware posterior approximation, justified by decision theoretic 
+and modular Bayesian inference arguments. We then investigate the 
+\textit{expected unnormalized posterior (EUP)}, a popular heuristic alternative, analyzing when 
+it may deviate from the EP baseline. Our results show that this heuristic can break down when 
+the surrogate uncertainty is highly non-uniform over the design space, as can be the case when
+the log-likelihood is emulated by a Gaussian process. Finally, we present 
+\textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an approximate 
+Markov chain Monte Carlo algorithm that is shown to produce reasonable EP approximations
+across a variety of experiments.
 \end{abstract}
 
 \section{Introduction}
 Simulation-based computer models are key tools for studying complex systems within 
 the physical, biological, and engineering sciences. Such models often have 
-uncertain parameters that must be estimated (i.e., calibrated) using observational data.
+unknown parameters that must be estimated (i.e., calibrated) using observational data.
 Quantifying the uncertainty in these estimated values is crucial for downstream 
 decision making. While Bayesian methods are particularly well-suited to this task, 
 standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
-are hindered by the computational cost of the simulation model. A popular solution 
+are hindered by the computational cost of many simulation models. A popular solution 
 is to use a small set of expensive simulations to train a statistical approximation 
 of the simulator. This surrogate (i.e., emulator) is then used as a drop-in replacement 
 for the true computer model, enabling the application of algorithms like MCMC. 
@@ -117,7 +119,7 @@ a variety of applications \citep{FerEmulation,FadikarAgentBased,idealizedGCM,
 trainDynamics,FATES_CES,CLMBayesianCalibration}.
 
 Despite significant advances in surrogate modeling, fitting a 
-highly accurate emulator under a limited computational budget remains a challenging task,
+highly accurate emulator under a limited computational budget is typically impossible,
 invariably implying the presence of errors in the surrogate-based posterior approximation.
 Ignoring these errors can lead to overconfident results 
 with miscalibrated uncertainties \citep{BilionisBayesSurrogates,BurknerSurrogate}.
@@ -140,26 +142,18 @@ BurknerSurrogate,BurknerTwoStep,FerEmulation}. Moreover, previous studies have
 explicitly cited computational challenges as a key factor in determining their 
 approach \citep{VehtariParallelGP,StuartTeck2}. In this paper, we start by setting 
 aside the computational considerations in order to identify a theoretically-justified 
-baseline posterior approximation. While in general computation for this distribution 
-is difficult, one can consider (1) exactly targeting a non-optimal distribution using standard
-inference methods, or (2) approximately targeting the optimal baseline using
-approximate inference methods.
-We show that existing uncertainty propagation schemes can be viewed as 
-implementations of the former approach, and provide a characterization of the approximation
-error for a commonly-used heuristic. We then adopt the latter perspective,
-introducing a new approximate MCMC algorithm that is shown to outperform 
-competing approaches.
- 
-\paragraph{Contributions.}
-\begin{enumerate}
-\item We formalize the problem of surrogate uncertainty propagation in Bayesian inverse problems.
-Adopting a Bayesian decision theoretic framework, we identify a particular mixture distribution, 
-termed the \textit{expected posterior (EP)}, as the optimal target for approximate inference.
-\item We analyze a popular heuristic, the \textit{expected unnormalized posterior (EUP)},
-providing results that elucidate when the EUP and EP may diverge.
-\item We introduce an approximate preconditioned Crank-Nicolson MCMC algorithm that 
-directly targets the EP, which is shown to perform favorably against alternatives.
-\end{enumerate}
+baseline posterior approximation termed the \textit{expected posterior (EP)}. In general, 
+EP-based inference is computationally demanding and difficult to implement for 
+infinite-dimensional surrogates such as GPs. To alleviate these 
+challenges, one can consider either (1) abandoning the EP in favor of convenient heuristic
+alternatives, or (2) developing approximate inference methods that directly target the EP.
+We analyze the \textit{expected unnormalized posterior (EUP)}, a commonly-used heuristic
+falling under the former category. While the EUP approximation is often reasonable, we 
+demonstrate that it can be unstable when the uncertainty in the surrogate-induced approximation 
+of the posterior density is highly variable over the parameter space. We then show that the latter
+approximate computation viewpoint can be fruitful in achieving a more robust EP approximation.
+In particular, we present \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an
+approximate MCMC algorithm targeting the EP that is well-defined for GP surrogates.
 
 \subsection{Outline}
 \Cref{sec:surrogates-intro} introduces the modular surrogate-based Bayesian workflow.
@@ -192,14 +186,14 @@ The goal is then to summarize the posterior distribution
 &&\normCst = \int_{\parSpace} \priorDens(\Par) \lik(\Par; \obs) d\Par. \label{eq:post_dens_generic}
 \end{align}
 While closed-form characterizations are typically thwarted by the intractable normalizing constant
-$\normCst$, posterior samples can be simulated using MCMC algorithms, which only require 
+$\normCst$, approximate posterior samples can be simulated using MCMC algorithms, which only require 
 access to pointwise evaluations of the unnormalized density 
 $\postDens(\Par) \Def \priorDens(\Par) \lik(\Par; \obs)$.
 However, such methods commonly require $10^5 - 10^7$ iterations, with each iteration 
-involving a query to the density $\postDens(\Par)$.
+involving at least one query to the density $\postDens(\Par)$.
 In various engineering and scientific applications, computing $\lik(\Par; \obs)$ (and thus
 $\postDens(\Par)$) requires running an expensive computer simulation. 
-This renders MCMC infeasible in this setting, motivating the need for inference schemes
+This renders MCMC infeasible, motivating the need for inference schemes
 that use only a small set of evaluations of $\postDens(\Par)$.
  
 \subsection{Bayesian Inverse Problems} \label{sec:bip}
@@ -234,16 +228,17 @@ on which $\postDens(\Par)$ depends. To make this explicit, let
 $\target: \parSpace \to \targetRange$ be the underlying map targeted for emulation. 
 A regression model $\targetEm$ is fit to a set of exact simulator runs 
 $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$, such that $\targetEm(\Par)$ provides at 
-prediction of $\target(\Par)$. \Cref{ex:fwd-em} and \Cref{ex:ldens-em} describe the common strategies 
+prediction of $\target(\Par)$. \Cref{ex:fwd-em,ex:ldens-em} describe the common strategies 
 where $\target$ is chosen to be the forward model or log-likelihood, respectively.
 
 In order to quantify the uncertainty introduced via this approximation, we consider 
 emulators that provide predictions in the form of a probability distribution; 
-i.e., $\targetEm(\Par)$ is a random vector, implying $\targetEm$ is a random function.
+i.e., $\targetEm(\Par)$ is a random vector and $\targetEm$ is a random function.
 Let $\emDist(\cdot \given \Par)$ and $\emDist$ denote the distributions of 
 $\targetEm(\Par)$ and $\targetEm$, respectively, and $\emE$ the expectation with respect to $\emDist$.
 The randomness in $\targetEm$ typically quantifies the epistemic (reducible) uncertainty
-due to the limited computational budget. Common models that provide predictive distributions include
+due to the limited computational budget \citep{epistemicAleatoric}. 
+Common models that provide predictive distributions include
 Gaussian processes (GPs; \citep{gramacy2020surrogates}), 
 Bayesian neural networks \citep{BayesOptNN}, deep ensembles \citep{deepEnsembles}, 
 and Bayesian additive regression trees \citep{BARTReview}.
@@ -251,7 +246,7 @@ and Bayesian additive regression trees \citep{BARTReview}.
 We consider the common surrogate modeling workflow in which $\targetEm$ is fit only to data generated by 
 the simulator, and then substituted for $\target$ to approximate the original Bayesian model. This two-stage 
 \textit{modular} pipeline (as opposed to fitting a joint Bayesian model) is practically convenient, and 
-has been shown to outperform the joint Bayesian approach in the presence of model misspecification
+has been shown to outperform the joint Bayesian approach in the presence of likelihood misspecification
 \citep{modularization, PlummerCut}. Using $\targetEm$ as a drop-in replacement for 
 $\target$ induces predictive distributions over $\postDens$ and $\normCst$. To emphasize the dependence
 of these quantities on $\target$, we write $\postDens(\Par; \target)$ and $\normCst(\target)$ and assume 
@@ -293,16 +288,15 @@ or (unnormalized) log-posterior
 $\Par \mapsto \log \left\{\priorDens(\Par)\lik(\Par; \obs)\right\}$
 \citep{emPostDens,Kandasamy_2017,llikRBF,gp_surrogates_random_exploration,
 landslideCalibration}.
-
 We collectively refer to these strategies as \textbf{log-density emulation}. In the 
 log-likelihood case, an emulator $\targetEm$ is fit to a design 
 $\{(\Par_n, \log \lik(\Par_n; \obs)\}_{n=1}^{\Ndesign}$
-and induces a posterior density surrogate 
+and induces an unnormalized posterior density surrogate 
 \begin{align}
 \postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}. \label{eq:post-em-llik}
 \end{align}
 The log-posterior case is similar, except that the effect of the prior is also 
-approximated by the emulator, so the induced posterior surrogate takes 
+approximated by the emulator, so the induced unnormalized posterior surrogate takes 
 the form $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 \end{ex}
 
@@ -325,7 +319,7 @@ conditioning. Consequently, various uncertainty propagation methods have been
 proposed, each resulting in different posterior inferences 
 \citep{BilionisBayesSurrogates,StuartTeck1,VehtariParallelGP,BurknerSurrogate,
 FerEmulation}.
-We identify and justify a mixture distribution termed the 
+We identify and justify a mixture distribution named the 
 \textit{expected posterior (EP)} as the correct distribution to target in 
 modular surrogate-based inference. 
 
@@ -349,7 +343,7 @@ theoretic viewpoint and select an optimal distribution from a set of candidates 
 minimizes an expected loss $\emE[\loss(\postNormEm, q)]$. In other words, we seek a Bayes'
 estimator 
 \begin{equation}
-\qDensOpt \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)],
+\qDensOpt \in \argmin_{\qDens \in \qSpace} \emE[\loss(\postNormEm, q)]
 \label{eq:variational-opt}
 \end{equation}
 with respect to a particular loss $\loss$ and space of densities $\qSpace$ over $\parSpace$. 
@@ -504,7 +498,7 @@ rather than the full emulator $\targetEm$. The EUP is defined by computing
 a pointwise expectation of $\postEm(\Par)$ and then normalizing post-hoc:
 \begin{equation}
 \postApproxEUPNorm(\Par) \Def 
-\frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] d\Par}
+\frac{\emE \left[\postEm(\Par) \right]}{\int_{\parSpace} \emE\left[\postEm(\Par) \right] \d\Par}
 = \frac{\emE\left[\postEm(\Par) \right]}{\emE[\normCstEm]}. \label{eq:post-approx-EUP} 
 \end{equation}
 The equality in \Cref{eq:post-approx-EUP} follows from
@@ -543,15 +537,15 @@ written as a posterior mixture
 \label{eq:eup-mixture} 
 \end{equation}
 where $\emDist(\d\targetTraj \given \obs) \propto \normCst(\targetTraj) \emDist(\d\targetTraj)$.
-Note that the plug-in mean, EP, and EUP can all be written in this mixture form with the respective
-weights $\delta_{\emE[\targetEm]}(\d\targetTraj)$, $\emDist(\d\targetTraj)$, and $\emDist(\d\targetTraj \given \obs)$.
+Hence, the plug-in mean, EP, and EUP can all be written in this mixture form with the respective
+weights $\delta_{\Em{\bar{\targetTraj}}}(\d\targetTraj)$, $\emDist(\d\targetTraj)$, and $\emDist(\d\targetTraj \given \obs)$.
 
 \subsection{Comparison of the EP and EUP}
 Notice in \Cref{eq:post-approx-EUP} that the EUP is a ratio estimator, and differs from 
 the EP due to the nonlinearity of the normalization operation. The EUP can thus 
 be derived from the EP by invoking two approximations: 
-(i.) treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
-(ii.) assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
+\emph{(i)} treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
+\emph{(ii)} assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
 The below result quantifies the effect of these two approximations.
 
 \begin{prop} \label{prop:ep-eup-pw-err}
@@ -621,7 +615,7 @@ trajectories in the second stage.
 We return to \Cref{ex:fwd-em,ex:ldens-em} to highlight concrete characterizations of the EUP
 in two common practical settings. 
 
-\begin{ex}[Example 1 Continued]
+\begin{ex}[Forward Model GP Surrogate]
 \label{ex:fwd-em-cont}
 Consider the setup from example \Cref{ex:fwd-em} with approximate density 
 $\postEm(\Par) = \priorDens(\Par)\Gaussian(\obs \mid \targetEm(\Par), \likPar)$. We now 
@@ -629,10 +623,10 @@ additionally assume that the surrogate has Gaussian pointwise predictions
 $\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. Such predictions might come from 
 a (potentially multi-output) GP emulator, though note that the EUP is defined only by the 
 pointwise predictions, and ignores any correlational structure in the surrogate.
-
 This setup is commonly considered in the Bayesian 
 inverse problem literature \citep{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
 idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
+
 Under these assumptions, the EUP assumes the form
 \begin{equation}
 \postApproxEUPNorm(\Par) \propto \priorDens(\Par) \Gaussian(\obs \mid \emMean(\Par), \likPar + \emVar(\Par)),
@@ -647,7 +641,7 @@ high uncertainty. Since the Gaussian likelihood is bounded above, when $\emMean(
 then an increase in $\emVar(\Par)$ may actually deflate the density at $\Par$.
 \end{ex}
 
-\begin{ex}[Example 2 Continued]
+\begin{ex}[Log-Density GP Surrogate]
 \label{ex:ldens-em-cont}
 Consider the setup from \Cref{ex:ldens-em} where $\postEm(\Par) = \Exp{\targetEm(\Par)}$.
 We again assume an emulator with Gaussian predictions $\targetEm(\Par) \sim \GP(\emMean(\Par), \emVar(\Par))$. 
@@ -658,7 +652,7 @@ This setup has been considered in several applications
 ActiveLearningMCMC,FerEmulation,StuartTeck1,StuartTeck2,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}.
 
-Under these assumptions, the pushforward predictive distributions for $\postEm(\Par)$ are log-normal
+Under these assumptions, the pushforward predictive distribution for $\postEm(\Par)$ is log-normal
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \emVar(\Par))$, implying
 \begin{equation}
 \postApproxEUPNorm(\Par) 
@@ -686,7 +680,6 @@ of the second term in \Cref{eq:ep-eup-pw-err} at points where the distribution o
 $\postEm(\Par)$ is heavy-tailed.
 As illustrated in the experiment in \Cref{sec:vsem}, the EP tends to be more robust, 
 though not immune, to the sensitivity exhibited by posterior estimates under GP log-density surrogates.
-\todo[inline]{Cite \citet{StuartTeck2,GP_PDE_priors} or \citet{quantileApprox} here?}
 \end{ex}
 
 \paragraph{Related work.} The EUP is proposed in the forward model emulator setting 
@@ -755,7 +748,7 @@ MCMC runs, but this may be less of an issue in modern parallel computing environ
 Moreover, methods have been developed to reduce the number of sampled trajectories $\NSample$ 
 required to adequately characterize the EP \citep{BurknerTwoStep}. 
 
-The more significant issue is the outer sampling step, which requires simulating surrogate 
+Another issue is the outer sampling step, which requires simulating surrogate 
 trajectories $\targetEm \sim \emDist$. While not a problem for finite-dimensional 
 surrogate models (e.g., linear models), this presents major challenges for surrogates 
 derived from GPs. Given the popularity of GP surrogates, 
@@ -804,12 +797,19 @@ the acceptance probability
 = \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
 \label{eq:MH-ratio-mwg}
 \end{equation}
-Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \emKer)$. 
+Henceforth, we consider the particular case where $\emDist$ is a Gaussian measure $\Gaussian(\emMean, \gpKer)$. 
 \footnote{More generally, the emulator predictive distribution itself need not be Gaussian. By simply re-defining
-$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.}
-This is typical in the infinite-dimensional setting we seek to address. Generalization to the non-Gaussian setting is 
-straightforward when $\emDist$ is finite-dimensional.
-
+$\target$, $\emDist$ can be the pushforward of an underlying Gaussian measure.} This covers many 
+practical applications where the surrogate is constructed as some function of a GP, a setting that currently 
+raises challenges for EP-based inference. Generalization to the non-Gaussian setting is straightforward when 
+$\emDist$ is finite-dimensional. In the Gaussian setting, a well-known $\emDist$-reversible proposal is given
+by the preconditioned Crank-Nicolson (pCN; \citet{functionSpaceMCMC}) update 
+\begin{equation}
+\tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
+\qquad \xi \sim \Gaussian(0, \gpKer). \label{eq:pcn-proposal}
+\end{equation}
+\Cref{alg:mwg} summarizes the complete MwG algorithm with the pCN proposal. 
+ 
 \begin{algorithm}[H]
     \caption{Metropolis-within-Gibbs for EP (single iteration)}
     \label{alg:mwg}
@@ -826,132 +826,38 @@ straightforward when $\emDist$ is finite-dimensional.
     \end{algorithmic}
 \end{algorithm}
 
-
-\subsection{Random Kernel Metropolis-Hastings}
-To circumvent the challenges posed by direct sampling, we present a Metropolis-Hastings (MH)
-MCMC algorithm that produces approximate EP samples. Our method avoids the challenges 
-associated with discretization and repeated just-in-time sampling.
-The sampler targets the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, 
-which admits $\postApproxEP$ as a marginal. At a high level, we consider algorithms that alternate between 
-$\Par$ and $\targetTraj$ updates, which update the current MCMC state $(\Par, \targetTraj)$ like
-\begin{align}
-\nextstate{\targetTraj} &\sim \MarkovKerTarget(\targetTraj, \cdot) \label{eq:f-update} \\
-\nextstate{\Par} &\sim \MarkovKerPar(\Par, \cdot \given \nextstate{\targetTraj}), \label{eq:u-update}
-\end{align}
-where $\MarkovKerTarget$ and $\MarkovKerPar$ are Markov kernels. 
-We refer to algorithms of this form as \textit{random kernel MCMC}, motivated by the view of 
-$\MarkovKerPar(\Par, \cdot \given \targetEm)$ as a random surrogate-based approximation 
-to the exact kernel $\MarkovKerPar(\Par, \cdot \given \target)$.
-Throughout this section we fix $\MarkovKerPar$ to be an MH kernel defined with respect to a 
-proposal kernel $\propDistPar$. The $\Par$-update in \Cref{eq:u-update} thus proceeds by sampling a proposal 
-$\propPar \sim \propDistPar(\Par, \cdot)$ and setting the next state $\nextstate{\Par}$ to $\propPar$
-with probability 
-\begin{equation}
-\accProbMH_{\Par}(\Par, \propPar)
-= \min\left(1, \frac{\postDens(\propPar; \nextstate{\targetTraj})}{\postDens(\Par; \nextstate{\targetTraj})} \cdot 
-\frac{\propDensPar(\propPar, \Par)}{\propDensPar(\Par, \propPar)} \right);
-\label{eq:MH-ratio-u}
-\end{equation}
-otherwise $\nextstate{\Par}$ is assigned the current state $\Par$. Here $\propDensPar(\Par, \cdot)$ denotes the density of 
-$\propDistPar(\Par, \cdot)$. Provided the unnormalized density $\postDens(\Par; \nextstate{\targetTraj})$
-depends on $\nextstate{\targetTraj}$ only through $\nextstate{\targetTraj}(\Par)$, then the MH update for $\Par$ only requires 
-realizing the finite-dimensional projection $[\nextstate{\targetTraj}(\Par), \nextstate{\targetTraj}(\propPar)]$ of the 
-function $\nextstate{\targetTraj}$.
-
-\subsection{A Preconditioned Crank-Nicholson Random Kernel Algorithm}
-Having established the MH update for $\Par$, we now focus on specifying the kernel $\MarkovKerTarget$
-in \Cref{eq:f-update}. To motivate our choice, first consider the requirements for an exact
-Metropolis-within-Gibbs scheme targeting the joint 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$. The $\Par$ update
-must leave $\postDens(\Par; \targetTraj) d\Par$ invariant, which is accomplished via the MH 
-kernel $\MarkovKerPar(\Par, \cdot \given \targetTraj)$ specified above. The $\targetTraj$ update must leave 
- $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
- care due to the fact that $\targetTraj$ may be infinite-dimensional. Proceeding in the spirit of 
- function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
-a $\emDist$-reversible proposal distribution $\propDistTarget(\targetTraj, \cdot)$, resulting in 
-the acceptance probability 
-\begin{equation}
-\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})
-= \min\left(1, \frac{\postDens(\Par; \tilde{\targetTraj})}{\postDens(\Par; \targetTraj)} \cdot 
-\frac{\normCst(\targetTraj)}{\normCst(\tilde{\targetTraj})} \right)
-= \min\left(1, \frac{\postDensNorm(\Par; \tilde{\targetTraj})}{\postDensNorm(\Par; \targetTraj)} \right).
-\label{eq:MH-ratio-mwg}
-\end{equation}
-If $\targetEm \sim \GP(\gpMean, \gpKer)$ 
-\footnote{More generally, this applies when the random density $\postEm$ arises as a transformation
-of an underlying Gaussian measure. The emulator predictive distribution itself need not be Gaussian.}
-then we may define $\propDistTarget(\targetTraj, \cdot)$ via the
-preconditioned Crank-Nicholson (pCN; \citet{functionSpaceMCMC}) proposal
-\begin{equation}
-\tilde{\targetTraj} \Def \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi, 
-\qquad \xi \sim \GP(0, \gpKer). \label{eq:pcn-proposal}
-\end{equation}
-This Metropolis-within-Gibbs algorithm generally cannot be practically implemented due to the intractable normalizing 
+This algorithm generally cannot be implemented due to the intractable normalizing 
 constant ratio $\normCst(\targetTraj)/\normCst(\tilde{\targetTraj})$ in \Cref{eq:MH-ratio-mwg}. 
 At first glance, it appears that techniques from the doubly intractable MCMC literature 
 \citet{doublyIntractableReview,exchangeAlg} may circumvent this issue, but such methods
  typically require the ability to directly sample $\postDensNorm(\cdot; \tilde{\targetTraj})$,
-which is infeasible in this context.
-To avoid the challenging task of estimating the 
-normalizing constant ratio\todo{cite paper that does try this here?}, 
-we instead invoke the simple approximation 
-$\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$, 
+which is infeasible in this context. An exact pseudo-marginal implementation is possible, but requires
+an unbiased estimator for $\normCst(\targetTraj)^{-1}$. While this is in principle possible using truncated
+random series (e.g., \citet{yvesCut}), such methods are difficult to implement in practice. We instead
+seek practical approximate heuristics that exploit the structure of the pCN proposal. 
+
+\subsection{Random Kernel Metropolis-Hastings}
+We now consider approximating the $\targetTraj$ update in the MwG scheme, leaving
+the $\Par$ update unchanged. Intuitively, by setting the pCN correlation parameter $\pcnCor \approx 1$
+the proposal $\tilde{\targetTraj}$ will be close to the current state $\targetTraj$, increasing the acceptance
+probability $\accProbMH_{\target}(\targetTraj, \tilde{\targetTraj})$. Following this intuition, we consider invoking the 
+simple approximation $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$, 
 thus removing the accept-reject correction and instead allowing the $\targetTraj$ chain 
-to follow a random walk. This approximation is reasonable when the proposal $\tilde{\targetTraj}$ does 
-not differ significantly  from the current state $\targetTraj$. We can control the error in the approximation by 
-restricting the scale of $\propDistTarget$, thus slowing down the mixing speed of the $\targetTraj$-chain.
-For the pCN proposal in \Cref{eq:pcn-proposal}, the $\pcnCor$ parameter controls the correlation 
-between $\targetTraj$ and $\tilde{\targetTraj}$, implying that setting $\pcnCor$ close to one ensures 
-$\tilde{\targetTraj}$ is sufficiently similar to $\targetTraj$ on average. We illustrate the effect of this 
-approximation through experiments; a complete theoretical analysis is beyond the scope of the present paper.
-
-As currently stated, the pCN update in \Cref{eq:pcn-proposal} is practically implementable only when 
-$\targetEm$ admits a finite-dimensional representation. However, the algorithm can still be implemented
-exactly (i.e., without discretization) when $\targetEm$ is function-valued by tracking only the 
-bivariate projections of the surrogate at the current and proposed parameter values $(\Par, \propPar)$.
-\Cref{alg:rk-pcn-finite} summarizes the conceptual implementation, which is realizable in the finite-dimensional
-setting. \Cref{alg:rk-pcn-infinite} states the practical implementation for infinite-dimensional surrogates.
-Additional implementation details are provided in the appendix.
-\todo[inline]{Add section in appendix}
-
-\begin{algorithm}[H]
-    \caption{Random Kernel pCN, Finite Dimensional (single iteration)}
-    \label{alg:rk-pcn-finite}
-    \begin{algorithmic}[1]
-    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
-    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
-    \State $\xi \sim \Gaussian(0, \gpKer)$
-    \State $\nextstate{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
-    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
-    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
-    \end{algorithmic}
-\end{algorithm}
-
-\begin{algorithm}[H]
-    \caption{Random Kernel pCN, Infinite Dimensional  (single iteration)}
-    \label{alg:rk-pcn-infinite}
-    \begin{algorithmic}[1]
-    \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
-    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj}_{\nextstate{\Par}})$
-    \State $\propPar \sim \propDistPar(\Par, \cdot), v \sim \mathrm{Unif}(0,1)$
-    \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
-    \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
-    \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
-    \State $(\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar})^\top \gets 
-    	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
-    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$ 
-    	\Comment{Compute using $\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar}$}
-    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
-    \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v > \alpha_{\Par}}$
-    \end{algorithmic}
-\end{algorithm}
+to follow a random walk. The notion of slowing the mixing speed of the $\targetTraj$-chain
+is noted in \citet{PlummerCut}, though it is discounted on the basis of inducing artificially slow mixing.
+By contrast, this slow mixing is quite natural in the present high-dimensional context, where large values of 
+$\pcnCor$ are already typically required to prevent excessively high rejection rates 
+\citep{functionSpaceMCMC, corrPM}. The resulting algorithm, which we call 
+\textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, is summarized in \Cref{alg:rk-pcn-finite}.
+Though it is stated for conceptual clarity in infinite dimensions, we emphasize that the algorithm can be 
+implemented exactly by only realizing finite-dimensional projections of the functions. See \Cref{alg:rk-pcn-infinite}
+in the appendix for details. We illustrate the effect of the normalizing constant approximation 
+approximation through experiments; a complete theoretical analysis is beyond the scope of this paper.
 
 \begin{rmk}
-The approximate Metropolis-within-Gibbs scheme above is derived by invoking the approximation
+The RKpCN scheme is derived by invoking the approximation
 $\postDensNorm(\Par; \tilde{\targetTraj}) / \postDensNorm(\Par; \targetTraj) \approx 1$.
-A natural alternative is to invoke the approximation 
+A natural alternative is to consider the approximation 
 $\normCst(\targetTraj) / \normCst(\tilde{\targetTraj}) \approx 1$,
 which yields the acceptance probability
 \begin{equation}
@@ -965,6 +871,20 @@ an algorithm targeting the EP.
 See \citet{pseudoMarginalMCMC,pseudoMarginalEfficiency,corrPM}
 for background on pseudo-marginal MCMC.
 \end{rmk}
+
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN (single iteration)}
+    \label{alg:rk-pcn-finite}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj)$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj})$
+    \State $\xi \sim \Gaussian(0, \gpKer)$
+    \State $\nextstate{\targetTraj} \gets \gpMean + \pcnCor (\targetTraj  - \gpMean) + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v_\Par \sim \mathrm{Unif}(0,1)$
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$
+    \State $\nextstate{\Par} \gets \propPar \indicator{v_\Par \leq \alpha_{\Par}} + \Par \indicator{v_\Par > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \end{algorithmic}
+\end{algorithm}
  
 \paragraph{Related work.}
 Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
@@ -972,7 +892,7 @@ for EP-based inference. They appear to implicitly assume the use of finite-dimen
 as difficulties related to sampling trajectories are not addressed.
 \citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstep{\targetTraj}_{\Par}$ and 
 $\nextstep{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
-Addressing pathologies in this approach were a primary motivation for our proposed method. 
+Addressing pathologies in this approach was a primary motivation for our proposed method. 
 
 There has been interest in the modular Bayes community in designing approximate MCMC 
 schemes as an alternative to MwMC for cut posterior inference. \citet{PlummerCut} describes 
@@ -989,21 +909,23 @@ We opt to avoid normalizing constant estimation and instead slow down the mixing
 $\targetTraj$-chain to control the approximation error.
 
 \section{Numerical Experiments} \label{sec:experiments}
-We consider several numerical experiments, with the dual aims of (i.) comparing the EP, EUP, and
-plug-in mean approximation under various surrogate modeling setups, and (ii.) assessing the 
-quality of the random kernel pCN (RKpCN) approximation to the EP. For the latter, we evaluate the
-RKpCN schemes in \Cref{alg:rk-pcn-finite,alg:rk-pcn-infinite} at different values of the 
-correlation parameter $\pcnCor$. We compare these MCMC approximations against the EUP as 
-well as a version of the naive cut algorithm described in \citet{PlummerCut}.
-\todo[inline]{need to more precisely describe this comparison baseline; here or in appendix?}
+We consider several numerical experiments, with the dual aims of \emph{(i)} comparing the EP, EUP, and
+plug-in mean approximation under various surrogate modeling setups, and \emph{(ii)} assessing the 
+quality of the RKpCN approximation to the EP. For the latter, we evaluate the
+RKpCN algorithm at different values of the correlation parameter $\pcnCor$. 
+We compare these MCMC approximations against the EUP as well as the RKpCN scheme with
+$\pcnCor = 0$. The latter implies sampling independent realizations of the surrogate at 
+each MCMC iteration, similar to the approach in \citet[Section 3]{PlummerCut}. Although this $\pcnCor = 0$
+case is technically a RKpCN algorithm, we refer to it in experiments as the \textit{independent cut} scheme,
+given that it lacks the defining quality (large $\pcnCor$) that justifies the approximation used in RKpCN.
 
 % Linear Gaussian Example
-\subsection{Linear Gaussian Example}
+\subsection{Linear Gaussian Example} \label{sec:linear-gaussian}
 We start with a toy linear Gaussian model in which the exact posterior, EP, and EUP are all 
 Gaussian and available in closed-form. A similar example is considered in
 \citet{garegnani2021NoisyMCMC}. Consider the linear Gaussian inverse problem
 \begin{align}
-\obs &= \fwdLin \Par + \noise
+\obs &= \fwdLin \Par + \noise,
 &&\noise \sim \Gaussian(0, \noiseCov) \label{eq:lin-Gauss-inv-prob} \\
 \Par &\sim \Gaussian(\priorMean, \priorCov). \nonumber
 \end{align}
@@ -1019,18 +941,19 @@ We consider a forward model emulator of the form
 corresponding to an additive Gaussian shift of the true model, with bias $\emBias$.
 The covariance $\emCov$ quantifies the surrogate uncertainty regarding the magnitude of the bias.
 In this toy example, the surrogate randomness does not vary with $\Par$, in contrast to the 
-emulators considered in the following more realistic experiments.
-The following result characterizes the EP and EUP in this setting. See the appendix for derivations.
+emulators considered in our subsequent, more realistic, experiments.
+The following result characterizes the EP and EUP in this setting.
 
 \begin{prop}
 Under the linear Gaussian model in \Cref{eq:lin-Gauss-inv-prob} with the emulator in \Cref{eq:lin-Gauss-em},
 the EP is given by $\postApproxEP(\Par) = \Gaussian(\Par \given \postMeanEP, \postCovEP)$, where
+for $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$,
 \begin{align}
 \postMeanEP &= \postMean - \epGain \emBias,
-&&\postCovEP = \postCov + \epGain \emCov \epGain^\top,
+&&\postCovEP = \postCov + \epGain \emCov \epGain^\top.
 \label{eq:lin-gauss-ep}
 \end{align}
-and $\epGain \Def \postCov \fwdLin^\top \noiseCov^{-1}$. The quantities $\postMean, \postCov$ are the 
+The quantities $\postMean, \postCov$ are the 
 exact posterior moments given in \Cref{eq:lin-Gauss-post-moments}. Under the same setup, the 
 EUP is given by $\postApproxEUP(\Par) = \Gaussian(\Par \given \postMeanEUP, \postCovEUP)$, where
 \begin{align}
@@ -1049,7 +972,7 @@ parameter space that are well-informed by the data. We investigate the posterior
 the EUP and EP in the $V$ basis to understand the influence of the surrogate noise. To simplify matters, consider
 the special case $\noiseCov = \sigma^2 I$, $\priorCov = c_0^2 I$, $\emCov = q^2 I$. The following results give
 the expressions for the exact, EUP, and EP posterior moments in the $V$ basis.
-\begin{prop}
+\begin{prop} \label{prop:linear-gaussian-analytical}
 Under the above assumptions $\postCov$, $\postCovEUP$, and $\postCovEP$ are diagonalized in the 
 $V$ basis, with respective eigenvalues given by 
 \begin{align}
@@ -1060,42 +983,15 @@ $V$ basis, with respective eigenvalues given by
 Moreover, the posterior means of each distribution can be written as linear combination of the $v_j$. The 
 coefficients in these linear combinations in directions with $s_j \neq 0$ are given by
 \begin{align*}
-&\alpha_j = \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle, 
-&&\alpha_j^{\eup} = \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \\
-&\alpha_j^{\ep} = \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
+&\alpha_j = \frac{\lambda_j s_j}{\sigma_j^2} \langle y, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle \\ 
+&\alpha_j^{\eup} = \frac{\lambda_j s_j}{\sigma^2 + q^2} \langle y - r, u_j \rangle + \frac{\lambda_j}{c_0^2} \langle m_0, v_j \rangle,
+&&\alpha_j^{\ep} = \alpha_j - \frac{c_0^2 s_j}{\sigma^2} \langle r, u_j \rangle.
 \end{align*}
 \end{prop}
-\todo[inline]{how best to format this? looks awkard}
-
-\begin{figure}[htbp]
-    \centering
-    \begin{subfigure}{0.7\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
-        \label{fig:plot1a}
-    \end{subfigure}
-
-    \begin{subfigure}{0.7\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
-        \label{fig:plot1b}
-    \end{subfigure}
-    \vspace{0.5em}
-
-    \caption{Scaling behavior as a function of $q / \sigma$, with $c_0 = 1.0$, $\sigma=1.0$, $r = (2.5, \dots, 2.5)^\top$.
-    The forward model $G$ is the convolution operator used in \Cref{sec:deconvolution}, with parameter and 
-    data dimensions $\dimPar = 100$, $\dimObs = 25$.
-    The plots show the variance and mean coordinates along certain $v_j$ directions (smaller $j$ indicating directions better informed by data),
-    relative to the exact (no surrogate) posterior analogs. Starting from the top-left in clockwise
-    order, the plots display $\lambda_j^{\eup} / \lambda_j$, $\lambda_j^{\ep} / \lambda_j$, 
-    $\alpha_j^{\eup} - \alpha_j$, and $\alpha_j^{\ep} - \alpha_j$ as a function of $q / \sigma$.}
-    \label{fig:lin-gauss-svd-plots}
-\end{figure}
-
 The behavior of the EUP and EP as the surrogate uncertainty increases is markedly different. As $q \to \infty$, the EUP 
 reverts to the $\Gaussian(\priorMean, \priorCov)$ prior, while the EP tends toward a flat distribution centered
-on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both $\postMeanEUP$ and 
-$\postMeanEP$ most significantly along directions well-informed by the data ($v_j$ with $s_j$ large). These 
+on $\postMeanEP$. In the non-asymptotic regime, the surrogate uncertainty inflates both the EP and EUP 
+variance most significantly along directions well-informed by the data ($v_j$ with $s_j$ large). These 
 trends are illustrated for a concrete numerical example in \Cref{fig:lin-gauss-svd-plots}. Note that $\postMeanEP$
 is independent of $\emCov$ and thus does not vary with the level of surrogate uncertainty.
 
@@ -1106,63 +1002,79 @@ a discretized signal over the domain $\parSpace = [0,100]$. The forward operator
 of a linear convolution with a Gaussian kernel, with an observation operator that selects every 
 fourth grid point. The data space is thus of dimension $\dimObs=25$. We consider $\Sigma = \sigma^2 I$
 with $\sigma = 0.2$ and define $\priorCov$ as a Gaussian kernel matrix, encoding a smoothness 
-assumption for the signal. Finally, we consider a surrogate with $\emCov = G \priorCov G^\top$, 
-which assumes the surrogate bias follows the same smoothness as the underlying signal.
+assumption for the signal.
+
+\begin{figure}[htbp]
+    \centering
+
+    % First row
+    \begin{subfigure}[b]{\textwidth}
+        \centering
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_exact_post.png}
+             \caption{Exact Posterior}
+             \label{fig:lin-gauss-exact-post}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_surrogate.png}
+            \caption{Surrogate Predictive Distribution}
+          \label{fig:lin-gauss-surrogate-pred}
+        \end{subfigure}
+    \end{subfigure}
+
+    \vspace{1em} % space between rows
+
+    % Second row
+    \begin{subfigure}[b]{\textwidth}
+        \centering
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
+            \caption{Coverage}
+            \label{fig:lin-gauss-coverage}
+        \end{subfigure}
+        \hfill
+        \begin{subfigure}[b]{0.45\textwidth}
+            \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
+            \caption{EP Approximation}
+            \label{fig:lin-gauss-mcmc}
+        \end{subfigure}
+    \end{subfigure}
+
+    \caption{
+    	\emph{(a)} Summary of the exact posterior for a single replicate: true posterior mean, $\pm 2$ standard deviations (shaded blue), 
+			 $\pm 2$ prior standard deviations, and observations (red).
+	\emph{(b)} Marginal distributions of $\targetEm(\Par_{\circ})$, the surrogate evaluated at the ground truth parameter.
+			The shaded region encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the 
+			observation locations (points on the plot).
+	\emph{(c)} Joint ellipsoidal coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
+			 The shaded regions summarize the middle 90\% of the replicates.
+	\emph{(d)} The 2-Wasserstein distance between various approximations to the EP, summarized over the 100 replicates.
+			 The distance to EUP is computed in closed-form. The sample-based approximations---independent cut and 
+			 RKpCN with $\rho \in \{0, 0.9, 0.95, 0.99\}$---are fit to Gaussians and then the closed-form distance formula is applied.
+    }
+    \label{fig:lin-gauss-combined}
+\end{figure}
+
+Finally, we consider a surrogate with $\emCov = G \priorCov G^\top$, 
+thus assuming the surrogate bias follows the same smoothness as the underlying signal.
 We run one hundred replicate experiments with this setup, with each replicate sampling a 
 ground truth parameter $\Par_{\circ}$ from the prior, generating synthetic data using this parameter, and 
 sampling the emulator bias $r$ from $\Gaussian(0, \emCov)$. Thus, each surrogate replicate is 
-biased but well-calibrated on average. \Cref{fig:lin-gauss-replicate-summary} displays the marginal 
-distributions for the exact posterior and surrogate predictive distribution for a single replicate.
+biased but well-calibrated on average. \Cref{fig:lin-gauss-exact-post,fig:lin-gauss-mcmc} display the marginal 
+distributions for the exact posterior and surrogate predictive distribution for a single replicate, respectively.
 
-\begin{figure}[ht]
-    \centering
-    \begin{subfigure}[b]{0.45\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_exact_post.png}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.45\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_surrogate.png}
-    \end{subfigure}
-    \caption{Summary of the exact posterior and surrogate marginal distributions for a single replicate in the experiment.
-    \textit{(Left)} The true posterior mean, $\pm 2$ standard deviations (shaded blue), $\pm 2$ prior standard deviations, and observations (red).
-    \textit{(Right)} Marginal distributions of $\targetEm(\Par_{\circ})$, the surrogate evaluated at the ground truth parameter. The shaded region
-    encloses $\pm 2$ predictive standard deviations. The surrogate only predicts at the observation locations.}
-    \label{fig:lin-gauss-replicate-summary}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \begin{subfigure}[b]{0.45\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_coverage.png}
-        \caption{Coverage}
-        \label{fig:lin-gauss-coverage}
-    \end{subfigure}
-    \hfill
-    \begin{subfigure}[b]{0.5\textwidth}
-        \centering
-        \includegraphics[width=\textwidth]{./../../experiments/linear_Gaussian/out/experiment1_mcmc.png}
-        \caption{EP Approximation}
-        \label{fig:lin-gauss-mcmc}
-    \end{subfigure}
-    \caption{\textit{(Left)} Joint coverage of the plug-in mean, EUP, and EP approximations, relative to the exact posterior.
-    		 The shaded regions summarize the middle 90\% of the replicates. Joint coverage is defined 
-		  via the Gaussian coverage ellipsoids at the different probability levels. 
-		  \textit{(Right)} The 2-Wasserstein distance between various approximations to the EP. The box plots summarize 
-    		 variability over the 100 replicates. For the EUP the distance is computed
-    		 in closed-form, as both distributions are Gaussian. The remaining approximations include the RKpCN
-		 algorithm with $\rho \in \{0.9, 0.95, 0.99\}$ and the naive cut algorithm of \citet{PlummerCut}.
-		 For these algorithms,
-		 burn-in samples are dropped and the remaining samples are used to fit a Gaussian approximation,
-		 which is then used in the closed-form distance formula.}
-\end{figure}
+\paragraph{Approximate Posterior Comparison.} \Cref{fig:lin-gauss-coverage} summarizes the joint coverage of
+the surrogate-based posteriors relative to the exact baseline. Though the surrogate is well-calibrated, the plug-in mean approximation
+severely under-covers due to the unquantified surrogate bias. Both the EUP and EP are well-calibrated and exhibit 
+similar behavior. The EP exhibits a marginally larger level of under-coverage for a portion of the replicates. This is not 
+surprising given the nature of the surrogate---the surrogate noise essentially acts as another observation noise term,
+a problem effectively made for the EUP. The EP nonetheless provides reasonable uncertainty quantification in this example.
 
 \paragraph{MCMC Evaluation.} \Cref{fig:lin-gauss-mcmc} compares the MCMC-based approximations against the 
 closed-form EP and EUP distributions. Each of the RKpCN algorithms accurately represent the EP, with the $\rho = 0.99$
-setting driving the approximation error near zero. The EUP exhibits more variability, while the cut approximation consistently 
-deviates from the EP target. Note that these algorithms are operating over a high-dimensional ($\dimPar = 100$)
+setting driving the approximation error near zero. The EUP exhibits more variability, while the independent cut approximation 
+consistently deviates from the EP target. These algorithms are operating over a high-dimensional ($\dimPar = 100$)
 parameter space in this example. The RKpCN algorithm is well-equipped for this situation, as the pCN proposal is 
 designed for high-dimensional latent Gaussian models \citep{functionSpaceMCMC}.
 
@@ -1191,7 +1103,7 @@ ordinary differential equations
 \end{align}
 where the model driver $\forcing(\Time)$ is given by photosynthetically active radiation 
 (\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
-Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day}),
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day})
 \begin{align}
 \NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
 \GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
@@ -1213,16 +1125,14 @@ one year period. We assume an additive Gaussian noise model
 \end{align}
 where $\fwd: \parSpace \to \R^{12}$ maps to the monthly LAI means. For simplicity, we fix $\sigma^2 = 1.0$
 and assume independent priors $\alphaV \sim \mathrm{Unif}(0.4, 1.0)$, $\vegInit \sim \mathrm{Unif}(0, 10)$.
-Ground truth values $\Par_{\circ}$ are sampled from the prior (the fixed parameters not being calibrated are also 
-assigned independent uniform priors). The mechanistic model is assumed to be well-specified, such that $\fwd$
-uses the correct ground truth values for the fixed parameters.
+Ground truth values $\Par_{\circ}$ are sampled from the prior and $\fwd$ is assumed to be well-specified.
 Synthetic data $\obs$ is simulated from the model in \Cref{eq:vsem-likelihood} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
 We consider two different emulators for the log-posterior $\target(\Par) \Def \log\{\priorDens(\Par) \lik(\Par; \obs)\}$.
 The first is a conjugate GP surrogate with GP prior defined by a constant mean function and a Gaussian kernel.
 The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by sampling a set of 
-points using a latin hypercube design and then evaluating the exact log-posterior density at these points. 
+points using a Latin hypercube design and then evaluating the exact log-posterior density at these points. 
 The GP mean constant and kernel hyperparameters are optimized by maximum marginal likelihood 
 using the \verb+gpjax+ Python package \citep{gpjax}. We constrain the kernel lengthscales to avoid pathologically 
 high or low values, and constrain the variance parameter of the GP likelihood to be small to encourage interpolation 
@@ -1237,13 +1147,44 @@ $\targetEm^{\mathrm{clip}}(\Par) \Def \min\{\targetEm(\Par), b(\Par)\}$. \citet{
 observation and instead truncate the predictive distribution, but we find that the clipped Gaussian is more appropriate here.
 
 \paragraph{Experiment Replications.}
-We repeat one hundred replications of the above setup. Each replicate varies in the sampled driver data, ground 
-truth $\Par_{\circ}$, synthetic observations $\obs$, and design points for the emulator. Both the GP and clipped GP
-surrogates are used for each replicate. This entire procedure is repeated for different numbers of design points
-$\Ndesign \in \{4, 8, 16\}$. As the parameter space here is two-dimensional, we approximate all probability distributions
-over a dense grid.
+We repeat one hundred replications of the above setup, testing both the GP and clipped GP for each replicate.
+The replicates vary in the sampled driver data, ground truth $\Par_{\circ}$, synthetic observations $\obs$, 
+and design points for the emulator. In addition, the values of 
+the VSEM parameters that are not being calibrated are randomly sampled from uniform distributions, yielding
+a different parameterization of the forward model for each replicate. This entire procedure is repeated for different 
+numbers of design points $\Ndesign \in \{4, 8, 16\}$. As the parameter space here is two-dimensional, 
+we approximate all probability distributions and coverage metrics over a dense grid.
 
 \subsubsection{Results}
+
+ \begin{figure}[htbp]
+    \centering
+    % top
+    \begin{subfigure}[b]{0.85\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
+        \caption{Coverage results using $\targetEm$}
+        \label{fig:vsem_coverage_gp}
+    \end{subfigure}
+    
+    % bottom
+    \begin{subfigure}[b]{0.85\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
+        \caption{Coverage results using $\targetEm^{\mathrm{clip}}$}
+        \label{fig:vsem_coverage_clip_gp}
+    \end{subfigure}
+
+    \caption{
+        Coverage metrics for the surrogate-based posteriors in the VSEM experiment, using the
+    	GP emulator $\targetEm$ \emph{(top)} and clipped GP emulator 
+	$\targetEm^{\mathrm{clip}}$ \emph{(bottom)}. Coverage is computed using masks over a
+	dense two-dimensional grid. The shaded regions summarize the middle 90\% of the replicates.
+    }
+    \label{fig:combined-vsem-coverage}
+\end{figure}
+
+
 \paragraph{GP Surrogate.}
 \Cref{fig:vsem_coverage_gp} summarizes the coverage of the posterior approximations derived using the GP 
 emulator $\targetEm$. The mean and EUP approximations systematically under-cover, while the EP is better 
@@ -1268,27 +1209,14 @@ The plug-in mean still systematically under-covers, but both the EUP and EP are 
 The clipping transform avoids the EUP pathologies stemming form the log-normal tails of $\postEm(\Par)$.
 However, we do still observe evidence (especially for $\Ndesign = 16$) of EUP instability relative to the EP,
 with a greater portion of the replicates resulting in significant under or over-calibration.
- 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_gp.png}
-    \caption{Coverage results using $\targetEm$}
-    \label{fig:vsem_coverage_gp}
-\end{figure}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=\linewidth]{./../../out/final/vsem_coverage_clip_gp.png}
-    \caption{Coverage results using $\targetEm^{\mathrm{clip}}$}
-    \label{fig:vsem_coverage_clip_gp}
-\end{figure}
-
 
 % Elliptic PDE Model
-\subsection{Elliptic PDE Model} \label{sec:pde}
+\subsection{Spatial PDE-Constrained Inversion} \label{sec:pde}
 We next consider PDE-constrained estimation of a latent spatial field. This experiment is motivated by hydrological
-applications in which a permeability field must be estimated from pressure observations at a set of spatial locations.
-\todo[inline]{add some citations}
+applications in which a heterogeneous permeability field must be estimated from pressure observations at a set of 
+spatial locations \citep{conditionPermToPressure,mcmcHydrology,precondMCMCKL}.
+Challenges of such inverse problems include the infinite dimensionality of the parameter and the high cost of
+the forward model \citep{dimRedPolyChaos}.
 
 \subsubsection{Experimental Setup}
 \paragraph{Mechanistic Model.}
@@ -1318,7 +1246,7 @@ $\log \perm(X) \sim \Gaussian(1, k_\kappa(X, X))$ for the discretized field.
 To reduce the parameter dimension, we approximate this Gaussian prior by retaining only the dominant six
 principal components of $k_\kappa(X, X)$. This tends to capture upwards of 95\% of the prior variance under 
 our experimental setup, and mimics the common approach of invoking Karhunen-Loève approximations in 
-spatial inverse problems \citep{uribeKL,dimRedPolyChaos}. Letting $\{(\lambda_r, \psi_r)\}_{r=1}^{6}$ denote 
+spatial inverse problems \citep{uribeKL,dimRedPolyChaos,KLInvProbs}. Letting $\{(\lambda_r, \psi_r)\}_{r=1}^{6}$ denote 
 the dominant eigenpairs, the rank-reduced prior model is
 \begin{equation}
 \log \perm(X) \Def 1 + \sum_{r=1}^{6} \sqrt{\lambda_r} \Par_j \psi_j, \qquad \Par_j \overset{\mathrm{iid}}{\sim} \Gaussian(0, 1),
@@ -1336,9 +1264,9 @@ Ground truth values $\Par_{\circ}$ are sampled from the prior, and synthetic dat
 \Cref{eq:pde-inv-prob} with $\Par = \Par_{\circ}$.
 
 \paragraph{Surrogate Model.}
-We fit a multi-output GP to the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to predict each of
+We fit a multi-output GP to the forward model $\target \Def \fwd$, consisting of independent single-output GPs fit to each of
 the four scalar outputs. The training data $\{(\Par_n, \target(\Par_n))\}_{n=1}^{\Ndesign}$ is constructed by 
-mapping latin hypercube samples through the standard Gaussian 
+mapping Latin hypercube samples through the standard Gaussian 
 quantile function to obtain the design inputs, and then evaluating $\fwd$ at each design input.
 Each univariate GP is defined by a constant mean function and a Gaussian kernel, with hyperparameters
 optimized by maximum marginal likelihood using \verb+gpjax+ \citep{gpjax}.
@@ -1369,16 +1297,95 @@ for a complete characterization of the EP, so should not be viewed as an exact b
 
 \subsubsection{Results}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{./../../out/final/pde_coverage.png}
-    \caption{Coverage results for PDE experiment.}
+    \caption{Coverage results for the surrogate-based posteriors in the PDE experiment.
+    		 Computed by estimating ellipsoidal coverage regions based on Mahalanobis distance using MCMC samples.
+		 The shaded regions summarize the middle 90\% of the replicates.}
     \label{fig:pde_coverage}
 \end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_10.png}
+        \caption{$N = 10$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_20.png}
+        \caption{$N = 20$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \includegraphics[width=\textwidth]{./../../out/final/pde_w2_ndesign_30.png}
+        \caption{$N = 30$}
+    \end{subfigure}
+    \caption{EP approximations in the PDE experiments.}
+    \label{fig:pde_wasserstein}
+\end{figure}
+
+\paragraph{Approximate Posterior Comparison.} \Cref{fig:pde_coverage} summarizes the joint ellipsoidal coverage of
+the surrogate-based posteriors relative to the exact baseline. Ellipsoidal coverage (based only on the empirical mean and 
+covariance of MCMC samples from the approximating distributions) was deemed reasonable upon observing that 
+the samples tended to have roughly elliptical shape across experimental replicates. The EP is seen to be well-calibrated on
+average across the three design sizes, while the plug-in mean significantly under-covers. The EUP tends to under-cover, 
+but the median replicate is nearly well-calibrated at the largest design size. Even at this design size, a significant portion of 
+the EUP replicates continues to completely miss the support of the true posterior. Naturally, the calibration of the posteriors
+can always be improved by improving the calibration of the underlying surrogate. We sought to fit reasonably well-calibrated
+GPs with realistic degrees of bias.
+
+\paragraph{MCMC Evaluation.} \Cref{fig:pde_wasserstein} summarizes the distance between various sample-based
+approximations to the MCwM EP baseline. We use entropic-regularized 2-Wasserstein distance,
+computed using the Sinkhorn algorithm in \verb+ott-jax+ \citep{ottjax}. Each distribution is represented by 1000 sub-samples
+from an MCMC algorithm. A whitening transformation is applied to the samples using the empirical mean and covariance of 
+the MCwM so that the distances are computed in the baseline MCwM geometry. The Sinkhorn regularization parameter is 
+selected using the \citep{ottjax} JAX applied to the MCwM points, and the same value is used for all Wasserstein computations
+for a fixed design size. The results show that both RKpCN with $\rho = 0.99$ and the EUP provide the best EP approximations, 
+with the median EUP replicate performing slightly better. 
 
 
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
+We provide theoretical arguments that generally favor the EP as the correct target for surrogate-based Bayesian inference.
+We compare this baseline to the EUP, a computationally-convenient alternative, and demonstrate that the two distributions
+can significantly deviate when the surrogate-based posterior density approximation approximation has highly non-uniform
+uncertainty over the parameter space. In particular, this occurs when the normalizing constant $\normCst(\targetEm)$ is highly 
+correlated with $\targetEm(\Par)$ in small regions of the parameter space.
+This problem is exemplified by applications where GPs are used to emulate 
+log-densities, but can sometimes be mitigated by practical safeguards (e.g., enforcing bound constraints). In our experiments,
+the EUP and EP tend to exhibit closer agreement in the forward model emulation setting. This is likely due to the fact
+that our numerical experiments consider Gaussian likelihoods, which are bounded and thus dampen the effects of high 
+surrogate uncertainty in small regions of the parameter space. 
+Caution is warranted when performing surrogate-based Bayesian inference with unbounded likelihoods.
+We also highlight different computational strategies for EP-based inference, and present the RKpCN algorithm, an easy-to-implement 
+approximate EP sampler that naturally handles the infinite-dimensionality of GP surrogates.
+
+There are several avenues for future research. First, it may be beneficial to explore alternative conceptual frameworks
+other than the Bayesian decision-theoretic framework considered here. One option is to consider regularizing the
+optimization problem in \Cref{prop:EP-variational} to yield an EP-like target that exhibits prior-reversion when surrogate
+uncertainty is high. This would naturally lead to connections with generalized Bayesian inference 
+(e.g., \citet{generalizedCut}). Expanding on our discussion of connections with cut posterior inference could also be 
+interesting. While the EP can be viewed as a cut posterior, surrogate-based uncertainty propagation 
+problems often have specific structure that differs from typical examples considered in the modular Bayes
+literature; e.g., the surrogate (the parameter in the first stage of the cut model) may be high or infinite
+dimensional, can be directly sampled, and may exhibit significant variation in its conditional distributions
+(i.e., surrogate variation over the parameter space). As a starting point, we considered experiments with 
+well-specified inverse problem likelihoods. Given that the cut posterior is designed for joint distributions 
+in which the second-stage model may be misspecified, it would be interesting to investigate whether the benefits of 
+the EP over the EUP become more pronounced under the presence of likelihood misspecification.
+Conversely, it may also be fruitful to investigate the effects of misspecification in the (first-stage) surrogate
+model. If the surrogate correlation structure over the parameter space is highly misspecified, then the EUP 
+(which ignores predictive correlations) may be more robust in such cases.
+
+Finally, there is significant potential to further refine the RKpCN algorithm. We justify the algorithm with 
+heuristic and empirical justifications in this work to demonstrate that a simple approximation can provide 
+a reasonable characterization of the EP. Rigorous theoretical analysis of this algorithm would likely draw
+upon results from both the noisy MCMC \citep{noisyMCSurvey,stabilityNoisyMH,corrPM} and function-space MCMC
+\citep{functionSpaceMCMC} literatures. There is likely room for improving the naive normalizing constant ratio 
+estimate used in RKpCN while maintaining a practical, easily implemented algorithm.
+
 \begin{comment}
 \todo[inline]{intro paragraph summarizing paper}
 
@@ -1499,6 +1506,73 @@ triangle inequality, integrating over $\parSpace$, and applying Tonelli's theore
 \int \emE[\postEm(\Par)] \refMeas(\d\Par) = \emE \int \postEm(\Par) \refMeas(\d\Par) = \emE[\normCstEm]
 \qquad \blacksquare
 \end{equation*} 
+
+\subsection{MCMC Details}
+The below algorithm provides a practical implementation of \Cref{alg:rk-pcn-finite} that only requires the realization
+of finite dimensional projections of the surrogate trajectories. This relies on the fact that $\postDens(\Par; \targetTraj)$
+is a function of $\targetTraj$ only through $\targetTraj(\Par)$. The algorithm requires one just-in-time GP sample 
+each iteration. However, additional conditioning points are not accumulated across iterations, avoiding the numerical
+issues associated with repeated just-in-time sampling required by MCwM methods (\Cref{alg:ep}) or the tempered 
+transitions strategy of \citet{PlummerCut}.
+
+\begin{algorithm}[H]
+    \caption{Random Kernel pCN, Practical Implementation  (single iteration)}
+    \label{alg:rk-pcn-infinite}
+    \begin{algorithmic}[1]
+    \State \textbf{Input:} Current state $(\Par, \targetTraj_{\Par})$
+    \State \textbf{Output:} Updated state $(\nextstate{\Par}, \nextstate{\targetTraj}_{\nextstate{\Par}})$
+    \State $\propPar \sim \propDistPar(\Par, \cdot), v_\Par \sim \mathrm{Unif}(0,1)$
+    \State $\targetTraj_{\propPar} \sim \mathrm{law}(\targetEm(\propPar) \given \targetEm(\Par) = \targetTraj_{\Par})$ \Comment{Just-in-time sample}
+    \State $\gpMean^{\Par, \propPar} \Def (\gpMean(\Par), \gpMean(\propPar))^\top$, $K_{\star}^{\Par, \propPar} \Def \gpKer((\Par, \propPar), (\Par, \propPar))$ \Comment{Bivariate projection}
+    \State $\xi \sim \Gaussian(0, K_{\star}^{\Par, \propPar})$
+    \State $(\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar})^\top \gets 
+    	\gpMean^{\Par, \propPar} + \pcnCor \{(\targetTraj_{\Par}, \targetTraj_{\propPar})^\top  - \gpMean^{\Par, \propPar}\} + \sqrt{1 - \pcnCor^2} \xi$ \Comment{$\targetTraj$ update}
+    \State $\alpha_{\Par} \gets \min\left\{1, \postDens(\propPar; \nextstate{\targetTraj}) / \postDens(\Par; \nextstate{\targetTraj}) \right\}$ 
+    	\Comment{Compute using $\nextstate{\targetTraj}_{\Par}, \nextstate{\targetTraj}_{\propPar}$}
+    \State $\nextstate{\Par} \gets \propPar \indicator{v \leq \alpha_{\Par}} + \Par \indicator{v > \alpha_{\Par}}$ \Comment{$\Par$ update}
+    \State $\nextstate{\targetTraj}_{\nextstate{\Par}} \gets \nextstate{\targetTraj}_{\propPar} \indicator{v_\Par \leq \alpha_{\Par}} + \nextstate{\targetTraj}_{\Par} \indicator{v_\Par > \alpha_{\Par}}$
+    \end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Additional Results from Numerical Experiments}
+
+\subsubsection{Linear Gaussian Example}
+\Cref{fig:lin-gauss-svd-plots} provides a visualization of the analytical results from 
+\Cref{prop:linear-gaussian-analytical}, using the linear forward model from the 
+example in \Cref{sec:deconvolution}.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_lambda.png}
+        \label{fig:plot1a}
+    \end{subfigure}
+
+    \begin{subfigure}{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{./../../experiments/linear_Gaussian/out/experiment1_svd_alpha.png}
+        \label{fig:plot1b}
+    \end{subfigure}
+    \vspace{0.5em}
+
+    \caption{Scaling behavior as a function of $q / \sigma$, with $c_0 = 1.0$, $\sigma=1.0$, $r = (2.5, \dots, 2.5)^\top$.
+    The forward model $G$ is the convolution operator used in \Cref{sec:deconvolution}, with parameter and 
+    data dimensions $\dimPar = 100$, $\dimObs = 25$.
+    The plots show the variance and mean coordinates along certain $v_j$ directions (smaller $j$ indicating directions better informed by data),
+    relative to the exact (no surrogate) posterior analogs. Starting from the top-left in clockwise
+    order, the plots display $\lambda_j^{\eup} / \lambda_j$, $\lambda_j^{\ep} / \lambda_j$, 
+    $\alpha_j^{\eup} - \alpha_j$, and $\alpha_j^{\ep} - \alpha_j$ as a function of $q / \sigma$.}
+    \label{fig:lin-gauss-svd-plots}
+\end{figure}
+
+
+
+
+
+
+
  
 \bibliography{./../shared/surrogates} 
 % \bibliographystyle{ieeetr}
