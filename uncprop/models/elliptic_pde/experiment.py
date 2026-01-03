@@ -512,6 +512,7 @@ def compute_wasserstein_comparison(
     reference_key: str,
     subsample: int | None = None,
     key: jax.random.PRNGKey = jax.random.PRNGKey(0),
+    epsilon: float | None = None,
     sinkhorn_kwargs: dict | None = None
 ):
     sinkhorn_kwargs = sinkhorn_kwargs or {}
@@ -534,12 +535,15 @@ def compute_wasserstein_comparison(
     }
 
     # choose regularization level using reference geometry
-    ref_geom = pointcloud.PointCloud(
-        samples[reference_key], 
-        samples[reference_key], 
-        epsilon=None
-    )
-    fixed_epsilon = ref_geom.epsilon
+    if epsilon is None:
+        ref_geom = pointcloud.PointCloud(
+            samples[reference_key], 
+            samples[reference_key], 
+            epsilon=None
+        )
+        fixed_epsilon = ref_geom.epsilon
+    else:
+        fixed_epsilon = epsilon
 
     # optional subsampling
     if subsample is not None:
@@ -558,3 +562,58 @@ def compute_wasserstein_comparison(
         results[name] = w2
 
     return results, fixed_epsilon
+
+
+def summarize_wasserstein_design_reps(key, base_out_dir, 
+                                      experiment_name, n_design, 
+                                      rep_idcs, output_dir=None):
+    """
+    Wasserstein distance to EP for all reps for a certain design size. The same regularization
+    parameter epsilon is used across all reps/approximating distributions for consistency.
+    """
+    w2_keys = jr.split(key, len(rep_idcs))
+    design_dir = base_out_dir / experiment_name / f'n_design_{n_design}'
+    results = []
+    eps = None
+
+    if output_dir is not None:
+        output_path = output_dir / f'w2_ndesign_{n_design}.npz'
+        write_to_file = True
+    else:
+        write_to_file = False
+
+    # combine results into single dictionary
+    def _combine_results(res):
+        keys = res[0].keys()
+        results = {k: jnp.stack([rep_result[k] for rep_result in res]) for k in keys}
+        return results
+    
+    for i, rep_idx in enumerate(rep_idcs):
+        try:
+            print('Rep ', rep_idx)
+            rep_dir = design_dir / f'rep{rep_idx}'
+            samp = dict(jnp.load(rep_dir / 'samples.npz'))
+            rkpcn_samp = dict(jnp.load(rep_dir / 'rkpcn_samples.npz'))
+            samp = samp | rkpcn_samp
+
+            rep_results, eps = compute_wasserstein_comparison(
+                samples=samp,
+                reference_key='ep_mcwmh',
+                subsample=1000,
+                key=w2_keys[i],
+                epsilon=eps,
+                sinkhorn_kwargs={'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
+            )
+            results.append(rep_results)
+
+            if i > 0 and i % 20 == 0:
+                if write_to_file:
+                    jnp.savez(output_path, **_combine_results(results))
+                jax.clear_caches()
+        except Exception as e:
+            print('Failed rep:', rep_idx)
+            print(e)
+    
+    results = _combine_results(results)
+    return results, eps
+
