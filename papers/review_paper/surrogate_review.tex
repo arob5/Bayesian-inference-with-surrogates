@@ -248,7 +248,7 @@ differential equation (ODE). While this example is simplified for clarity, the s
 inverse problems faced in practice, such as parameter estimation for land surface models \citep{paramLSM}. 
 Consider a parameter-dependent initial value problem 
 \begin{align}
-\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart) = \stateIC, \label{ode_ivp}
+\frac{d}{d\Time} \state(\Time, \Par) &= \odeRHS(\state(\Time, \Par), \Par), &&x(\timeStart, \Par) = \stateIC, \label{ode_ivp}
 \end{align}
 describing the time evolution of $\dimState$ state variables 
 $\state(\Time, \Par) \Def \left\{\indexState{\state}(\Time, \Par)\right\}_{\stateIndex=1}^{\dimState}$
@@ -298,8 +298,9 @@ evaluations. Even within this class of surrogates, the regression modeling setup
 with a key decision being the choice of response variable to approximate with the regression model. 
 To formalize this notion, let $\target: \parSpace \to \targetRange$ denote the map that the surrogate seeks to 
 approximate. When relevant, we will augment the notation from \Cref{sec:background} to emphasize the dependence
-on this \textit{target map}; e.g., $\postDens(\Par; \target)$, $\lik(\Par; \target, \obs)$, $\normCst(\target)$, etc. 
-We make the assumption throughout that $\postDens(\Par; \target)$ depends on $\Par$ only through $\target(\Par)$.
+on this \textbf{target map}; e.g., $\postDens(\Par; \target)$, $\lik(\Par; \target, \obs)$, $\normCst(\target)$, etc. 
+We make the assumption throughout that $\postDens(\Par; \target)$ depends on $\Par$ and $\target$ only as a 
+function of $\target(\Par)$.
 The implicit assumption here is that the target map has been chosen to alleviate the computational bottleneck; hence,
 the density $\postDens(\Par; \target)$ is cheap to compute once the expensive computation $\target(\Par)$ is 
 available.
@@ -323,7 +324,7 @@ connections to these topics in \todo{add reference}.
 
 \subsection{Probabilistic Surrogates}
 In practice, fitting a highly accurate surrogate can be challenging, and the induced posterior approximation inherits 
-imperfections from the underlying emulator. This implies the concern that the surrogate-based posterior approximation
+imperfections from the underlying emulator. This raises the concern that the surrogate-based posterior approximation
 can be both biased and overconfident. To address this fundamental challenge and mitigate the problem 
 of unquantified posterior approximation error, we argue that a Bayesian surrogate-based workflow should include
 the following two steps:
@@ -364,15 +365,17 @@ the $\Nbatch \times \Nbatch^\prime$ cross covariance. In particular, we use the 
 $\{\design, \target(\design)\}$ for the design points and their corresponding outputs.
 
 Of central importance to this work is the manner in which emulator uncertainty propagates to downstream 
-quantities of interest. For example, plugging the random surrogate in place of the true target map induces a distribution over the posterior density $\postDensNorm(\Par; \targetEm)$. 
+quantities of interest. For example, the quantity $\postDensNorm(\Par; \targetEm)$ resulting from plugging
+the surrogate in place of the true target map is a random density with a distribution that summarizes
+surrogate-induced uncertainty in the true posterior. 
 When discussing such pushforward distributions we make use of the 
 notation $\postNormEm \Def \postDensNorm(\cdot; \targetEm)$ when explicit reference to the underlying emulator
 is not necessary.
 
 In many situations, the target $\target$ is a multi-valued function and hence $\targetEm$ is a multi-output
-model. In this case, $\emMean(\Par)$ and $\emVar(\Par)$ denote the predictive mean vector and 
+regression model. In this case, $\emMean(\Par)$ and $\emVar(\Par)$ denote the predictive mean vector and 
 covariance matrix, respectively, over the different outputs. To avoid complicating notation, we do not extend
-the above vectorized notation in the multi-output setting. We make clarifying remarks when it is necessary to 
+the above vectorized notation in the multi-output setting. We make clarifying remarks when necessary to 
 avoid ambiguity.
 
 \subsection{Common Surrogate Models}
@@ -392,8 +395,8 @@ A typical GP-based workflow consists of specifying a prior $\targetEm[0] \sim \G
 over the target function $\target$, defined by a prior mean function $\emMean[0](\cdot)$ and 
 covariance function (i.e., kernel) $\emKer[0](\cdot, \cdot)$. The 
 defining property of a GP is its Gaussian finite-dimensional marginal distributions
-$\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$, 
-using the notation $\emKer[0](\ParBatch) \Def \emKer[0](\ParBatch, \ParBatch)$.
+$\targetEm[0](\ParBatch) \sim \Gaussian(\emMean[0](\ParBatch), \emKer[0](\ParBatch))$
+(using the notation $\emKer[0](\ParBatch) \Def \emKer[0](\ParBatch, \ParBatch)$).
 Commonly, the hyperparameters defining the mean and kernel are optimized, though Bayesian 
 treatments are also possible. With fixed hyperparameters, the surrogate is constructed by 
 closed-form conditioning 
@@ -406,7 +409,7 @@ with the conditional mean and kernel given by
 &= \emKer[0](\ParBatch) - \emKer[0](\ParBatch, \design) \emKer[0](\design)^{-1} \emKer[0](\design, \ParBatch).
 \nonumber
 \end{align}
-Thus, in their most basic form GPs surrogates are Gaussian predictors 
+Thus, in their most basic form GP surrogates are Gaussian predictors 
 $\targetEm(\ParBatch) \sim \Gaussian(\emMean(\ParBatch), \emKer(\ParBatch))$. 
 Extensions of the GP methodology
 can produce more flexible emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
@@ -417,14 +420,14 @@ typically yield predictions in the form of (infinite) mixtures of Gaussians.
 Surrogates that consist of linear combinations of polynomial basis functions are 
 commonly used in the engineering and applied math communities. 
 Polynomial chaos expansions (PCEs; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby 
-a polynomial basis is used to approximate a random variable $\func(\Par)$ as a function of
+a polynomial basis is used to approximate a random variable $\target(\Par)$ as a function of
 a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
 \begin{equation}
 \targetEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
 \end{equation}
 where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
 to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
-approximate moments of $\func(\Par)$. More relevant to our context,
+approximate moments of $\target(\Par)$. More relevant to our context,
 the map $\targetEm[\dimBasis](\Par)$ can also be used as a surrogate for $\target(\Par)$.
 With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
 within our definition of probabilistic surrogates. We nonetheless highlight them here
@@ -437,26 +440,37 @@ employed to accelerate Bayesian inversion in various applications
 \citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
 
 \subsubsection{Neural Networks}
+In regimes where the input dimension $\dimPar$ and computational 
+budget $\Ndesign$ are large, neural networks are well-suited to 
+serve as surrogate models. Bayesian treatment of neural 
+network parameters provides probabilistic predictions, but in practice significant 
+approximations are required for inference \citep{BayesOptNN}. One popular simplification
+treats only the final neural network layer in a Bayesian fashion 
+\citep{BayesLastLayer,BayesOptBayesLastLayer}. These difficulties have motivated
+interest in surrogate models with predictive distributions 
+not necessarily rooted in the Bayesian philosophy. This includes deep ensembles, 
+which summarize uncertainty via an ensemble of neural network 
+models \citep{deepEnsembles,Lueckmann2018LikelihoodfreeIW},
+and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}.
 
 \subsection{Finite vs. Infinite Dimensional Surrogates}
-As will be explored in the subsequent section, a diverse array of methods have been proposed for propagating 
-surrogate uncertainty within the posterior approximation. It is our view that this can be largely explained by 
-computational considerations for particular emulators, rather than by an overarching philosophy of uncertainty 
-propagation. In particular, a key differentiating characteristic is whether or not the surrogate admits a finite-dimensional 
-representation. We define $\targetEm$ to be finite-dimensional if its randomness stems from a finite-dimensional
+As will be explored throughout this paper, methods for surrogate-based posterior inference
+may present varying degrees of computational challenges depending on the particular type
+of emulator model. A key influencing factor is whether or not the surrogate admits a 
+finite-dimensional representation. We define $\targetEm$ to be finite-dimensional if its randomness stems from a finite-dimensional
 parameter $\theta_{\Ndesign}$; i.e., $\targetEm(\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
 random vector $\theta_{\Ndesign}$ and non-random function $g$.
 In this case, it is feasible to sample trajectories (sample paths) of $\targetEm$ via 
 \begin{align}
-&\targetTraj(\cdot) \Def g(\cdot, \theta),
+&\targetTraj(\cdot) \Def g(\cdot; \theta),
 &&\theta \sim \mathrm{law}(\theta_{\Ndesign}).
 \end{align}
 The sampled trajectory $\targetTraj(\cdot)$ can now be evaluated at any input value. A standard example is a 
 model taking the form of a linear combination of basis functions 
-$\targetEm(\cdot) = \sum_{j=1}^{J} \theta_{\Ndesign}^{(j)} g^{(j)}(\cdot)$.
+$\targetEm(\cdot) = \sum_{\idxBasis=1}^{\dimBasis} \theta_{\Ndesign}^{(\idxBasis)} g^{(\idxBasis)}(\cdot)$.
 
 An infinite-dimensional surrogate admits no such finite-dimensional representation. 
-Typical examples include surrogates constructed from Gaussian processes. For these models, 
+Typical examples include surrogates constructed from GPs. For these models, 
 it is computationally infeasible to sample trajectories. Instead, the surrogate can typically be 
 characterized by the set of distributions $\emDist(\ParBatch)$ over finite-dimensional
 subsets $\ParBatch$.
