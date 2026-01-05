@@ -5,6 +5,7 @@ from typing import Any
 import jax.numpy as jnp
 import jax.random as jr
 from gpjax import Dataset
+from gpjax.gps import Prior as GPPrior
 from numpyro.distributions import MultivariateNormal
 from jax.scipy.special import logsumexp
 
@@ -12,6 +13,7 @@ from uncprop.custom_types import Array, ArrayLike, PRNGKey
 from uncprop.core.distribution import Distribution, DistributionFromDensity
 from uncprop.core.inverse_problem import Posterior
 from uncprop.utils.gpjax_models import construct_gp, train_gp_hyperpars
+from uncprop.utils.gpjax_multioutput import BatchedRBF
 from uncprop.utils.grid import normalize_density_over_grid, Grid
 from uncprop.core.surrogate import (
     GPJaxSurrogate,
@@ -64,7 +66,14 @@ def fit_vsem_surrogate(key: PRNGKey,
         _print_gp_fit_info(gp, opt_info)
 
     # wrap gpjax object as a GPJAXSurrogate
-    log_density_surrogate = GPJaxSurrogate(gp=gp, design=design, jitter=jitter)
+    ker = gp.prior.kernel
+    batched_kernel = BatchedRBF(batch_dim=1, input_dim=ker.n_dims,
+                                lengthscale=ker.lengthscale,
+                                variance=ker.variance)
+    batched_gp_prior = GPPrior(mean_function=gp.prior.mean_function,
+                               kernel=batched_kernel)
+    batched_gp_post = batched_gp_prior * gp.likelihood
+    log_density_surrogate = GPJaxSurrogate(gp=batched_gp_post, design=design, jitter=jitter)
 
     # surrogate-induced posterior approximation
     if surrogate_tag == 'gp':
@@ -80,7 +89,7 @@ def fit_vsem_surrogate(key: PRNGKey,
     else:
         raise ValueError(f'Invalid surrogate tag: {surrogate_tag}')
     
-    return post_surrogate, opt_info
+    return VSEMPosteriorSurrogate(post_surrogate), opt_info
 
 
 def _print_gp_fit_info(gp, opt_info):

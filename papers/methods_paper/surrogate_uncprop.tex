@@ -97,10 +97,10 @@ and modular Bayesian inference arguments. We then investigate the
 \textit{expected unnormalized posterior (EUP)}, a popular heuristic alternative, analyzing when 
 it may deviate from the EP baseline. Our results show that this heuristic can break down when 
 the surrogate uncertainty is highly non-uniform over the design space, as can be the case when
-the log-likelihood is emulated by a Gaussian process. Finally, we present 
-\textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an approximate 
-Markov chain Monte Carlo algorithm that is shown to produce reasonable EP approximations
-across a variety of experiments.
+the log-likelihood is emulated by a Gaussian process. Finally, we present the
+\textit{random kernel preconditioned Crank-Nicolson (RKpCN)} algorithm, an approximate 
+Markov chain Monte Carlo scheme that provides a practical EP approximation in the challenging
+setting involving infinite-dimensional Gaussian process surrogates.
 \end{abstract}
 
 \section{Introduction}
@@ -155,7 +155,7 @@ approximate computation viewpoint can be fruitful in achieving a more robust EP 
 In particular, we present \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, an
 approximate MCMC algorithm targeting the EP that is well-defined for GP surrogates.
 
-\subsection{Outline}
+The remainder of this paper is structured as follows.
 \Cref{sec:surrogates-intro} introduces the modular surrogate-based Bayesian workflow.
 In \Cref{sec:EP} we derive the EP as a Bayes' estimator, and discuss connections 
 with the so-called cut posterior distribution. In \Cref{sec:approximating-ep}
@@ -850,9 +850,9 @@ $\pcnCor$ are already typically required to prevent excessively high rejection r
 \citep{functionSpaceMCMC, corrPM}. The resulting algorithm, which we call 
 \textit{random kernel preconditioned Crank-Nicolson (RKpCN)}, is summarized in \Cref{alg:rk-pcn-finite}.
 Though it is stated for conceptual clarity in infinite dimensions, we emphasize that the algorithm can be 
-implemented exactly by only realizing finite-dimensional projections of the functions. See \Cref{alg:rk-pcn-infinite}
-in the appendix for details. We illustrate the effect of the normalizing constant approximation 
-approximation through experiments; a complete theoretical analysis is beyond the scope of this paper.
+implemented exactly by only realizing finite-dimensional projections of the functions. 
+See \Cref{alg:rk-pcn-infinite} in \Cref{app:mcmc} for details. We illustrate the effect of the RKpCN acceptance 
+probability approximation through experiments; a complete theoretical analysis is beyond the scope of this paper.
 
 \begin{rmk}
 The RKpCN scheme is derived by invoking the approximation
@@ -892,7 +892,6 @@ for EP-based inference. They appear to implicitly assume the use of finite-dimen
 as difficulties related to sampling trajectories are not addressed.
 \citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstep{\targetTraj}_{\Par}$ and 
 $\nextstep{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
-Addressing pathologies in this approach was a primary motivation for our proposed method. 
 
 There has been interest in the modular Bayes community in designing approximate MCMC 
 schemes as an alternative to MwMC for cut posterior inference. \citet{PlummerCut} describes 
@@ -1090,30 +1089,9 @@ underscoring the potential for surrogates in this domain \citep{paramLSM}.
 
 \paragraph{Mechanistic Model.}
 We consider a synthetic data experiment using the \textit{Very Simple Ecosystem Model} (VSEM), 
-a toy model capturing the basic structure of more complex land surface models \citep{vsem}. The model 
-describes the evolution of the state vector 
-$\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}$,
-with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, 
-below-ground vegetation (roots), and soil pools, respectively. These states evolve according to the system of coupled 
-ordinary differential equations
-\begin{align}
-\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
-\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
-\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
-\end{align}
-where the model driver $\forcing(\Time)$ is given by photosynthetically active radiation 
-(\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
-Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day})
-\begin{align}
-\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
-\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
-\LAI(\stateV) &= \LAR \cdot \stateV, \nonumber
-\end{align} 
-where $\GPP(\stateV, \forcing)$ and $\LAI(\stateV)$ model Gross Primary Productivity (GPP; \textrm{kg C/$m^2$/day})
-and Leaf Area Index (LAI; \textrm{$m^2/m^2$}), respectively.
-Given a noisy synthetic model driver time series and initial conditions $\{\vegInit, \rootInit, \soilInit\}$,
-we numerically solve the ODE at a daily time step
-via the basic Euler scheme as implemented in the R \verb+BayesianTools+ package \citep{vsem}. 
+a toy model capturing the basic structure of more complex land surface models \citep{vsem}. 
+The model, which is an ODE of similar form to that in \Cref{ode_ivp}, is described in detail in
+\Cref{app:vsem}.
 
 \paragraph{Statistical Model.}
 We consider estimating the parameters $\Par \Def (\alphaV, \vegInit)$ given noisy monthly averages of LAI over a 
@@ -1208,7 +1186,7 @@ likelihood bound constraint in the predictive distribution drastically improves 
 The plug-in mean still systematically under-covers, but both the EUP and EP are well-calibrated on average.
 The clipping transform avoids the EUP pathologies stemming form the log-normal tails of $\postEm(\Par)$.
 However, we do still observe evidence (especially for $\Ndesign = 16$) of EUP instability relative to the EP,
-with a greater portion of the replicates resulting in significant under or over-calibration.
+with a greater portion of the replicates resulting in significant under or over-coverage.
 
 % Elliptic PDE Model
 \subsection{Spatial PDE-Constrained Inversion} \label{sec:pde}
@@ -1228,7 +1206,7 @@ Assume that the permeability $\perm(\state)$ and pressure $\pressure(\state)$ fi
 subject to the boundary conditions $\pressure(1) = 1$ and $\perm(0)\frac{\partial\pressure}{\partial \state}(0) = 1$.
 The source term is defined as 
 \begin{equation}
-\source(\state) = \sum_{i=1}^{4} \frac{0.8}{\delta\sqrt{2\pi}} \exp\left\{-\frac{1}{2\delta^2}(\state - c_i)^2 \right\}
+\source(\state) = \sum_{i=1}^{4} \frac{0.8}{\delta\sqrt{2\pi}} \exp\left\{-\frac{1}{2\delta^2}(\state - c_i)^2 \right\},
 \end{equation}
 with $\delta = 0.05$ and $(c_1, \dots, c_4) = (0.2, 0.4, 0.6, 0.8)$. We discretize the spatial dimension over an 
 evenly-spaced grid $X = \{\state_m\}_{m=1}^{100}$ and solve the PDE with 
@@ -1341,16 +1319,16 @@ approximations to the MCwM EP baseline. We use entropic-regularized 2-Wasserstei
 computed using the Sinkhorn algorithm in \verb+ott-jax+ \citep{ottjax}. Each distribution is represented by 1000 sub-samples
 from an MCMC algorithm. A whitening transformation is applied to the samples using the empirical mean and covariance of 
 the MCwM so that the distances are computed in the baseline MCwM geometry. The Sinkhorn regularization parameter is 
-selected using the \citep{ottjax} JAX applied to the MCwM points, and the same value is used for all Wasserstein computations
-for a fixed design size. The results show that both RKpCN with $\rho = 0.99$ and the EUP provide the best EP approximations, 
-with the median EUP replicate performing slightly better. 
+selected using the \verb+ott-jax+ default computed with respect the MCwM points, and the same value is used for all 
+Wasserstein computations for a fixed design size. The results show that both RKpCN with $\rho = 0.99$ and the EUP 
+provide the best EP approximations, with the median EUP replicate performing slightly better. 
 
 
 % Discussion and conclusions
 \section{Discussion and Conclusions} \label{sec:conclusion}
 We provide theoretical arguments that generally favor the EP as the correct target for surrogate-based Bayesian inference.
 We compare this baseline to the EUP, a computationally-convenient alternative, and demonstrate that the two distributions
-can significantly deviate when the surrogate-based posterior density approximation approximation has highly non-uniform
+can significantly deviate when the surrogate-based posterior density approximation has highly non-uniform
 uncertainty over the parameter space. In particular, this occurs when the normalizing constant $\normCst(\targetEm)$ is highly 
 correlated with $\targetEm(\Par)$ in small regions of the parameter space.
 This problem is exemplified by applications where GPs are used to emulate 
@@ -1404,8 +1382,9 @@ correlation structure is misspecified
 
 
 % Appendix
-\section{Appendix}
+\appendix
 
+\section{Proofs}
 For the below proofs we use the following measure-theoretic setup.
 Let $\refMeas$ be a reference measure (e.g., Lebesgue) on $(\parSpace, \BorelSig)$,
 and $\emDist$ a probability measure on $(\emSpace, \emSig)$. Assume that 
@@ -1507,7 +1486,7 @@ triangle inequality, integrating over $\parSpace$, and applying Tonelli's theore
 \qquad \blacksquare
 \end{equation*} 
 
-\subsection{MCMC Details}
+\section{MCMC Algorithm Details} \label{app:mcmc}
 The below algorithm provides a practical implementation of \Cref{alg:rk-pcn-finite} that only requires the realization
 of finite dimensional projections of the surrogate trajectories. This relies on the fact that $\postDens(\Par; \targetTraj)$
 is a function of $\targetTraj$ only through $\targetTraj(\Par)$. The algorithm requires one just-in-time GP sample 
@@ -1535,9 +1514,9 @@ transitions strategy of \citet{PlummerCut}.
 \end{algorithm}
 
 
-\subsection{Additional Results from Numerical Experiments}
+\section{Additional Details for Numerical Experiments}
 
-\subsubsection{Linear Gaussian Example}
+\subsection{Linear Gaussian Example}
 \Cref{fig:lin-gauss-svd-plots} provides a visualization of the analytical results from 
 \Cref{prop:linear-gaussian-analytical}, using the linear forward model from the 
 example in \Cref{sec:deconvolution}.
@@ -1568,12 +1547,34 @@ example in \Cref{sec:deconvolution}.
 \end{figure}
 
 
+\subsection{Ecological Model Example} \label{app:vsem}
+\paragraph{Details for VSEM Model.}
+The model 
+describes the evolution of the state vector 
+$\state(\Time) \Def [\stateV(\Time), \stateR(\Time), \stateS(\Time)]^\top \in \R_{\geq 0}^{3}$,
+with the state variables representing the quantity of carbon (\textrm{kg C/$m^2$}) in above-ground vegetation, 
+below-ground vegetation (roots), and soil pools, respectively. These states evolve according to the system of coupled 
+ordinary differential equations
+\begin{align}
+\dstateV(\Time) &= \alphaV \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateV(\Time)}{\tauV} \\
+\dstateR(\Time) &= (1.0 - \alphaV) \NPP(\stateV(\Time), \forcing(\Time)) - \frac{\stateR(\Time)}{\tauR} \nonumber \\ 
+\dstateS(\Time) &= \frac{\stateR(\Time)}{\tauR} + \frac{\stateV(\Time)}{\tauV} - \frac{\stateS(\Time)}{\tauS}, \nonumber
+\end{align}
+where the model driver $\forcing(\Time)$ is given by photosynthetically active radiation 
+(\textrm{MJ/$m^2$/day}), and the dynamics rely on the following parameterized model of 
+Net Primary Productivity (NPP; \textrm{kg C/$m^2$/day})
+\begin{align}
+\NPP(\stateV, \forcing) &= (1 - \fracRespiration) \GPP(\stateV, \forcing) \\
+\GPP(\stateV, \forcing) &= \forcing \cdot \LUE \cdot \left[1 - \exp\left\{-\KEXT \cdot \LAI(\stateV) \right\} \right] \nonumber \\
+\LAI(\stateV) &= \LAR \cdot \stateV, \nonumber
+\end{align} 
+where $\GPP(\stateV, \forcing)$ and $\LAI(\stateV)$ model Gross Primary Productivity (GPP; \textrm{kg C/$m^2$/day})
+and Leaf Area Index (LAI; \textrm{$m^2/m^2$}), respectively.
+Given a noisy synthetic model driver time series and initial conditions $\{\vegInit, \rootInit, \soilInit\}$,
+we numerically solve the ODE at a daily time step
+via the basic Euler scheme as implemented in the R \verb+BayesianTools+ package \citep{vsem}. 
 
 
-
-
-
- 
 \bibliography{./../shared/surrogates} 
 % \bibliographystyle{ieeetr}
 

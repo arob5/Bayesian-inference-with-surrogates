@@ -467,8 +467,6 @@ class GPJaxSurrogate(Surrogate):
         - `jitter` is a value added to the diagonal of any predictive covariance. Note that 
         the gpjax jitter is added regardless; this provides an opportunity to increase the 
         jitter if necessary.
-        - At present, the conditioning functionality is only implemented for single output
-          GPs. The other methods work for both single and multioutput models. 
     """
     def __init__(self, 
                  gp: ConjugatePosterior, 
