@@ -4,6 +4,9 @@
 \usepackage{dsfont}
 
 
+% Emphasize works inline (e.g., for defining terms, etc.)
+\newcommand{\inlinedef}[1]{\textbf{#1}}
+
 % --------------------------------------------------------------------------------------------------
 % Bayesian inverse problem.
 % --------------------------------------------------------------------------------------------------
@@ -125,7 +128,7 @@
 \newcommand{\sampleIndex}{k} % Generic index for samples. 
 \newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
 \newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
-\newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
+\newcommand{\indexMCMC}[2][\sampleIndex]{\indexSample[{#1}]{#2}}
 \newcommand{\NMCMC}{\NSample} % Number MCMC samples
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 
@@ -162,7 +165,7 @@
 \newcommand{\indexState}[2][\stateIndex]{{#2}^{({#1})}}
 \newcommand{\solutionOp}{\mathcal{S}}
 \newcommand{\obsOp}{\mathcal{H}}
-\newcommand{\timeIndex}{\mcmcIndex}
+\newcommand{\timeIndex}{\sampleIndex}
 \newcommand{\indexTime}[2][\timeIndex]{{#2}_{#1}}
 \newcommand{\NTimeStep}{\NSample}
 \newcommand{\forcing}{w}

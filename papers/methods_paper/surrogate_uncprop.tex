@@ -112,7 +112,8 @@ decision making. While Bayesian methods are particularly well-suited to this tas
 standard Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) 
 are hindered by the computational cost of many simulation models. A popular solution 
 is to use a small set of expensive simulations to train a statistical approximation 
-of the simulator. This surrogate (i.e., emulator) is then used as a drop-in replacement 
+of the simulator \citep{gramacy2020surrogates}. 
+This surrogate (i.e., emulator) is then used as a drop-in replacement 
 for the true computer model, enabling the application of algorithms like MCMC. 
 This modular surrogate-based Bayesian workflow has seen widespread use across
 a variety of applications \citep{FerEmulation,FadikarAgentBased,idealizedGCM,
@@ -121,7 +122,7 @@ trainDynamics,FATES_CES,CLMBayesianCalibration}.
 Despite significant advances in surrogate modeling, fitting a 
 highly accurate emulator under a limited computational budget is typically impossible,
 invariably implying the presence of errors in the surrogate-based posterior approximation.
-Ignoring these errors can lead to overconfident results 
+Ignoring these errors can lead to biased results 
 with miscalibrated uncertainties \citep{BilionisBayesSurrogates,BurknerSurrogate}.
 It is thus crucial to acknowledge and propagate this additional source of uncertainty in 
 surrogate-based Bayesian workflows. 
@@ -132,7 +133,10 @@ predictive uncertainty that be can utilized to this end.
 While in principle surrogate and calibration parameters can be learned 
 jointly (e.g., \citet{KOH}), in practice it is more common to conduct inference 
 for these quantities in two distinct stages \citep{modularization,PlummerCut}.
-Such decoupling has several practical benefits, but leaves open the 
+Such decoupling has several benefits, avoiding computation for the larger joint
+model and preventing a misspecified calibration likelihood from affecting
+inference for the surrogate parameters \citep{modularization}.
+ However, it leaves open the 
 question as to the ``correct'' approach for propagating surrogate uncertainty 
 within the posterior approximation in the second stage.
 A variety of uncertainty-aware posterior 
@@ -546,7 +550,7 @@ the EP due to the nonlinearity of the normalization operation. The EUP can thus
 be derived from the EP by invoking two approximations: 
 \emph{(i)} treating $\postEm(\Par)$ and $\normCstEm^{-1}$ as independent; and 
 \emph{(ii)} assuming $\emE[\normCstEm^{-1}] \approx \emE[\normCstEm]^{-1}$.
-The below result quantifies the effect of these two approximations.
+The following result quantifies the effect of these two approximations.
 
 \begin{prop} \label{prop:ep-eup-pw-err}
 The pointwise difference between the EP and EUP is given by
@@ -569,8 +573,8 @@ $\normCstEm$. The influence of a parameter value will typically increase when
 $\postEm(\Par)$ is large on average, highly variable, and is positively correlated with other 
 $\postEm(\Par^\prime)$. The latter property may be satisfied, for example, when using 
 a GP emulator with a long lengthscale. Based on this logic, we expect the EUP to inflate 
-influential regions and depress non-influential regions, relative to the EP. As we will see 
-in experiments, this can manifest as the EUP being highly peaked in regions with 
+influential regions and depress non-influential regions, relative to the EP. As demonstrated in
+experiments (\Cref{sec:vsem}), this can manifest as the EUP being highly peaked in regions with 
 significant surrogate uncertainty. The pointwise error in 
 \Cref{prop:ep-eup-pw-err} can be integrated to obtain the following $L_1$ bound 
 between $\postApproxEP$ and $\postApproxEUPNorm$.
@@ -652,7 +656,7 @@ This setup has been considered in several applications
 ActiveLearningMCMC,FerEmulation,StuartTeck1,StuartTeck2,random_fwd_models,
 GP_PDE_priors,OakleyllikEm,JosephMinEnergy,AlawiehIterativeGP,gpEmMCMC}.
 
-Under these assumptions, the pushforward predictive distribution for $\postEm(\Par)$ is log-normal
+Under these assumptions, the pushforward predictive distribution for $\postEm(\Par)$ is log-normal,
 $\postEm(\Par) \sim \LN(\gpMean(\Par), \emVar(\Par))$, implying
 \begin{equation}
 \postApproxEUPNorm(\Par) 
@@ -772,7 +776,7 @@ sampled values at these points. This approach has the downside of
 requiring the difficult choice of an appropriate conditioning set.
 
 \subsection{Exact Metropolis-within-Gibbs} \label{sec:mwg}
-Given the downsides of the MCwM approach, a natural alternative is to seek an MCMC
+Given the downsides of the MwMC approach, a natural alternative is to seek an MCMC
 algorithm that targets the EP asymptotically. This offers the potential for computational 
 savings---running one chain instead of a large ensemble---and avoids the need
 to sample trajectories. We first introduce an exact, but impractical, Metropolis-within-Gibbs (MwG) 
@@ -1094,8 +1098,11 @@ The model, which is an ODE of similar form to that in \Cref{ode_ivp}, is describ
 \Cref{app:vsem}.
 
 \paragraph{Statistical Model.}
-We consider estimating the parameters $\Par \Def (\alphaV, \vegInit)$ given noisy monthly averages of LAI over a 
-one year period. We assume an additive Gaussian noise model
+We consider the task of estimating the parameters $\Par \Def (\alphaV, \vegInit)$; $\vegInit$ is the initial
+condition for the quantity of carbon in above-ground vegetation pool, while $\alphaV$ controls the fraction
+of carbon allocated to this pool at each time step. We assume that the observations $\obs$ consist of
+noisy monthly averages of leaf area index (LAI), a quantity proportional to the amount of carbon in 
+above-ground vegetation. We assume an additive Gaussian noise model
 \begin{align}
 &\obs = \fwd(\Par) + \noise,
 &&\noise \sim \Gaussian(0, \sigma^2 I)
@@ -1315,11 +1322,11 @@ can always be improved by improving the calibration of the underlying surrogate.
 GPs with realistic degrees of bias.
 
 \paragraph{MCMC Evaluation.} \Cref{fig:pde_wasserstein} summarizes the distance between various sample-based
-approximations to the MCwM EP baseline. We use entropic-regularized 2-Wasserstein distance,
+approximations to the MwMC EP baseline. We use entropic-regularized 2-Wasserstein distance,
 computed using the Sinkhorn algorithm in \verb+ott-jax+ \citep{ottjax}. Each distribution is represented by 1000 sub-samples
 from an MCMC algorithm. A whitening transformation is applied to the samples using the empirical mean and covariance of 
-the MCwM so that the distances are computed in the baseline MCwM geometry. The Sinkhorn regularization parameter is 
-selected using the \verb+ott-jax+ default computed with respect the MCwM points, and the same value is used for all 
+the MwMC so that the distances are computed in the baseline MwMC geometry. The Sinkhorn regularization parameter is 
+selected using the \verb+ott-jax+ default computed with respect the MwMC points, and the same value is used for all 
 Wasserstein computations for a fixed design size. The results show that both RKpCN with $\rho = 0.99$ and the EUP 
 provide the best EP approximations, with the median EUP replicate performing slightly better. 
 
@@ -1491,7 +1498,7 @@ The below algorithm provides a practical implementation of \Cref{alg:rk-pcn-fini
 of finite dimensional projections of the surrogate trajectories. This relies on the fact that $\postDens(\Par; \targetTraj)$
 is a function of $\targetTraj$ only through $\targetTraj(\Par)$. The algorithm requires one just-in-time GP sample 
 each iteration. However, additional conditioning points are not accumulated across iterations, avoiding the numerical
-issues associated with repeated just-in-time sampling required by MCwM methods (\Cref{alg:ep}) or the tempered 
+issues associated with repeated just-in-time sampling required by MwMC methods (\Cref{alg:ep}) or the tempered 
 transitions strategy of \citet{PlummerCut}.
 
 \begin{algorithm}[H]
