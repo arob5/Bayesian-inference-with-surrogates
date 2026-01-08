@@ -368,7 +368,7 @@ then the optimization problem in \Cref{eq:variational-opt} is solved uniquely by
 \begin{equation}
 \qDensOpt(\Par) = 
 \emE \left[\postNormEm(\Par) \right]
-= \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj).
+= \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
 \label{eq:ep-approx}
 \end{equation}
 \end{prop}
@@ -383,7 +383,7 @@ denoted by $\postApproxEP \Def \qDensOpt$.
 
 \subsection{Hierarchical Formulation}
 The EP arises as the marginal of the 
-joint distribution $\emDist(d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par$, which 
+joint distribution $\emDist(\d\targetTraj) \postDensNorm(\Par; \targetTraj) d\Par$, which 
 can be understood via the hierarchical model 
 \begin{align}
 &\targetTraj  \sim \emDist, 
@@ -792,12 +792,12 @@ algorithm that targets the EP. We then consider several approximations that yiel
 samplers.
 
 We aim to target the joint distribution 
-$\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits $\postApproxEP$ 
+$\emDist(\d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj) d\Par$, which admits $\postApproxEP$ 
 as a marginal. We consider MwG schemes that alternate between $\Par$ and $\targetTraj$ updates, which 
 must leave their respective conditional distributions invariant. The $\Par$ update must leave 
 $\postDens(\Par; \targetTraj) d\Par$ invariant, which is accomplished with a standard Metropolis-Hastings (MH)
 step. The $\targetTraj$ update must leave 
- $\emDist(d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
+ $\emDist(\d\targetTraj) \postDens(\Par; \targetTraj)/\normCst(\targetTraj)$ invariant, requiring more 
  care due to the fact that $\targetTraj$ may be infinite-dimensional.
  Proceeding in the spirit of function space MCMC methods \citep{functionSpaceMCMC}, we consider an MH step with 
 a $\emDist$-reversible proposal distribution $\propDistTarget(\targetTraj, \cdot)$, resulting in 
@@ -902,8 +902,8 @@ for background on pseudo-marginal MCMC.
 Both \citep{garegnani2021NoisyMCMC} and \citet{BurknerSurrogate} propose MwMC schemes
 for EP-based inference. They appear to implicitly assume the use of finite-dimensional emulators,
 as difficulties related to sampling trajectories are not addressed.
-\citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstep{\targetTraj}_{\Par}$ and 
-$\nextstep{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
+\citet{FerEmulation} utilize a noisy MH algorithm in which $\nextstate{\targetTraj}_{\Par}$ and 
+$\nextstate{\targetTraj}_{\tilde{\Par}}$ are independently sampled at each step.
 
 There has been interest in the modular Bayes community in designing approximate MCMC 
 schemes as an alternative to MwMC for cut posterior inference. \citet{PlummerCut} describes 

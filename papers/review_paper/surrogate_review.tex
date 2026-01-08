@@ -7,6 +7,7 @@
 \usepackage[pdftex]{graphicx}
 \usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
 \usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,url,fancyhdr}
+\usepackage[affil-it]{authblk}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{natbib}
@@ -92,7 +93,14 @@
 
 % Title and author
 \title{Probabilistic Surrogates for Bayesian Inverse Problems: Posterior Approximation and Active Learning}
-\author{Andrew G. Roberts, Michael Dietze, Jonathan Huggins}
+\author[1]{Andrew Gerard Roberts\thanks{Emails: \texttt{arober@bu.edu}, \texttt{dietze@bu.edu}, \texttt{huggins@bu.edu}}}
+\author[2]{Michael Dietze}
+\author[1,3]{Jonathan H. Huggins}
+
+\affil[1]{Faculty of Computing and Data Sciences, Boston University}
+\affil[2]{Department of Earth and Environment, Boston University}
+\affil[3]{Department of Mathematics and Statistics, Boston University}
+\date{}
 
 \begin{document}
 
@@ -398,7 +406,7 @@ response surface modeling for computer experiments
 black-box optimization \citep{reviewBayesOpt}, reliability 
 analysis \citep{contourEstimation,cole2021entropybased}, and parameter 
 calibration \citep{KOH,computerModelCalibrationReview}. For in-depth treatments, we refer to
-\citet{gramacy2020surrogates,gpML}.
+\citet{gramacy2020surrogates,gpML,StuartTeck2}.
 
 A typical GP-based workflow consists of specifying a prior $\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ 
 over the target function $\target$, defined by a prior mean function $\emMean[0](\cdot)$ and 
@@ -675,6 +683,160 @@ of log-posterior emulation is that the regularizing effect of the prior cannot b
 surrogate predictions in the tails. The importance of the surrogate tail behavior is further discussed in 
 \todo{add cross-ref}.
 
+% Surrogate-Based Posterior Approximation
+\section{Surrogate-Based Posterior Approximation}
+The primary goal of Bayesian inference is to characterize the posterior distribution $\postDensNorm$,
+which is then used for downstream analysis and decision making. Therefore, a central question in surrogate-based
+inference is how to utilize the emulator in approximating $\postDensNorm$ \citep{StuartTeck1,SinsbeckNowak,VehtariParallelGP}.
+Error in the emulator approximation will induce error in the posterior approximation, yielding 
+biased posterior estimates. In the ideal setting, this bias can be eliminated by iteratively refining the 
+surrogate \todo{cross-ref}, but computational constraints often place practical limits on such procedures.
+It is thus crucial to acknowledge the surrogate uncertainty within the posterior approximation
+in order to properly calibrate posterior uncertainty estimates
+\citep{BilionisBayesSurrogates,BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. 
+However, there is no single objectively correct method for propagating the uncertainty captured by the surrogate predictive 
+distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
+own assumptions and practical limitations. It is important for practitioners to understand these 
+considerations in order to determine the best approach for a particular application. In this section, we survey 
+the various posterior approximations that have been proposed, highlighting overarching themes and 
+conceptual considerations. See \todo{cross-ref} for recommendations in choosing a particular method.
+
+\begin{figure}
+     \centering
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{lpost_dist_fwdem_trim.png}
+         \caption{\texorpdfstring{$\log\left\{\priorDens(\Par) \lik(\Par; \targetEm)\right\}$}{Log Post. Approx., Forward Model Em.}}
+         \label{fig:lpost_dist_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
+         \centering
+         \includegraphics[width=\textwidth]{post_norm_approx_fwdem.png}
+         \caption{$\postDensNorm$ approx}
+         \label{fig:post_norm_approx_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [llik]
+         \centering
+         \includegraphics[width=\textwidth]{lpost_dist_llikem_trim.png}
+         \caption{\texorpdfstring{$\log\left\{\priorDens(\Par)\right\} + \targetEm(\Par)$}{Log Post. Approx., Log-Lik Em.}}
+         \label{fig:lpost_dist_llikem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [llik] 
+         \centering
+         \includegraphics[width=\textwidth]{post_norm_approx_llikem.png}
+         \caption{$\postDensNorm$ approx}
+         \label{fig:post_norm_approx_llikem}
+     \end{subfigure}
+        \caption{A continuation of the example in \Cref{fig:em_dist_1d}. The top and bottom rows correspond
+        to the forward model and log-likelihood emulation settings, respectively. The first column summarizes
+        the distributions of the log-posterior approximations induced by the underlying emulators, with 
+        the predictive mean in blue and the shaded region containing 90\% of the mass. The second column 
+        plots compares various (normalized) posterior approximations derived from the log-posterior 
+        emulator. Note that even though  the emulators interpolate the design points, the posterior
+        approximations do not owing to the normalization.}
+        \label{fig:post_norm_approx_1d}
+\end{figure}
+
+\subsection{Plug-In Mean}
+Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
+ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
+of the random surrogate model. Plugging the predictive mean $\emMean$
+in place of the true target map induces the deterministic posterior approximation
+\begin{equation}
+\postApproxNormMean(\Par) \Def \postDens(\Par; \emMean) / \normCst(\emMean),
+\label{eq:mean-approx}
+\end{equation}
+which we refer to as the \inlinedef{plug-in mean} approximation.
+The mean approximation has been applied in various contexts
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
+and analyzed theoretically 
+\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
+If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
+but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
+both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}.
+
+\subsection{Estimators for the Random Posterior}
+We now consider uncertainty-aware posterior approximations that incorporate the surrogate uncertainty.
+
+
+
+
+Consider a random surrogate $\postEm[\Ndesign]$ for the unnormalized posterior density, 
+induced by some underlying emulator (e.g., a forward model or log-density emulator).
+We will use the notation $\E_{\Ndesign}$ to indicate expectations with respect to the 
+distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
+By normalizing $\postEm[\Ndesign]$, we obtain a random density
+\footnote{More generally, this is a random measure. We work with densities to avoid measure-theoretic technicalities.}
+\begin{align}
+&\postNormEm[\Ndesign](\Par) 
+\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \postEm[\Ndesign](\Par),
+&&\normCstEm[\Ndesign]\Def \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par,
+\label{eq:sample-approx}
+\end{align}
+which summarizes the uncertainty about the true posterior. 
+While $\postEm[\Ndesign](\Par)$ depends 
+only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
+depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
+the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
+$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
+\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar}.
+To construct a deterministic approximation to $\postDens$, we can consider the expectation
+\begin{equation}
+\postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
+\end{equation}
+which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
+In the forward model emulation setting, \Cref{eq:ep-approx} can also be motivated as the $\Par$-marginal 
+under the joint posterior $p(\Par, \fwdEm[\Ndesign] \given \obs)$, under the assumption that $\fwdEm[\Ndesign]$
+and $\obs$ are independent.
+
+Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
+respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
+Assuming the expectation exists, \Cref{alg:ep} could in principle 
+be used to draw samples from $\llikEmSampDensNorm$. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\begin{table}[h]
+\centering
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{3.8cm} >{\centering\arraybackslash}p{4.2cm} >{\centering\arraybackslash}p{4.2cm}}
+\toprule
+& \textbf{Plug-In Mean} & \textbf{EUP} & \textbf{EP} \\
+\midrule
+\textbf{Ratio Estimator} & 
+$\displaystyle \frac{\postDens(\Par; \emE[\targetEm])}{\normCst(\emE[\targetEm])}$ &
+$\displaystyle \frac{\emE[\postDens(\Par; \targetEm)]}{\emE[\normCst(\targetEm)]}$ &
+$\displaystyle \emE\left[\frac{\postDens(\Par; \targetEm)}{\normCst(\targetEm)}\right]$ \\ [4ex]
+
+\textbf{Mixture Dist.} & 
+$\int \postDensNorm(\Par; \targetTraj) \delta_{\emMean}(\d\targetTraj)$ & 
+$\int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj \given \obs)$ & 
+$ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
+\bottomrule
+\end{tabular}
+\caption{Different perspectives on normalized density approximations defined by various forms of averaging.
+	     The top row highlights interpretations as ratio estimators; only the EP considers the 
+	     coupling between the numerator and denominator. The second row shows that each
+	     approximation can be viewed as a weighted mixture over surrogate-induced posterior 
+	     trajectories.}
+\label{tab:post-approx-comparison}
+\end{table}
+
+
 
 %%%
 \begin{comment}
@@ -719,117 +881,14 @@ Common approaches construct finite-rank approximations of the form
 in \Cref{eq:finite-basis}.
 
 
-We focus on surrogates that take the form of a  
-regression or interpolation model approximating the map $\Par \mapsto \fwd(\Par)$ or $\Par \mapsto \lpost(\Par)$.
 \footnote{This is in contrast to other surrogate modeling strategies (e.g., reduced-order modeling)
 that exploit the specific structure of the forward model; see \citet{multifidelityReview} for a detailed review.}
-Recall from the introduction that we refer to methods that explicitly model the former map as 
-\textit{forward model emulation}, and those that 
-model the latter as \textit{log-density emulation}. We also include methods that emulate the log-likelihood
-map $\Par \mapsto \llik(\Par)$ in this latter category (see \Cref{sec:llik_vs_lpost}).
-Throughout this review, we will typically assume the functions
-$\fwd(\Par)$, $\llik(\Par)$, and $\lpost(\Par)$ are computationally expensive black-boxes. In applications,
-the forward model often takes the form of a costly computer simulation, so we will occasionally refer to 
-queries to these functions as simulator evaluations.
-The following section provides a concrete example of such a simulation
-model stemming from the numerical solution of a system of differential equations. 
 
  \subsection{Gaussian Processes} \label{gp_review}
  Since Gaussian processes will serve as our primary example of a probabilistic surrogate,
  we provide a brief overview here; for in-depth treatments, we refer to 
  \cite{gramacy2020surrogates, StuartTeck2, gpML}.
  
- \subsubsection{Single Output Gaussian Processes}
- A Gaussian process (GP) can be thought of as a
-random function $\funcPrior: \parSpace \to \R$, defined by the property that 
-the random vector $[\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top$ has
-a joint Gaussian distribution for any finite set of inputs $\parMat \Def \{\Par_1, \dots, \Par_\Ndesign\} \subset \parSpace$. 
-A GP is defined by its mean function $\gpMeanPrior: \parSpace \to \R$ and positive-definite kernel
-(i.e., covariance function) $\gpKerPrior: \parSpace \times \parSpace \to \R$ and is thus denoted by 
-$\funcPrior \sim \GP(\gpMeanPrior, \gpKerPrior)$. Throughout this paper, we will vectorize notation as follows; letting 
-$\tilde{\parMat} \Def [\tilde{\Par}_1, \dots, \tilde{\Par}_M]  \subset \parSpace$ be a second set of inputs, we define 
-$\funcPrior(\parMat) \Def [\funcPrior(\Par_1), \dots, \funcPrior(\Par_\Ndesign)]^\top \in \R^{\Ndesign}$, 
-$\gpKerPrior(\parMat, \tilde{\parMat}) \Def \{\gpKerPrior(\Par_{\idxDesign}, \tilde{\Par}_m)\}_{\substack{1 \leq \idxDesign \leq \Ndesign \\ 1 \leq m \leq M}} \in \R^{\Ndesign \times M}$, 
-and $\gpKerPrior(\parMat) \Def \gpKerPrior(\parMat, \parMat) \in \R^{\Ndesign \times \Ndesign}$. 
-We similarly use this vectorized notation for other functions; e.g., $\gpMeanPrior(\parMat)$, $\fwd(\parMat)$, and $\llik(\parMat)$.
-Given this notation, 
-the defining property of the GP can be written as 
-\begin{align}
-\funcPrior(\parMat) &\sim \Gaussian(\gpMeanPrior(\parMat), \gpKerPrior(\parMat)).
-\end{align}
-For our purposes, the GP $\funcPrior$ will represent a prior distribution for a \textit{deterministic} function 
-$\func: \parSpace \to \R$, such that the randomness in $\funcPrior$ encodes our epistemic 
-uncertainty about $\func$ \citep{epistemicAleatoric}.
-The underlying ideas explored here can also be extended to the setting where evaluations of $\func$ 
-are corrupted by noise \citep{stochasticComputerModels,VehtariParallelGP,OakleyllikEm}. 
-If we observe noiseless function evaluations $\func(\designIn)$ at a set of inputs $\designIn$, then we can consider
-the conditional distribution $\funcPrior|[\funcPrior(\designIn)=\func(\designIn)]$. It is well-known
-\citep{gpML} that the conditional is also a GP
-\begin{align}
-\funcEm[\Ndesign] \Def \funcPrior|[\funcPrior(\designIn)=\func(\designIn)]\sim \GP(\gpMean[\Ndesign], \gpKer[\Ndesign]), \label{generic_gp_conditional}
-\end{align}
-with mean and kernel given by
-\begin{align}
-\gpMean[\Ndesign](\parMat) &= \gpMeanPrior(\parMat) + \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} [\func(\designIn) - \gpMeanPrior(\designIn)] \label{kriging_eqns} \\
-\gpKer[\Ndesign](\parMat) &= \gpKerPrior(\parMat) - \gpKerPrior(\parMat, \designIn) \gpKerPrior(\designIn)^{-1} \gpKerPrior(\designIn, \parMat). \nonumber
-\end{align}
-
-We will refer to observed input locations $\designIn$ as \textit{design points}, and the conditional
-distribution $\GP(\gpMean[\Ndesign], \gpKer[\Ndesign])$ as the \textit{predictive distribution}.
-The predictive mean can be seen to interpolate the design points (i.e., $\gpMean[\Ndesign](\designIn) = \func(\designIn[\Ndesign])$), with 
-the predictive variance vanishing at these inputs (i.e., $\gpKer[\Ndesign](\designIn) = 0$). 
-To break these interpolation properties,
-a constant can be added to the diagonal of the kernel matrix so that $(\gpKerPrior(\designIn) + \nuggetSD^2 I)^{-1}$ replaces 
-$\gpKerPrior(\designIn)^{-1}$ in \cref{kriging_eqns}. In the present context of deterministic forward models, 
-this interpolation property is typically desirable. Nevertheless, a small, positive fixed constant $\nuggetSD^2$ is still 
-typically included for numerical stability. 
-
-Appropriate choices for the prior mean $\gpMeanPrior$ and covariance $\gpKerPrior$ depend on the 
-particular application, with common choices for the mean including a constant or a linear model of the form 
-$\gpMeanPrior(\Par) = \beta^\top \phi(\Par)$, for some feature map $\phi$. A typical default choice of 
-covariance function is the exponentiated quadratic (also called squared exponential, Gaussian, or radial basis function)
-kernel,
-\begin{align}
-\gpKerPrior(\Par, \tilde{\Par}) &= 
-\margSD^2 \Exp{- \sum_{\idxParDim=1}^{\dimPar} \left(\frac{\Par_{\idxParDim} - \tilde{\Par}_{\idxParDim}}{\lengthscale_{\idxParDim}} \right)^2}, \label{Gaussian_kernel}
-\end{align}
-defined by the choice of positive hyperparameters $\margSD, \lengthscale_{1}, \dots, \lengthscale_{\dimPar}$. 
-This is an example of a stationary (i.e., shift-invariant) kernel since $\gpKerPrior(\Par, \tilde{\Par})$ only depends 
-on its arguments through their componentwise difference $\Par - \tilde{\Par}$. 
-A common approach to set the mean and kernel hyperparameters is the empirical Bayes method of fixing
-their values at their maximum (marginal) likelihood estimates, which conveniently retains the Gaussian
-predictive distribution in \cref{generic_gp_conditional} at the expense of failing to acknowledge uncertainty
-in the hyperparameters. The fully Bayesian alternative significantly increases computational cost, 
-and results in a non-Gaussian predictive distribution after marginalizing the hyperparameters.
-Unless otherwise indicated, we assume the mean and kernel hyperparameters are
-fixed, so that the GP predictive distribution remains Gaussian.
-
-\subsubsection{Multiple Output Gaussian Processes}
-We now consider the extension to multi-output functions $\funcPrior: \parSpace \to \R^{\dimObs}$. 
-There is a large literature on multi-output kernels \citep{multiOutputKernels}, but we focus here on the 
-simplest case in which each output is modeled separately as an independent GP. 
-In this setting, the notation $\gpKerPrior(\Par)$ is now interpreted as the $\dimObs \times \dimObs$ 
-diagonal matrix collecting the variance of each independent GP. Similarly, for a set of inputs 
-$\parMat \in \R^{M \times \dimPar}$, $\gpKerPrior(\parMat)$ is now the 
-$M\dimObs \times M\dimObs$ block diagonal matrix constructed from the covariances of 
-each independent GP.
- 
-This basic multi-output strategy becomes problematic when the output dimension $\dimObs$ 
-is large or the outputs are highly interdependent, rendering the independent GP approach infeasible or ill-advised.
-A popular alternative is to approximate the function output as a linear combination of a small number
-of basis vectors, with the coefficients modeled as independent GPs; that is, 
-\begin{align}
-\funcPrior(\Par) &= \sum_{\idxBasis=1}^{\dimBasis} \basisWeight_{\idxBasis}(\Par) \basisVec_{\idxBasis} + \noise_{\basisVec} \label{basis_func_model} \\
-\basisWeight_{\idxBasis} &\overset{\textrm{ind}}{\sim} \GP(\emMean[0]{(\idxBasis)}, \emKer[0]{(\idxBasis)}), \label{basis_func_GPs} \\
- \noise_{\basisVec} &\sim \Gaussian(0, \sigma^2_{\basisVec}), \label{basis_func_noise}
-\end{align}
-where the $\basisVec_{\idxBasis}$ are fixed basis vectors.
-These basis vectors are commonly constructed via a singular value decomposition, though other 
-bases are also possible \citep{HigdonBasis, emulate_functional_output, functionValuedModels, PODemulation}.
-Under this model, the univariate GPs $\basisWeight_{\idxBasis}$ are fit and conditioned independently, then 
-plugged back into \cref{basis_func_model} to construct the predictive distribution. The linear Gaussian 
-structure of \cref{basis_func_model} implies that this approach retains a Gaussian predictive distribution
-for $\funcEm[\Ndesign]$, conditional on the hyperparameters.
 
 % Initial Design and Surrogate Models
 \section{Initial Design and Surrogate Models} \label{sec:surrogate-models}
@@ -874,241 +933,11 @@ approximation of the posterior, which is then sampled from to produce an initial
 the initial design. While we do not focus on these methods further in this review, continued 
 methodological development investigating such workflows is a promising avenue for future research. 
 
-\subsection{Probabilistic Surrogates}
-While any regression model may be used as an emulator, those that produce only point 
-predictions do not provide a direct means of propagating surrogate uncertainty. We thus
-focus on probabilistic (i.e., random/stochastic) surrogates, which are emulators that 
-provide a probabilistic description of approximation uncertainty. 
-
-\subsubsection{Common Models}
-Though the notion of a probabilistic surrogate is quite broad, we highlight a few common
-model choices.
-
-\paragraph{Gaussian Processes.}
-Gaussian processes (GPs) have emerged as a canonical surrogate model, and provide the 
-basis for examples given throughout this review. GPs have been extensively applied in a
-wide variety of surrogate modeling tasks, including as emulators for solving Bayesian 
-inverse problems (e.g., \citet{GP_PDE_priors,VehtariParallelGP}). The Gaussian predictive distribution of a 
-GP facilitates many convenient closed-form computations. Extensions of the GP methodology
-can produce more flexible emulators with non-Gaussian predictive distributions. For example, fully Bayesian 
-GPs \citep{fullyBayesianGPs} and deep GPs \citep{deepGPVecchia,deepGPAL}
-typically yield predictions in the form of (infinite) mixtures of Gaussians.
-
-\paragraph{Polynomials.}
-Surrogates that consist of linear combinations of polynomial basis functions are 
-commonly used in the engineering and applied math communities. Polynomial 
-chaos expansions (PCEs; \citet[Chapter 9]{UQpredCompSci}) are a particular example whereby a polynomial 
-basis is used to approximate a random variable $\func(\Par)$ as a function of
-a random input $\Par \sim \priorDens$. In particular, the expansion is of the form
-\begin{equation}
-\funcEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
-\end{equation}
-where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
-to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
-approximate moments of $\func(\Par)$. More relevant to our context,
-the map $\funcEm[\dimBasis](\Par)$ can also be used as a surrogate for $\func(\Par)$.
-With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
-within our definition of probabilistic surrogates. We nonetheless highlight them here
-due to their popularity, the fact that they can be converted into random surrogates by 
-considering Bayesian treatments of the coefficients 
-\citep{BayesianPCE1,BayesianPCE2,BurknerSurrogate},
-and their use in conjunction with probabilistic surrogates (e.g., as the mean function
-of a GP; \citet{PCEGPWind,PCEGP2,SinsbeckNowak}). PCE surrogates have been
-employed to accelerate Bayesian inversion in various applications 
-\citep{dimRedPolyChaos,BurknerSurrogate,PCEBIP}.
-
-\paragraph{Neural Networks.}
-In regimes where the input dimension $\dimPar$ and computational 
-budget $\Ndesign$ are large, neural networks can be particularly well-suited to 
-act as surrogate models. Bayesian treatment of neural 
-network parameters provides probabilistic predictions, but in practice significant 
-approximations are required for inference \citep{BayesOptNN}. One popular simplification
-treats only the final neural network layer in a Bayesian fashion 
-\citep{BayesLastLayer,BayesOptBayesLastLayer}. These difficulties have motivated
-interest in surrogate models with predictive distributions 
-not necessarily rooted in the Bayesian philosophy. This includes deep ensembles, 
-which summarize uncertainty via an ensemble of neural network 
-models \citep{deepEnsembles,Lueckmann2018LikelihoodfreeIW},
-and epistemic neural networks \citep{epistemicNN,BayesOptEpistemicNN}. 
-
-\subsubsection{Finite-Dimensional vs. Infinite-Dimensional Models}
-Much of the literature on surrogate-based Bayesian inference tends to 
-be geared towards a particular emulator type (e.g., GPs or PCEs). Therefore, posterior 
-approximation or active learning algorithms proposed in the context of one 
-model may not easily generalize to another. A particularly important distinction
-in this context is whether or not an algorithm requires sampling entire trajectories 
-from the surrogate. To formalize this notion, let $\funcEm[\Ndesign]$ denote a generic 
-probabilistic surrogate model for some function $\func$.
-
-\paragraph{Finite-Dimensional Model.}
-We refer to $\funcEm[\Ndesign]$ as \textit{finite-dimensional} if the randomness in 
-$\funcEm[\Ndesign]$ stems from 
-a finite-dimensional parameter $\theta_{\Ndesign}$; i.e., 
-$\funcEm[\Ndesign](\cdot) = g(\cdot; \theta_{\Ndesign})$ for some 
-random vector $\theta_{\Ndesign}$ and non-random function $g$.
-In this case, it is feasible to sample trajectories (sample paths) of 
-$\funcEm[\Ndesign]$ via 
-\begin{align}
-&\func_{\mathrm{samp}}(\cdot) \Def g(\cdot, \theta_{\mathrm{samp}}),
-&&\theta_{\mathrm{samp}} \sim \mathrm{law}(\theta_{\Ndesign}).
-\end{align}
-The sampled function $\func_{\mathrm{samp}}(\cdot)$ can now 
-be evaluated at any input value. A standard example is a linear 
-regression model of the form
-\begin{align}
-\funcEm[\Ndesign](\cdot) &= \sum_{\idxBasis=1}^{\dimBasis} (\theta_{\Ndesign})_{\idxBasis} \basisVec_{\idxBasis}(\cdot)
-\label{eq:finite-basis}
-\end{align}
-for some fixed basis vectors $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$.
-Other finite-dimensional surrogates include neural networks and Bayesian additive 
-regression trees \citep{BARTBO,BARTReview}.
-
-\paragraph{Infinite-Dimensional Model.} For an infinite-dimensional model, no such 
-finite-dimensional parameter $\theta_{\Ndesign}$ exists. Typical examples include 
-GPs and deep GPs. In this setting, a generic view of a 
-surrogate model is as a map from finite sets of inputs $\parMat$ to a predictive distribution 
-over the associated responses $\func(\parMat)$. This viewpoint has formed the basis 
-for the implementation of surrogate models in software packages such as 
-\verb+BoTorch+ \citep{botorch}. It is therefore feasible to sample the finite-dimensional distributions
-$\funcEm[\Ndesign](\parMat)$ for finite input sets $\parMat$, but sampling trajectories
-$\func_{\mathrm{samp}}(\cdot) \sim \mathrm{law}(\funcEm[\Ndesign])$ would require 
-infinite computing resources. Practical techniques to sample approximate trajectories have been
-extensively studied when $\funcEm[\Ndesign]$ is a GP, including work in 
-Bayesian inverse problems \citep{dimRedPolyChaos,functionSpaceMCMC} 
-and Bayesian optimization \citep{pathwiseConditioning,samplingGPPosts}.
-Common approaches construct finite-rank approximations of the form  
-in \Cref{eq:finite-basis}.
-
-\vspace{0.5cm}
-
-The distinction between finite and infinite-dimensional surrogates becomes 
-relevant in understanding the generality of various uncertainty propagation 
-methods.
-Certain methods assume the ability to sample trajectories from the emulator, which poses 
-no problems for finite-dimensional models (e.g., PCEs and neural networks) but
-leads to additional challenges for GPs. For example,
-\citet{BurknerSurrogate,garegnani2021NoisyMCMC} suggest algorithms
-that were deemed impractical in \citet{VehtariParallelGP,StuartTeck1}, which can
-be explained by the fact that the latter authors are working with GPs, while the former
-implicitly assume finite-dimensional emulators.
-
  
 \section{Posterior Approximation} \label{sec:post-approx}
-The primary goal of Bayesian inference is to characterize the posterior distribution $\postDensNorm$,
-which is then used for downstream analysis and decision making. Therefore, a central question in surrogate-based
-inference is how to utilize the emulator in approximating $\postDensNorm$ \citep{StuartTeck1,SinsbeckNowak,VehtariParallelGP}.
-Error in the emulator approximation will induce error in the posterior approximation, yielding 
-biased posterior estimates. In the ideal setting, this bias can be eliminated by iteratively refining the 
-surrogate (\Cref{sec:seq-design}), but computational constraints often place practical limits on such procedures.
-It is thus crucial to acknowledge the surrogate uncertainty within the posterior approximation
-in order to properly calibrate posterior uncertainty estimates
-\citep{BilionisBayesSurrogates,BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. However, there is no single 
-objectively correct method for propagating the uncertainty captured by the surrogate predictive 
-distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
-own assumptions and practical limitations. It is important for practitioners to understand these 
-considerations in order to determine the best approach for a particular application. In this section, we survey 
-the various posterior approximations that have been proposed. See \Cref{sec:recs} for recommendations
-in choosing a particular method.
 
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{toy_1d/lpost_dist_fwdem_trim.png}}
-         \caption{$\lpost(\cdot; \fwdEm[\Ndesign])$}
-         \label{fig:lpost_dist_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{{toy_1d/post_norm_approx_fwdem.png}}
-         \caption{$\postDensNorm$ approx}
-         \label{fig:post_norm_approx_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [llik]
-         \centering
-         \includegraphics[width=\textwidth]{{toy_1d/lpost_dist_llikem_trim.png}}
-         \caption{$\lpost(\cdot; \llikEm[\Ndesign])$}
-         \label{fig:lpost_dist_llikem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [llik] 
-         \centering
-         \includegraphics[width=\textwidth]{{toy_1d/post_norm_approx_llikem.png}}
-         \caption{$\postDensNorm$ approx}
-         \label{fig:post_norm_approx_llikem}
-     \end{subfigure}
-        \caption{A continuation of the example in \Cref{fig:em_dist_1d}. The top and bottom rows correspond
-        to the forward model and log-likelihood emulation settings, respectively. The first column summarizes
-        the distributions of the log-posterior approximations induced by the underlying emulators, with 
-        the predictive mean in blue and the shaded region containing 90\% of the mass. The second column 
-        plots compares various (normalized) posterior approximations derived from the log-posterior 
-        emulator. Note that even though  the emulators interpolate the design points, the posterior
-        approximations do not owing to the normalization.}
-        \label{fig:post_norm_approx_1d}
-\end{figure}
 
-\subsection{Plug-In Mean}
-Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
-ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
-of the random surrogate model. Plugging the predictive mean in place of the quantity it is emulating induces 
-a deterministic approximation $\postApproxNormMean[\Ndesign]$ of the posterior distribution 
-$\postDensNorm$, which we refer to as the \textit{plug-in mean}, or simply \textit{mean}, approximation. 
-In the forward model and log-likelihood emulation settings the mean approximations take the form
-\begin{align}
-\postApproxNormMean[\Ndesign](\Par; \fwdEm[\Ndesign])
-&\Def \frac{1}{\normCstEm(\emMean[\Ndesign]{\fwd})} \postDens(\Par; \emMean[\Ndesign]{\fwd}) \label{eq:mean-approx-fwd} \\
-\postApproxNormMean[\Ndesign](\Par; \llikEm[\Ndesign]) &\Def \frac{1}{\normCstEm(\emMean[\Ndesign]{\llik})} \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)}, \label{eq:mean-approx-llik}
-\end{align}
-with normalizing constants
-\begin{align}
-&\normCstEm(\emMean[\Ndesign]{\fwd}) \Def \int_{\parSpace} \postDens(\Par; \emMean[\Ndesign]{\fwd}) d\Par,
-&&\normCstEm(\emMean[\Ndesign]{\llik}) \Def \int_{\parSpace} \priorDens(\Par) \Exp{\emMean[\Ndesign]{\llik}(\Par)} d\Par.
-\end{align}
-Existence of these integrals is discussed in \Cref{sec:existence}.
-The mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
-and analyzed theoretically 
-\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
-If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
-but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
-both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}. 
 
-\subsection{Expected Posterior}
-We now consider posterior approximations that incorporate the surrogate uncertainty.
-Consider a random surrogate $\postEm[\Ndesign]$ for the unnormalized posterior density, 
-induced by some underlying emulator (e.g., a forward model or log-density emulator).
-We will use the notation $\E_{\Ndesign}$ to indicate expectations with respect to the 
-distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
-By normalizing $\postEm[\Ndesign]$, we obtain a random density
-\footnote{More generally, this is a random measure. We work with densities to avoid measure-theoretic technicalities.}
-\begin{align}
-&\postNormEm[\Ndesign](\Par) 
-\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \postEm[\Ndesign](\Par),
-&&\normCstEm[\Ndesign]\Def \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par,
-\label{eq:sample-approx}
-\end{align}
-which summarizes the uncertainty about the true posterior. 
-While $\postEm[\Ndesign](\Par)$ depends 
-only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
-depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
-the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
-$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
-\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar}.
-To construct a deterministic approximation to $\postDens$, we can consider the expectation
-\begin{equation}
-\postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
-\end{equation}
-which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
-In the forward model emulation setting, \Cref{eq:ep-approx} can also be motivated as the $\Par$-marginal 
-under the joint posterior $p(\Par, \fwdEm[\Ndesign] \given \obs)$, under the assumption that $\fwdEm[\Ndesign]$
-and $\obs$ are independent.
-
-Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
-respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
-Assuming the expectation exists, \Cref{alg:ep} could in principle 
-be used to draw samples from $\llikEmSampDensNorm$. 
 
 \begin{algorithm}
     \caption{Direct sampling from $\postApproxEP$}
@@ -1160,21 +989,6 @@ of $\postEm[\Ndesign]$. In the GP setting, approaches such as the Karhunen-Loeve
 and random Fourier features could be leveraged for this purpose \citep{dimRedPolyChaos,samplingGPPosts}. 
 But as with the \citet{trainDynamics} method, this approach is only an approximate implementation of \Cref{alg:ep}.
 
-\begin{table}[h]
-\centering
-\begin{tabular}{>{\centering\arraybackslash}p{4cm} >{\centering\arraybackslash}p{5cm} >{\centering\arraybackslash}p{5cm}}
-\toprule
-\textbf{Plug-In Mean} & \textbf{Expected Likelihood} & \textbf{Expected Posterior} \\
-\midrule
-$\displaystyle \frac{\postDens(\Par; \E_{\Ndesign}[\fwdEm[\Ndesign]])}{\normCst(\E_{\Ndesign}[\fwdEm[\Ndesign]])}$ & 
-$\displaystyle \frac{\E_{\Ndesign}\left[\postDens(\Par; \fwdEm[\Ndesign])\right]}{\E_{\Ndesign}\left[\normCstEm[\Ndesign]\right]}$ & 
-$\displaystyle \E_{\Ndesign}\left[\frac{\postDens(\Par; \fwdEm[\Ndesign])}{\normCstEm[\Ndesign]}\right]$ \\
-\bottomrule
-\end{tabular}
-\caption{Comparison of the normalized density approximations implied by the plug-in mean, expected likelihood,
-and expected posterior approximations in the forward model emulation setting.}
-\label{tab:post-approx-comparison}
-\end{table}
 
 \subsection{Expected Likelihood}
 Given the challenge of implementing \Cref{alg:ep} with an infinite-dimensional emulator, the majority of 
