@@ -14,6 +14,7 @@
 \usepackage{caption, subcaption}
 \usepackage{fancyvrb}
 \usepackage{float}
+\usepackage[most]{tcolorbox}
 \usepackage[hypertexnames=false]{hyperref}
 \usepackage{cleveref}
 
@@ -31,17 +32,23 @@
 \usepackage{multirow}
 
 % Color boxes.
-\usepackage[most]{tcolorbox}
+\tcbuselibrary{breakable} % ensure breakable capability is loaded
 
-\newtcolorbox{examplebox}[1][Gaussian Setting]{
-  colback=blue!5!white,     % background color
-  colframe=blue!75!black,   % frame color
-  fonttitle=\bfseries,      % bold title
-  title={#1}, % default title
-  boxrule=0.8pt,            % line thickness
-  arc=4pt,                  % rounded corners
-  left=6pt, right=6pt, top=6pt, bottom=6pt % padding
-}
+\newtcbtheorem[number within=section, crefname={example}{examples}, Crefname={Example}{Examples}]{examplebox}{Example}{
+    before skip=12pt plus 2pt minus 2pt,
+    after skip=12pt plus 2pt minus 2pt,
+    breakable,
+    enhanced,
+    colback=white,
+    colframe=gray!80!black,
+    colbacktitle=gray!20,
+    coltitle=black,
+    fonttitle=\bfseries,
+    fontupper=\normalfont,
+    sharp corners,
+    attach boxed title to top left={yshift=-2mm, xshift=2mm},
+    boxed title style={colframe=gray!80!black, sharp corners},
+}{ex}
 
 % Local custom commands. 
 \input{../shared/macros_general.tex}
@@ -93,6 +100,7 @@
 
 % Introduction 
 \section{Introduction}
+
 Within the Bayesian paradigm, there is need for posterior approximation algorithms tailored to settings 
 where evaluation of the (unnormalized) posterior density incurs significant computational expense. 
 This situation commonly arises in the physical, biological, and engineering sciences, 
@@ -238,7 +246,7 @@ which may involve running an expensive computer simulation (e.g., a numerical di
 inverse problems the posterior density $\postDens(\Par)$ is often a computationally expensive, and potentially black box 
 (i.e., difficult or impossible to differentiate), function. 
 
-\subsection{Motivating Example: Parameter Estimation for ODEs} \label{dynamical_models}
+\begin{examplebox}{Parameter Estimation for ODEs}{ex:ode}
 In modeling the Earth system, complex dynamical models are used to simulate trajectories
 of various physical processes, such as temperature trends and carbon fluxes
  \citep{ESM_modeling_2pt0,paramLSM,idealizedGCM,FATES_CES,CLMBayesianCalibration,FerEmulation}.
@@ -277,6 +285,7 @@ for some ``true'' parameter value $\ParTrue \in \parSpace$, we see that this pro
 \Cref{eq:inv_prob_Gaussian} with forward model $\fwd \Def \obsOp \circ \solutionOp$.
 In this case, the computational
 cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the numerical solver $\solutionOp(\Par)$.
+\end{examplebox}
 
 \section{Surrogate Models}
 Given the inference bottleneck imposed by a computationally expensive posterior density, many methods have emerged
@@ -311,7 +320,7 @@ target map at a set of \inlinedef{design points} $\design \Def \{\Par_{\designId
 Substituting the exact map with its emulator induces an approximation of the posterior density 
 $\postDensNorm(\Par; \targetEm) = \postDens(\Par; \targetEm) / \normCst(\targetEm)$. Provided that the 
 emulator predictions can be computed relatively cheaply, the approximation $\postDens(\Par; \targetEm)$
-can now be fed to standard inference algorithms (e.g., MCMC). 
+can now be fed to standard inference algorithms (e.g., MCMC).
 
 \begin{remark}
 Throughout this article, we focus on the case where the target $\target$ is a deterministic function.
@@ -476,7 +485,7 @@ characterized by the set of distributions $\emDist(\ParBatch)$ over finite-dimen
 subsets $\ParBatch$.
 
 % Surrogate targets
-\section{Choosing the Target Map}
+\section{Choosing the Target Map} \label{sec:target-map}
 Perhaps even more important than the choice of model class for the surrogate is the decision
 as to what should be emulated in the first place; in other words, the definition of the target map
 $\target$. While this question is highly problem-dependent, the structure of a Bayesian inference
@@ -563,35 +572,29 @@ Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
 Log-density emulation, described in \Cref{sec:log_density_emulation}, offers another avenue for 
 dimension reduction when the observation space is high-dimensional.
 
-\begin{examplebox}[Gaussian Forward Model Emulation Setting] 
-Consider the special case where both the likelihood and forward model emulator are Gaussian.
-In particular, this implies an induced unnormalized posterior density surrogate
+
+\begin{examplebox}{Forward Model Surrogate, Gaussian Setting}{ex:fwd-em}
+Consider the setting of a Bayesian inverse problem with an additive Gaussian noise model
+(\Cref{eq:inv_prob_Gaussian}). Assume an emulator $\targetEm$ has been 
+fit to approximate the true forward model $\fwd$. This induces an approximation of the 
+unnormalized posterior density 
 \begin{align}
-\postDens(\Par; \targetEm) &= \priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar) \label{eq:fwd-em-Gaussian-post} \\
-\targetEm(\Par) &\sim \Gaussian(\emMean(\Par), \emKer(\Par))
+\postDens(\Par; \targetEm) &= \priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar),
 \label{eq:fwd-em-Gaussian}
 \end{align}
-for each $\Par \in \parSpace$. We refer to \Cref{eq:fwd-em-Gaussian-post,eq:fwd-em-Gaussian} as the 
-\textit{Gaussian forward model emulation setting}.
-These Gaussian assumptions facilitate closed-form computation of the posterior surrogate mean and variance
+for each $\Par \in \parSpace$. In general, the distribution of $\postDens(\Par; \targetEm)$ depends on 
+the predictive distribution of $\targetEm$. The additional assumption 
+$\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$ facilitates closed-form computation
+of the first two moments,
 \begin{align*}
 \emE\left[\postDens(\Par; \targetEm) \right] 
-&= \priorDens(\Par) \Gaussian(\obs \given \emMean(\Par), \likPar + \emKer(\Par)) \\
-\Var_{\Ndesign}\left[\postDens(\Par; \targetEm) \right]
+&= \priorDens(\Par) \Gaussian(\obs \given \emMean(\Par), \likPar + \emVar(\Par)) \\
+\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
 &= \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\likPar + 
-\emKer(\Par)  \right)}{\det(2\pi \likPar)^{1/2}} - \\
-&\qquad \qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\left[\likPar + \emKer(\Par)\right]  \right)}{\det(2\pi [\likPar + \emKer[\Ndesign]{\fwd}(\Par)])^{1/2}}\bigg]
+\emVar(\Par)  \right)}{\det(2\pi \likPar)^{1/2}} - \\
+&\qquad \qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\left[\likPar + \emVar(\Par)\right]  \right)}{\det(2\pi [\likPar + \emVar(\Par)])^{1/2}}\bigg].
 \end{align*}
-for each $\Par \in \parSpace$.
-The canonical example of a Gaussian surrogate is a GP, which is defined by specifying a prior distribution  
-$\targetEm[0] \sim \GP(\emMean[0], \emKer[0])$ for $\fwd$. Conditioning on the design yields 
-the predictive distribution 
-$\targetEm \Def \targetEm[0] \given [\targetEm[0](\design) = \fwd(\design)] \sim \GP(\emMean, \emKer)$, 
-which constitutes the forward model emulator.
-In the typical case that the observation space has dimension $\dimObs > 1$, then we interpret 
-$\emMean[0], \emKer[0]$ as multi-output mean and covariance functions, respectively
-(see \Cref{basis_func_model,basis_func_GPs,basis_func_noise}).
-This Gaussian setting has been considered frequently in the literature
+for each $\Par \in \parSpace$. This Gaussian setting has been considered frequently in the literature
 \citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,Surer2023sequential,
 VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
 \end{examplebox}
@@ -637,57 +640,45 @@ compares forward model and log-likelihood emulators for PDE-constrained inverse 
 Other works instead opt for the closely-related strategy of emulating the unnormalized log-posterior density
 \citet{emPostDens,Kandasamy_2017,gp_surrogates_random_exploration,landslideCalibration}.
 \citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
-to approximate a sequence of functions designed to be more regular than the log-likelihood.   
+to approximate a sequence of functions designed to be more regular than the log-likelihood.
+
+\begin{examplebox}{Log-Likelihood Surrogate, Gaussian Setting}{ex:ldens-em}
+In the case that the emulator is fit to the log-likelihood, the induced unnormalized posterior approximation
+is of the form 
+\begin{align}
+\postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}.
+\end{align}
+Under the assumption $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$, this
+quantity is log-normally distributed, with moments
+\begin{align*}
+\emE\left[\postDens(\Par; \targetEm) \right] 
+&= \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
+\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
+&= \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)}
+\end{align*}
+\end{examplebox}
+
+\subsubsection{Log-Likelihood vs. Log-Posterior Emulation.} \label{sec:llik_vs_lpost}
+The literature summary above indicates that both log-likelihood and log (unnormalized) posterior
+emulators are utilized, with the former being more common. 
+We are not aware of any cases in which the performance of the two methods is compared. 
+Indeed, the choice appears inconsequential, as one emulator can easily be converted into the other 
+by adding or subtracting the log-prior density, which represents a deterministic shift to the predictive 
+distribution. Despite the similarity, there are potential tradeoffs from 
+a modeling standpoint. One benefit of emulating the log-posterior is the qualitative knowledge 
+that the tails of the target function must decay, which can (and should) be leveraged in designing 
+an appropriate surrogate model. The tail behavior of the log-likelihood is not always well-known a priori, 
+which can present more of a modeling challenge. The challenge of predicting the log-likelihood versus 
+the sum of the log-likelihood and log-prior depends on the particular problem at hand; when the data is
+highly informative the likelihood will dominate and thus the difference in difficulty will be small. A downside
+of log-posterior emulation is that the regularizing effect of the prior cannot be relied upon to tame 
+surrogate predictions in the tails. The importance of the surrogate tail behavior is further discussed in 
+\todo{add cross-ref}.
 
 
 %%%
 \begin{comment}
 %%%
-
-\begin{examplebox}[Gaussian Log-Density Emulation Setting]
-Consider the special case where either the log-likelihood or log-posterior emulator is Gaussian.
-Both cases imply
-\begin{align}
-\postEm[\Ndesign](\Par) &= \Exp{\lpostEm[\Ndesign](\Par)} \sim \LN\left(\emMean[\Ndesign]{\lpost}(\Par), \emKer[\Ndesign]{\lpost}(\Par)\right)
-\label{eq:llik-em-Gaussian}
-\end{align}
-for each $\Par \in \parSpace$, where $\LN$ denotes a log-normal distribution parameterized by the mean and variance of the
-underlying Gaussian random variable. The standard log-normal moment equations yield
-\begin{align*}
-\E\left[\postEm[\Ndesign](\Par)\right] 
-&= \Exp{\emMean[\Ndesign]{\lpost}(\Par) + \frac{1}{2}\emKer[\Ndesign]{\lpost}(\Par)}, \\
-\Var\left[\postEm[\Ndesign](\Par)\right] 
-&= \left[\Exp{\emKer[\Ndesign]{\lpost}(\Par)} - 1\right] \Exp{2\emMean[\Ndesign]{\lpost}(\Par) + \emKer[\Ndesign]{\lpost}(\Par)}.
-\end{align*}
-This \textit{Gaussian log-density emulation setting} arises when either the log-likelihood or log-posterior is emulated
-by a GP. In either case, the induced unnormalized posterior density surrogate is a 
-\textit{log-normal process}, the exponential of a GP. Note that the Gaussian log-density emulation setting is defined by 
-an assumption only on the surrogate model,
-unlike the forward model analog in \Cref{eq:fwd-em-Gaussian-post,eq:fwd-em-Gaussian}, which additionally makes an assumption on the 
-likelihood. Gaussian log-density emulators are studied in 
-\citet{StuartTeck1,StuartTeck2,FerEmulation,gp_surrogates_random_exploration,
-trainDynamics,emPostDens,OakleyllikEm,ActiveLearningMCMC}.
-\end{examplebox}
-
-\subsubsection{Log-Likelihood vs. Log-Posterior Emulation.} \label{sec:llik_vs_lpost}
-The literature summary above indicates that both log-likelihood and log-posterior emulators are commonly used;
-we are not aware of any cases in which the performance of the two methods is compared. 
-Indeed, the choice appears inconsequential, as one emulator can easily be converted into the other 
-by adding or subtracting the log-prior density, which represents a deterministic shift to the predictive 
-distribution. For example, given a fit log-likelihood emulator $\llikEm[\Ndesign]$, a log-posterior emulator 
-can be constructed via
-\begin{equation}
-\lpostEm[\Ndesign](\Par) \Def \llikEm[\Ndesign](\Par) + \log \priorDens(\Par),
-\end{equation}
-which simply adjusts the predictive mean. Despite the similarity, there are potential tradeoffs from 
-a modeling standpoint. One benefit of emulating the log-posterior is the qualitative knowledge 
-that the tails must decay, which can (and should) be leveraged in designing an appropriate 
-surrogate model. The tail behavior of $\llik$ is not always well-known a priori, which can 
-present more of a modeling challenge. On the other hand, the downside of emulating $\lpost$ is
-that the prior is being approximated, and therefore cannot be relied on to decay in the tails.
-These tradeoffs are related to the challenge of ensuring the emulator induces a well-defined
-posterior approximation (see \Cref{sec:existence}). 
-
 
 \section{Modular Surrogate-Based Bayesian Workflow}
 % maybe discuss the KOH joint model in the intro here?
@@ -697,9 +688,6 @@ posterior approximation (see \Cref{sec:existence}).
 \subsection{Surrogate Refinement}
 
 \section{Posterior Approximation}
-
-
-
 
 
 % stuff to include in MCMC section

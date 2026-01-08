@@ -7,6 +7,7 @@
 \usepackage[pdftex]{graphicx}
 \usepackage{amsthm,amssymb,latexsym,gensymb,mathtools,mathrsfs}
 \usepackage{epstopdf,enumitem,microtype,dcolumn,booktabs,hyperref,url,fancyhdr}
+\usepackage[affil-it]{authblk}
 \usepackage{algorithm}
 \usepackage{algpseudocode} % Note that this also loads algorithmicx
 \usepackage{cleveref}
@@ -79,7 +80,14 @@
 
 % Title and author
 \title{Propagating Surrogate Uncertainty in Bayesian Inverse Problems}
-\author{Andrew Roberts, Michael Dietze, Jonathan Huggins}
+\author[1]{Andrew Gerard Roberts\thanks{Emails: \texttt{arober@bu.edu}, \texttt{dietze@bu.edu}, \texttt{huggins@bu.edu}}}
+\author[2]{Michael Dietze}
+\author[1,3]{Jonathan H. Huggins}
+
+\affil[1]{Faculty of Computing and Data Sciences, Boston University}
+\affil[2]{Department of Earth and Environment, Boston University}
+\affil[3]{Department of Mathematics and Statistics, Boston University}
+\date{}
 
 \begin{document}
 \maketitle
