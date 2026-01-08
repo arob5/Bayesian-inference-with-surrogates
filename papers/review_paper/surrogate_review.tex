@@ -581,7 +581,7 @@ Log-density emulation, described in \Cref{sec:log_density_emulation}, offers ano
 dimension reduction when the observation space is high-dimensional.
 
 
-\begin{examplebox}{Forward Model Surrogate, Gaussian Setting}{ex:fwd-em}
+\begin{examplebox}{Forward Model Surrogate, Gaussian Setting}{fwd-em}
 Consider the setting of a Bayesian inverse problem with an additive Gaussian noise model
 (\Cref{eq:inv_prob_Gaussian}). Assume an emulator $\targetEm$ has been 
 fit to approximate the true forward model $\fwd$. This induces an approximation of the 
@@ -650,7 +650,7 @@ Other works instead opt for the closely-related strategy of emulating the unnorm
 \citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
 to approximate a sequence of functions designed to be more regular than the log-likelihood.
 
-\begin{examplebox}{Log-Likelihood Surrogate, Gaussian Setting}{ex:ldens-em}
+\begin{examplebox}{Log-Likelihood Surrogate, Gaussian Setting}{ldens-em}
 In the case that the emulator is fit to the log-likelihood, the induced unnormalized posterior approximation
 is of the form 
 \begin{align}
@@ -660,9 +660,9 @@ Under the assumption $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par)
 quantity is log-normally distributed, with moments
 \begin{align*}
 \emE\left[\postDens(\Par; \targetEm) \right] 
-&= \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
+&= \priorDens(\Par)\Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
 \Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
-&= \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)}
+&= \priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)}
 \end{align*}
 \end{examplebox}
 
@@ -796,59 +796,53 @@ suggests the following direct sampling scheme for EP inference.
 
 In general, it is not possible to directly sample from $\postDensNorm(\cdot; \targetTraj)$ and thus it is common to replace the inner sampling
 step in \Cref{alg:ep} with an MCMC algorithm. The resulting approximate sampling scheme, known as \inlinedef{Metropolis within Monte Carlo (MwMC)}
-is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. The outer sampling step requires the ability to 
+is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. 
+The outer sampling step requires the ability to 
 sample surrogate trajectories and is thus problematic 
 when the surrogate model is infinite-dimensional (e.g., a GP), likely explaining why early work in this area discounted the practicality
 of the EP \citep{StuartTeck1,StuartTeck2,SinsbeckNowak}. \citet{ourSurrPropPaper} discuss practical computation for the EP, presenting
-an approximate MCMC scheme that is well-defined in the GP setting.
-
-
+an approximate MCMC scheme that is well-defined in the GP setting. This avoids the MwMC requirement of running a large
+ensemble of MCMC chains. \citet{trainDynamics} alternatively suggest an approximate MwMC implementation geared towards
+GP emulators.
 
 \subsubsection{The Expected Unnormalized Posterior}
-\subsubsection{Other Pointwise Estimators}
+The EP averages the \textit{normalized} random posterior $\postEm(\Par) / \normCstEm$, 
+acknowledging the coupling between the numerator and denominator induced by the 
+shared dependence on $\targetEm$.
+Since the normalizing constant is the root cause of the challenges associated with EP 
+computation, many studies have opted to circumvent these difficulties by first deriving 
+an estimate of the \textit{unnormalized} density approximation $\postEm$ and then 
+normalizing post-hoc. This is computationally convenient since
+ $\postEm(\Par)$, unlike $\postNormEm(\Par)$, depends only on the single point 
+ estimate $\targetEm(\Par)$ rather than the entire surrogate $\targetEm$.
+Thus, a consequence of using such \inlinedef{pointwise estimators} is that they ignore any 
+predictive correlation structure in the surrogate. 
 
-
-
-\begin{comment}
-
-While $\postEm[\Ndesign](\Par)$ depends 
-only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
-depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
-the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
-$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
-
-
-
-Consider a random surrogate $\postEm[\Ndesign]$ for the unnormalized posterior density, 
-induced by some underlying emulator (e.g., a forward model or log-density emulator).
-We will use the notation $\E_{\Ndesign}$ to indicate expectations with respect to the 
-distribution of the underlying surrogate model; e.g., the law of $\fwdEm[\Ndesign]$ or $\lpostEm[\Ndesign]$.
-By normalizing $\postEm[\Ndesign]$, we obtain a random density
-\footnote{More generally, this is a random measure. We work with densities to avoid measure-theoretic technicalities.}
+The most common posterior estimate of this sort is the \inlinedef{expected unnormalized posterior (EUP)}
+\footnote{
+\citep{StuartTeck1,StuartTeck2,GP_PDE_priors} refer to this as the \textit{marginal} approximation,
+while \citep{BurknerSurrogate} instead uses the term \textit{expected likelihood}. We prefer 
+\textit{expected unnormalized posterior}, as used in \citet{ourSurrPropPaper}, since it also encompasses
+log-posterior emulators.
+},
 \begin{align}
-&\postNormEm[\Ndesign](\Par) 
-\Def \frac{1}{\llikEmRdm[\Ndesign]{\normCst}} \postEm[\Ndesign](\Par),
-&&\normCstEm[\Ndesign]\Def \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par,
-\label{eq:sample-approx}
+\postApproxEUP(\Par) \Def \frac{\emE[\postEm(\Par)]}{\emE[\normCstEm]},
+\label{eq:eup}
 \end{align}
-which summarizes the uncertainty about the true posterior. 
-
-To construct a deterministic approximation to $\postDens$, we can consider the expectation
+which averages the numerator and denominator independently. The EUP can also 
+be interpreted as the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
 \begin{equation}
-\postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
+\targetTraj  \sim \emDist, \qquad 
+\Par \sim \priorDens, \qquad
+\obs \given \targetTraj, \Par \sim \lik(\Par; \targetTraj, \d\obs),
+\label{eq:eup-prob-model}
 \end{equation}
-which we refer to as the \textit{expected posterior (EP)}, following the terminology in \citet{BurknerSurrogate}.
-In the forward model emulation setting, \Cref{eq:ep-approx} can also be motivated as the $\Par$-marginal 
-under the joint posterior $p(\Par, \fwdEm[\Ndesign] \given \obs)$, under the assumption that $\fwdEm[\Ndesign]$
-and $\obs$ are independent.
-
-Under an infinite-dimensional surrogate (e.g., a GP), the expectation in \Cref{eq:ep-approx} is with 
-respect to an infinite-dimensional random element, and thus its existence is a non-trivial matter \citep{StuartTeck1}.
-Assuming the expectation exists, \Cref{alg:ep} could in principle 
-be used to draw samples from $\llikEmSampDensNorm$. 
-
-\end{comment}
-
+as discussed in \citet{ourSurrPropPaper,SinsbeckNowak,StuartTeck1,StuartTeck2}.
+The papers \citet{StuartTeck1,StuartTeck2,random_fwd_models} establish bounds between the EUP
+and ground truth posterior. \citet{ourSurrPropPaper} studies the EUP as an approximation
+to the EP, demonstrating that the two distributions can deviate when 
+the distribution of $\postEm(\Par)$ varies significantly with $\Par$, especially when these pointwise
+distributions are heavy-tailed.
 
 \begin{table}[h]
 \centering
@@ -875,6 +869,43 @@ $ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
 \label{tab:post-approx-comparison}
 \end{table}
 
+The EUP is typically more computationally convenient relative to the EP. 
+This is especially true in special cases where the expectation
+$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{eup-fwd-em,eup-ldens-em}), 
+which allows for the application of standard 
+Bayesian inference algorithms. Alternatively, if $\targetEm(\Par)$ can be directly sampled pointwise,
+then $\emE[\postEm(\Par)]$ can be unbiasedly estimated, enabling the use of pseudo-marginal 
+MCMC \citep{pseudoMarginalMCMC}. The psuedo-marginal approach is studied in 
+\citet{garegnani2021NoisyMCMC}, and \citet{ourSurrPropPaper} notes that correlated pseudo-marginal
+methods \citep{corrPM} may be employed when $\targetEm$ is a GP.
+
+\begin{examplebox}{EUP, Gaussian Forward Model Emulator Setting}{eup-fwd-em}
+Consider the setting from \Cref{ex:fwd-em}, where a Gaussian forward model surrogate is paired with 
+an additive Gaussian likelihood. In this case, the EUP is given by
+\begin{align*}
+\postApproxEUPNorm(\Par)
+\propto \emE\left[\priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar) \right] 
+&= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar + \emVar(\Par)).
+\end{align*}
+\end{examplebox}
+
+\begin{examplebox}{EUP, Gaussian Log-Likelihood Emulator Setting}{eup-ldens-em}
+In the setting from \Cref{ex:ldens-em} with a log-likelihood emulator with Gaussian predictive
+distributions, the EUP is given by
+\begin{align*}
+\postApproxEUPNorm(\Par)
+\propto \emE\left[\priorDens(\Par)\Exp{\targetEm(\Par)} \right] 
+&= \priorDens(\Par) \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)}.
+\end{align*}
+Due to the exponential dependence, this distribution can be highly sensitive to small changes in
+$\emMean(\Par)$ and $\emVar(\Par)$. In particular, the EUP in this setting is susceptible to 
+extreme concentration in small regions with large uncertainty \Cref{ourSurrPropPaper,VehtariParallelGP}.
+\end{examplebox}
+
+
+
+ 
+\subsubsection{Other Pointwise Estimators}
 
 
 %%%
@@ -975,94 +1006,9 @@ methodological development investigating such workflows is a promising avenue fo
  
 \section{Posterior Approximation} \label{sec:post-approx}
 
-
-
-
-\begin{algorithm}
-    \caption{Direct sampling from $\postApproxEP$}
-    \label{alg:ep}
-    \begin{algorithmic}[1] % The number tells where the line numbering should start
-    \Function{sampleEP}{$\llikEmRdm[\Ndesign]{\postDensNorm}, \NSample, M$}     
-        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
-        		\State $\llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)} \sim \law(\llikEmRdm[\Ndesign]{\postDensNorm})$ \Comment{Sample posterior trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \overset{iid}{\sim} \llikEmRdm[\Ndesign]{\postDensNorm}^{(\sampleIndex)}$ \Comment{Sample parameters}
-	\EndFor
-	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-A practical implementation 
-would entail first sampling a trajectory of the surrogate model, which induces a sample 
-trajectory of the unnormalized random density $\llikEmRdmDens[\Ndesign]$. Parameter samples
-could then be drawn from the distribution implied by this unnormalized density using standard 
-methods (e.g., MCMC).
-The output of the algorithm thus represents a mixture over an 
-ensemble of posterior distributions. Choosing $M = 1$  (drawing one sample per
-trajectory of $\postNormEm[\Ndesign]$) implies that \Cref{alg:ep} returns independent 
-samples from $\postApproxEP[\Ndesign]$. For $M > 1$, the samples will be dependent.
-For example, in the extreme case $\NSample = 1$ they will 
-still have the correct marginal distribution $\postApproxEP[\Ndesign]$, but will 
-only provide a summary of a single trajectory from $\postNormEm[\Ndesign]$ and thus 
-in general provide a poor representation of this random density.
-
-\Cref{alg:ep} is readily implementable in practice provided the ability to sample trajectories 
-of $\postEm[\Ndesign]$, which will generally be possible for
-finite-dimensional surrogate models. \citet{garegnani2021NoisyMCMC,BurknerSurrogate}, and \citet{BurknerTwoStep}
-investigate \Cref{alg:ep} in such settings. Under certain assumptions, \citet{garegnani2021NoisyMCMC} 
-bounds the Monte Carlo error in the sample-based approximation of $\postApproxEP[\Ndesign]$.
-\citet{BurknerTwoStep} proposes an importance sampling approximation to reduce the 
-required number of sampled trajectories.
-
-With an infinite-dimensional emulator, the practical difficulty in 
-implementing \Cref{alg:ep} is the requirement to sample an infinite-dimensional 
-trajectory from the surrogate model.
-These difficulties are noted in \citet{VehtariParallelGP} as justification for pursuing alternative 
-approaches. As far as we are aware, \citet{trainDynamics} is the only work to attempt an 
-implementation of \Cref{alg:ep} in the infinite-dimensional context. Their method consists of approximating GP 
-trajectories by sampling the surrogate only at a finite grid of points, and then approximating 
-the trajectory as the GP mean, conditional on the sampled values at these points.
-We note that an alternative approach could involve constructing a finite-dimensional approximation 
-of the surrogate in order to provide the practical means to simulate (approximate) trajectories 
-of $\postEm[\Ndesign]$. In the GP setting, approaches such as the Karhunen-Loeve expansion 
-and random Fourier features could be leveraged for this purpose \citep{dimRedPolyChaos,samplingGPPosts}. 
-But as with the \citet{trainDynamics} method, this approach is only an approximate implementation of \Cref{alg:ep}.
-
-
 \subsection{Expected Likelihood}
-Given the challenge of implementing \Cref{alg:ep} with an infinite-dimensional emulator, the majority of 
-previous literature instead proposes deterministic approximations of the unnormalized
-density. As opposed to the expected posterior method, these approximations are computed 
-pointwise in $\Par$. This is a potential downside of this approach, as it does not leverage 
-the full structure of the surrogate predictive distribution (e.g., the predictive covariance of a GP emulator).
-However, the focus on unnormalized density approximation has several practical benefits, 
-including that it does not require approximating surrogate trajectories and is amenable to the application of 
-standard Bayesian inference procedures using a single MCMC run.
 
-We start by considering the approximation derived by computing the pointwise expectation 
-of $\postEm(\Par)$ and then normalizing after-the-fact.
-This yields the unnormalized density estimate
-\begin{align}
-\postApproxMarg[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right], \label{eq:post-approx-EL}
-\end{align}
-which we refer to as the \textit{expected likelihood (EL)}
-\footnote{Note that we are technically considering expectations of the unnormalized posterior density approximation 
-$\postEm[\Ndesign](\Par)$, but this is equivalent to taking expectations of the likelihood approximation and
-then multiplying by the prior density.}
-approximation, again borrowing terminology from
- \citet{BurknerSurrogate}. \citet{StuartTeck1} instead refer to this as the \textit{marginal} approximation, 
- and show the normalizing constant implied by \Cref{eq:post-approx-EL} is given by
- \begin{equation}
- \int_{\parSpace} \E_{\Ndesign}\left[\postEm[\Ndesign](\Par) \right] d\Par 
- = \E_{\Ndesign} \int_{\parSpace} \postEm[\Ndesign](\Par) d\Par
- = \E_{\Ndesign}\left[\normCstEm \right],
- \end{equation} 
-meaning the expected likelihood approximation is a ratio estimator of the form 
- $\postApproxNormMarg[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par)] / \E_{\Ndesign}[\normCstEm]$.
- Note the difference with respect to 
- $\postApproxEP[\Ndesign](\Par) = \E_{\Ndesign}[\postEm[\Ndesign](\Par) / \normCstEm]$, 
- which we highlight in \Cref{tab:post-approx-comparison} in the forward model emulation setting. 
- The \textit{unnormalized} expected likelihood approximation $\postApproxMarg[\Ndesign]$ 
+The \textit{unnormalized} expected likelihood approximation $\postApproxMarg[\Ndesign]$ 
  may be justified from a Bayesian decision-theoretic viewpoint as the minimizer of an $L^2$ risk. However, this does not 
  confer the same optimality on the normalized approximation $\postApproxNormMarg[\Ndesign]$;
  see \citep{SinsbeckNowak,StuartTeck2,VehtariParallelGP} for details. 
