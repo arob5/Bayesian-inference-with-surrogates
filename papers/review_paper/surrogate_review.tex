@@ -759,8 +759,63 @@ but in general ignoring the surrogate uncertainty can lead to posterior approxim
 both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}.
 
 \subsection{Estimators for the Random Posterior}
-We now consider uncertainty-aware posterior approximations that incorporate the surrogate uncertainty.
+We now consider surrogate-based posterior approximations that incorporate the surrogate uncertainty.
+Recall the shorthand $\postNormEm(\Par) = \postEm(\Par) / \normCstEm$ for the random quantities induced
+by plugging $\targetEm$ in place of $\target$. One approach to deriving posterior approximations is to construct
+a deterministic estimate that summarizes the uncertainty in $\postNormEm$. This perspective is 
+adopted in \citep{ourSurrPropPaper,StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar}.
 
+\subsubsection{The Expected Posterior}
+A natural estimate follows from considering the mean of the random density, yielding
+the \inlinedef{expected posterior (EP)},
+\begin{align}
+\postApproxEP(\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
+\label{eq:ep}
+\end{align}
+\citet{ourSurrPropPaper} argues for the EP as a principled default choice in most analyses,
+showing that it represents the optimal estimate of $\postNormEm$ with respect to several 
+common loss functions. The terminology \textit{expected posterior} comes from 
+\citet{BurknerSurrogate}, in which the EP is empirically compared to alternative approximations.
+The EP is a continuous mixture of posterior realizations $\postDensNorm(\Par; \targetTraj)$
+induced by trajectories $\targetTraj \sim \emDist$ of the underlying emulator. This immediately 
+suggests the following direct sampling scheme for EP inference.
+
+\begin{algorithm}[H]
+    \caption{Direct sampling from $\postApproxEP$}
+    \label{alg:ep}
+    \begin{algorithmic}[1]
+    \Function{sampleEP}{$\postNormEm, \NSample, M$}     
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
+        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
+	\EndFor
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+In general, it is not possible to directly sample from $\postDensNorm(\cdot; \targetTraj)$ and thus it is common to replace the inner sampling
+step in \Cref{alg:ep} with an MCMC algorithm. The resulting approximate sampling scheme, known as \inlinedef{Metropolis within Monte Carlo (MwMC)}
+is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. The outer sampling step requires the ability to 
+sample surrogate trajectories and is thus problematic 
+when the surrogate model is infinite-dimensional (e.g., a GP), likely explaining why early work in this area discounted the practicality
+of the EP \citep{StuartTeck1,StuartTeck2,SinsbeckNowak}. \citet{ourSurrPropPaper} discuss practical computation for the EP, presenting
+an approximate MCMC scheme that is well-defined in the GP setting.
+
+
+
+\subsubsection{The Expected Unnormalized Posterior}
+\subsubsection{Other Pointwise Estimators}
+
+
+
+\begin{comment}
+
+While $\postEm[\Ndesign](\Par)$ depends 
+only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
+depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
+the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
+$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
 
 
 
@@ -777,12 +832,7 @@ By normalizing $\postEm[\Ndesign]$, we obtain a random density
 \label{eq:sample-approx}
 \end{align}
 which summarizes the uncertainty about the true posterior. 
-While $\postEm[\Ndesign](\Par)$ depends 
-only on the univariate surrogate prediction at $\Par$, $\llikEmRdm[\Ndesign]{\postDensNorm}(\Par)$
-depends on the entire random function $\llikEmRdmDens[\Ndesign]$ due to its dependence on 
-the (random) normalizing constant $\llikEmRdm[\Ndesign]{\normCst}$. The quantity
-$\llikEmRdm[\Ndesign]{\postDensNorm}$ is referred to as the \textit{sample} approximation in
-\citet{StuartTeck1, StuartTeck2,random_fwd_models,TeckHyperpar}.
+
 To construct a deterministic approximation to $\postDens$, we can consider the expectation
 \begin{equation}
 \postApproxEP[\Ndesign](\Par) \Def \E_{\Ndesign}\left[\postNormEm[\Ndesign](\Par) \right], \label{eq:ep-approx}
@@ -797,18 +847,7 @@ respect to an infinite-dimensional random element, and thus its existence is a n
 Assuming the expectation exists, \Cref{alg:ep} could in principle 
 be used to draw samples from $\llikEmSampDensNorm$. 
 
-
-
-
-
-
-
-
-
-
-
-
-
+\end{comment}
 
 
 \begin{table}[h]
