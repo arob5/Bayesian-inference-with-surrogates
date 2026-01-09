@@ -25,4 +25,12 @@ The sub-directories are organized as follows.
     * Inverse problem and probability distribution abstractions used in experiments
     * Sampling algorithms, written more-or-less in the [blackjax](https://blackjax-devs.github.io/blackjax/) style
     * Gaussian process surrogate model: `GPJaxSurrogate` is a wrapper around a [gpjax](https://docs.jaxgaussianprocesses.com/) model with some added functionality
-    * 
+    * Abstractions for random measures induced by GP surrogates
+- `models`
+    * Each "model" typically corresponds to one of the numerical experiments
+    * Models consist of an underlying mechanistic model, a statistical inverse problem model, and a surrogate model
+    * Currently the code setting up the experiments for these models is also housed here, but this will be moved outside of `uncprop` shortly
+- `utils`
+    * Abstractions for a single experimental "replicate" and an experiments consisting of many replicates
+    * Extensions to gpjax models, including vectorized fitting of independent multi-output GPs not natively supported in gpjax
+    * Other helpers for plotting, working with probability distributions, and working with uniformly spaced grids (for toy examples over 2d parameter space)
