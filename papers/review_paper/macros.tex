@@ -7,6 +7,12 @@
 % Emphasize works inline (e.g., for defining terms, etc.)
 \newcommand{\inlinedef}[1]{\textbf{#1}}
 
+
+% --------------------------------------------------------------------------------------------------
+% Bayesian inverse problem.
+% --------------------------------------------------------------------------------------------------
+\newcommand{\GaussianCDF}{\Phi}
+
 % --------------------------------------------------------------------------------------------------
 % Bayesian inverse problem.
 % --------------------------------------------------------------------------------------------------
@@ -45,11 +51,14 @@
 \newcommand{\targetEm}[1][\Ndesign]{f_{#1}} % Emulator for target quantity
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
 \newcommand{\emMean}[1][\Ndesign]{\mu_{#1}}
+\newcommand{\emSD}[1][\Ndesign]{s_{#1}}
 \newcommand{\emVar}[1][\Ndesign]{s^2_{#1}}
 \newcommand{\emKer}[1][\Ndesign]{k_{#1}}
 \newcommand{\emDist}{\nu_{\Ndesign}} % Predictive distribution (law) of the emulator (a stochastic process)
 \newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
 \newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
+\newcommand{\quantileProb}{\alpha}
+\newcommand{\emQ}{\mathbb{Q}^\quantileProb_{\Ndesign}} % Quantile wrt emulator distribution
 \newcommand{\emObs}{z} % The design set used to train the emulator.
 \newcommand{\targetRange}{\mathbb{F}} % Codomain for the target function.
 \newcommand{\emLik}{\lik_{\target}} % Likelihood for emulator model for training on simulation data
@@ -81,6 +90,7 @@
 \newcommand{\postApproxEUP}{\Em{\postDens}^{\eup}}
 \newcommand{\postApproxEUPNorm}{\Em{\postDensNorm}^{\eup}}
 \newcommand{\postApproxNormMean}{\Em{\postDensNorm}^{\mathrm{mean}}}
+\newcommand{\postApproxQuantileNorm}{\Em{\postDensNorm}^{\quantileProb}}
 
 % Likelihood approximations.
 \newcommand{\likApproxEP}{\Em{\lik}^{\ep}}

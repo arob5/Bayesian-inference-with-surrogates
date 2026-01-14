@@ -109,6 +109,11 @@
 % Introduction 
 \section{Introduction}
 
+\todo[inline]{
+	Need a section or figure laying out the Bayesian surrogate-based workflow. 
+	Also need to highlight the major challenges (concentrated posterior, non-stationary likelihoods, sparse designs, GP tail behavior)
+}
+
 Within the Bayesian paradigm, there is need for posterior approximation algorithms tailored to settings 
 where evaluation of the (unnormalized) posterior density incurs significant computational expense. 
 This situation commonly arises in the physical, biological, and engineering sciences, 
@@ -868,10 +873,10 @@ $ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
 	     trajectories.}
 \label{tab:post-approx-comparison}
 \end{table}
-
+ 
 The EUP is typically more computationally convenient relative to the EP. 
 This is especially true in special cases where the expectation
-$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{eup-fwd-em,eup-ldens-em}), 
+$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{ex:eup-fwd-em, ex:eup-ldens-em}), 
 which allows for the application of standard 
 Bayesian inference algorithms. Alternatively, if $\targetEm(\Par)$ can be directly sampled pointwise,
 then $\emE[\postEm(\Par)]$ can be unbiasedly estimated, enabling the use of pseudo-marginal 
@@ -895,17 +900,60 @@ distributions, the EUP is given by
 \begin{align*}
 \postApproxEUPNorm(\Par)
 \propto \emE\left[\priorDens(\Par)\Exp{\targetEm(\Par)} \right] 
-&= \priorDens(\Par) \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)}.
+&= \priorDens(\Par) \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
+&= \postApproxMean(\Par) \Exp{\frac{1}{2} \emVar(\Par)}
 \end{align*}
 Due to the exponential dependence, this distribution can be highly sensitive to small changes in
 $\emMean(\Par)$ and $\emVar(\Par)$. In particular, the EUP in this setting is susceptible to 
-extreme concentration in small regions with large uncertainty \Cref{ourSurrPropPaper,VehtariParallelGP}.
+extreme concentration in small regions with large uncertainty \citep{ourSurrPropPaper,VehtariParallelGP}.
 \end{examplebox}
-
-
-
  
 \subsubsection{Other Pointwise Estimators}
+Various alternative estimators have been proposed for the unnormalized posterior density. 
+Instead of computing pointwise expectations, one can consider summarizing $\postEm(\Par)$
+using other statistics. Such estimators have primarily been considered for log-density
+emulators (\Cref{ex:eup-ldens-em}), motivated by the lack of robustness of the EUP in this setting.
+\citet{VehtariParallelGP,quantileApprox,FATES_CES} consider the use of pointwise quantiles as 
+a more robust alternative to the mean. \citet{gpEmMCMC} consider a weighted quantile variant that 
+results in an estimator that penalizes surrogate uncertainty. This generally has the effect of enforcing
+tail decay in the estimator as distance from the design points increases, but fails to produce an
+uncertainty-aware posterior approximation. \Cref{ex:other-pw-ldens-em} details the particular
+form of these estimators for surrogate models with Gaussian predictions.
+
+In the forward model emulation setting, \citet{BurknerSurrogate} also consider an \textit{expected log-likelihood}
+approximation of the form $\priorDens(\Par) \Exp{\emE[\log \lik(\Par; \targetEm)]}$ and draw 
+a connection with power-scaled likelihoods. However, the authors ultimately recommend the expected 
+posterior and expected likelihood as preferred alternatives to this method.
+
+
+\begin{examplebox}
+{\parbox{0.85\linewidth}{%
+    Other Pointwise Estimators\\
+    Gaussian Log-Likelihood Emulator Setting}
+}
+{other-pw-ldens-em}
+We return to the setting from \Cref{ex:ldens-em} with a log-likelihood emulator with Gaussian predictive
+distributions. Let $\emQ$ denote the $\quantileProb \in (0, 1)$ quantile of a random variable with respect to the
+emulator predictive distribution. A quantile-based estimate in this setting takes the form
+\begin{align*}
+\postApproxQuantileNorm(\Par) \propto
+\priorDens(\Par) \emQ(\Exp{\targetEm(\Par)})
+&= \priorDens(\Par) \Exp{\emMean(\Par) + \GaussianCDF^{-1}(\quantileProb) \emSD(\Par)} \\
+&= \postApproxMean(\Par) \Exp{\GaussianCDF^{-1}(\quantileProb) \emSD(\Par)},
+\end{align*}
+where $\GaussianCDF$ is the standard Gaussian distribution function. This expression is of the same form 
+as the EUP in \Cref{ex:eup-ldens-em}, but the uncertainty inflation term scales more slowly as a function
+of the surrogate uncertainty. The special case $\quantileProb = 1/2$ (i.e., the median) 
+reduces to the plug-mean approximation, while values $\quantileProb > 1/2$ imply 
+the density will be inflated in regions of higher surrogate uncertainty.
+\end{examplebox}
+
+\section{Sequential Strategies for Surrogate Construction}
+
+\subsection{Active Learning}
+\subsection{Tempered Approximations}
+
+
 
 
 %%%
