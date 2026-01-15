@@ -32,9 +32,9 @@
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood 
 \newcommand{\lik}{\mathsf{L}} % Likelihood 
 \newcommand{\priorDens}{\pi_0} % Prior density 
-\newcommand{\postDens}{\pi} % Unnormalized posterior density.
-\newcommand{\lpost}{\llik^{\postDens}} % Log unnormalized posterior density.
-\newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
+\newcommand{\postDens}{\tilde{\pi}}
+\newcommand{\postDensNorm}{\pi}
+
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
@@ -107,10 +107,16 @@
 
 % Variational formulation.
 \newcommand{\qMeas}{Q} % Generic prob measure on parSpace (used in variational formulation)
-\newcommand{\qDens}{q} % Density of qDens.
-\newcommand{\qSpace}{\mathcal{Q}} % Space of densities or measures.
+\newcommand{\qDensNorm}{q} % Density of qDens.
+\newcommand{\qSpaceNorm}{\mathcal{Q}} % Space of densities or measures.
+\newcommand{\qDens}{\tilde{q}} % Density of qDens.
+\newcommand{\qSpace}{\tilde{\mathcal{Q}}} % Space of densities or measures.
 \newcommand{\loss}{\mathcal{L}}
-\newcommand{\qDensOpt}{\qDens_{\mathrm{opt}}} % Solution of optimization problem
+\newcommand{\gibbsloss}{\ell}
+\newcommand{\gibbsrate}{\beta}
+\newcommand{\risk}{\mathcal{R}}
+\newcommand{\qDensNormOpt}{\qDensNorm_{\mathrm{opt}}} % Solution of optimization problem
+\newcommand{\qDensOpt}{\qDens_{\mathrm{opt}}} 
 \newcommand{\qMeasOpt}{\qMeas_{\mathrm{opt}}}
 
 % Analyzing EUP vs. EP

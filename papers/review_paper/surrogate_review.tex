@@ -706,6 +706,256 @@ considerations in order to determine the best approach for a particular applicat
 the various posterior approximations that have been proposed, highlighting overarching themes and 
 conceptual considerations. See \todo{cross-ref} for recommendations in choosing a particular method.
 
+\subsection{Plug-In Mean}
+Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
+ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
+of the random surrogate model. Plugging the predictive mean $\emMean$
+in place of the true target map induces the deterministic posterior approximation
+\begin{equation}
+\postApproxNormMean(\Par) \Def \postDens(\Par; \emMean) / \normCst(\emMean),
+\label{eq:mean-approx}
+\end{equation}
+which we refer to as the \inlinedef{plug-in mean} approximation.
+The mean approximation has been applied in various contexts
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
+and analyzed theoretically 
+\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
+If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
+but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
+both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}.
+
+\subsection{Frameworks for Constructing Posterior Estimators}
+To transition to uncertainty-aware posterior approximations that leverage the full surrogate
+predictive distribution, we establish four conceptual frameworks that provide the basis for
+deriving such estimators.
+
+\subsubsection{Summarizing a Random Measure} \label{sec:random-measure}
+Recall that $\postNormEm(\Par) = \postEm(\Par) / \normCstEm$ is a random density
+\footnote{More generally, this is a random probability measure. We work with densities to avoid measure-theoretic technicalities.},
+with randomness in the numerator and denominator induced by $\targetEm$.
+ One approach to deriving posterior approximations is to construct
+a deterministic estimate that summarizes the uncertainty in $\postNormEm$.
+\citet{ourSurrPropPaper} formalize this as an optimization problem by defining a loss
+$\loss(\qDensNorm, \qDensNorm^\prime)$ that quantifies the difference between two densities. 
+A deterministic estimate can then be defined as a minimizer of the expected loss
+\begin{equation}
+\qDensNormOpt \Def \argmin_{\qDensNorm \in \qSpaceNorm} \emE[\loss(\qDensNorm, \postNormEm)],
+\label{eq:random-measure-variational}
+\end{equation}
+over a candidate space of densities $\qSpaceNorm$.
+An estimator derived under this perspective will naturally acknowledge the coupling between
+$\postEm(\Par)$ and $\normCstEm$ induced by the shared dependence on $\targetEm(\Par)$.
+While conceptually coherent, the dependence of $\normCstEm$ on the entire random function
+$\targetEm$ introduces practical difficulties.
+The random measure perspective is introduced in \citet{StuartTeck1} and adopted in 
+\citet{ourSurrPropPaper,StuartTeck2,random_fwd_models,TeckHyperpar}.
+\todo[inline]{bring up optimization perspective here?} 
+
+\subsubsection{Decision Theory for Unnormalized Densities} \label{sec:decision-theory}
+A practical strategy that circumvents the challenges associated with the random normalizing 
+constant is to instead derive an estimate of the \textit{unnormalized} density $\postEm$
+and then normalize the estimate post-hoc. This is computationally convenient since
+ $\postEm(\Par)$, unlike $\postNormEm(\Par)$, depends only on the marginal distribution of
+ $\targetEm(\Par)$, rather than the entire surrogate $\targetEm$.
+Such \inlinedef{pointwise estimators} ignore any predictive correlation structure in the surrogate,
+thus failing to acknowledge the coupling between $\postEm(\Par)$ and $\normCstEm$. 
+A standard approach to constructing pointwise estimators is to adopt a Bayesian decision theoretic
+viewpoint, defining a loss function $\loss(\qDens, \qDens^\prime)$ that quantifies the 
+distance between two \textit{unnormalized} densities. The unnormalized posterior estimate is then 
+defined as the minimizer of the expected loss
+\begin{equation}
+\qDensOpt \Def \argmin_{\qDens \in \qSpace} \emE[\loss(\qDens, \postEm)],
+\end{equation}
+over a set of candidate functions $\qSpace$. The final posterior estimate is the normalized version
+of $\qDensOpt$. This decision theoretic approach was originally proposed in 
+\citet{SinsbeckNowak} and subsequently utilized in 
+\citet{VehtariParallelGP,gpEmMCMC,StuartTeck2}.
+
+\subsubsection{Generalized Bayesian Inference} \label{sec:generalized-bayes}
+Alternatively, pointwise estimators may be motivated through the lens of generalized Bayesian inference.
+Assume the surrogate appears only through the likelihood function (thus excluding log-posterior emulators).
+In this case, we define a pointwise loss $\gibbsloss(\Par, \targetTraj)$ quantifying model-data agreement
+given a particular parameter $\Par$ and surrogate realization $\targetTraj$. 
+Let $\risk$ denote a risk functional mapping $\gibbsloss(\Par, \targetEm)$ to a deterministic summary
+$\risk(\Par)$. A posterior approximation can then be defined as the optimizer
+\begin{align}
+\qDensNormOpt \Def 
+\mathrm{arginf}_{\qDensNorm \in \qSpaceNorm} 
+\left\{\int \emE[\gibbsloss_\Par(\targetEm; \obs)] \qDensNorm(\d\Par) + \frac{1}{\gibbsrate} \KL{\qDensNorm}{\priorDens} \right\},
+\end{align}
+over the space of densities $\qDensNorm$. The \textit{learning rate} $\gibbsrate > 0$ controls the size of the 
+prior-to-posterior update. Under conditions detailed in \todo{add Bissiri reference}, the optimum assumes the form
+\begin{align}
+\qDensNormOpt \propto \priorDens(\Par) \Exp{-\gibbsrate \risk(\Par)}.
+\end{align}
+As we will see, with $\gibbsrate = 1$ and particular definitions of $\risk$, this framework is equivalent to the 
+decision theoretic construction in the preceding section.
+\todo[inline]{Refine: benefits/motivation of this approach}
+
+\subsubsection{Uncertainty Propagation via Computation} \label{sec:unc-prop-computation}
+\todo[inline]{cite GP emulated MCMC, Fer, noisy MCMC literature}
+
+\section{Concrete Posterior Estimators}
+We now define several explicit posterior approximations, highlighting their interpretations within 
+the above conceptual frameworks.
+
+\subsubsection{The Expected Posterior}
+Adopting the random measure viewpoint from \Cref{sec:random-measure}, 
+a natural estimate follows from considering the mean of the random density, yielding
+the \inlinedef{expected posterior (EP)},
+\begin{align}
+\postApproxEP(\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
+\label{eq:ep}
+\end{align}
+\citet{ourSurrPropPaper} argues for the EP as a principled default choice in most analyses.
+They adopt the variational formulation in \Cref{eq:random-measure-variational}, showing
+that the EP minimizes the expected Kullback-Leibler (KL) divergence and expected 
+$L_2$ error with respect to $\postNormEm$.
+The terminology \textit{expected posterior} comes from 
+\citet{BurknerSurrogate}, in which the EP is empirically compared to alternative approximations.
+The EP is a continuous mixture of posterior realizations $\postDensNorm(\Par; \targetTraj)$
+induced by trajectories $\targetTraj \sim \emDist$ of the underlying emulator. This immediately 
+suggests the following direct sampling scheme for EP inference.
+
+\begin{algorithm}[H]
+    \caption{Direct sampling from $\postApproxEP$}
+    \label{alg:ep}
+    \begin{algorithmic}[1]
+    \Function{sampleEP}{$\postNormEm, \NSample, M$}     
+        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
+        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
+		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
+	\EndFor
+	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
+	\EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+In general, it is not possible to directly sample from $\postDensNorm(\cdot; \targetTraj)$ and thus it is common to replace the inner sampling
+step in \Cref{alg:ep} with an MCMC algorithm. The resulting approximate sampling scheme, known as \inlinedef{Metropolis within Monte Carlo (MwMC)},
+is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. 
+The outer sampling step requires the ability to 
+sample surrogate trajectories and is thus problematic 
+when the surrogate model is infinite-dimensional (e.g., a GP), likely explaining why early work in this area discounted the practicality
+of the EP \citep{StuartTeck1,StuartTeck2,SinsbeckNowak}. \citet{ourSurrPropPaper} discuss practical computation for the EP, presenting
+an approximate MCMC scheme that is well-defined in the GP setting.
+\citet{trainDynamics} alternatively suggest an approximate MwMC implementation tailored to
+GP emulators.
+
+\subsubsection{The Expected Unnormalized Posterior}
+The computational challenges associated with EP-based inference stem from the fact that
+the EP considers the average of the \textit{normalized} random posterior $\postEm(\Par) / \normCstEm$.
+To avoid such challenges, one could instead consider the ratio estimator defined by averaging
+the numerator and denominator independently, yielding the \inlinedef{expected unnormalized posterior (EUP)}
+\footnote{
+\citep{StuartTeck1,StuartTeck2,GP_PDE_priors} refer to this as the \textit{marginal} approximation,
+while \citep{BurknerSurrogate} instead uses the term \textit{expected likelihood}. We prefer 
+\textit{expected unnormalized posterior}, as used in \citet{ourSurrPropPaper}, since it also encompasses
+log-posterior emulators.
+},
+\begin{align}
+\postApproxEUPNorm(\Par) \Def \frac{\emE[\postEm(\Par)]}{\emE[\normCstEm]}.
+\label{eq:eup}
+\end{align}
+The EUP was first proposed in \citet{BilionisBayesSurrogates}, in which it is derived as 
+the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
+\begin{equation}
+\targetTraj  \sim \emDist, \qquad 
+\Par \sim \priorDens, \qquad
+\obs \given \targetTraj, \Par \sim \lik(\Par; \targetTraj, \d\obs),
+\label{eq:eup-prob-model}
+\end{equation}
+a perspective also noted in \citet{ourSurrPropPaper,SinsbeckNowak,StuartTeck1,StuartTeck2}.
+\citet{SinsbeckNowak} adopt the decision theory framework from
+\Cref{sec:decision-theory}, showing that the EUP is optimal under an $L_2$ loss. 
+\citet{StuartTeck1,StuartTeck2,random_fwd_models} establish Hellinger bounds between the EUP
+and ground truth posterior. \citet{ourSurrPropPaper} sutdy the EUP as an approximation
+to the EP, demonstrating that the two distributions can deviate when 
+the distribution of $\postEm(\Par)$ varies significantly with $\Par$, especially when these pointwise
+distributions are heavy-tailed. \Cref{tab:post-approx-comparison} compares the plug-in mean, EUP,
+and EP estimators as (i) ratio estimators, and (ii) mixture distributions aggregating surrogate-induced
+posterior trajectories. 
+
+\begin{table}[h]
+\centering
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{3.8cm} >{\centering\arraybackslash}p{4.2cm} >{\centering\arraybackslash}p{4.2cm}}
+\toprule
+& \textbf{Plug-In Mean} & \textbf{EUP} & \textbf{EP} \\
+\midrule
+\textbf{Ratio Estimator} & 
+$\displaystyle \frac{\postDens(\Par; \emE[\targetEm])}{\normCst(\emE[\targetEm])}$ &
+$\displaystyle \frac{\emE[\postDens(\Par; \targetEm)]}{\emE[\normCst(\targetEm)]}$ &
+$\displaystyle \emE\left[\frac{\postDens(\Par; \targetEm)}{\normCst(\targetEm)}\right]$ \\ [4ex]
+
+\textbf{Mixture Dist.} & 
+$\int \postDensNorm(\Par; \targetTraj) \delta_{\emMean}(\d\targetTraj)$ & 
+$\int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj \given \obs)$ & 
+$ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
+\bottomrule
+\end{tabular}
+\caption{Different perspectives on normalized density approximations defined by various forms of averaging.
+	     The top row highlights interpretations as ratio estimators; only the EP considers the 
+	     coupling between the numerator and denominator. The second row shows that each
+	     approximation can be viewed as a weighted mixture over surrogate-induced posterior 
+	     trajectories. We write $\emDist(\d\targetTraj \given \obs)$ to denote the distribution
+	     proportional to $\normCst(\targetTraj) \emDist(\d\targetTraj)$, and $\delta_{\emMean}$
+	     the Dirac measure centered at $\emMean$.}
+\label{tab:post-approx-comparison}
+\end{table}
+ 
+The EUP is typically more computationally convenient relative to the EP. 
+This is especially true in special cases where the expectation
+$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{ex:eup-fwd-em,ex:eup-ldens-em}), 
+which allows for the application of standard 
+Bayesian inference algorithms. Alternatively, if $\targetEm(\Par)$ can be directly sampled pointwise,
+then $\emE[\postEm(\Par)]$ can be unbiasedly estimated, enabling the use of pseudo-marginal 
+MCMC \citep{pseudoMarginalMCMC}. The psuedo-marginal approach is studied in 
+\citet{garegnani2021NoisyMCMC}, and \citet{ourSurrPropPaper} notes that correlated pseudo-marginal
+methods \citep{corrPM} may be employed when $\targetEm$ is a GP.
+
+\begin{examplebox}{EUP, Gaussian Forward Model Emulator}{eup-fwd-em}
+Consider the setting from \Cref{ex:fwd-em}, where
+$\postEm(\Par) = \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar)$
+and $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$.
+Under these assumptions, the EUP is given by
+\begin{align}
+\postApproxEUPNorm(\Par)
+&\propto \emE\left[\priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar) \right] \nonumber \\
+&= \priorDens(\Par) \Gaussian(\obs \given \emMean(\Par), \likPar + \emVar(\Par)). \label{eq:eup-gaussian}
+\end{align}
+Thus, in this setting the EUP admits a natural data space interpretation. 
+The original inverse problem $\obs = \fwd(\Par) + \noise$ is replaced by
+$\obs = \emMean(\Par) + \eta(\Par) + \noise$, with the parameter-dependent
+noise term $\eta(\Par) \sim \Gaussian(0, \emVar(\Par))$ accounting for the 
+uncertainty in the forward model \citep{CES,StuartTeck1}. Observe that
+$\postApproxEUP(\Par) \to \priorDens(\Par)$ as $\emVar(\Par) \to \infty$,
+implying that ignorance regarding the true forward model output results in 
+prior reversion. The particular EUP estimator in \Cref{eq:eup-gaussian}
+is utilized in \citet{Surer2023sequential,weightedIVAR,StuartTeck2,GP_PDE_priors,CES,
+idealizedGCM,villani2024posteriorsamplingadaptivegaussian,hydrologicalModel,hydrologicalModel2}.
+\end{examplebox}
+
+\begin{examplebox}{EUP, Gaussian Log-Likelihood Emulator}{eup-ldens-em}
+Recall the setup from \Cref{ex:ldens-em}, where $\postEm(\Par) = \priorDens(\Par)\Exp{\targetEm(\Par)}$
+and $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$.
+Under these assumptions, the EUP is given by
+\begin{align}
+\postApproxEUPNorm(\Par)
+&\propto \emE\left[\priorDens(\Par)\Exp{\targetEm(\Par)} \right] \nonumber \\
+&= \priorDens(\Par) \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \label{eq:eup-ldens-gauss} \\
+&= \postApproxMean(\Par) \Exp{\frac{1}{2} \emVar(\Par)}. \nonumber
+\end{align}
+The final expression demonstrates that, in this setting, the EUP inflates the plug-in mean estimator
+where uncertainty is large \citep{StuartTeck1,StuartTeck2,VehtariParallelGP}. 
+The estimator scales very quickly as surrogate uncertainty increases, with 
+$\postApproxEUP(\Par) \to \infty$ as $\emVar(\Par) \to \infty$.
+Thus, unlike the forward model analog in \Cref{ex:eup-fwd-em}, the EUP does not exhibit prior
+reversion under surrogate ignorance.
+Due to the exponential dependence, this distribution can be highly sensitive to small changes in
+$\emMean(\Par)$ and $\emVar(\Par)$, making it particularly susceptible to 
+extreme concentration in small regions with large uncertainty \citep{ourSurrPropPaper,VehtariParallelGP}.
+\end{examplebox}
+
 \begin{figure}
      \centering
      \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
@@ -744,169 +994,6 @@ conceptual considerations. See \todo{cross-ref} for recommendations in choosing 
         approximations do not owing to the normalization.}
         \label{fig:post_norm_approx_1d}
 \end{figure}
-
-\subsection{Plug-In Mean}
-Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
-ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
-of the random surrogate model. Plugging the predictive mean $\emMean$
-in place of the true target map induces the deterministic posterior approximation
-\begin{equation}
-\postApproxNormMean(\Par) \Def \postDens(\Par; \emMean) / \normCst(\emMean),
-\label{eq:mean-approx}
-\end{equation}
-which we refer to as the \inlinedef{plug-in mean} approximation.
-The mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
-and analyzed theoretically 
-\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
-If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
-but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
-both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}.
-
-\subsection{Estimators for the Random Posterior}
-We now consider surrogate-based posterior approximations that incorporate the surrogate uncertainty.
-Recall the shorthand $\postNormEm(\Par) = \postEm(\Par) / \normCstEm$ for the random quantities induced
-by plugging $\targetEm$ in place of $\target$. One approach to deriving posterior approximations is to construct
-a deterministic estimate that summarizes the uncertainty in $\postNormEm$. This perspective is 
-adopted in \citep{ourSurrPropPaper,StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar}.
-
-\subsubsection{The Expected Posterior}
-A natural estimate follows from considering the mean of the random density, yielding
-the \inlinedef{expected posterior (EP)},
-\begin{align}
-\postApproxEP(\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
-\label{eq:ep}
-\end{align}
-\citet{ourSurrPropPaper} argues for the EP as a principled default choice in most analyses,
-showing that it represents the optimal estimate of $\postNormEm$ with respect to several 
-common loss functions. The terminology \textit{expected posterior} comes from 
-\citet{BurknerSurrogate}, in which the EP is empirically compared to alternative approximations.
-The EP is a continuous mixture of posterior realizations $\postDensNorm(\Par; \targetTraj)$
-induced by trajectories $\targetTraj \sim \emDist$ of the underlying emulator. This immediately 
-suggests the following direct sampling scheme for EP inference.
-
-\begin{algorithm}[H]
-    \caption{Direct sampling from $\postApproxEP$}
-    \label{alg:ep}
-    \begin{algorithmic}[1]
-    \Function{sampleEP}{$\postNormEm, \NSample, M$}     
-        \For{$\sampleIndex \gets 1, \dots, \NSample$} 
-        		\State $\targetTraj^{(\sampleIndex)} \sim \emDist$ \Comment{Sample emulator trajectory}
-		\State $\Par^{(\sampleIndex, 1)}, \dots, \Par^{(\sampleIndex, M)} \sim \postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \Comment{Sample posterior given trajectory}
-	\EndFor
-	\State \Return $\{\Par^{(\sampleIndex, m)}\}_{1 \leq \sampleIndex \leq \NSample, \ 1 \leq m \leq M}$
-	\EndFunction
-    \end{algorithmic}
-\end{algorithm}
-
-In general, it is not possible to directly sample from $\postDensNorm(\cdot; \targetTraj)$ and thus it is common to replace the inner sampling
-step in \Cref{alg:ep} with an MCMC algorithm. The resulting approximate sampling scheme, known as \inlinedef{Metropolis within Monte Carlo (MwMC)}
-is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. 
-The outer sampling step requires the ability to 
-sample surrogate trajectories and is thus problematic 
-when the surrogate model is infinite-dimensional (e.g., a GP), likely explaining why early work in this area discounted the practicality
-of the EP \citep{StuartTeck1,StuartTeck2,SinsbeckNowak}. \citet{ourSurrPropPaper} discuss practical computation for the EP, presenting
-an approximate MCMC scheme that is well-defined in the GP setting. This avoids the MwMC requirement of running a large
-ensemble of MCMC chains. \citet{trainDynamics} alternatively suggest an approximate MwMC implementation geared towards
-GP emulators.
-
-\subsubsection{The Expected Unnormalized Posterior}
-The EP averages the \textit{normalized} random posterior $\postEm(\Par) / \normCstEm$, 
-acknowledging the coupling between the numerator and denominator induced by the 
-shared dependence on $\targetEm$.
-Since the normalizing constant is the root cause of the challenges associated with EP 
-computation, many studies have opted to circumvent these difficulties by first deriving 
-an estimate of the \textit{unnormalized} density approximation $\postEm$ and then 
-normalizing post-hoc. This is computationally convenient since
- $\postEm(\Par)$, unlike $\postNormEm(\Par)$, depends only on the single point 
- estimate $\targetEm(\Par)$ rather than the entire surrogate $\targetEm$.
-Thus, a consequence of using such \inlinedef{pointwise estimators} is that they ignore any 
-predictive correlation structure in the surrogate. 
-
-The most common posterior estimate of this sort is the \inlinedef{expected unnormalized posterior (EUP)}
-\footnote{
-\citep{StuartTeck1,StuartTeck2,GP_PDE_priors} refer to this as the \textit{marginal} approximation,
-while \citep{BurknerSurrogate} instead uses the term \textit{expected likelihood}. We prefer 
-\textit{expected unnormalized posterior}, as used in \citet{ourSurrPropPaper}, since it also encompasses
-log-posterior emulators.
-},
-\begin{align}
-\postApproxEUP(\Par) \Def \frac{\emE[\postEm(\Par)]}{\emE[\normCstEm]},
-\label{eq:eup}
-\end{align}
-which averages the numerator and denominator independently. The EUP can also 
-be interpreted as the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
-\begin{equation}
-\targetTraj  \sim \emDist, \qquad 
-\Par \sim \priorDens, \qquad
-\obs \given \targetTraj, \Par \sim \lik(\Par; \targetTraj, \d\obs),
-\label{eq:eup-prob-model}
-\end{equation}
-as discussed in \citet{ourSurrPropPaper,SinsbeckNowak,StuartTeck1,StuartTeck2}.
-The papers \citet{StuartTeck1,StuartTeck2,random_fwd_models} establish bounds between the EUP
-and ground truth posterior. \citet{ourSurrPropPaper} studies the EUP as an approximation
-to the EP, demonstrating that the two distributions can deviate when 
-the distribution of $\postEm(\Par)$ varies significantly with $\Par$, especially when these pointwise
-distributions are heavy-tailed.
-
-\begin{table}[h]
-\centering
-\begin{tabular}{>{\raggedright\arraybackslash}p{2.2cm} >{\centering\arraybackslash}p{3.8cm} >{\centering\arraybackslash}p{4.2cm} >{\centering\arraybackslash}p{4.2cm}}
-\toprule
-& \textbf{Plug-In Mean} & \textbf{EUP} & \textbf{EP} \\
-\midrule
-\textbf{Ratio Estimator} & 
-$\displaystyle \frac{\postDens(\Par; \emE[\targetEm])}{\normCst(\emE[\targetEm])}$ &
-$\displaystyle \frac{\emE[\postDens(\Par; \targetEm)]}{\emE[\normCst(\targetEm)]}$ &
-$\displaystyle \emE\left[\frac{\postDens(\Par; \targetEm)}{\normCst(\targetEm)}\right]$ \\ [4ex]
-
-\textbf{Mixture Dist.} & 
-$\int \postDensNorm(\Par; \targetTraj) \delta_{\emMean}(\d\targetTraj)$ & 
-$\int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj \given \obs)$ & 
-$ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
-\bottomrule
-\end{tabular}
-\caption{Different perspectives on normalized density approximations defined by various forms of averaging.
-	     The top row highlights interpretations as ratio estimators; only the EP considers the 
-	     coupling between the numerator and denominator. The second row shows that each
-	     approximation can be viewed as a weighted mixture over surrogate-induced posterior 
-	     trajectories.}
-\label{tab:post-approx-comparison}
-\end{table}
- 
-The EUP is typically more computationally convenient relative to the EP. 
-This is especially true in special cases where the expectation
-$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{ex:eup-fwd-em, ex:eup-ldens-em}), 
-which allows for the application of standard 
-Bayesian inference algorithms. Alternatively, if $\targetEm(\Par)$ can be directly sampled pointwise,
-then $\emE[\postEm(\Par)]$ can be unbiasedly estimated, enabling the use of pseudo-marginal 
-MCMC \citep{pseudoMarginalMCMC}. The psuedo-marginal approach is studied in 
-\citet{garegnani2021NoisyMCMC}, and \citet{ourSurrPropPaper} notes that correlated pseudo-marginal
-methods \citep{corrPM} may be employed when $\targetEm$ is a GP.
-
-\begin{examplebox}{EUP, Gaussian Forward Model Emulator Setting}{eup-fwd-em}
-Consider the setting from \Cref{ex:fwd-em}, where a Gaussian forward model surrogate is paired with 
-an additive Gaussian likelihood. In this case, the EUP is given by
-\begin{align*}
-\postApproxEUPNorm(\Par)
-\propto \emE\left[\priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar) \right] 
-&= \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar + \emVar(\Par)).
-\end{align*}
-\end{examplebox}
-
-\begin{examplebox}{EUP, Gaussian Log-Likelihood Emulator Setting}{eup-ldens-em}
-In the setting from \Cref{ex:ldens-em} with a log-likelihood emulator with Gaussian predictive
-distributions, the EUP is given by
-\begin{align*}
-\postApproxEUPNorm(\Par)
-\propto \emE\left[\priorDens(\Par)\Exp{\targetEm(\Par)} \right] 
-&= \priorDens(\Par) \Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
-&= \postApproxMean(\Par) \Exp{\frac{1}{2} \emVar(\Par)}
-\end{align*}
-Due to the exponential dependence, this distribution can be highly sensitive to small changes in
-$\emMean(\Par)$ and $\emVar(\Par)$. In particular, the EUP in this setting is susceptible to 
-extreme concentration in small regions with large uncertainty \citep{ourSurrPropPaper,VehtariParallelGP}.
-\end{examplebox}
  
 \subsubsection{Other Pointwise Estimators}
 Various alternative estimators have been proposed for the unnormalized posterior density. 
@@ -914,24 +1001,22 @@ Instead of computing pointwise expectations, one can consider summarizing $\post
 using other statistics. Such estimators have primarily been considered for log-density
 emulators (\Cref{ex:eup-ldens-em}), motivated by the lack of robustness of the EUP in this setting.
 \citet{VehtariParallelGP,quantileApprox,FATES_CES} consider the use of pointwise quantiles as 
-a more robust alternative to the mean. \citet{gpEmMCMC} consider a weighted quantile variant that 
-results in an estimator that penalizes surrogate uncertainty. This generally has the effect of enforcing
-tail decay in the estimator as distance from the design points increases, but fails to produce an
-uncertainty-aware posterior approximation. \Cref{ex:other-pw-ldens-em} details the particular
-form of these estimators for surrogate models with Gaussian predictions.
+a more robust alternative to the mean. \Cref{ex:other-pw-ldens-em} details the particular form 
+of these estimators for log-likelihood emulators with Gaussian predictions. 
+Instead of the median, \citet{gpEmMCMC} utilize the pointwise mode of $\postEm(\Par)$, which
+has the effect of penalizing surrogate uncertainty; i.e., the posterior approximation at a particular point strictly decreases
+when surrogate uncertainty increases at that point. This has the desirable effect of encouraging 
+tail decay in the posterior estimate as distance form the design points increases, but but fails to produce 
+an uncertainty-aware posterior approximation.
 
 In the forward model emulation setting, \citet{BurknerSurrogate} also consider an \textit{expected log-likelihood}
 approximation of the form $\priorDens(\Par) \Exp{\emE[\log \lik(\Par; \targetEm)]}$ and draw 
 a connection with power-scaled likelihoods. However, the authors ultimately recommend the expected 
 posterior and expected likelihood as preferred alternatives to this method.
 
-
 \begin{examplebox}
-{\parbox{0.85\linewidth}{%
-    Other Pointwise Estimators\\
-    Gaussian Log-Likelihood Emulator Setting}
-}
-{other-pw-ldens-em}
+{Quantile Estimator, Gaussian Log-Likelihood Emulator}
+{quantile-pw-ldens-em}
 We return to the setting from \Cref{ex:ldens-em} with a log-likelihood emulator with Gaussian predictive
 distributions. Let $\emQ$ denote the $\quantileProb \in (0, 1)$ quantile of a random variable with respect to the
 emulator predictive distribution. A quantile-based estimate in this setting takes the form
