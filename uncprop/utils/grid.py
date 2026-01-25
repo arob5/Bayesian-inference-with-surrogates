@@ -119,7 +119,9 @@ class Grid:
         if z.shape[0] != self.n_points:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
-        if self.n_dims == 2:
+        if self.n_dims == 1:
+            return self._plot_1d(z, titles=titles, points=points, **kwargs)
+        elif self.n_dims == 2:
             return self._plot_2d(z, titles=titles, points=points, **kwargs)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
@@ -160,6 +162,26 @@ class Grid:
 
         return fig, ax
 
+    def _plot_1d(self,
+                 z: Array,
+                 titles: str | list[str] | None = None,
+                 points: ArrayLike | None = None,
+                 **kwargs) -> tuple[Figure, Sequence[Axes]]:
+        assert self.n_dims == 1
+
+        X = self.grid_arrays[0]
+        Z = z.reshape(X.shape[0], -1)
+        fig, ax = plt.subplots()
+
+        for i in range(Z.shape[1]):
+            label = None if titles is None else titles[i]
+            ax.plot(X, Z[:,i], linestyle='-', label=label)
+
+        if points is not None:
+            y0,y1 = ax.get_ylim()
+            ax.vlines(points, y0, y1, linestyles='--', colors='red')
+
+        return fig, ax
 
     def _plot_2d(self,
                  z: Array,
