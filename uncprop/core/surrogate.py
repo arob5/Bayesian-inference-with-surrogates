@@ -36,7 +36,6 @@ PredDist: TypeAlias = Distribution
 
 
 def construct_design(key: PRNGKey,
-                     design_method: str, 
                      n_design: int, 
                      prior_sampler: Callable[[PRNGKey, int], ArrayLike], 
                      f: Callable) -> Dataset:
@@ -398,7 +397,7 @@ class FwdModelGaussianSurrogate(SurrogateDistribution):
         noise_cov_tril = self.noise_cov_tril
 
         def logdensity(x):
-            m_x = gp(x).mean.T
+            m_x = jnp.atleast_2d(gp(x).mean).T
             log_prior_x = log_prior(x)
             return log_prior_x + _gaussian_log_density_tril(y, m=m_x, L=noise_cov_tril)
 
@@ -425,11 +424,12 @@ class FwdModelGaussianSurrogate(SurrogateDistribution):
 
         def logdensity(x):
             pred = gp(x)
-            var_x = pred.variance.T # (n, p)
+            mean_x = jnp.atleast_2d(pred.mean).T
+            var_x = jnp.atleast_2d(pred.variance).T # (n, p)
             log_prior_x = log_prior(x)
             C_x = noise_cov[None] + jax.vmap(jnp.diag)(var_x) # (n, p, p)
             L_x = jnp.linalg.cholesky(C_x, upper=False)
-            return log_prior_x + _gaussian_log_density_tril(y, m=pred.mean.T, L=L_x)
+            return log_prior_x + _gaussian_log_density_tril(y, m=mean_x, L=L_x)
 
         return DistributionFromDensity(log_dens=logdensity,
                                        dim=gp.input_dim,

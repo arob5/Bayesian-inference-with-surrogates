@@ -200,3 +200,23 @@ def plot_coverage_curve_reps(log_coverage: Array,
         axs[0].legend()
 
     return fig, axs
+
+
+def plot_gp_1d(x: Array,
+               mean: Array,
+               sd: Array,
+               points: Array | None = None,
+               true_y: Array | None = None,
+               n_sd: int = 2):
+    
+    fig, ax = plt.subplots()
+    ax.plot(x, mean, linestyle='-')
+    ax.fill_between(x, mean-2*sd, mean+2*sd, alpha=0.3)
+
+    if true_y is not None:
+        ax.plot(x, true_y, linestyle='-', color='black')
+    if points is not None:
+        y0,y1 = ax.get_ylim()
+        ax.vlines(points, y0, y1, linestyles='--', colors='red')
+    
+    return fig, ax

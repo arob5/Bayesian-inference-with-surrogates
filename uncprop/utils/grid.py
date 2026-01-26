@@ -166,6 +166,7 @@ class Grid:
                  z: Array,
                  titles: str | list[str] | None = None,
                  points: ArrayLike | None = None,
+                 legend: bool = True,
                  **kwargs) -> tuple[Figure, Sequence[Axes]]:
         assert self.n_dims == 1
 
@@ -180,6 +181,9 @@ class Grid:
         if points is not None:
             y0,y1 = ax.get_ylim()
             ax.vlines(points, y0, y1, linestyles='--', colors='red')
+
+        if legend:
+            ax.legend()
 
         return fig, ax
 
