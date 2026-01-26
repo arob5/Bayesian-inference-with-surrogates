@@ -167,6 +167,7 @@ class Grid:
                  titles: str | list[str] | None = None,
                  points: ArrayLike | None = None,
                  legend: bool = True,
+                 colors: Mapping[str, str] | None = None,
                  **kwargs) -> tuple[Figure, Sequence[Axes]]:
         assert self.n_dims == 1
 
@@ -176,11 +177,13 @@ class Grid:
 
         for i in range(Z.shape[1]):
             label = None if titles is None else titles[i]
-            ax.plot(X, Z[:,i], linestyle='-', label=label)
+            color = colors[label] if (colors is not None and label in colors) else None
+            ax.plot(X, Z[:,i], linestyle='-', label=label, color=color)
 
         if points is not None:
             y0,y1 = ax.get_ylim()
-            ax.vlines(points, y0, y1, linestyles='--', colors='red')
+            color = colors['aux'] if (colors is not None and 'aux' in colors) else None
+            ax.vlines(points, y0, y1, linestyles='--', colors=color)
 
         if legend:
             ax.legend()

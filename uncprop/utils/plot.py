@@ -14,8 +14,8 @@ import math
 from uncprop.custom_types import Array
 
 def set_plot_theme():
-    sns.set_theme(style='white', palette='colorblind')
-    sns.set_context("paper", font_scale=1.5)
+    sns.set_theme(style='ticks', palette='colorblind')
+    sns.set_context('paper', font_scale=1.5)
 
     # Specific Paul Tol color scheme when comparing different posteriors
     colors = {
@@ -205,18 +205,30 @@ def plot_coverage_curve_reps(log_coverage: Array,
 def plot_gp_1d(x: Array,
                mean: Array,
                sd: Array,
+               colors: Mapping[str, str] | None = None,
                points: Array | None = None,
                true_y: Array | None = None,
                n_sd: int = 2):
-    
+    """
+    If provided, `colors` should have keys 'mean', 'interval',
+    'points', 'true'.
+    """
+    if colors is not None:
+        mean_color = colors['mean'] if 'mean' in colors else None
+        interval_color = colors['interval'] if 'interval' in colors else None
+        points_color = colors['points'] if 'points' in colors else None
+        true_color = colors['true'] if 'true' in colors else None
+    else:
+        mean_color = interval_color = points_color = true_color = None
+
     fig, ax = plt.subplots()
-    ax.plot(x, mean, linestyle='-')
-    ax.fill_between(x, mean-2*sd, mean+2*sd, alpha=0.3)
+    ax.plot(x, mean, linestyle='-', color=mean_color)
+    ax.fill_between(x, mean-2*sd, mean+2*sd, alpha=0.3, color=interval_color)
 
     if true_y is not None:
-        ax.plot(x, true_y, linestyle='-', color='black')
+        ax.plot(x, true_y, linestyle='-', color=true_color)
     if points is not None:
         y0,y1 = ax.get_ylim()
-        ax.vlines(points, y0, y1, linestyles='--', colors='red')
+        ax.vlines(points, y0, y1, linestyles='--', colors=points_color)
     
     return fig, ax
