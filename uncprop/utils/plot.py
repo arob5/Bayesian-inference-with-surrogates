@@ -10,6 +10,7 @@ import seaborn as sns
 import jax.numpy as jnp
 import numpy as np
 import math
+from jax.scipy.stats import norm
 
 from uncprop.custom_types import Array
 
@@ -202,17 +203,15 @@ def plot_coverage_curve_reps(log_coverage: Array,
     return fig, axs
 
 
-def plot_gp_1d(x: Array,
-               mean: Array,
-               sd: Array,
-               colors: Mapping[str, str] | None = None,
-               points: Array | None = None,
-               true_y: Array | None = None,
-               n_sd: int = 2):
-    """
-    If provided, `colors` should have keys 'mean', 'interval',
-    'points', 'true'.
-    """
+def plot_marginal_pred_1d(x: Array,
+                          mean: Array,
+                          lower: Array,
+                          upper: Array,
+                          colors: Mapping[str, str] | None = None,
+                          points: Array | None = None,
+                          true_y: Array | None = None,
+                          interval_alpha: float = 0.3):
+    
     if colors is not None:
         mean_color = colors['mean'] if 'mean' in colors else None
         interval_color = colors['interval'] if 'interval' in colors else None
@@ -223,7 +222,7 @@ def plot_gp_1d(x: Array,
 
     fig, ax = plt.subplots()
     ax.plot(x, mean, linestyle='-', color=mean_color)
-    ax.fill_between(x, mean-2*sd, mean+2*sd, alpha=0.3, color=interval_color)
+    ax.fill_between(x, lower, upper, alpha=interval_alpha, color=interval_color)
 
     if true_y is not None:
         ax.plot(x, true_y, linestyle='-', color=true_color)
@@ -232,3 +231,28 @@ def plot_gp_1d(x: Array,
         ax.vlines(points, y0, y1, linestyles='--', colors=points_color)
     
     return fig, ax
+
+
+def plot_gp_1d(x: Array,
+               mean: Array,
+               sd: Array,
+               colors: Mapping[str, str] | None = None,
+               points: Array | None = None,
+               true_y: Array | None = None,
+               interval_prob: float = 0.95,
+               interval_alpha: float = 0.3):
+    """
+    If provided, `colors` should have keys 'mean', 'interval',
+    'points', 'true'.
+    """
+    q = (1 - interval_prob) / 2
+    shift = jnp.abs(norm.ppf(q))
+
+    return plot_marginal_pred_1d(x=x,
+                                 mean=mean,
+                                 lower=mean-shift*sd,
+                                 upper=mean+shift*sd,
+                                 colors=colors,
+                                 points=points,
+                                 true_y=true_y,
+                                 interval_alpha=interval_alpha)
