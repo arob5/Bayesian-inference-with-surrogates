@@ -507,57 +507,84 @@ problem presents multiple high-level options. We categorize these under the broa
 is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly noted in 
 \citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
 
-\begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.3\textwidth} % GP dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{gp_dist_fwdem.png}
-         \caption{\texorpdfstring{$\targetEm$}{Forward Model Emulator}}
-         \label{fig:gp_dist_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % llik dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{llik_dist_fwdem.png}
-         \caption{\texorpdfstring{$\log \lik(\cdot; \targetEm)$}{Induced Log-Likelihood Emulator}}
-         \label{fig:llik_dist_fwd}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % lik dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{lik_dist_fwdem.png}
-         \caption{\texorpdfstring{$\lik(\cdot; \targetEm)$}{Induced Likelihood Emulator}}
-         \label{fig:lik_dist_fwdem}
-     \end{subfigure} % Empty subfigure
-     \begin{subfigure}[b]{0.3\textwidth}
+
+% --- PAGE 1: THE PLOTS ---
+\begin{figure}[p] % [p] suggests putting it on its own page
     \centering
-    \rule{\textwidth}{0pt}
+    \enlargethispage{2cm} % Borrow 2cm from the bottom margin
+    
+    % Adjust row spacing globally for this figure
+    \captionsetup[subfigure]{aboveskip=2pt, belowskip=2pt}
+
+    % ROW 1
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{gp_dist_fwdem.png}
+        \caption{\texorpdfstring{$\targetEm \approx \fwd$}{Forward Model Emulator}}
     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % llik dist [llik] 
-         \centering
-         \includegraphics[width=\textwidth]{llik_dist_llikem.png}
-         \caption{\texorpdfstring{$\targetEm$}{Log-Likelihood Emulator}}
-         \label{fig:llik_dist_llikem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.3\textwidth} % lik dist [llik]
-         \centering
-         \includegraphics[width=\textwidth]{lik_dist_llikem.png}
-         \caption{\texorpdfstring{$\Exp{\targetEm}$}{Induced Likelihood Emulator}}
-         \label{fig:lik_dist_llikem}
-     \end{subfigure}
-        \caption{Comparison of forward model and log-likelihood emulation in a simple one-dimensional problem 
-        \texorpdfstring{($\dimPar = \dimObs = 1$)}{}. The top and bottom rows correspond 
-        to the forward model emulation and log-likelihood emulation settings, respectively. The columns correspond to (1) the forward model emulator;
-        (2) the log-likelihood emulator induced by the underlying GP; 
-        (3) the likelihood emulator induced by the underlying GP. When directly emulating the 
-        log-likelihood, the underlying GP is itself the log-likelihood emulator, and there is no forward model emulator.
-        The black line is the ground truth and the red points are the design points used for emulator training. 
-        The blue line is the mean of the respective emulators, and the shaded area corresponds to 90\% credible 
-        intervals for the predictive distributions.}
-        \label{fig:em_dist_1d}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \rule{\textwidth}{0pt} 
+        \vfill % Fills vertical space to match the left plot
+    \end{subfigure}
+
+    \vspace{0.2em} % Reduced spacing
+
+    % ROW 2
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{lpost_dist_fwdem.png}
+        \caption{\texorpdfstring{$\log \Gaussian(\obs \given \targetEm(\cdot), \likPar)$}{Induced Log-Likelihood Emulator}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{gp_dist_ldensem.png}
+        \caption{\texorpdfstring{$\targetEm \approx \log \postDens$}{Log-Density Emulator}}
+    \end{subfigure}
+
+    \vspace{0.2em}
+
+    % ROW 3
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{dens_dist_fwdem.png}
+        \caption{\texorpdfstring{$\Gaussian(\obs \given \targetEm(\cdot), \likPar)$}{Induced Likelihood Emulator}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{dens_dist_ldensem.png}
+        \caption{\texorpdfstring{$\Exp{\targetEm}$}{Induced Density Approximation}}
+    \end{subfigure}
+
+    \vspace{0.2em}
+
+    % ROW 4
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{post_norm_dist_fwdem.png}
+	\caption{\texorpdfstring{$\Gaussian(\obs \given \targetEm(\cdot), \likPar) / \normCst(\targetEm)$}{Induced Density Approximation}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[height=0.18\textheight]{post_norm_dist_ldensem.png}
+        \caption{\texorpdfstring{$\Exp{\targetEm} / \normCst(\targetEm)$}{Induced Density Approximation}}
+    \end{subfigure}
+
+    % We leave the main caption empty or use a short version here
+    \caption{Surrogate pushforward distributions.} 
 \end{figure}
+
+% --- PAGE 2: THE MAIN CAPTION ---
+\begin{figure}[t]
+    \ContinuedFloat % Keeps the figure numbering the same (e.g., Fig 1)
+    \caption{Comparison of forward model and log-likelihood emulation. The left column displays the forward model emulation setting, while the right column displays the log-likelihood emulation setting. The rows represent (1) the primary emulator/blank, (2) the induced log-likelihood, (3) the induced likelihood, and (4) additional metrics. The black line is ground truth, red points are design points, and blue lines are the emulator mean with 90\% credible intervals.}
+    \label{fig:em_dist_1d}
+\end{figure}
+
 
 \subsection{Forward Model Emulation}
 In the Bayesian inverse problem context (\Cref{sec:bip}), the primary computational bottleneck 
@@ -977,28 +1004,28 @@ extreme concentration in small regions with large uncertainty \citep{ourSurrProp
      \centering
      \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
          \centering
-         \includegraphics[width=\textwidth]{lpost_dist_fwdem_trim.png}
+         \includegraphics[width=\textwidth]{lpost_dist_fwdem.png}
          \caption{\texorpdfstring{$\log\left\{\priorDens(\Par) \lik(\Par; \targetEm)\right\}$}{Log Post. Approx., Forward Model Em.}}
          \label{fig:lpost_dist_fwdem}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
          \centering
-         \includegraphics[width=\textwidth]{post_norm_approx_fwdem.png}
+         \includegraphics[width=\textwidth]{post_approx_fwdem.png}
          \caption{$\postDensNorm$ approx}
          \label{fig:post_norm_approx_fwdem}
      \end{subfigure}
      \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [llik]
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [ldens]
          \centering
-         \includegraphics[width=\textwidth]{lpost_dist_llikem_trim.png}
+         \includegraphics[width=\textwidth]{gp_dist_ldensem.png}
          \caption{\texorpdfstring{$\log\left\{\priorDens(\Par)\right\} + \targetEm(\Par)$}{Log Post. Approx., Log-Lik Em.}}
          \label{fig:lpost_dist_llikem}
      \end{subfigure}
      \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [llik] 
+     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [ldens] 
          \centering
-         \includegraphics[width=\textwidth]{post_norm_approx_llikem.png}
+         \includegraphics[width=\textwidth]{post_approx_ldensem.png}
          \caption{$\postDensNorm$ approx}
          \label{fig:post_norm_approx_llikem}
      \end{subfigure}
