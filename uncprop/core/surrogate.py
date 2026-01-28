@@ -299,7 +299,6 @@ class LogDensClippedGPSurrogate(SurrogateDistribution):
         return jnp.clip(gaussian_samp, max=upper_bound)
     
     def log_density_from_pred(self, pred: PredDist):
-        """ Surrogate predictions are Gaussian log-density predictions; just clip them """
         return pred
     
     def expected_surrogate_approx(self) -> DistributionFromDensity:

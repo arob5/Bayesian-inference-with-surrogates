@@ -499,14 +499,122 @@ subsets $\ParBatch$.
 
 % Surrogate targets
 \section{Choosing the Target Map} \label{sec:target-map}
-Perhaps even more important than the choice of model class for the surrogate is the decision
-as to what should be emulated in the first place; in other words, the definition of the target map
-$\target$. While this question is highly problem-dependent, the structure of a Bayesian inference
-problem presents multiple high-level options. We categorize these under the broad labels
-\inlinedef{forward model emulation} and \inlinedef{log-density emulation}. A similar dichotomy
-is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly noted in 
-\citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
+Parallel to the choice of model class is the determination of the surrogate’s target: the map $\target$.
+While this decision is inherently problem-dependent, the structure of a Bayesian inverse problem suggests 
+two overarching strategies: \inlinedef{forward model emulation}, which targets the underlying forward map, 
+and \inlinedef{log-density emulation}, which directly targets the posterior surface.
+A similar dichotomy is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}. 
+Other authors have acknowledged the importance of this choice, prior to committing to one of the 
+two options \citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
+\todo{Is this last sentence needed?}
 
+\subsection{Forward Model Emulation}
+The high computational cost in Bayesian inverse problems stems primarily from the underlying forward model. 
+A natural strategy to alleviate this bottleneck is to fit an emulator directly targeting the forward map, $\target \Def \fwd$. 
+The architecture of such a surrogate is largely dictated by the properties of $\fwd$.
+A common challenge in this context is the high dimensionality of the observation space,
+particularly for models with complex spatial or temporal structure---examples include 
+epidemic modeling \citep{FadikarAgentBased},
+engineering design \citep{PODemulation}, ecological forecasting 
+\citep{emPostDens,DagonCLM}, and climate modeling \citep{ESM_modeling_2pt0,idealizedGCM}.
+Emulators for such complex model outputs typically rely on some form of dimensionality reduction. Common approaches include:
+\begin{enumerate}
+\item \emph{Basis Expansion}: Emulating the coefficients of a linear basis 
+(e.g., principal components analysis or proper orthogonal decomposition) \citep{HigdonBasis,FadikarAgentBased,PODemulation}.
+\item \emph{Feature Extraction}: Targeting low-dimensional statistical summaries 
+\citep{ESM_modeling_2pt0,idealizedGCM,CLMBayesianCalibration,CLMSurrogates}.
+\item \emph{Specialized Architectures}: Utilizing emulators designed to leverage the structure of particular
+dynamical models 
+\citep{GP_dynamic_emulation, Bayesian_emulation_dynamic,Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
+\end{enumerate} 
+
+\begin{examplebox}{Forward Model Surrogate, Gaussian Setting}{fwd-em}
+Consider the setting of a Bayesian inverse problem with an additive Gaussian noise model
+(\Cref{eq:inv_prob_Gaussian}). Assume an emulator $\targetEm$ has been 
+fit to approximate the true forward model $\fwd$. This induces an approximation of the 
+unnormalized posterior density 
+\begin{align}
+\postDens(\Par; \targetEm) &= \priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar),
+\label{eq:fwd-em-Gaussian}
+\end{align}
+for each $\Par \in \parSpace$. In general, the distribution of $\postDens(\Par; \targetEm)$ depends on 
+the predictive distribution of $\targetEm$. The additional assumption 
+$\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$ facilitates closed-form computation
+of the first two moments,
+\begin{align*}
+\emE\left[\postDens(\Par; \targetEm) \right] 
+&= \priorDens(\Par) \Gaussian(\obs \given \emMean(\Par), \likPar + \emVar(\Par)) \\
+\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
+&= \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\likPar + 
+\emVar(\Par)  \right)}{\det(2\pi \likPar)^{1/2}} - \\
+&\qquad \qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\left[\likPar + \emVar(\Par)\right]  \right)}{\det(2\pi [\likPar + \emVar(\Par)])^{1/2}}\bigg],
+\end{align*}
+a fact that has been leveraged frequently in the literature
+\citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,Surer2023sequential,
+VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}. \Cref{fig:em_dist_1d}
+visualizes how the uncertainty in a GP forward model emulator propagates to downstream 
+quantities within this setting.
+\end{examplebox}
+
+\subsection{Log-Density Emulation} \label{sec:log_density_emulation}
+Given that most posterior inference algorithms require only an unnormalized density as input, 
+an efficient alternative to forward model emulation is to directly target the log-likelihood or 
+the unnormalized log-posterior—collectively referred to as \inlinedef{log-density emulation}.
+While one could also consider modeling the likelihood or posterior surface directly,
+emulating on the log scale is generally preferred to improve numerical stability, enforce
+non-negativity of the resulting density approximation, and yield a smoother target surface.
+
+The primary appeal of this approach is \textit{scalarization} \citep{ranjan2016inverse, trainDynamics}: 
+collapsing a potentially high-dimensional observation space into a single scalar output. 
+However, this simplification introduces distinct challenges. Log-densities often exhibit a large dynamic 
+range and non-stationary behavior, which can be difficult for standard surrogates to capture 
+\citep{wang2018adaptive, Surer2023sequential}. Furthermore, because additive errors in the log-domain 
+become multiplicative errors when exponentiated, the resulting posterior approximations are highly sensitive 
+to emulator misspecification \citep{ourSurrPropPaper}.
+
+A further complication arises when likelihood parameters (e.g., $\likPar$ in \Cref{eq:inv_prob_Gaussian}) are unknown. 
+While one can expand the emulator's input space to include these parameters \citep{llikRBF, emPostDens}, this increases 
+the input dimensionality and can further complicate the target surface. Alternatively, some likelihoods permit emulating a 
+sufficient statistic—such as the mean squared error—which can be evaluated independently of the noise 
+parameters \citep{FerEmulation}.
+
+Log-likelihood emulators have also seen use in calibrating stochastic simulators \citep{OakleyllikEm,llikEmABC,VehtariParallelGP,gpEmMCMC}, 
+developing active learning algorithms \citep{JosephMinEnergy,ActiveLearningMCMC,quantileApprox,AlawiehIterativeGP}, 
+and performing Bayesian quadrature \citep{BayesQuadrature,BayesQuadRatios}. Applications to 
+ecological modeling are considered in \citet{FerEmulation,FATES_CES}, while \citep{GP_PDE_priors}
+compares forward model and log-likelihood emulators for PDE-constrained inverse problems.
+
+\begin{examplebox}{Log-Likelihood Surrogate, Gaussian Setting}{ldens-em}
+In the case that the emulator is fit to the log-likelihood, the induced unnormalized posterior approximation
+is of the form 
+\begin{align}
+\postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}.
+\end{align}
+Under the assumption $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$, this
+quantity is log-normally distributed, with moments
+\begin{align*}
+\emE\left[\postDens(\Par; \targetEm) \right] 
+&= \priorDens(\Par)\Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
+\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
+&= \priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)}.
+\end{align*}
+\end{examplebox}
+
+\subsubsection{Log-Likelihood vs. Log-Posterior Emulation.} \label{sec:llik_vs_lpost}
+Since the prior density is typically a known, analytic function, the log-likelihood is the most 
+frequent target for emulation. However, several works target the unnormalized log-posterior 
+directly \citep{emPostDens, Kandasamy_2017, gp_surrogates_random_exploration}. 
+While the choice may seem numerically inconsequential---as one can be converted to the other 
+via a deterministic shift by the log-prior---there are distinct modeling trade-offs.
+
+Emulating the log-posterior allows the surrogate to leverage known tail behavior, as the posterior 
+must decay to zero in the limit. In contrast, the log-likelihood's tail behavior may be poorly defined 
+or non-existent (e.g., in the case of flat likelihoods), presenting a greater challenge for 
+standard surrogate models (e.g., stationary GPs). Conversely, a downside of log-posterior emulation 
+is that it ``bakes in'' a specific prior; any update to the prior model necessitates re-training the surrogate, 
+whereas a log-likelihood emulator remains valid regardless of the prior choice.
+In data-rich settings where the likelihood dominates the prior, the practical difference between these two 
+targets diminishes, as the response surfaces will be nearly identical in the regions of high posterior mass.
 
 % --- PAGE 1: THE PLOTS ---
 \begin{figure}[p] % [p] suggests putting it on its own page
@@ -521,6 +629,7 @@ is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly 
         \centering
         \includegraphics[height=0.18\textheight]{gp_dist_fwdem.png}
         \caption{\texorpdfstring{$\targetEm \approx \fwd$}{Forward Model Emulator}}
+        \label{fig:gp_dist_fwdem}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
@@ -564,13 +673,13 @@ is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly 
     % ROW 4
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[height=0.18\textheight]{post_norm_dist_fwdem.png}
+        \includegraphics[height=0.22\textheight]{post_norm_dist_fwdem.png}
 	\caption{\texorpdfstring{$\Gaussian(\obs \given \targetEm(\cdot), \likPar) / \normCst(\targetEm)$}{Induced Density Approximation}}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.48\textwidth}
         \centering
-        \includegraphics[height=0.18\textheight]{post_norm_dist_ldensem.png}
+        \includegraphics[height=0.22\textheight]{post_norm_dist_ldensem.png}
         \caption{\texorpdfstring{$\Exp{\targetEm} / \normCst(\targetEm)$}{Induced Density Approximation}}
     \end{subfigure}
 
@@ -580,281 +689,127 @@ is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}, and briefly 
 
 % --- PAGE 2: THE MAIN CAPTION ---
 \begin{figure}[t]
-    \ContinuedFloat % Keeps the figure numbering the same (e.g., Fig 1)
-    \caption{Comparison of forward model and log-likelihood emulation. The left column displays the forward model emulation setting, while the right column displays the log-likelihood emulation setting. The rows represent (1) the primary emulator/blank, (2) the induced log-likelihood, (3) the induced likelihood, and (4) additional metrics. The black line is ground truth, red points are design points, and blue lines are the emulator mean with 90\% credible intervals.}
+    \ContinuedFloat
+    \caption{Pushforward distributions induced by underlying GP emulators of the forward model (left column) and unnormalized log-posterior (right column). 
+    The plots summarize the pointwise marginal distributions of each quantity; in particular, the means (magenta lines)
+    and 95\% credible intervals (shaded regions). The black lines are ground truth (no emulation) and the gray dashed lines indicate the locations of the 
+    design inputs used to train the surrogates. The respective rows represent the surrogate-induced distributions over the 
+    \emph{(1)} forward model, \emph{(2)} unnormalized log-posterior density, \emph{(3)} unnormalized posterior density, and 
+    \emph{(4)} normalized posterior density. The top right entry is blank due to the fact that the log-density surrogate does not produce an approximation
+    of the forward model. The magenta lines in the third and fourth rows represent \texorpdfstring{$\postApproxEUP$}{the unnormalized EUP}
+    and \texorpdfstring{$\postApproxEP$}{the EP}, respectively.}
     \label{fig:em_dist_1d}
 \end{figure}
 
 
-\subsection{Forward Model Emulation}
-In the Bayesian inverse problem context (\Cref{sec:bip}), the primary computational bottleneck 
-is the underlying forward model $\fwd$. A natural strategy is to fit an emulator to approximate
-the map $\Par \mapsto \fwd(\Par)$, thus defining $\target \Def \fwd$. 
-The first row of \Cref{fig:em_dist_1d} presents a toy example in which uncertainty in a forward model
-emulator propagates to the induced log-likelihood and likelihood approximations.  
-
-The particular form of the forward model surrogate will be dictated by the properties of $\fwd$.  
-A common challenge in emulating forward models stems from the fact that the observation 
-space (i.e., the output space of $\fwd(\Par)$) can be very high-dimensional. 
-Such complications commonly arise in settings with spatial or temporal structure, 
-such as epidemic modeling \citep{FadikarAgentBased},
-engineering design \citep{PODemulation}, ecological forecasting 
-\citep{emPostDens,DagonCLM}, and climate modeling \citep{ESM_modeling_2pt0,idealizedGCM}.
-One popular approach to deal with this challenge is to approximate the forward model output
-as a linear combination of a small number of basis vectors, and then emulate the scalar coefficients 
-of these vectors \citep{HigdonBasis,FadikarAgentBased,PODemulation}.
-Alternatively, surrogates 
-can be fit to low-dimensional summaries of the high-dimensional output, such as spatial or 
-temporal averages \citep{ESM_modeling_2pt0,idealizedGCM,CLMBayesianCalibration,CLMSurrogates}.
-Many other approaches have been proposed, including emulators designed 
-specifically for dynamical models \citep{GP_dynamic_emulation, Bayesian_emulation_dynamic, 
-Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
-Log-density emulation, described in \Cref{sec:log_density_emulation}, offers another avenue for 
-dimension reduction when the observation space is high-dimensional.
-
-
-\begin{examplebox}{Forward Model Surrogate, Gaussian Setting}{fwd-em}
-Consider the setting of a Bayesian inverse problem with an additive Gaussian noise model
-(\Cref{eq:inv_prob_Gaussian}). Assume an emulator $\targetEm$ has been 
-fit to approximate the true forward model $\fwd$. This induces an approximation of the 
-unnormalized posterior density 
-\begin{align}
-\postDens(\Par; \targetEm) &= \priorDens(\Par)\Gaussian(\obs \given \targetEm(\Par), \likPar),
-\label{eq:fwd-em-Gaussian}
-\end{align}
-for each $\Par \in \parSpace$. In general, the distribution of $\postDens(\Par; \targetEm)$ depends on 
-the predictive distribution of $\targetEm$. The additional assumption 
-$\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$ facilitates closed-form computation
-of the first two moments,
-\begin{align*}
-\emE\left[\postDens(\Par; \targetEm) \right] 
-&= \priorDens(\Par) \Gaussian(\obs \given \emMean(\Par), \likPar + \emVar(\Par)) \\
-\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
-&= \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\likPar + 
-\emVar(\Par)  \right)}{\det(2\pi \likPar)^{1/2}} - \\
-&\qquad \qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \frac{1}{2}\left[\likPar + \emVar(\Par)\right]  \right)}{\det(2\pi [\likPar + \emVar(\Par)])^{1/2}}\bigg].
-\end{align*}
-for each $\Par \in \parSpace$. This Gaussian setting has been considered frequently in the literature
-\citep{StuartTeck1,GP_PDE_priors,hydrologicalModel,hydrologicalModel2,Surer2023sequential,
-VillaniAdaptiveGP,weightedIVAR,idealizedGCM,CES}.
-\end{examplebox}
-
-\subsection{Log-Density Emulation} \label{sec:log_density_emulation}
-Ultimately, only an unnormalized density is required as input to standard posterior inference algorithms.
-Therefore, for the purpose of posterior inference, it is sufficient to bypass the forward model and directly 
-emulate either the log-likelihood or unnormalized log-posterior density.  
-We refer to these two approaches collectively as \inlinedef{log-density emulation}.
-The second row of \Cref{fig:em_dist_1d} demonstrates how uncertainty in a GP log-likelihood emulator 
-propagates to the likelihood. While one could consider directly emulating the density itself,
-fitting surrogates on the log scale is typically preferred as a way to improve numerical stability,
-enforce non-negativity in the density approximation, and yield a smoother target function for emulation.
-
-Perhaps the most significant benefit of using log-density emulation is the reduction to predicting a 
-scalar-valued output quantity, as opposed to the potentially high-dimensional output space of the forward model. 
-This notion is referred to as \textit{scalarization} in \citet{ranjan2016inverse, trainDynamics}.
-However, log-density emulation also presents several challenges. Even on the log scale, log-densities can be fast-varying and 
-exhibit a large dynamic range, proving troublesome for surrogate models that assume stationarity \citep{wang2018adaptive}.
-A simple toy example is used in \citep{Surer2023sequential} to demonstrate such modeling challenges, and the 
-authors conclude that forward model emulation is preferred in their application of interest. 
-Posterior approximations based on log-density surrogates can also be quite sensitive to emulator misspecification,
-owing to the fact that additive errors in the log-density surrogate are exponentiated, implying multiplicative errors in the 
-induced density approximation. This sensitivity can easily lead to pathological behavior when propagating 
-surrogate uncertainty in this setting, as discussed in \todo{add references/crossref}.
-
-A third challenge follows from the fact that 
-the likelihood parameters (e.g., $\likPar$ in \Cref{eq:inv_prob_Gaussian}) are typically not known and must also be 
-learned from data. An obvious solution is to extend the input space of the emulator to include the likelihood parameters
-\citep{llikRBF,emPostDens}, but the resulting response surface may prove more challenging to emulate. 
-This approach also increases both the input dimensionality of the emulator, as well as the number of design points required to achieve a reasonable fit. \citet{llikRBF} describe the construction of designs in the extended input space, 
-noting that design points can be added along the likelihood parameter dimensions without requiring more forward model evaluations. For example, in the Gaussian likelihood setting, once the simulation $\target(\Par)$ is obtained, the 
-likelihood $\Gaussian(\obs \given \target(\Par), \likPar)$ can now be evaluated cheaply at different values of $\likPar$.
-Alternatively, specific likelihood choices may admit a sufficient statistic which can be emulated independently of the likelihood parameters. \citet{FerEmulation}
-adopt this approach for a homoscedastic Gaussian likelihood $\Gaussian(\obs \given \fwd(\Par), \sigma^2 I)$ by 
-emulating the map $\Par \mapsto \norm{\obs - \fwd(\Par)}_2^2$.
-
-Log-likelihood emulators have also seen use in calibrating stochastic simulators \citep{OakleyllikEm,llikEmABC,VehtariParallelGP,gpEmMCMC}, developing active learning 
-algorithms \citep{JosephMinEnergy,ActiveLearningMCMC,quantileApprox,AlawiehIterativeGP}, 
-and performing Bayesian quadrature \citep{BayesQuadrature,BayesQuadRatios}. Applications to 
-ecological modeling are considered in \citet{FerEmulation,FATES_CES}. \citep{GP_PDE_priors}
-compares forward model and log-likelihood emulators for PDE-constrained inverse problems.
-Other works instead opt for the closely-related strategy of emulating the unnormalized log-posterior density
-\citet{emPostDens,Kandasamy_2017,gp_surrogates_random_exploration,landslideCalibration}.
-\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
-to approximate a sequence of functions designed to be more regular than the log-likelihood.
-
-\begin{examplebox}{Log-Likelihood Surrogate, Gaussian Setting}{ldens-em}
-In the case that the emulator is fit to the log-likelihood, the induced unnormalized posterior approximation
-is of the form 
-\begin{align}
-\postDens(\Par; \targetEm) &= \priorDens(\Par) \Exp{\targetEm(\Par)}.
-\end{align}
-Under the assumption $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$, this
-quantity is log-normally distributed, with moments
-\begin{align*}
-\emE\left[\postDens(\Par; \targetEm) \right] 
-&= \priorDens(\Par)\Exp{\emMean(\Par) + \frac{1}{2} \emVar(\Par)} \\
-\Var_{\emDist}\left[\postDens(\Par; \targetEm) \right]
-&= \priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)}
-\end{align*}
-\end{examplebox}
-
-\subsubsection{Log-Likelihood vs. Log-Posterior Emulation.} \label{sec:llik_vs_lpost}
-The literature summary above indicates that both log-likelihood and log (unnormalized) posterior
-emulators are utilized, with the former being more common. 
-We are not aware of any cases in which the performance of the two methods is compared. 
-Indeed, the choice appears inconsequential, as one emulator can easily be converted into the other 
-by adding or subtracting the log-prior density, which represents a deterministic shift to the predictive 
-distribution. Despite the similarity, there are potential tradeoffs from 
-a modeling standpoint. One benefit of emulating the log-posterior is the qualitative knowledge 
-that the tails of the target function must decay, which can (and should) be leveraged in designing 
-an appropriate surrogate model. The tail behavior of the log-likelihood is not always well-known a priori, 
-which can present more of a modeling challenge. The challenge of predicting the log-likelihood versus 
-the sum of the log-likelihood and log-prior depends on the particular problem at hand; when the data is
-highly informative the likelihood will dominate and thus the difference in difficulty will be small. A downside
-of log-posterior emulation is that the regularizing effect of the prior cannot be relied upon to tame 
-surrogate predictions in the tails. The importance of the surrogate tail behavior is further discussed in 
-\todo{add cross-ref}.
-
 % Surrogate-Based Posterior Approximation
 \section{Surrogate-Based Posterior Approximation}
-The primary goal of Bayesian inference is to characterize the posterior distribution $\postDensNorm$,
-which is then used for downstream analysis and decision making. Therefore, a central question in surrogate-based
-inference is how to utilize the emulator in approximating $\postDensNorm$ \citep{StuartTeck1,SinsbeckNowak,VehtariParallelGP}.
-Error in the emulator approximation will induce error in the posterior approximation, yielding 
-biased posterior estimates. In the ideal setting, this bias can be eliminated by iteratively refining the 
-surrogate \todo{cross-ref}, but computational constraints often place practical limits on such procedures.
-It is thus crucial to acknowledge the surrogate uncertainty within the posterior approximation
-in order to properly calibrate posterior uncertainty estimates
-\citep{BilionisBayesSurrogates,BurknerSurrogate,StuartTeck1,FerEmulation,BurknerTwoStep}. 
-However, there is no single objectively correct method for propagating the uncertainty captured by the surrogate predictive 
-distribution \citep{BurknerSurrogate}. Rather, a variety of methods have been proposed, each with their 
-own assumptions and practical limitations. It is important for practitioners to understand these 
-considerations in order to determine the best approach for a particular application. In this section, we survey 
-the various posterior approximations that have been proposed, highlighting overarching themes and 
-conceptual considerations. See \todo{cross-ref} for recommendations in choosing a particular method.
+The ultimate objective of Bayesian inference is to characterize the posterior distribution 
+$\postDensNorm$ for downstream decision-making. Consequently, the central challenge in 
+surrogate modeling is not merely fitting the emulator, but effectively utilizing it to 
+approximate $\postDensNorm$ \citep{StuartTeck1,SinsbeckNowak}. Any discrepancy between 
+the emulator and the target map introduces bias into the posterior estimate. 
+While iterative refinement can asymptotically eliminate this bias (\Cref{sec:active-learning}), 
+computational budgets often preclude this luxury.
 
-\subsection{Plug-In Mean}
-Before discussing methods to propagate surrogate uncertainty, we establish the baseline method of simply 
-ignoring this uncertainty. A deterministic emulator can be defined by utilizing only the predictive mean function
-of the random surrogate model. Plugging the predictive mean $\emMean$
-in place of the true target map induces the deterministic posterior approximation
+To mitigate bias and properly calibrate uncertainty, one must acknowledge the surrogate's predictive 
+uncertainty within the posterior approximation \citep{BilionisBayesSurrogates,BurknerSurrogate}. 
+However, as noted by \citet{BurknerSurrogate}, there is no single ``correct'' mechanism for propagating 
+surrogate uncertainty. In this section, we survey the conceptual frameworks for deriving these 
+approximations and detail specific estimators proposed in the literature.
+
+\subsection{The Plug-In Mean}
+We begin by establishing a baseline: ignoring surrogate uncertainty entirely. The \inlinedef{plug-in mean} 
+approximation replaces the random surrogate with its deterministic predictive mean $\emMean$, yielding:
 \begin{equation}
-\postApproxNormMean(\Par) \Def \postDens(\Par; \emMean) / \normCst(\emMean),
+\postApproxNormMean(\Par) \Def \postDens(\Par; \emMean) / \normCst(\emMean).
 \label{eq:mean-approx}
 \end{equation}
-which we refer to as the \inlinedef{plug-in mean} approximation.
-The plug-in mean approximation has been applied in various contexts
-\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates} 
-and analyzed theoretically 
-\citep{StuartTeck1,StuartTeck2,random_fwd_models,TeckHyperpar,gp_surrogates_random_exploration}.
-If the emulator predictive mean is known to be highly accurate then this approximation may be reasonable,
-but in general ignoring the surrogate uncertainty can lead to posterior approximations that are 
-both inaccurate and overly confident \citep{BurknerSurrogate,BilionisBayesSurrogates}.
+While computationally straightforward and widely applied
+\citep{VehtariParallelGP,trainDynamics,emPostDens,BurknerSurrogate,CLMBayesianCalibration,Lueckmann2018LikelihoodfreeIW,BilionisBayesSurrogates}, 
+this approach assumes the emulator is highly accurate. In general, disregarding the surrogate uncertainty leads to posterior 
+approximations that are both biased and overconfident \citep{BurknerSurrogate,BilionisBayesSurrogates,StuartTeck1}.
 
 \subsection{Frameworks for Constructing Posterior Estimators}
-To transition to uncertainty-aware posterior approximations that leverage the full surrogate
-predictive distribution, we establish four conceptual frameworks that provide the basis for
-deriving such estimators.
+To move beyond the plug-in baseline, we outline four conceptual frameworks that rigorously ground 
+the propagation of surrogate uncertainty.
 
 \subsubsection{Summarizing a Random Measure} \label{sec:random-measure}
-Recall that $\postNormEm(\Par) = \postEm(\Par) / \normCstEm$ is a random density
-\footnote{More generally, this is a random probability measure. We work with densities to avoid measure-theoretic technicalities.},
-with randomness in the numerator and denominator induced by $\targetEm$.
- One approach to deriving posterior approximations is to construct
-a deterministic estimate that summarizes the uncertainty in $\postNormEm$.
-\citet{ourSurrPropPaper} formalize this as an optimization problem by defining a loss
-$\loss(\qDensNorm, \qDensNorm^\prime)$ that quantifies the difference between two densities. 
-A deterministic estimate can then be defined as a minimizer of the expected loss
+Given that the emulator $\targetEm$ is a random function, the induced posterior $\postNormEm(\Par)$ is a random density
+\footnote{More generally, this is a random probability measure. We work with densities to avoid measure-theoretic technicalities.}. 
+One principled approach is to construct a deterministic approximation that best summarizes this random measure. 
+\citet{ourSurrPropPaper} formalize this via the variational objective
 \begin{equation}
 \qDensNormOpt \Def \argmin_{\qDensNorm \in \qSpaceNorm} \emE[\loss(\qDensNorm, \postNormEm)],
 \label{eq:random-measure-variational}
 \end{equation}
-over a candidate space of densities $\qSpaceNorm$.
-An estimator derived under this perspective will naturally acknowledge the coupling between
-$\postEm(\Par)$ and $\normCstEm$ induced by the shared dependence on $\targetEm(\Par)$.
-While conceptually coherent, the dependence of $\normCstEm$ on the entire random function
-$\targetEm$ introduces practical difficulties.
+for a loss function $\loss$ and space of densities $\qSpaceNorm$.
+Estimators derived from this perspective naturally account for the coupling between the unnormalized density and the 
+normalizing constant. However, the global dependence on $\normCstEm$---a function of the 
+random function $\targetEm$---often renders inference challenging for densities of this form.
 The random measure perspective is introduced in \citet{StuartTeck1} and adopted in 
 \citet{ourSurrPropPaper,StuartTeck2,random_fwd_models,TeckHyperpar}.
 
 \subsubsection{Decision Theory for Unnormalized Densities} \label{sec:decision-theory}
-A practical strategy that circumvents the challenges associated with the random normalizing 
-constant is to instead derive an estimate of the \textit{unnormalized} density $\postEm$
-and then normalize the estimate post-hoc. This is computationally convenient since
- $\postEm(\Par)$, unlike $\postNormEm(\Par)$, depends only on the marginal distribution of
- $\targetEm(\Par)$, rather than the entire surrogate $\targetEm$.
-Such \inlinedef{pointwise estimators} ignore any predictive correlation structure in the surrogate,
-thus failing to acknowledge the coupling between $\postEm(\Par)$ and $\normCstEm$. 
-A standard approach to constructing pointwise estimators is to adopt a Bayesian decision theoretic
-viewpoint, defining a loss function $\loss(\qDens, \qDens^\prime)$ that quantifies the 
-distance between two \textit{unnormalized} densities. The unnormalized posterior estimate is then 
-defined as the minimizer of the expected loss
+To circumvent the difficulties of a random normalizing constant, one can estimate the \textit{unnormalized} 
+density $\postEm$ directly. This approach is computationally attractive as $\postEm(\Par)$ depends only 
+on the marginal distribution of $\targetEm(\Par)$. Adopting a decision-theoretic stance \citep{SinsbeckNowak}, 
+we seek the estimator $\qDensOpt$ that minimizes the expected loss
 \begin{equation}
 \qDensOpt \Def \argmin_{\qDens \in \qSpace} \emE[\loss(\qDens, \postEm)],
 \end{equation}
-over a set of candidate functions $\qSpace$. The final posterior estimate is the normalized version
-of $\qDensOpt$. This decision theoretic approach was originally proposed in 
-\citet{SinsbeckNowak} and subsequently utilized in 
-\citet{VehtariParallelGP,gpEmMCMC,StuartTeck2}.
+over a set of candidate functions $\qSpace$. The final approximate posterior is obtained by normalizing 
+$\qDensOpt$ post-hoc. While computationally convenient, these \inlinedef{pointwise estimators} ignore the 
+correlation structure of the surrogate \citep{VehtariParallelGP}. This decision theoretic approach was originally proposed in 
+\citet{SinsbeckNowak} and subsequently utilized in \citet{VehtariParallelGP,gpEmMCMC,StuartTeck2}.
 
 \subsubsection{Generalized Bayesian Inference} \label{sec:generalized-bayes}
-Alternatively, pointwise estimators may be motivated through the lens of generalized Bayesian inference.
-Assume the surrogate appears only through the likelihood function (thus excluding log-posterior emulators).
-In this case, we define a pointwise loss $\gibbsloss(\Par, \targetTraj)$ quantifying model-data agreement
-given a particular parameter $\Par$ and surrogate realization $\targetTraj$. 
-Let $\risk$ denote a risk functional mapping $\Par$ to a deterministic summary
-of the random variable $\gibbsloss(\Par, \targetEm)$. A posterior approximation can then be defined as 
-the optimizer
+Pointwise estimators can alternatively be viewed through the lens of 
+Generalized Bayesian Inference \citep{Bissiri2016,knoblauch2019} by specifying a loss function 
+$\gibbsloss(\Par; \targetEm)$. Viewing this loss as a random function of $\targetEm$, let $\risk$ 
+denote a risk functional mapping $\Par$ to a deterministic summary of the random variable $\gibbsloss(\Par; \targetEm)$.
+The posterior approximation is defined as the density minimizing the regularized risk
 \begin{align}
-\qDensNormOpt \Def 
-\mathrm{arginf}_{\qDensNorm \in \qSpaceNorm} 
-\left\{\int \risk(\Par) \qDensNorm(\d\Par) + \frac{1}{\gibbsrate} \KL{\qDensNorm}{\priorDens} \right\},
+\qDensNormOpt \Def \mathrm{arginf}_{\qDensNorm \in \qSpaceNorm} 
+\left\{\int \risk(\Par) \qDensNorm(\d\Par) + \frac{1}{\gibbsrate} \KL{\qDensNorm}{\priorDens} \right\}
 \end{align}
-over the space of densities $\qSpaceNorm$. The \textit{learning rate} $\gibbsrate > 0$ controls the size of the 
-prior-to-posterior update. Under conditions detailed in \todo{add Bissiri reference}, the optimum assumes the form
+over the space of densities $\qSpaceNorm$
+\footnote{Let $\KL{p}{q}$ denote the Kullback-Leibler (KL) divergence between two densities.}
+\footnote{Under this construction, we assume that the prior density is external to the surrogate model,
+thus excluding log-posterior emulators.}.
+Under conditions detailed in \citet{Bissiri2016}, the optimum 
+assumes the form
 \begin{align}
 \qDensNormOpt \propto \priorDens(\Par) \Exp{-\gibbsrate \risk(\Par)}.
 \end{align}
-As we will see, with $\gibbsrate = 1$ and particular definitions of $\risk$, this framework is equivalent to the 
-decision theoretic construction in the preceding section.
-\todo[inline]{Refine: benefits/motivation of this approach}
+The learning rate $\gibbsrate$ governs the weight of the data relative to the prior. This framework is particularly useful 
+for robustifying inference against surrogate misspecification; by tuning $\gibbsrate$, one can temper the posterior to 
+account for epistemic errors in the emulator \citep{Bissiri2016}. Notably, with $\gibbsrate = 1$ and particular definitions 
+of $\risk$, this framework is equivalent to the decision theoretic construction in the preceding section.
 
 \subsubsection{Uncertainty Propagation via Computation} \label{sec:unc-prop-computation}
-Finally, we consider algorithmic approaches to uncertainty propagation. Instead of explicitly 
-defining a target posterior approximation, one can consider propagating the surrogate uncertainty
-through standard inference algorithms (e.g., MCMC). The posterior approximation is thus 
-implicitly defined as the output of such an algorithm. \citet{gpEmMCMC} conceptualize 
-a Metropolis-Hastings algorithm as a deterministic map from $\postDens$ to
-a set of samples (conditional on the internal random variables used for Metropolis proposals
-and acceptance decisions). Since the surrogate model induces a distribution over $\postDens$,
-approximate posterior inference can be viewed as a standard problem of forward uncertainty propagation
-through the deterministic map. While the authors ultimately deem the implementation of such
-a procedure impractical, it serves as conceptual inspiration for practical approximations.
-\citet{FerEmulation} also adopt a purely algorithmic approach, randomly sampling a realization of the 
-surrogate at each iteration of an MCMC algorithm. Approaches of this sort often have close connections
-with the so-called noisy MCMC literature \citep{noisyMCSurvey,noisyMCMC}.  
+Finally, rather than defining an explicit target density, the posterior approximation can be defined 
+\textit{implicitly} as the output of a randomized algorithm. \citet{gpEmMCMC} adopt this perspective,
+seeking to characterize how emulator uncertainty propagates through an MCMC algorithm.
+\citet{FerEmulation,ourSurrPropPaper} each consider algorithms
+that involve sampling the surrogate model at each iteration of an MCMC scheme.
+Such methods, closely related to noisy MCMC \citep{noisyMCSurvey,noisyMCMC}, 
+treat inference as a direct forward propagation of surrogate uncertainty through the sampling machinery.
+
 
 \section{Concrete Posterior Estimators}
-We now define several explicit posterior approximations, highlighting their interpretations within 
-the above conceptual frameworks.
+We now examine specific estimators derived from these frameworks.
 
-\subsubsection{The Expected Posterior}
-Adopting the random measure viewpoint from \Cref{sec:random-measure}, 
-a natural estimate follows from considering the mean of the random density, yielding
-the \inlinedef{expected posterior (EP)},
+\subsubsection{The Expected Posterior (EP)}
+Under the random measure framework (\Cref{sec:random-measure}), minimizing the expected KL-divergence 
+yields the mean of the random density, or the \inlinedef{expected posterior (EP)}
+\footnote{The label \textit{expected posterior} is borrowed from \citet{BurknerSurrogate}.}:
 \begin{align}
-\postApproxEP(\Par) \Def \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
+\postApproxEP(\Par) \Def \emE[\postDensNorm(\Par; \targetEm)] = \int \postDensNorm(\Par; \targetTraj) \emDist(\d\targetTraj).
 \label{eq:ep}
 \end{align}
-\citet{ourSurrPropPaper} argues for the EP as a principled default choice in most analyses.
-They adopt the variational formulation in \Cref{eq:random-measure-variational}, showing
-that the EP minimizes the expected Kullback-Leibler (KL) divergence and expected 
-$L_2$ error with respect to $\postNormEm$.
-The terminology \textit{expected posterior} comes from 
-\citet{BurknerSurrogate}, in which the EP is empirically compared to alternative approximations.
-The EP is a continuous mixture of posterior realizations $\postDensNorm(\Par; \targetTraj)$
-induced by trajectories $\targetTraj \sim \emDist$ of the underlying emulator. This immediately 
-suggests the following direct sampling scheme for EP inference.
+Functionally, the EP is a mixture distribution averaging the posteriors induced by all possible surrogate trajectories. 
+This interpretation suggests a nested sampling scheme (\Cref{alg:ep}), marginalizing over surrogate trajectories $\targetTraj \sim \emDist$.
 
 \begin{algorithm}[H]
     \caption{Direct sampling from $\postApproxEP$}
@@ -870,38 +825,33 @@ suggests the following direct sampling scheme for EP inference.
     \end{algorithmic}
 \end{algorithm}
 
-In general, it is not possible to directly sample from $\postDensNorm(\cdot; \targetTraj)$ and thus it is common to replace the inner sampling
-step in \Cref{alg:ep} with an MCMC algorithm. The resulting approximate sampling scheme, known as \inlinedef{Metropolis within Monte Carlo (MwMC)},
-is investigated in \citet{garegnani2021NoisyMCMC,BurknerSurrogate,BurknerTwoStep}. 
-The outer sampling step requires the ability to 
-sample surrogate trajectories and is thus problematic 
-when the surrogate model is infinite-dimensional (e.g., a GP), likely explaining why early work in this area discounted the practicality
-of the EP \citep{StuartTeck1,StuartTeck2,SinsbeckNowak}. 
-\citet{gpEmMCMC} adopt the algorithmic viewpoint discussed in \Cref{sec:unc-prop-computation},
-noting that uncertainty could be pushed through the MCMC mapping by sampling surrogate trajectories
-and feeding each through the MCMC scheme. While they do not explore this approach further, we note 
-that the method they describe directly corresponds to a MwMC scheme for EP-based inference.
-\citet{ourSurrPropPaper} discuss practical computation for the EP, presenting
-an approximate MCMC scheme that is well-defined in the GP setting.
-\citet{trainDynamics} alternatively suggest an approximate MwMC implementation tailored to
-GP emulators. 
+Practical implementation typically employs Metropolis-within-Monte-Carlo (MwMC), in which approximate samples 
+$\Par^{(\sampleIndex, m)}$ are generated by an MCMC scheme targeting the posterior trajectory 
+$\postDensNorm(\cdot; \targetTraj^{(\sampleIndex)})$ \citep{garegnani2021NoisyMCMC, BurknerSurrogate}.
+However, sampling full trajectories (line 3) is non-trivial for infinite-dimensional models like GPs, a limitation that 
+likely hindered early adoption of the EP \citep{StuartTeck1,SinsbeckNowak,VehtariParallelGP}. Recent advances have proposed 
+approximate schemes tailored for GP emulators to surmount this bottleneck \citep{trainDynamics,ourSurrPropPaper}.
+\citet{ourSurrPropPaper} argues for the EP as a principled default posterior choice in many applications.
 
-\subsubsection{The Expected Unnormalized Posterior}
-The computational challenges associated with EP-based inference stem from the fact that
-the EP considers the average of the \textit{normalized} random posterior $\postEm(\Par) / \normCstEm$.
-To avoid such challenges, one could instead consider the ratio estimator defined by averaging
-the numerator and denominator independently, yielding the \inlinedef{expected unnormalized posterior (EUP)}
+\subsubsection{The Expected Unnormalized Posterior (EUP)}
+To avoid integrating over the normalizing constant, as required by the EP, one can average the numerator 
+and denominator independently. This yields the \inlinedef{expected unnormalized posterior (EUP)}
 \footnote{
 \citep{StuartTeck1,StuartTeck2,GP_PDE_priors} refer to this as the \textit{marginal} approximation,
-while \citep{BurknerSurrogate} instead uses the term \textit{expected likelihood}. We prefer 
+while \citep{BurknerSurrogate} instead use the term \textit{expected likelihood}. We prefer 
 \textit{expected unnormalized posterior}, as used in \citet{ourSurrPropPaper}, since it also encompasses
 log-posterior emulators.
-},
+}:
 \begin{align}
 \postApproxEUPNorm(\Par) \Def \frac{\emE[\postEm(\Par)]}{\emE[\normCstEm]}.
 \label{eq:eup}
 \end{align}
-The EUP was first proposed in \citet{BilionisBayesSurrogates}, in which it is derived as 
+The EUP corresponds to the $L_2$-optimal estimator under the unnormalized decision-theoretic framework 
+(\Cref{sec:decision-theory}; \citet{SinsbeckNowak}). Because the expectation $\emE[\postEm(\Par)]$ can often 
+be computed in closed form (see examples below) or unbiasedly estimated, the EUP enables the use 
+of standard MCMC or pseudo-marginal \citep{pseudoMarginalMCMC} algorithms \citep{garegnani2021NoisyMCMC}.
+
+The EUP is originally proposed in \citet{BilionisBayesSurrogates}, in which it is derived as 
 the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
 \begin{equation}
 \targetTraj  \sim \emDist, \qquad 
@@ -910,13 +860,13 @@ the marginal posterior $p(\Par \given \obs)$ under the hierarchical model
 \label{eq:eup-prob-model}
 \end{equation}
 a perspective also noted in \citet{ourSurrPropPaper,SinsbeckNowak,StuartTeck1,StuartTeck2}.
-\citet{SinsbeckNowak} adopt the decision theory framework from
-\Cref{sec:decision-theory}, showing that the EUP is optimal under an $L_2$ loss. 
 \citet{StuartTeck1,StuartTeck2,random_fwd_models} establish Hellinger bounds between the EUP
-and ground truth posterior. \citet{ourSurrPropPaper} sutdy the EUP as an approximation
+and ground truth posterior when using GP emulators.
+ \citet{ourSurrPropPaper} study the EUP as an approximation
 to the EP, demonstrating that the two distributions can deviate when 
 the distribution of $\postEm(\Par)$ varies significantly with $\Par$, especially when these pointwise
-distributions are heavy-tailed. \Cref{tab:post-approx-comparison} compares the plug-in mean, EUP,
+distributions are heavy-tailed.
+ \Cref{tab:post-approx-comparison} compares the plug-in mean, EUP,
 and EP estimators as (i) ratio estimators, and (ii) mixture distributions aggregating surrogate-induced
 posterior trajectories. 
 
@@ -946,16 +896,6 @@ $ \int \postDensNorm(\Par; \targetTraj) \emDist(d\targetTraj)$ \\
 	     the Dirac measure centered at $\emMean$.}
 \label{tab:post-approx-comparison}
 \end{table}
- 
-The EUP is typically more computationally convenient relative to the EP. 
-This is especially true in special cases where the expectation
-$\emE[\postEm(\Par)]$ is available in closed-form (see \Cref{ex:eup-fwd-em,ex:eup-ldens-em}), 
-which allows for the application of standard 
-Bayesian inference algorithms. Alternatively, if $\targetEm(\Par)$ can be directly sampled pointwise,
-then $\emE[\postEm(\Par)]$ can be unbiasedly estimated, enabling the use of pseudo-marginal 
-MCMC \citep{pseudoMarginalMCMC}. The psuedo-marginal approach is studied in 
-\citet{garegnani2021NoisyMCMC}, and \citet{ourSurrPropPaper} notes that correlated pseudo-marginal
-methods \citep{corrPM} may be employed when $\targetEm$ is a GP.
 
 \begin{examplebox}{EUP, Gaussian Forward Model Emulator}{eup-fwd-em}
 Consider the setting from \Cref{ex:fwd-em}, where
@@ -1005,8 +945,15 @@ extreme concentration in small regions with large uncertainty \citep{ourSurrProp
      \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
          \centering
          \includegraphics[width=\textwidth]{lpost_dist_fwdem.png}
-         \caption{\texorpdfstring{$\log\left\{\priorDens(\Par) \lik(\Par; \targetEm)\right\}$}{Log Post. Approx., Forward Model Em.}}
+         \caption{\texorpdfstring{$\log \Gaussian(\obs \given \targetEm(\cdot), \likPar)$}{Log Post. Approx., Forward Model Em.}}
          \label{fig:lpost_dist_fwdem}
+     \end{subfigure}
+     \hfill
+     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [ldens]
+         \centering
+         \includegraphics[width=\textwidth]{gp_dist_ldensem.png}
+         \caption{Log-Posterior Emulator}
+         \label{fig:lpost_dist_llikem}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
@@ -1014,13 +961,6 @@ extreme concentration in small regions with large uncertainty \citep{ourSurrProp
          \includegraphics[width=\textwidth]{post_approx_fwdem.png}
          \caption{$\postDensNorm$ approx}
          \label{fig:post_norm_approx_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [ldens]
-         \centering
-         \includegraphics[width=\textwidth]{gp_dist_ldensem.png}
-         \caption{\texorpdfstring{$\log\left\{\priorDens(\Par)\right\} + \targetEm(\Par)$}{Log Post. Approx., Log-Lik Em.}}
-         \label{fig:lpost_dist_llikem}
      \end{subfigure}
      \hfill
      \begin{subfigure}[b]{0.48\textwidth} % post norm approx [ldens] 
@@ -1080,7 +1020,7 @@ arises from the decision theoretic viewpoint by considering losses of the $L_1$ 
 \citep{VehtariParallelGP,gpEmMCMC}.
 \end{examplebox}
 
-\section{Sequential Strategies for Surrogate Construction}
+\section{Sequential Strategies for Surrogate Construction} \label{sec:active-learning}
 Outside of simple problems, achieving a desired level of surrogate accuracy using a single 
 round of simulator runs typically requires an impractically large number of design points. 
 This stems from the fact that the posterior distribution may occupy a small subset of the prior support.
@@ -1106,6 +1046,8 @@ a Bayesian inverse problem. Our presentation highlights three (non mutually excl
 \begin{enumerate}
 \item \inlinedef{Design Optimization}
 \item \inlinedef{Tempering}
+\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
+to approximate a sequence of functions designed to be more regular than the log-likelihood.
 \item \inlinedef{MCMC-based Exploration}
 \end{enumerate}
 
