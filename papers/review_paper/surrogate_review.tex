@@ -106,107 +106,58 @@
 
 \maketitle
 
-% Introduction 
+
 \section{Introduction}
+In fields ranging from climate science \citep{ESM_modeling_2pt0,FATES_CES} to systems biology 
+\citep{yeastMatingSurrogate}, the scientific process increasingly relies on complex, high-fidelity 
+computer simulations. Calibrating these models—estimating parameters consistent with observed data—naturally 
+falls within the Bayesian paradigm. However, standard posterior inference algorithms (e.g., Markov chain Monte Carlo) 
+require evaluating the likelihood function tens of thousands of times. When a single simulation takes minutes or hours, 
+this cost renders these standard approaches intractable.
+
+To overcome this barrier, a rich literature has developed around \textit{surrogate modeling} (i.e., \textit{emulation}). The core 
+idea is to replace the expensive simulator with a statistical approximation—trained on a sparse set of simulator runs—that is 
+computationally cheap to evaluate \citep{KOH,gramacy2020surrogates}. By substituting this emulator into the inference pipeline, 
+one seeks to characterize the posterior distribution at a fraction of the cost.
+
+\subsection{Challenges in Surrogate-Based Bayesian Inference}
+While conceptually straightforward, replacing the true model with an approximation introduces methodological
+and conceptual challenges. While some of these difficulties are generic within the broader context of surrogate modeling,
+others are unique to the use of emulators within a Bayesian workflow \citep{BurknerSurrogate}:
+
+\begin{enumerate}
+    \item \textbf{Concentrated Posteriors:} When data are informative, the posterior mass often concentrates in a small, 
+    unknown subset of the prior support. A sparse set of simulator evaluations is likely to completely miss this 
+    ``needle in a haystack'', yielding a surrogate that is uninformed in the most relevant regions. 
+    \item \textbf{Non-Stationary Target Surfaces:} Surrogate models are often trained to emulate quantities such as 
+    simulator outputs or the log-likelihood function. These target surfaces can be highly non-stationary and span many 
+    orders of magnitude. Standard emulators (e.g., stationary Gaussian processes) often struggle to model such surfaces 
+    sufficiently well to resolve the posterior geometry.
+    \item \textbf{Uncertainty Propagation:} Surrogate error translates directly into posterior bias. Ignoring this error can lead to
+    biased and overconfident inference, necessitating frameworks to construct uncertainty-aware posterior estimates.
+    \item \textbf{The Chicken and Egg Problem:} A globally-accurate surrogate model is not necessarily required for accurate
+    posterior inference. Rather, high surrogate accuracy is necessary in high-density regions. However, identifying these 
+    regions requires the very knowledge of the posterior geometry that the surrogate is intended to provide.
+\end{enumerate}
+
+\subsection{Scope and Contributions}
+This review synthesizes the methodological landscape of surrogate-based Bayesian inference, 
+focusing on the dual goals of \textit{uncertainty propagation} (accounting for surrogate error) and 
+\textit{uncertainty reduction} (surrogate refinement via active learning). 
+We adopt a generic probabilistic perspective, encompassing both 
+\textit{forward model emulation} (emulating simulator outputs) and 
+\textit{log-density emulation} (directly emulating the log-likelihood or log-posterior surface).
+Rather than focusing on a specific model class, we provide a unified treatment of the workflow, 
+highlighting how sequential design and probabilistic uncertainty quantification can be leveraged to 
+tackle the aforementioned challenges.
 
 \todo[inline]{
-	Need a section or figure laying out the Bayesian surrogate-based workflow. 
-	Also need to highlight the major challenges (concentrated posterior, non-stationary likelihoods, sparse designs, GP tail behavior)
+\begin{enumerate}
+\item Add paper organization here
+\item Add section walking through surrogate-based modular Bayesian workflow, with a diagram.
+\item Improve citations in introduction
+\end{enumerate}
 }
-
-Within the Bayesian paradigm, there is need for posterior approximation algorithms tailored to settings 
-where evaluation of the (unnormalized) posterior density incurs significant computational expense. 
-This situation commonly arises in the physical, biological, and engineering sciences, 
-where likelihood evaluations require running a complex computer simulation; 
-e.g., \citep{ESM_modeling_2pt0,yeastMatingSurrogate,FerEmulation,FATES_CES,CLMBayesianCalibration}.
-Such computer models often derive from systems of differential equations, with the goal being to estimate (i.e., calibrate) 
-unknown parameters characterizing the physical model.
-To address this computational bottleneck, a large body of research has emerged that seeks to characterize the Bayesian 
-posterior distribution over model parameters while minimizing the number of required posterior density evaluations. 
-A popular class of methods involves replacing either the computer model, log-likelihood function, or
-log-posterior density with a statistical surrogate (also called an emulator or meta-model), 
-which induces a computationally cheap approximation to the posterior density.
-The surrogate can be trained offline using a small set of expensive model runs (often performed in 
-parallel), and plugged in as an approximation to facilitate the application of 
-standard inference schemes such as Markov chain Monte Carlo (MCMC) 
-\citep{modularization,BurknerSurrogate,BurknerTwoStep}.
-
-This generic surrogate-based Bayesian workflow can be instantiated in a variety of ways.
-A key modeling decision is the choice of input-output map used to generate training data for
-fitting the emulator---i.e., the choice of which quantity to emulate. One option is to 
-target the computational bottleneck at its source by emulating the underlying computer model.
-This strategy, which we term \textit{forward model emulation}, has been applied extensively
-in the computer experiments literature; surrogates have been devised for a wide variety of 
-computer models, including those with high-dimensional outputs \citep{HigdonBasis,RougierHighDim}, 
-high-dimensional inputs \citep{RemoteSensingEmulator,ZhouHighDimInput}, 
-dynamical structure \citep{GP_dynamic_emulation,Bayesian_emulation_dynamic}, and
-inherent stochasticity \citep{stochasticComputerModels,VehtariParallelGP,FadikarAgentBased}. 
-Alternatively, in the context of Bayesian inference, 
-it has been noted that only an approximation of the posterior density is required to 
-accelerate posterior estimation \citep{StuartTeck1,GP_PDE_priors}. Therefore, an alternative surrogate 
-strategy consists of directly emulating the log-likelihood 
-(e.g., \citet{VehtariParallelGP,FerEmulation,trainDynamics}) or 
-(unnormalized) log-posterior density (e.g., \citet{emPostDens,gp_surrogates_random_exploration,Kandasamy_2017}). 
-We collectively refer to such approaches as \textit{log-density emulation}.
-In this review, we adopt a generic viewpoint that encompasses both forward model and log-likelihood
-emulation. We will explore the strengths and drawbacks of each approach, and discuss in which contexts
-each might be preferred.
-
-In addition to choosing the target map for emulation, another key decision is the 
-choice of surrogate model. Gaussian processes \citep{KOH,HigdonBasis,StuartTeck1,VehtariParallelGP}, 
-polynomial chaos expansions
-\citep{dimRedPolyChaos,PCEBIP,BurknerSurrogate}, and 
-neural networks \citep{Lueckmann2018LikelihoodfreeIW,DagonCLM} have 
-been extensively applied for this purpose. While many previous studies
-on surrogate-based Bayesian inference focus on a specific model 
-(e.g., \citet{StuartTeck1,VehtariParallelGP}), recent work has emphasized generic 
-probabilistic workflows \citep{BurknerSurrogate,garegnani2021NoisyMCMC,BurknerTwoStep}.
-We adopt the latter perspective in this review, remaining agnostic to the particular
-surrogate model, while also highlighting Gaussian processes as a special case in order
-to aid intuition.
-
-While surrogates offer the potential for significant computational savings, 
-they introduce a new source of uncertainty within the Bayesian model. 
-To avoid incorrect or miscalibrated inference, it is necessary
-to both propagate and---within computational constraints---reduce this uncertainty.
-The latter can be addressed by means of sequential design (i.e., active learning)
-algorithms, which refine the posterior approximation by iteratively constructing the set of simulator runs used for
-surrogate training \citep{SinsbeckNowak,Li_2014,VehtariParallelGP,Lueckmann2018LikelihoodfreeIW,Surer2023sequential,
-KandasamyActiveLearning2015,VillaniAdaptiveGP,weightedIVAR,Semler_2023,Semler2024GradientEnhanced,
-surrogateNoisyMCMC,hydrologicalModel,AlawiehIterativeGP}.
-In many practical applications it is computationally infeasible to reduce the surrogate approximation error to 
-a negligible level. Hence, recent work has stressed the importance of inferential workflows that 
-propagate surrogate uncertainty so that downstream uncertainty estimates acknowledge the 
-surrogate approximation
-\citep{BurknerSurrogate,surrogateNoisyMCMC,CES,FerEmulation,hydrologicalModel,hydrologicalModel2}.
-In order to propagate surrogate uncertainty, the emulator must include uncertainty
-estimates in addition to point predictions. We therefore focus on \textit{probabilistic emulators}, 
-which provide predictions in the form of a probability distribution. Gaussian processes naturally 
-fall within this category, while other models can be converted into probabilistic emulators
-via Bayesian treatments \citep{BayesianPCE1,BayesianPCE2} or ensemble methods \citep{deepEnsembles}. 
-
-% Goals
-\subsection{Goals}
-Or contributions? Need to think about what we want in this section. Generally speaking, it seems that 
-our main contribution is a broad synthesis of a collection of related methods for surrogate-based 
-Bayesian inference. We review the varied literature on two related goals: uncertainty propagation 
-(posterior approximation) and uncertainty reduction (sequential design/active learning). We provide
-detailed derivations of common results used in the Gaussian settings, while also highlighting 
-generic probabilistic workflows that do not rely on distributional assumptions.
-
-% Paper Organization
-\subsection{Paper Organization}
-\Cref{sec:background} begins with background on Bayesian inverse problems and Gaussian processes.
-\Cref{sec:surrogate-models} provides an overview of probabilistic surrogates, highlighting distinctions
-between finite and infinite-dimensional emulators and describing the techniques of forward model 
-emulation and log-density emulation. \Cref{sec:post-approx} addresses the question of how to 
-use a probabilistic surrogate to approximate the posterior distribution, with an emphasis on correctly
-propagating surrogate uncertainty. \Cref{sec:seq-design} reviews active learning strategies for 
-goal-oriented surrogate refinement. We offer a list of practical recommendations in \Cref{sec:recs},
-which are emphasized in a numerical case study presented in \Cref{sec:case-study}.
-In \Cref{sec:related-work} we highlight related work in computer model calibration, probabilistic numerics,
-and multifidelity methods (\todo: this third one may change). We conclude in \Cref{sec:conclusion}. 
-All derivations and proofs are provided in the appendix.
 
 % Background
 \section{Bayesian Inference with Expensive Models} \label{sec:background}
@@ -1018,6 +969,73 @@ arises from the decision theoretic viewpoint by considering losses of the $L_1$ 
 \end{examplebox}
 
 \section{Sequential Strategies for Surrogate Construction} \label{sec:active-learning}
+In trivial settings, a static design sampled from the prior may suffice to train an accurate surrogate. However, for complex inverse problems, the posterior distribution often concentrates on a minute subset of the prior support. A "one-shot" design—while allowing for maximal parallelism—allocates computational resources inefficiently, placing the vast majority of design points in regions of negligible posterior mass. Conversely, the limiting case of a \inlinedef{pure sequential} strategy, where simulations are performed serially, maximizes information gain per run but fails to exploit parallel computing resources.
+
+To balance these extremes, modern approaches typically adopt a batch-sequential workflow: simulator runs are spread across multiple rounds, with earlier results guiding the selection of future batches. We refer to this broad class of algorithms as \inlinedef{active learning} for Bayesian inverse problems. The central challenge in this regime is the "exploration vs. exploitation" trade-off \citep{reviewBayesOpt,BadiaRL}. The algorithm must exploit current knowledge to refine the surrogate in high-probability regions, while simultaneously exploring areas where surrogate uncertainty is high to avoid missing modes.
+
+We categorize sequential strategies into three (often overlapping) paradigms:
+\begin{enumerate}
+    \item \inlinedef{Design Optimization}: Explicitly maximizing an acquisition function to select the next batch of points.
+    \item \inlinedef{Tempering}: Constructing a sequence of intermediate target densities to guide the surrogate toward the posterior.
+    \item \inlinedef{MCMC-based Exploration}: Embedding the design construction directly within a posterior sampling algorithm.
+\end{enumerate}
+
+\subsection{Design Optimization}
+In this framework, new design points are chosen by optimizing a criterion, or \textit{acquisition function}, that quantifies the utility of observing the simulator at a candidate location. Unlike standard experimental design—which often targets global response surface accuracy—active learning for inversion must be "goal-oriented," focusing strictly on the accuracy of the resulting posterior approximation.
+
+A subtle but critical consideration in this setting is the optimal distribution of design points. Even with a perfect surrogate, approximating a probability distribution requires placing more points in regions of high probability mass. In fact, theoretical results suggest that design points should be sampled from a distribution that is \textit{over-dispersed} relative to the target posterior, thereby ensuring adequate coverage of the tails \citep{sinsbeck2020sequential}. Design criteria must therefore balance three objectives: (i) reducing surrogate uncertainty, (ii) focusing on high posterior mass, and (iii) ensuring tail coverage.
+
+\subsubsection{Frameworks for Design Criteria}
+Similar to the posterior estimators in \Cref{sec:target-map}, design criteria can be derived from rigorous theoretical frameworks.
+
+\paragraph{Decision Theoretic Framework.}
+Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
+\begin{equation}
+    \alpha(\batchPar) = \emE_{\batchObs}\left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
+\end{equation}
+where the outer expectation averages over potential simulation outcomes at $\batchPar$. This effectively anticipates the reduction in posterior approximation error provided by the new data.
+
+\paragraph{Stepwise Uncertainty Reduction (SUR).}
+Alternatively, SUR strategies seek to minimize an information-theoretic summary of the uncertainty in the quantity of interest \citep{bect2019supermartingale,chevalier2014fast}. If the quantity of interest is the posterior density, this amounts to selecting $\batchPar$ to minimize the expected entropy or integrated variance of the future posterior approximation.
+
+\subsubsection{Pointwise Criteria}
+Pointwise criteria assign a utility score to single candidate points $\Par \in \parSpace$. Common examples include Maximum Variance (MaxVar) and Maximum Entropy (MaxEnt), which target the location of highest surrogate uncertainty. While nominally designed for pure sequential settings, these can be adapted for batch acquisition using heuristic strategies. The \inlinedef{Kriging Believer} (or Constant Liar) heuristic \citep{ginsbourger2010kriging} selects a point, temporarily updates the surrogate assuming a deterministic outcome (e.g., the predictive mean), and repeats the process until the batch is filled. This prevents the "clumping" of design points that occurs if one simply selects the top-$k$ maxima of the acquisition function.
+
+\subsubsection{Global Criteria}
+Global criteria assess uncertainty integrated over the entire parameter space. These are naturally suited for batch selection, as the reduction in integrated uncertainty can be conditioned on a set of candidate points simultaneously.
+Crucially, the "goal" of the inference can be encoded into the integration measure. A generic global criterion takes the form:
+\begin{equation}
+    \alpha(\batchPar) = \int_{\parSpace} \mathbb{V}[\qDens(\Par) \mid \batchPar] \, w(\Par) \, \d\Par.
+\end{equation}
+Here, $\mathbb{V}$ represents the variance of the estimator conditioned on the proposed batch. The weight function $w(\Par)$ dictates the focus:
+\begin{itemize}
+    \item \textbf{Prior Weighting ($w = \priorDens$):} Reduces uncertainty globally according to the prior support. This is robust but may waste effort on low-likelihood regions.
+    \item \textbf{Posterior Weighting ($w \approx \postDens$):} Weights the integral by the current posterior approximation. This focuses the design on the posterior mode, but risks getting stuck in local optima if the current approximation is biased.
+\end{itemize}
+Alternatively, one can integrate the variance of the \textit{forward model} $\target$, weighted by the posterior probability. This targets regions where the map is uncertain \textit{and} the probability is high, explicitly coupling the surrogate accuracy to the inference task \citep{sinsbeck2020sequential, activeSubspaceLearning}.
+
+\subsection{Tempered Approximations}
+In problems where the likelihood is highly informative, the posterior effectively becomes a "needle in a haystack" relative to the prior. Active learning schemes targeting the true posterior directly may fail to identify the high-mass region, exhausting the budget on exploring negligible areas.
+
+A powerful remedy is \inlinedef{tempering}: introducing a sequence of intermediate distributions $\pi_0, \pi_1, \dots, \pi_T$, where $\pi_0 = \priorDens$ and $\pi_T = \postDens$. Common choices involve geometric bridges of the form $\pi_t(\Par) \propto \priorDens(\Par) \lik(\Par)^{\beta_t}$ with $0 = \beta_0 < \dots < \beta_T = 1$.
+The surrogate is constructed sequentially to approximate each $\pi_t$ in turn. By the time the algorithm targets $\pi_T$, the surrogate has already resolved the broader basins of attraction, preventing mode collapse. This strategy is closely related to Sequential Monte Carlo (SMC) and has been adapted for surrogate modeling in methods such as \textit{adaptive Gaussian process approximation} \citep{wang2018adaptive, adaptiveMultimodal} and Ensemble Kalman Inversion \citep{EKI_review}.
+
+\subsection{MCMC-based Exploration}
+A third class of strategies weaves the design construction directly into the execution of an MCMC chain. Rather than distinct "training" and "sampling" phases, the MCMC sampler acts as the exploration engine.
+
+These methods generally fall into two sub-categories:
+\begin{enumerate}
+    \item \textbf{Exact-Approximate MCMC:} These algorithms asymptotically sample from the exact posterior. A typical heuristic is to use the surrogate to propose a move, and then decide whether to run the true simulator based on a specific trigger (e.g., if the surrogate error at that point is likely to affect the acceptance decision) \citep{conrad2016accelerating, noisyMCMC}.
+    \item \textbf{Budget-Constrained Exploration:} Here, the MCMC chain is used primarily to discover high-probability candidates. If the chain encounters a region of high surrogate variance, the simulator is queried, and the surrogate is updated. Once the computational budget is exhausted, the final surrogate is frozen for inference. This approach is conceptually similar to "active learning" but uses the Markov chain dynamics to solve the maximization of the acquisition function implicitly \citep{gpEmMCMC, li2019adaptive}.
+\end{enumerate}
+
+
+
+
+
+\begin{comment}
+
+\section{Sequential Strategies for Surrogate Construction} \label{sec:active-learning}
 Outside of simple problems, achieving a desired level of surrogate accuracy using a single 
 round of simulator runs typically requires an impractically large number of design points. 
 This stems from the fact that the posterior distribution may occupy a small subset of the prior support.
@@ -1060,15 +1078,58 @@ Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature
 reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}.
 
 \subsection{Design Optimization}
+In this section I want to emphasize acquisition functions that are tailored to the goal of improving the posterior approximation,
+drawing a distinction to standard design criteria that are geared towards other goals (global response surface approximation
+or optimization). I also want to highlight two flavors of criteria (see subsections below). I want to adopt the general viewpoint
+of a sequential design loop that acquires a batch of points at each iteration. There is also a subtlety to get across regarding
+the optimal selection of new design points. Even in the absence of surrogate uncertainty, there exists the question of where 
+to optimally place design points to provide the best surrogate-based approximation of a probability distribution. Past work 
+suggests that the tails of the distribution should be over-sampled (i.e., sample design points from an over-dispersed version
+of the target distribution). In sequential design, this question is complicated by the fact that we also want to balance this with
+the placement of points in regions that are currently uncertain. Design criteria need to weigh both of these things.
+I would like to also discuss how criteria can be designed from the unnormalized density decision theoretic viewpoint, or 
+other viewpoints discussed when constructing posterior estimators. Perhaps this section should mimic that previous section,
+and first begin with a sub-section that lays out frameworks for deriving design criteria. Frameworks I know about are the 
+unnormalized decision theoretic framework and stepwise uncertainty reduction. I'm sure there could be some interested
+generalized Bayes viewpoints or a normalized posterior decision theoretic framework as well, which would be nice to
+tie this closely to that previous section.
+
+\subsubsection{Pointwise Criteria}
+This encompasses criteria like maxvar/maxent that seek the single point where the quantity of interest (e.g., the unnormalized
+posterior density) is most uncertain. These strategies are thus nominally for the pure sequential setting, but I want to highlight
+that they can utilized for multi-point acquisition using heuristic techniques like kriging believer/constant liar, or other methods.
+
+\subsubsection{Global Criteria}
+This encompasses criteria that consider the uncertainty over the entire design space such as integrated variance/entropy
+criteria. I want to highlight that pointwise criteria can often be converted to global criteria (maxvar to integrated variance).
+The general pattern here is: maximum uncertainty criteria converted to integrated conditional uncertainty criteria. These
+integrated criteria are naturally defined in the batch sequential setting, since the batch of points appears in the conditioning.
+I also want to highlight that there are many goal-oriented ways to construct these criteria in the Bayesian inference setting:
+the ``goal'' can be encoded in the both the integrand or the weighting measure in the integrated criteria. For example, 
+we can consider the conditional variance of the unnormalized posterior and integrate this over the design space, weighted
+uniformly or by the prior. Alternatively, we could consider the conditional variance of the underlying target map (e.g., the forward model)
+and then weight the integral by the current posterior approximation. These both take into account the goal of posterior approximation
+in some sense (i.e., place design points where the posterior is large as well as where there is surrogate uncertainty).  
+
 \subsection{Tempered Approximations}
+This section should highlight approaches that use some sort of likelihood tempering in addition to surrogate, which is common in 
+techniques like sequential importance sampling and ensemble Kalman inversion. The motivation here is that the posterior 
+may be very concentrated relative to the prior, so active learning schemes that target the fixed posterior over multiple iterations
+may be quite inefficient and take a while to find the region of high posterior mass. This might be improved by instead targeting
+intermediate distributions that act as stepping stones to the true posterior. This can be combined with acquisition criteria targeting
+the intermediate distributions as well.
+
 \subsection{MCMC-based Exploration}
+This section is a catch-all for techniques that do sequential design within a single MCMC algorithm. This includes so-called 
+``exact-approximate'' schemes which are designed to eventually sample from the true posterior, as well as approximate
+schemes that only acquire new points until some sort of budget is exhausted. 
+
 
 \section{Connection to Other Literatures}
 \subsection{Amortized and Simulation-Based Inference}
 \subsection{Computer Model Calibration}
 \subsection{Modular Bayesian Inference}
 
-\begin{comment}
 
 For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
 proposed that seek to strike this balance in the context of solving Bayesian inverse problems \citep{SinsbeckNowak,Surer2023sequential,KandasamyActiveLearning2015,weightedIVAR,
