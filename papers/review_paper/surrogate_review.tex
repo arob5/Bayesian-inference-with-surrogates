@@ -969,25 +969,43 @@ arises from the decision theoretic viewpoint by considering losses of the $L_1$ 
 \end{examplebox}
 
 \section{Sequential Strategies for Surrogate Construction} \label{sec:active-learning}
-In trivial settings, a static design sampled from the prior may suffice to train an accurate surrogate. However, for complex inverse problems, the posterior distribution often concentrates on a minute subset of the prior support. A "one-shot" design—while allowing for maximal parallelism—allocates computational resources inefficiently, placing the vast majority of design points in regions of negligible posterior mass. Conversely, the limiting case of a \inlinedef{pure sequential} strategy, where simulations are performed serially, maximizes information gain per run but fails to exploit parallel computing resources.
+In trivial settings, a static design sampled from the prior may suffice to train an accurate surrogate. 
+However, for complex inverse problems, the posterior distribution often concentrates on a small subset of the prior support. 
+A ``one-shot'' design---while allowing for maximal parallelism---allocates computational resources inefficiently, 
+placing the vast majority of design points in regions of negligible posterior mass. Conversely, the limiting case of 
+a \inlinedef{pure sequential} strategy, where simulations are performed serially, 
+maximizes information gain per run but fails to exploit parallel computing resources.
 
-To balance these extremes, modern approaches typically adopt a batch-sequential workflow: simulator runs are spread across multiple rounds, with earlier results guiding the selection of future batches. We refer to this broad class of algorithms as \inlinedef{active learning} for Bayesian inverse problems. The central challenge in this regime is the "exploration vs. exploitation" trade-off \citep{reviewBayesOpt,BadiaRL}. The algorithm must exploit current knowledge to refine the surrogate in high-probability regions, while simultaneously exploring areas where surrogate uncertainty is high to avoid missing modes.
-
-We categorize sequential strategies into three (often overlapping) paradigms:
+To balance these extremes, practical approaches typically adopt a batch-sequential workflow: simulator runs are 
+spread across multiple rounds, with earlier results guiding the selection of future batches. We refer to this broad 
+class of algorithms as \inlinedef{active learning} for Bayesian inverse problems. The central challenge in this 
+regime is navigating the ``exploration vs. exploitation'' trade-off \citep{reviewBayesOpt,BadiaRL}. Active learning 
+algorithms must exploit current knowledge to refine the surrogate in known high-probability regions, while 
+simultaneously exploring high-uncertainty areas to avoid missing other important regions. We categorize sequential 
+strategies into three (often overlapping) paradigms:
 \begin{enumerate}
-    \item \inlinedef{Design Optimization}: Explicitly maximizing an acquisition function to select the next batch of points.
+    \item \inlinedef{Design Optimization}: Explicitly optimizing an objective function to select the next batch of points.
     \item \inlinedef{Tempering}: Constructing a sequence of intermediate target densities to guide the surrogate toward the posterior.
     \item \inlinedef{MCMC-based Exploration}: Embedding the design construction directly within a posterior sampling algorithm.
 \end{enumerate}
 
 \subsection{Design Optimization}
-In this framework, new design points are chosen by optimizing a criterion, or \textit{acquisition function}, that quantifies the utility of observing the simulator at a candidate location. Unlike standard experimental design—which often targets global response surface accuracy—active learning for inversion must be "goal-oriented," focusing strictly on the accuracy of the resulting posterior approximation.
+In this framework, new design points are chosen by optimizing a criterion, or \inlinedef{acquisition function}, that quantifies the 
+utility of running the simulator at a set of candidate locations. Similar approaches are widely applied in the broader context
+of surrogate modeling. For example, the field of Bayesian optimization focuses on the definition of acquisition functions 
+targeting the goal of black-box function optimization \citep{reviewBayesOpt}. In the present context, acquisition functions
+should reflect the explicit goal of estimating the posterior distribution. 
 
-A subtle but critical consideration in this setting is the optimal distribution of design points. Even with a perfect surrogate, approximating a probability distribution requires placing more points in regions of high probability mass. In fact, theoretical results suggest that design points should be sampled from a distribution that is \textit{over-dispersed} relative to the target posterior, thereby ensuring adequate coverage of the tails \citep{sinsbeck2020sequential}. Design criteria must therefore balance three objectives: (i) reducing surrogate uncertainty, (ii) focusing on high posterior mass, and (iii) ensuring tail coverage.
+A subtle but critical consideration in this setting is the optimal distribution of design points. Even with a perfect surrogate, 
+approximating a probability distribution requires placing more points in regions of high probability mass. In fact, theoretical 
+results suggest that design points should be sampled from a distribution that is \textit{over-dispersed} relative to the target 
+posterior, thereby ensuring adequate coverage of the tails \citep{sinsbeck2020sequential}. Design criteria must therefore 
+balance three objectives: (i) reducing surrogate uncertainty, (ii) focusing on high posterior mass, and (iii) ensuring tail coverage.
 
 \subsubsection{Frameworks for Design Criteria}
 Similar to the posterior estimators in \Cref{sec:target-map}, design criteria can be derived from rigorous theoretical frameworks.
 
+\begin{comment}
 \paragraph{Decision Theoretic Framework.}
 Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
 \begin{equation}
@@ -1020,6 +1038,9 @@ In problems where the likelihood is highly informative, the posterior effectivel
 A powerful remedy is \inlinedef{tempering}: introducing a sequence of intermediate distributions $\pi_0, \pi_1, \dots, \pi_T$, where $\pi_0 = \priorDens$ and $\pi_T = \postDens$. Common choices involve geometric bridges of the form $\pi_t(\Par) \propto \priorDens(\Par) \lik(\Par)^{\beta_t}$ with $0 = \beta_0 < \dots < \beta_T = 1$.
 The surrogate is constructed sequentially to approximate each $\pi_t$ in turn. By the time the algorithm targets $\pi_T$, the surrogate has already resolved the broader basins of attraction, preventing mode collapse. This strategy is closely related to Sequential Monte Carlo (SMC) and has been adapted for surrogate modeling in methods such as \textit{adaptive Gaussian process approximation} \citep{wang2018adaptive, adaptiveMultimodal} and Ensemble Kalman Inversion \citep{EKI_review}.
 
+\todo[inline]{\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
+to approximate a sequence of functions designed to be more regular than the log-likelihood.}
+
 \subsection{MCMC-based Exploration}
 A third class of strategies weaves the design construction directly into the execution of an MCMC chain. Rather than distinct "training" and "sampling" phases, the MCMC sampler acts as the exploration engine.
 
@@ -1031,51 +1052,8 @@ These methods generally fall into two sub-categories:
 
 
 
-
-
-\begin{comment}
-
+% old section
 \section{Sequential Strategies for Surrogate Construction} \label{sec:active-learning}
-Outside of simple problems, achieving a desired level of surrogate accuracy using a single 
-round of simulator runs typically requires an impractically large number of design points. 
-This stems from the fact that the posterior distribution may occupy a small subset of the prior support.
-Initial designs sampled from the prior may completely miss the region of $\parSpace$ where 
-the posterior concentrates. A natural remedy to address this challenge is to proceed iteratively,
-refining the posterior approximation in a sequence of steps. Such algorithms can assume many 
-forms, but all share the property that simulator runs are spread across multiple rounds of computation, 
-with earlier rounds used to inform the selection of future design points. The number of rounds and 
-number of simulations per round are dependent on the computational cost of the simulator and the 
-availability of parallel computing resources. The limiting \inlinedef{pure sequential} setting in which 
-runs are conducted one after the other offers no opportunity to exploit parallelism, but allows for 
-maximal information in selecting design points for new simulations. This serial strategy may be 
-ideal for inverse problems of modest computational cost, but becomes intractable as simulator
-cost increases. By contrast, a one-shot design allows for maximal parallelism, but relies only 
-on prior information to inform the design point selection. In many problems, the optimal balance 
-falls between these extremes.
-
-A wide variety of sequential inference strategies have been proposed for Bayesian inverse problems with
-computationally expensive posterior densities. We consider the broad class of posterior inference algorithms 
-that (i) leverage surrogate models, and (ii) sequentially construct the set of design points used by the surrogate.
-Such schemes can be said to be addressing the challenge of \inlinedef{active learning} for the solution of
-a Bayesian inverse problem. Our presentation highlights three (non mutually exclusive) active learning strategies:
-\begin{enumerate}
-\item \inlinedef{Design Optimization}
-\item \inlinedef{Tempering}
-\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
-to approximate a sequence of functions designed to be more regular than the log-likelihood.
-\item \inlinedef{MCMC-based Exploration}
-\end{enumerate}
-
-Each of these strategies attempts to make efficient use of the limited computational budget,
-leveraging the current information in the surrogate model to actively target promising regions
-of $\parSpace$. However, the design point selection criteria must avoid placing too much trust
-in the (imperfect) surrogate. In other words, effective active 
-learning algorithms must target promising regions (according to the current surrogate) but also explore
-areas where the surrogate is uncertain.
-This ``exploration vs. exploitation'' balancing act is familiar in fields such as 
-Bayesian optimization \citep{reviewBayesOpt}, Bayesian quadrature 
-\citep{BayesQuadrature,BayesQuadratureAL,BayesQuadRatios,quadratureLogGP}, 
-reinforcement learning \citep{BadiaRL,LiuRL}, and bandit algorithms \citep{banditsEmpirical,LattimoreBandits}.
 
 \subsection{Design Optimization}
 In this section I want to emphasize acquisition functions that are tailored to the goal of improving the posterior approximation,
