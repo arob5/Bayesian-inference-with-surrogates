@@ -108,15 +108,19 @@
 
 
 \section{Introduction}
-In fields ranging from climate science \citep{ESM_modeling_2pt0,FATES_CES} to systems biology 
-\citep{yeastMatingSurrogate}, the scientific process increasingly relies on complex, high-fidelity 
-computer simulations. Calibrating these models—estimating parameters consistent with observed data—naturally 
-falls within the Bayesian paradigm. However, standard posterior inference algorithms (e.g., Markov chain Monte Carlo) 
-require evaluating the likelihood function tens of thousands of times. When a single simulation takes minutes or hours, 
-this cost renders these standard approaches intractable.
-
+In fields ranging from climate science \citep{ESM_modeling_2pt0} \todo{one more citation} to astrophysics
+\citep{VarmaBlackHole2019,npeAstrophysics}, the scientific process increasingly relies on complex, computationally
+expensive computer simulations. Many such computer models contain parameters with values that cannot be specified
+a priori or estimated experimentally. Therefore, a critical task in many scientific workflows is to estimate values
+of these parameters that are consistent with observed data, a process sometimes called 
+\textit{parameter calibration} \citep{paramLSM} \todo{one more citation}.
+Bayesian inference offers a principled framework for parameter inference, providing mechanisms to 
+quantify parameter uncertainty and balance prior information with observed data.
+However, standard Bayesian inference algorithms (e.g., Markov chain Monte Carlo) 
+require evaluating the likelihood function tens to hundreds of thousands of times. When a single simulation takes 
+minutes or hours, this cost renders these standard approaches intractable.
 To overcome this barrier, a rich literature has developed around \textit{surrogate modeling} (i.e., \textit{emulation}). The core 
-idea is to replace the expensive simulator with a statistical approximation—trained on a sparse set of simulator runs—that is 
+idea is to replace the expensive simulator with a statistical approximation, trained on a sparse set of simulator runs, that is 
 computationally cheap to evaluate \citep{KOH,gramacy2020surrogates}. By substituting this emulator into the inference pipeline, 
 one seeks to characterize the posterior distribution at a fraction of the cost.
 
@@ -193,8 +197,8 @@ $\Par$ that gave rise to the observed data. The bulk of the modeling effort typi
 mechanistic model $\fwd: \parSpace \to \obsSpace$ encoding domain knowledge, which describes the forward 
 process by which parameters produce observed quantities. We refer to $\fwd$ as the \textit{forward model}.
 The task of solving the inverse problem entails
-inverting the relationship, identifying parameter values that might have yielded a particular observation.
-This parameter recovery is commonly cast as a problem of Bayesian inference with a Gaussian noise model
+inverting the relationship, identifying parameter values consistent with a particular observation. This parameter recovery 
+is commonly cast as a problem of Bayesian inference with a Gaussian noise model
 \begin{equation}
 \obs = \fwd(\Par) + \noise, \qquad
 \noise \sim \Gaussian(0, \likPar), \label{eq:inv_prob_Gaussian} 
@@ -254,7 +258,7 @@ cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the
 \section{Surrogate Models}
 Given the inference bottleneck imposed by a computationally expensive posterior density, many methods have emerged
 aiming to approximate the posterior using only a small set of density evaluations. Many such approaches 
-consist of replacing a computationally-limiting component of the model with a cheap \textit{surrogate}, thus enabling 
+consist of replacing a computationally-limiting component of the model with a cheap \inlinedef{surrogate}, thus enabling 
 the use of standard inference schemes on the resulting approximate model. In this section, we introduce the particular
 sub-class of surrogate models that form the focus of this article.
 
@@ -276,7 +280,7 @@ We make the assumption throughout that $\postDens(\Par; \target)$ depends on $\P
 function of $\target(\Par)$.
 The implicit assumption here is that the target map has been chosen to alleviate the computational bottleneck; hence,
 the density $\postDens(\Par; \target)$ is cheap to compute once the expensive computation $\target(\Par)$ is 
-available.
+completed.
 
 A regression-based surrogate is a regression model $\targetEm$ fit to training data 
 $\{(\Par_{\designIdx}, \target(\Par_{\designIdx}))\}_{\designIdx=1}^{\Ndesign}$ constructed by evaluating the exact
@@ -292,13 +296,13 @@ This implies the observed simulation outputs $\target(\Par_{\designIdx})$ are no
 emulators commonly seek to (approximately) interpolate between design points.
 Many of the ideas here are also relevant to the stochastic case, including to the simulation-based
 inference setting where the likelihood takes the form of a black-box stochastic simulator. We discuss
-connections to these topics in \todo{add reference}.
+connections to these topics in \Cref{sec:sbi}.
 \end{remark}
 
 \subsection{Probabilistic Surrogates}
-In practice, fitting a highly accurate surrogate can be challenging, and the induced posterior approximation inherits 
-imperfections from the underlying emulator. This raises the concern that the surrogate-based posterior approximation
-can be both biased and overconfident. To address this fundamental challenge and mitigate the problem 
+In practice, fitting a highly accurate surrogate can be challenging. Since the induced posterior approximation
+inherits imperfections from the underlying emulator, this raises the concern that the posterior estimate 
+can be simultaneously biased and overconfident. To address this fundamental challenge and mitigate the problem 
 of unquantified posterior approximation error, we argue that a Bayesian surrogate-based workflow should include
 the following two steps:
 \begin{enumerate}
@@ -306,7 +310,7 @@ the following two steps:
 runs of the simulator, targeting the design points with the greatest potential for improvement in the posterior
 approximation or an alternative downstream goal.
 \item \textit{Uncertainty propagation}: when the computational budget is exhausted, 
-construct a final posterior approximation that propagates the surrogate uncertainty. 
+construct a final posterior estimate that propagates the remaining surrogate uncertainty. 
 \end{enumerate}
 Both of these steps require emulators that are equipped with a notion of predictive uncertainty. For this reason, 
 we focus on \textit{probabilistic surrogates}---models that provide predictions in the form of probability
@@ -327,7 +331,7 @@ approximates $\target$. Let $\emE$ denote expectation with respect to $\emDist$,
 the surrogate predicts a scalar-valued quantity, define the pointwise 
 predictive mean $\emMean(\Par) \Def \emE[\targetEm(\Par)]$ and variance 
 $\emVar(\Par) \Def \Var_{\emDist}[\targetEm(\Par)]$. While some emulators provide only pointwise predictions,
-many also encode correlational structure across input values. We thus denote 
+many also encode correlational structure across input values. We thus denote the covariance
 $\emKer(\Par, \Par^\prime) \Def \Cov_{\emDist}[\targetEm(\Par), \targetEm(\Par^\prime)]$, 
 noting that $\emKer(\Par, \Par) = \emVar(\Par)$.
 For a finite set of inputs $\ParBatch \Def \{\Par_b\}_{b=1}^{\Nbatch} \subset \parSpace^{\Nbatch}$, we use the 
@@ -335,7 +339,7 @@ vectorized notation $\target(\ParBatch) \Def [\target(\Par_1), \dots, \target(\P
 $\targetEm(\ParBatch) \sim \emDist(\ParBatch)$ denoting the $\Nbatch$-dimensional joint predictive distribution with mean vector $\emMean(\ParBatch)$ and covariance matrix $\emVar(\ParBatch)$. Similarly, given another set
 $\ParBatch^\prime$ of $\Nbatch^\prime$ inputs, we write $\emKer(\ParBatch, \ParBatch^\prime)$ to denote
 the $\Nbatch \times \Nbatch^\prime$ cross covariance. In particular, we use the shorthand 
-$\{\design, \target(\design)\}$ for the design points and their corresponding outputs.
+$\{\design, \target(\design)\}$ for the design points and the corresponding target function evaluations.
 
 Of central importance to this work is the manner in which emulator uncertainty propagates to downstream 
 quantities of interest. For example, the quantity $\postDensNorm(\Par; \targetEm)$ resulting from plugging
@@ -399,7 +403,7 @@ a random input $\Par \sim \priorDens$. In particular, the expansion is of the fo
 \targetEm[\dimBasis](\Par) = \sum_{\idxBasis=1}^{\dimBasis} c_{\idxBasis} \basisVec_{\idxBasis}(\Par),
 \end{equation}
 where $\basisVec_{1}, \dots, \basisVec_{\dimBasis}$ are orthogonal polynomials with respect 
-to the distribution $\priorDens$ on the inputs. Once constructed, a PCE is often used to 
+to $\priorDens$. Once constructed, a PCE is often used to 
 approximate moments of $\target(\Par)$. More relevant to our context,
 the map $\targetEm[\dimBasis](\Par)$ can also be used as a surrogate for $\target(\Par)$.
 With fixed coefficients $c_{\idxBasis}$, this map is deterministic and thus PCEs do not fall
@@ -455,16 +459,13 @@ While this decision is inherently problem-dependent, the structure of a Bayesian
 two overarching strategies: \inlinedef{forward model emulation}, which targets the underlying forward map, 
 and \inlinedef{log-density emulation}, which directly targets the posterior surface.
 A similar dichotomy is explored in \citet{StuartTeck1,GP_PDE_priors,random_fwd_models}. 
-Other authors have acknowledged the importance of this choice, prior to committing to one of the 
-two options \citet{Surer2023sequential,trainDynamics,ActiveLearningMCMC,emPostDens}.
-\todo{Is this last sentence needed?}
 
 \subsection{Forward Model Emulation}
 The high computational cost in Bayesian inverse problems stems primarily from the underlying forward model. 
 A natural strategy to alleviate this bottleneck is to fit an emulator directly targeting the forward map, $\target \Def \fwd$. 
 The architecture of such a surrogate is largely dictated by the properties of $\fwd$.
 A common challenge in this context is the high dimensionality of the observation space,
-particularly for models with complex spatial or temporal structure---examples include 
+particularly for models with complex spatial or temporal structure; examples include 
 epidemic modeling \citep{FadikarAgentBased},
 engineering design \citep{PODemulation}, ecological forecasting 
 \citep{emPostDens,DagonCLM}, and climate modeling \citep{ESM_modeling_2pt0,idealizedGCM}.
@@ -474,7 +475,7 @@ Emulators for such complex model outputs typically rely on some form of dimensio
 (e.g., principal components analysis or proper orthogonal decomposition) \citep{HigdonBasis,FadikarAgentBased,PODemulation}.
 \item \emph{Feature Extraction}: Targeting low-dimensional statistical summaries 
 \citep{ESM_modeling_2pt0,idealizedGCM,CLMBayesianCalibration,CLMSurrogates}.
-\item \emph{Specialized Architectures}: Utilizing emulators designed to leverage the structure of particular
+\item \emph{Specialized Architectures}: Leveraging the structure of particular
 dynamical models 
 \citep{GP_dynamic_emulation, Bayesian_emulation_dynamic,Liu_West_dynamic_emulation, dynamic_nonlinear_simulators_GP}.
 \end{enumerate} 
@@ -1104,7 +1105,7 @@ schemes that only acquire new points until some sort of budget is exhausted.
 
 
 \section{Connection to Other Literatures}
-\subsection{Amortized and Simulation-Based Inference}
+\subsection{Amortized and Simulation-Based Inference} \label{sec:sbi}
 \subsection{Computer Model Calibration}
 \subsection{Modular Bayesian Inference}
 
