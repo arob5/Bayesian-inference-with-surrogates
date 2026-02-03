@@ -987,6 +987,33 @@ arises from the decision theoretic viewpoint by considering losses of the $L_1$ 
 \end{examplebox}
 
 \section{Active Learning for Bayesian Inversion} \label{sec:active-learning}
+Up until this point, we have considered a fixed surrogate model fit to training data 
+obtained from simulator runs at a set of design points $\design \Def \{\Par_1, \dots, \Par_{\Ndesign}\}$.
+The simplest approach to select these points is to sample from some distribution over $\parSpace$
+(e.g., the prior $\priorDens$). Such a ``one-shot'' design is appealing in that it allows for maximal 
+parallelism in simulator runs. However, the posterior distribution commonly concentrates on a small 
+subset of the prior support, implying that a prior-based 
+design will likely allocate the majority of points in regions with negligible posterior mass.
+In many such cases, one cannot hope to achieve an acceptable posterior approximation with 
+a static design based solely on prior information. 
+
+To address this issue, the design can instead be constructed 
+sequentially, with information from the current simulations used to inform the selection of new design points.
+We refer to this broad class of algorithms as \inlinedef{active learning} for Bayesian inverse problems.
+At the extreme end of this spectrum is a \inlinedef{pure sequential} strategy, where simulations are performed serially, 
+one at a time. This allows for the most informed selection of the points, but fails to exploit parallel computing 
+resources and is thus impractical in many large-scale applications.
+To balance these extremes, practical approaches typically adopt a batch-sequential workflow: simulator runs are 
+spread across multiple rounds, with a batch of model runs executed in parallel each round
+\footnote{This is the ``synchronous parallel'' setting. 
+For simplicity, we do not discuss asynchronous parallel approaches here \citep{parallelBOThompson}.}.
+
+
+
+A central tension arises from...
+
+
+
 In trivial settings, a static design sampled from the prior may suffice to train an accurate surrogate. 
 However, for complex inverse problems, the posterior distribution often concentrates on a small subset of the prior support. 
 A ``one-shot'' design---while allowing for maximal parallelism---allocates computational resources inefficiently, 
