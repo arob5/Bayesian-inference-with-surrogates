@@ -1001,33 +1001,21 @@ To address this issue, the design can instead be constructed
 sequentially, with information from the current simulations used to inform the selection of new design points.
 We refer to this broad class of algorithms as \inlinedef{active learning} for Bayesian inverse problems.
 At the extreme end of this spectrum is a \inlinedef{pure sequential} strategy, where simulations are performed serially, 
-one at a time. This allows for the most informed selection of the points, but fails to exploit parallel computing 
+one at a time. This allows for the most informed design point selection, but fails to exploit parallel computing 
 resources and is thus impractical in many large-scale applications.
 To balance these extremes, practical approaches typically adopt a batch-sequential workflow: simulator runs are 
 spread across multiple rounds, with a batch of model runs executed in parallel each round
 \footnote{This is the ``synchronous parallel'' setting. 
 For simplicity, we do not discuss asynchronous parallel approaches here \citep{parallelBOThompson}.}.
+The central challenge faced by such algorithms is navigating the ``exploration vs. exploitation'' 
+trade-off \citep{reviewBayesOpt,BadiaRL}. Active learning schemes must exploit current information 
+to refine the surrogate in known high-probability regions, while simultaneously exploring high-uncertainty 
+areas to avoid missing other important regions.
 
-
-
-A central tension arises from...
-
-
-
-In trivial settings, a static design sampled from the prior may suffice to train an accurate surrogate. 
-However, for complex inverse problems, the posterior distribution often concentrates on a small subset of the prior support. 
-A ``one-shot'' design---while allowing for maximal parallelism---allocates computational resources inefficiently, 
-placing the vast majority of design points in regions of negligible posterior mass. Conversely, the limiting case of 
-a \inlinedef{pure sequential} strategy, where simulations are performed serially, 
-maximizes information gain per run but fails to exploit parallel computing resources.
-
-To balance these extremes, practical approaches typically adopt a batch-sequential workflow: simulator runs are 
-spread across multiple rounds, with earlier results guiding the selection of future batches. We refer to this broad 
-class of algorithms as \inlinedef{active learning} for Bayesian inverse problems. The central challenge in this 
-regime is navigating the ``exploration vs. exploitation'' trade-off \citep{reviewBayesOpt,BadiaRL}. Active learning 
-algorithms must exploit current knowledge to refine the surrogate in known high-probability regions, while 
-simultaneously exploring high-uncertainty areas to avoid missing other important regions. We categorize sequential 
-strategies into three (often overlapping) paradigms:
+Active learning algorithms have been explored extensively in the context of Bayesian inference. Our focus
+here is on the sub-class of methods where design points are selected sequentially to refine a surrogate
+model with the goal of improving a posterior approximation. We identify three (non-mutually exclusive)
+strategies that are commonly used for this purpose:
 \begin{enumerate}
     \item \inlinedef{Design Optimization}: Explicitly optimizing an objective function to select the next batch of points.
     \item \inlinedef{Tempering}: Constructing a sequence of intermediate target densities to guide the surrogate toward the posterior.
@@ -1035,17 +1023,21 @@ strategies into three (often overlapping) paradigms:
 \end{enumerate}
 
 \subsection{Design Optimization}
-In this framework, new design points are chosen by optimizing a criterion, or \inlinedef{acquisition function}, that quantifies the 
-utility of running the simulator at a set of candidate locations. Similar approaches are widely applied in the broader context
-of surrogate modeling. For example, the field of Bayesian optimization focuses on the definition of acquisition functions 
-targeting the goal of black-box function optimization \citep{reviewBayesOpt}. In the present context, acquisition functions
-should reflect the explicit goal of estimating the posterior distribution. 
+Many active learning algorithms explicitly define a design criterion, or \inlinedef{acquisition function}, that quantifies the utility 
+of running the simulator at a set of candidate locations. This objective function is then optimized at each round
+of the active learning procedure to select the next batch of design points. Similar approaches are also widely applied in other
+applications involving surrogate models. For example, the field of Bayesian optimization focuses on the definition of 
+acquisition functions targeting the goal of black-box function optimization \citep{reviewBayesOpt}. Acquisition functions for 
+Bayesian inversion should instead encode the explicit goal of estimating the posterior distribution.
 
-A subtle but critical consideration in this setting is the optimal distribution of design points. Even with a perfect surrogate, 
-approximating a probability distribution requires placing more points in regions of high probability mass. In fact, theoretical 
-results suggest that design points should be sampled from a distribution that is \textit{over-dispersed} relative to the target 
-posterior, thereby ensuring adequate coverage of the tails \citep{sinsbeck2020sequential}. Design criteria must therefore 
-balance three objectives: (i) reducing surrogate uncertainty, (ii) focusing on high posterior mass, and (iii) ensuring tail coverage.
+Even with complete knowledge of the true posterior, there remains the question concerning the optimal
+placement of design points for surrogate-based posterior approximation. Results suggest that the points should 
+be sampled from an over-dispersed variant of the true posterior, thereby ensuring adequate coverage of 
+the tails \citep{StuartTeck2,briol2017sampling}. These results are consistent with the intuitive notion that design
+points should be placed in high-probability regions, while also ensuring adequate coverage to constrain the 
+global surrogate behavior. With imperfect information, acquisition functions must balance this ideal with the 
+need to reduce uncertainty in poorly explored regions. 
+ 
 
 \subsubsection{Frameworks for Design Criteria}
 Similar to the posterior estimators in \Cref{sec:target-map}, design criteria can be derived from rigorous theoretical frameworks.
@@ -1169,7 +1161,7 @@ achieving an accurate posterior approximation
 requires an accurate emulator in the subset of $\parSpace$ where the posterior is large, while also
 containing enough global information to know where the posterior is small. This informal statement is 
 put on rigorous footing in \citet{StuartTeck2}, with theoretical results suggesting designs based on 
-an over-dispersed version of $\postDensNorm$.
+an over-dispersed version of $\postDensNorm$. 
 The notion of oversampling the tails has also been proposed to construct designs
 for numerical integration \citep{briol2017sampling}. These results are consistent with the notion of 
 constraining the global surrogate behavior, while also fine-tuning the local fit in high-probability regions.
