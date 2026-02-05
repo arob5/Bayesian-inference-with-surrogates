@@ -11,13 +11,14 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from jax.scipy.special import logsumexp
 import gpjax as gpx
-from scipy.stats import qmc
-from numpy.random import default_rng
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import seaborn as sns
+
+from jax.scipy.stats import norm
+from numpy.random import default_rng
+from jax.scipy.special import logsumexp
 
 from numpyro.distributions import LogNormal
 from jax.scipy.stats import norm
@@ -49,11 +50,15 @@ from uncprop.utils.plot import (
 
 
 # -----------------------------------------------------------------------------
-# Surrogate models
+# Core Surrogate Containers
 # -----------------------------------------------------------------------------
 
 @dataclass
 class SurrogatePost1d:
+    """
+    Wrapper arround a SurrogateDistribution with added functionality for 
+    producing the plots for the 1d toy example.
+    """
     key: PRNGKey
     post_em: SurrogateDistribution
     post_true: Posterior
@@ -62,9 +67,9 @@ class SurrogatePost1d:
     grid: Grid
     n_mc: int
     f_target: Callable
-    plot_surrogate_fn: Callable
-    plot_log_dens_surrogate_fn: Callable
-    plot_dens_surrogate_fn: Callable
+    plot_surrogate_fn: Callable | None
+    plot_log_dens_surrogate_fn: Callable | None
+    plot_dens_surrogate_fn: Callable | None
     surrogate_pred: Distribution | None = None
     
     def __post_init__(self):
@@ -74,25 +79,103 @@ class SurrogatePost1d:
         self.density_grid = get_density_grid(key_ep, self.post_em, self.grid, self.post_true)
 
     def plot_surrogate(self, **kwargs):
-        fig, ax = self.plot_surrogate_fn(surrogate_pred=self.surrogate_pred,
-                                         design=self.post_em.surrogate.design,
-                                         f_target=self.f_target,
-                                         grid=self.grid,
-                                         **kwargs)
+        if self.plot_surrogate_fn is None:
+            return None
+        
+        fig, ax = self.plot_surrogate_fn(post_em_1d=self, **kwargs)
         ax.set_ylabel(self.target_label)
 
         return (fig, ax)
 
     def plot_log_dens_surrogate(self, **kwargs):
+        if self.plot_log_dens_surrogate_fn is None:
+            return None
+        
         fig, ax = self.plot_log_dens_surrogate_fn(post_em_1d=self, **kwargs)
         ax.set_ylabel(r'$\log \tilde{\pi}(u)$')
         return fig, ax
     
     def plot_dens_surrogate(self, **kwargs):
+        if self.plot_dens_surrogate_fn is None:
+            return None
+
         fig, ax = self.plot_dens_surrogate_fn(post_em_1d=self, **kwargs)
         ax.set_ylabel(r'$\tilde{\pi}(u)$')
         return fig, ax
+    
+    def plot_norm_dens_surrogate(self, 
+                                 interval_prob: float = 0.95,
+                                 gp_colors: dict[str,str] | None = None, 
+                                 **kwargs):
+        grid = self.grid
 
+        # compute mean and quantiles of normalized density trajectories
+        post_samp, _ = normalize_density_over_grid(self.lpost_samp, 
+                                                   cell_area=grid.cell_area,
+                                                   return_log=False)
+        stats = calc_dist_from_samples(post_samp, interval_prob=interval_prob)
+
+        # ground truth normalized density
+        post_true, _ = normalize_density_over_grid(self.post_true.log_density(grid.flat_grid),
+                                                   cell_area=grid.cell_area, return_log=False)
+
+        fig, ax = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
+                                        mean=stats['mean'],
+                                        lower=stats['lower'],
+                                        upper=stats['upper'],
+                                        points=self.post_em.surrogate.design.X,
+                                        true_y=post_true.ravel(),
+                                        colors=gp_colors)
+        ax.set_xlabel('u')
+        ax.set_ylabel(r'$\pi(u)$')
+
+        return fig, ax
+    
+    def plot_post_approx(self,
+                         post_ylim: tuple[float,float] | None = None, 
+                         post_colors: dict[str,str] | None = None):
+        # posterior approximation plot
+        fig, ax = self.density_grid.plot(normalized=True, 
+                                         log_scale=False, 
+                                         points=self.post_em.surrogate.design.X,
+                                         colors=post_colors)
+        
+        ax.set_ylabel(r'$\pi(u)$')
+        if post_ylim is not None:
+            ax.set_ylim(post_ylim)
+
+        return fig, ax
+
+
+def wrap_gp(gp, design, jitter):
+    """Wrap single output gpjax GP as batch GPJaxSurrogate object"""
+    ker = gp.prior.kernel
+    batched_kernel = BatchedRBF(batch_dim=1, input_dim=ker.n_dims,
+                                lengthscale=ker.lengthscale,
+                                variance=ker.variance)
+    batched_gp_prior = gpx.gps.Prior(mean_function=gp.prior.mean_function,
+                                     kernel=batched_kernel)
+    batched_gp_post = batched_gp_prior * gp.likelihood
+    return GPJaxSurrogate(gp=batched_gp_post, design=design, jitter=jitter)
+
+
+def get_density_grid(key: PRNGKey,
+                     post_em: SurrogateDistribution,
+                     grid: Grid, 
+                     post_true: Posterior):
+    dists = {
+        'exact': post_true,
+        'mean': post_em.expected_surrogate_approx(),
+        'eup': post_em.expected_density_approx(),
+        'ep': post_em.expected_normalized_density_approx(key, grid=grid)
+    }
+
+    return DensityComparisonGrid(grid=grid, distributions=dists)
+
+
+# -------------------------------------------------------------------------
+# Helpers for Forward Model Surrogate
+# -------------------------------------------------------------------------
 
 class FwdModelGaussianSurrogateGrid(FwdModelGaussianSurrogate):
     """Posterior surrogate induced by forward model surrogate
@@ -132,132 +215,7 @@ class FwdModelGaussianSurrogateGrid(FwdModelGaussianSurrogate):
 
         log_post_samp = log_prior_dens + log_lik_vals
         return log_post_samp
-
-
-class LogDensGPSurrogateGrid(LogDensGPSurrogate):
-    """Posterior surrogate induced by log-density surrogate
     
-    Defines method to approximate EP over a grid.
-    """
-    def expected_normalized_density_approx(self,
-                                           key,
-                                           *,
-                                           grid,
-                                           n_mc: int = 10_000,
-                                           **method_kwargs):
-        
-            cell_area = grid.cell_area
-            input_dim = self.surrogate.input_dim
-
-            def log_dens(x):
-                log_post_samp = self.surrogate(x).sample(key, n=n_mc) # (n_mc, n_x)
-                return _estimate_ep_grid(log_post_samp, cell_area=cell_area)
-
-            return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
-    
-    def _sample_lpost(self, key, x, n=1):
-        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
-        return self.surrogate(x).sample(key, n=n) # (n, n_x)
-    
-
-class LogDensClippedGPSurrogateGrid(LogDensClippedGPSurrogate):
-    """Posterior surrogate induced by clipped GP log-density surrogate
-    
-    Defines method to approximate EP over a grid.
-    """
-    def expected_normalized_density_approx(self,
-                                           key,
-                                           *,
-                                           grid,
-                                           n_mc: int = 10_000,
-                                           **method_kwargs):
-        
-            cell_area = grid.cell_area
-            input_dim = self.surrogate.input_dim
-
-            def log_dens(x):
-                log_post_samp = self._sample_lpost(key, x, n=n_mc) # (n_mc, n_x)
-                return _estimate_ep_grid(log_post_samp, cell_area=cell_area)
-
-            return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
-    
-    def _sample_lpost(self, key, x, n=1):
-        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
-        return self.sample_surrogate_pred(key, x, n=n) # (n, n_x)
-    
-
-def wrap_gp(gp, design, jitter):
-    """Wrap single output gpjax GP as batch GPJaxSurrogate object"""
-    ker = gp.prior.kernel
-    batched_kernel = BatchedRBF(batch_dim=1, input_dim=ker.n_dims,
-                                lengthscale=ker.lengthscale,
-                                variance=ker.variance)
-    batched_gp_prior = gpx.gps.Prior(mean_function=gp.prior.mean_function,
-                                     kernel=batched_kernel)
-    batched_gp_post = batched_gp_prior * gp.likelihood
-    return GPJaxSurrogate(gp=batched_gp_post, design=design, jitter=jitter)
-
-
-# -------------------------------------------------------------------------
-# Plotting helpers
-# -------------------------------------------------------------------------
-
-def calc_dist_from_samples(lpost_samp: Array,
-                           transform: str | None = None,
-                           interval_prob: float = 0.95):
-    """
-    By default, computes mean and lower/upper quantiles for a set of 
-    unnormalized log-density samples. Optionally transforms samples prior
-    to computing these quantities. The transform arg accepts None, 'exp'
-    or 'normalize'. Normalize both exponentiates and normalized.
-     
-    The statistics are always returned on the log scale for consistency.
-    """
-    samp = lpost_samp
-    q_lower = 0.5 * (1 - interval_prob)
-
-    if transform is None:
-        mean = jnp.mean(samp, axis=0)
-    elif transform == 'exp':
-        mean = logsumexp(samp, axis=0) - jnp.log(samp.shape[0])
-    elif transform == 'normalize':
-        raise NotImplementedError
-    else:
-        raise ValueError(f'Invalid transform: {transform}')
-
-    # Exponential transform simply exponentiates lower/upper
-    lower = jnp.quantile(samp, q=q_lower, axis=0)
-    upper = jnp.quantile(samp, q=1-q_lower, axis=0)
-        
-    return {'mean': mean, 'lower': lower, 'upper': upper}
-
-
-def plot_gp_surrogate(surrogate_pred: Distribution,
-                      design: gpx.Dataset,
-                      f_target: Callable,
-                      grid: Grid, 
-                      gp_colors: dict[str, str] | None = None, 
-                      interval_prob: float = 0.95):
-    """Save plot summarizing underlying GP emulator distribution
-    
-    Agnostic to the underlying surrogate target. `f_target` is the true target
-    function that is emulated.
-
-    Returns:
-        tuple:
-            tuple: (figure, axis) objects
-            Distribution: surrogate predictive distribution at grid points
-    """
-    fig_em, ax_em = plot_gp_1d(x=grid.flat_grid.ravel(),
-                               mean=surrogate_pred.mean,
-                               sd=surrogate_pred.stdev,
-                               points=design.X,
-                               true_y=f_target(grid.flat_grid),
-                               colors=gp_colors,
-                               interval_prob=interval_prob)
-
-    return fig_em, ax_em
-
 
 def plot_log_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                                 interval_prob: float = 0.95,
@@ -317,6 +275,262 @@ def plot_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
     return fig, ax
 
 
+# -------------------------------------------------------------------------
+# Helpers for GP Log-Density Surrogate
+# -------------------------------------------------------------------------
+
+class LogDensGPSurrogateGrid(LogDensGPSurrogate):
+    """Posterior surrogate induced by log-density surrogate
+    
+    Defines method to approximate EP over a grid.
+    """
+    def expected_normalized_density_approx(self,
+                                           key,
+                                           *,
+                                           grid,
+                                           n_mc: int = 10_000,
+                                           **method_kwargs):
+        
+            cell_area = grid.cell_area
+            input_dim = self.surrogate.input_dim
+
+            def log_dens(x):
+                log_post_samp = self.surrogate(x).sample(key, n=n_mc) # (n_mc, n_x)
+                return _estimate_ep_grid(log_post_samp, cell_area=cell_area)
+
+            return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
+    
+    def sample_lpost(self, key, x, n=1):
+        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
+        return self.surrogate(x).sample(key, n=n) # (n, n_x)
+    
+
+def plot_lognorm_surrogate(post_em_1d: SurrogatePost1d,
+                           interval_prob: float = 0.95,
+                           gp_colors: dict[str,str] | None = None):
+    x = post_em_1d.grid.flat_grid
+    surrogate_pred = post_em_1d.surrogate_pred
+    design = post_em_1d.post_em.surrogate.design
+
+    return plot_lognorm_1d(x=x.ravel(),
+                           mean=surrogate_pred.mean,
+                           sd=surrogate_pred.stdev,
+                           colors=gp_colors,
+                           points=design.X,
+                           true_y=post_em_1d.f_target(x),
+                           interval_prob=interval_prob)
+
+
+# -------------------------------------------------------------------------
+# Helpers for Clipped GP Log-Density Surrogate
+# -------------------------------------------------------------------------
+
+class LogDensClippedGPSurrogateGrid(LogDensClippedGPSurrogate):
+    """Posterior surrogate induced by clipped GP log-density surrogate
+    
+    Defines method to approximate EP over a grid.
+    """
+    def expected_normalized_density_approx(self,
+                                           key,
+                                           *,
+                                           grid,
+                                           n_mc: int = 10_000,
+                                           **method_kwargs):
+        
+            cell_area = grid.cell_area
+            input_dim = self.surrogate.input_dim
+
+            def log_dens(x):
+                log_post_samp = self.sample_lpost(key, x, n=n_mc) # (n_mc, n_x)
+                return _estimate_ep_grid(log_post_samp, cell_area=cell_area)
+
+            return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
+    
+    def sample_lpost(self, key, x, n=1):
+        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
+        return self.sample_surrogate_pred(key, x, n=n) # (n, n_x)
+
+
+def plot_clipped_gp_surrogate(post_em_1d: SurrogatePost1d,
+                              interval_prob: float = 0.95,
+                              gp_colors: dict[str,str] | None = None):
+    x = post_em_1d.grid.flat_grid
+    gp_pred = post_em_1d.surrogate_pred
+    design = post_em_1d.post_em.surrogate.design
+    upper_bound_fn = post_em_1d.post_em._log_dens_upper_bound
+    lpost_true = post_em_1d.post_true.log_density(x)
+
+    stats = calc_clipped_gaussian_stats(m=gp_pred.mean, 
+                                        sd=gp_pred.stdev, 
+                                        b=upper_bound_fn(x), 
+                                        interval_prob=interval_prob)
+    return plot_marginal_pred_1d(x=x.ravel(),
+                                 mean=stats['mean'],
+                                 lower=stats['lower'],
+                                 upper=stats['upper'],
+                                 points=design.X,
+                                 true_y=lpost_true,
+                                 colors=gp_colors)
+
+
+def plot_clipped_lnp_surrogate(post_em_1d: SurrogatePost1d,
+                               interval_prob: float = 0.95,
+                               gp_colors: dict[str,str] | None = None):
+    x = post_em_1d.grid.flat_grid
+    gp_pred = post_em_1d.surrogate_pred
+    design = post_em_1d.post_em.surrogate.design
+    upper_bound_fn = post_em_1d.post_em._log_dens_upper_bound
+    lpost_true = post_em_1d.post_true.log_density(x)
+
+    stats = calc_clipped_lognormal_stats(m=gp_pred.mean, 
+                                         sd=gp_pred.stdev, 
+                                         b=upper_bound_fn(x), 
+                                         interval_prob=interval_prob)
+    return plot_marginal_pred_1d(x=x.ravel(),
+                                 mean=stats['mean'],
+                                 lower=stats['lower'],
+                                 upper=stats['upper'],
+                                 points=design.X,
+                                 true_y=jnp.exp(lpost_true),
+                                 colors=gp_colors)
+
+
+def calc_clipped_gaussian_stats(m, sd, b, interval_prob=0.95):
+    """
+    Computes mean and confidence interval for the censored random 
+    variable Y = min(X, b) where X ~ N(m, sd^2).
+    
+    Args:
+        m: Vector of means for X.
+        sd: Vector of standard deviations for X.
+        b: Vector of censoring limits (upper bound).
+        interval_prob: The probability mass for the credible interval (default 0.95).
+        
+    Returns:
+        Dictionary with 'mean', 'lower', and 'upper'.
+    """
+
+    # compute mean
+    alpha = (b - m) / sd
+    phi_alpha = norm.cdf(alpha)
+    pdf_alpha = norm.pdf(alpha)
+    mean_val = (m - b) * phi_alpha - sd * pdf_alpha + b
+
+    # compute quantiles
+    alpha_level = (1.0 - interval_prob) / 2.0
+    p_lower = alpha_level
+    p_upper = 1.0 - alpha_level
+    q_x_lower = m + sd * norm.ppf(p_lower)
+    q_x_upper = m + sd * norm.ppf(p_upper)
+    
+    # Apply the censoring (min(X, b))
+    lower_val = jnp.minimum(q_x_lower, b)
+    upper_val = jnp.minimum(q_x_upper, b)
+    
+    return {
+        'mean': mean_val,
+        'lower': lower_val,
+        'upper': upper_val
+    }
+
+
+def calc_clipped_lognormal_stats(m, sd, b, interval_prob=0.95):
+    """
+    Computes mean and confidence interval for the censored random 
+    variable Y = min(exp(X), exp(b)) where X ~ N(m, sd^2).
+    
+    Args:
+        m: Vector of means for the underlying Gaussian X.
+        sd: Vector of standard deviations for the underlying Gaussian X.
+        b: Vector of censoring limits (in the Gaussian domain). 
+           The actual value limit is exp(b).
+        interval_prob: The probability mass for the credible interval (default 0.95).
+        
+    Returns:
+        Dictionary with 'mean', 'lower', and 'upper'.
+    """
+ 
+    # compute mean
+    alpha = (b - m) / sd    
+    term1 = jnp.exp(m + 0.5 * sd**2) * norm.cdf(alpha - sd)
+    term2 = jnp.exp(b) * (1.0 - norm.cdf(alpha)) # or norm.cdf(-alpha)
+    mean_val = term1 + term2
+
+    # compute quantiles    
+    alpha_level = (1.0 - interval_prob) / 2.0
+    p_lower = alpha_level
+    p_upper = 1.0 - alpha_level
+    q_x_lower = m + sd * norm.ppf(p_lower)
+    q_x_upper = m + sd * norm.ppf(p_upper)
+    lower_val = jnp.exp(jnp.minimum(q_x_lower, b))
+    upper_val = jnp.exp(jnp.minimum(q_x_upper, b))
+    
+    return {
+        'mean': mean_val,
+        'lower': lower_val,
+        'upper': upper_val
+    }
+
+
+# -------------------------------------------------------------------------
+# General Plotting helpers
+# -------------------------------------------------------------------------
+
+def calc_dist_from_samples(lpost_samp: Array,
+                           transform: str | None = None,
+                           interval_prob: float = 0.95):
+    """
+    By default, computes mean and lower/upper quantiles for a set of 
+    unnormalized log-density samples. Optionally transforms samples prior
+    to computing these quantities. The transform arg accepts None or 'exp'.
+     
+    The statistics are always returned on the log scale for consistency.
+    """
+    samp = lpost_samp
+    q_lower = 0.5 * (1 - interval_prob)
+
+    if transform is None:
+        mean = jnp.mean(samp, axis=0)
+    elif transform == 'exp':
+        mean = logsumexp(samp, axis=0) - jnp.log(samp.shape[0])
+    else:
+        raise ValueError(f'Invalid transform: {transform}')
+
+    # Exponential transform simply exponentiates lower/upper
+    lower = jnp.quantile(samp, q=q_lower, axis=0)
+    upper = jnp.quantile(samp, q=1-q_lower, axis=0)
+        
+    return {'mean': mean, 'lower': lower, 'upper': upper}
+
+
+def plot_gp_surrogate(post_em_1d: SurrogatePost1d, 
+                      gp_colors: dict[str, str] | None = None, 
+                      interval_prob: float = 0.95):
+    """Save plot summarizing underlying GP emulator distribution
+    
+    Agnostic to the underlying surrogate target. `f_target` is the true target
+    function that is emulated.
+
+    Returns:
+        tuple:
+            tuple: (figure, axis) objects
+            Distribution: surrogate predictive distribution at grid points
+    """
+    x = post_em_1d.grid.flat_grid
+    surrogate_pred = post_em_1d.surrogate_pred
+    design = post_em_1d.post_em.surrogate.design
+
+    fig_em, ax_em = plot_gp_1d(x=x.ravel(),
+                               mean=surrogate_pred.mean,
+                               sd=surrogate_pred.stdev,
+                               points=design.X,
+                               true_y=post_em_1d.f_target(x),
+                               colors=gp_colors,
+                               interval_prob=interval_prob)
+
+    return fig_em, ax_em
+
+
 def plot_lognorm_1d(x,
                     mean,
                     sd,
@@ -361,106 +575,6 @@ def plot_lognorm_1d(x,
     return fig, ax
 
 
-def get_density_grid(key: PRNGKey,
-                     post_em: SurrogateDistribution,
-                     grid: Grid, 
-                     post_true: Posterior):
-    dists = {
-        'exact': post_true,
-        'mean': post_em.expected_surrogate_approx(),
-        'eup': post_em.expected_density_approx(),
-        # 'ep': post_em.expected_normalized_density_approx(key, grid=grid)
-    }
-
-    return DensityComparisonGrid(grid=grid, distributions=dists)
-
-
-def save_post_approx_plot(post_em, dens_grid, out_dir, 
-                          filename_label, post_colors, post_ylim=None):
-    """Save posterior approximation plot."""
-    # posterior approximation plot
-    fig_approx, ax_approx = dens_grid.plot(normalized=True, 
-                                           log_scale=False, 
-                                           points=post_em.surrogate.design.X,
-                                           colors=post_colors)
-    
-    ax_approx.set_ylabel(r'$\pi(u)$')
-    if post_ylim is not None:
-        ax_approx.set_ylim(post_ylim)
-    
-    fig_approx.savefig(out_dir / f'post_approx_{filename_label}.png', bbox_inches='tight')
-
-
-def save_norm_post_surrogate_plots(key, out_dir, post_em, post_true, grid, filename_label,
-                                   n_mc=int(1e5), interval_prob=0.95, gp_colors=None):
-    lpost_samp = post_em._sample_lpost(key, grid.flat_grid, n=n_mc) # (n_mc, n_x)
-    trajectories, _ = normalize_density_over_grid(lpost_samp, cell_area=grid.cell_area, return_log=False)
-
-    q_lower = 0.5 * (1 - interval_prob)
-    lower = jnp.quantile(trajectories, q=q_lower, axis=0)
-    upper = jnp.quantile(trajectories, q=1-q_lower, axis=0)
-    mean = jnp.mean(trajectories, axis=0)
-    post_true, _ = normalize_density_over_grid(post_true.log_density(grid.flat_grid),
-                                               cell_area=grid.cell_area, return_log=False)
-
-    fig, ax = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
-                                    mean=mean,
-                                    lower=lower,
-                                    upper=upper,
-                                    points=post_em.surrogate.design.X,
-                                    true_y=post_true.ravel(),
-                                    colors=gp_colors)
-    ax.set_xlabel('u')
-    ax.set_ylabel(r'$\pi(u)$')
-    fig.savefig(out_dir / f'post_norm_dist_{filename_label}.png', bbox_inches='tight')
-
-    return lpost_samp
-
-
-def save_ldens_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_colors, 
-                        post_colors, interval_prob, n_mc=int(1e5), **kwargs):
-    """
-    Surrogate plots for log-density emulator
-    """
-    key, key_grid, key_samp = jr.split(key, 3)
-    dens_grid = get_density_grid(key_grid, grid, post_em, post_true)
-    surr = post_em.surrogate
-    filename_label = 'ldensem'
-
-    save_post_approx_plot(post_em=post_em, dens_grid=dens_grid,
-                          out_dir=out_dir, filename_label=filename_label,
-                          post_colors=post_colors, **kwargs)
-
-    _, pred = save_surrogate_plot(out_dir=out_dir,
-                                  post_em=post_em, 
-                                  f_target=f_target, 
-                                  grid=grid,
-                                  gp_colors=gp_colors, 
-                                  filename_label=filename_label,
-                                  target_label=r'$\log \tilde{\pi}(u)$', 
-                                  interval_prob=interval_prob)
-    
-    lpost_samp = save_norm_post_surrogate_plots(key=key_samp, 
-                                                out_dir=out_dir,
-                                                post_em=post_em, 
-                                                post_true=post_true, 
-                                                grid=grid,
-                                                filename_label=filename_label,
-                                                n_mc=n_mc, 
-                                                interval_prob=interval_prob,
-                                                gp_colors=gp_colors)
-
-    # unnormalized posterior surrogate plot
-    fig_dens, ax_dens = plot_lognorm_1d(x=grid.flat_grid.ravel(),
-                                        mean=pred.mean,
-                                        sd=pred.stdev,
-                                        points=surr.design.X,
-                                        true_y=jnp.exp(f_target(grid.flat_grid)),
-                                        colors=gp_colors,
-                                        interval_prob=interval_prob)
-    ax_dens.set_ylabel(r'$\tilde{\pi}(u)$')
-    fig_dens.savefig(out_dir / f'dens_dist_{filename_label}.png', bbox_inches='tight')
-
 
 # def save_clipped_ldens_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_colors, 
 #                                 post_colors, interval_prob, n_mc=int(1e5), **kwargs):
@@ -471,19 +585,6 @@ def save_ldens_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_col
 #     dens_grid = get_density_grid(key_grid, grid, post_em, post_true)
 #     surr = post_em.surrogate
 #     filename_label = 'clipem'
-
-#     save_post_approx_plot(post_em=post_em, dens_grid=dens_grid,
-#                           out_dir=out_dir, filename_label=filename_label,
-#                           post_colors=post_colors, **kwargs)
-    
-#     lpost_samp = save_norm_post_surrogate_plots(key=key_samp, 
-#                                                 out_dir=out_dir,
-#                                                 post_em=post_em, 
-#                                                 post_true=post_true, 
-#                                                 grid=grid,
-#                                                 filename_label=filename_label,
-#                                                 n_mc=n_mc, 
-#                                                 interval_prob=interval_prob)
 
 #     fig_gp, ax_gp = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
 #                                           mean=post_em.expected_surrogate_approx().log_density(grid.flat_grid),
@@ -506,63 +607,3 @@ def save_ldens_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_col
     # fig_dens.savefig(out_dir / f'dens_dist_{filename_label}.png', bbox_inches='tight')
 
 
-def save_fwd_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_colors, 
-                      post_colors, interval_prob, n_mc=int(1e5), **kwargs):
-    """
-    Surrogate plots for forward model emulator
-    """
-    key, key_grid, key_samp = jr.split(key, 3)
-    dens_grid = get_density_grid(key_grid, grid, post_em, post_true)
-    surr = post_em.surrogate
-    filename_label = 'fwdem'
-
-    save_post_approx_plot(post_em=post_em, dens_grid=dens_grid,
-                          out_dir=out_dir, filename_label=filename_label,
-                          post_colors=post_colors, **kwargs)
-
-    _, pred = save_surrogate_plot(out_dir=out_dir,
-                                  post_em=post_em, 
-                                  f_target=f_target, 
-                                  grid=grid,
-                                  gp_colors=gp_colors, 
-                                  filename_label=filename_label,
-                                  target_label=r'$G(u)$', 
-                                  interval_prob=interval_prob)
-    
-    lpost_samp = save_norm_post_surrogate_plots(key=key_samp, 
-                                                out_dir=out_dir,
-                                                post_em=post_em, 
-                                                post_true=post_true, 
-                                                grid=grid,
-                                                filename_label=filename_label,
-                                                n_mc=n_mc, 
-                                                interval_prob=interval_prob)
-   
-    # induced log unnormalized posterior density surrogate
-    sigma = post_em.noise_cov_tril.item()
-    log_dens_mean = norm.logpdf(post_em.y, loc=pred.mean, scale=sigma) - 0.5 * pred.variance / (sigma**2)
-    q_lower = 0.5 * (1 - interval_prob)
-    lpost_lower = jnp.quantile(lpost_samp, q=q_lower, axis=0)
-    lpost_upper = jnp.quantile(lpost_samp, q=1-q_lower, axis=0)
-    lpost_true = post_true.log_density(grid.flat_grid).ravel()
-
-    fig_lpost, ax_lpost = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
-                                                mean=log_dens_mean.ravel(),
-                                                lower=lpost_lower,
-                                                upper=lpost_upper,
-                                                points=surr.design.X,
-                                                true_y=lpost_true,
-                                                colors=gp_colors)
-    ax_lpost.set_ylabel(r'$\log \tilde{\pi}(u)$')
-    fig_lpost.savefig(out_dir / f'lpost_dist_{filename_label}.png', bbox_inches='tight')
-
-    # unnormalized posterior surrogate plot
-    fig_post, ax_post = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
-                                              mean=jnp.exp(dens_grid.log_dens_grid['eup']),
-                                              lower=jnp.exp(lpost_lower),
-                                              upper=jnp.exp(lpost_upper),
-                                              points=surr.design.X,
-                                              true_y=jnp.exp(lpost_true),
-                                              colors=gp_colors)
-    ax_post.set_ylabel(r'$\tilde{\pi}(u)$')
-    fig_post.savefig(out_dir / f'dens_dist_{filename_label}.png', bbox_inches='tight')

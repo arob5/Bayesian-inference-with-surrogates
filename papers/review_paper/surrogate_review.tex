@@ -1028,30 +1028,40 @@ of running the simulator at a set of candidate locations. This objective functio
 of the active learning procedure to select the next batch of design points. Similar approaches are also widely applied in other
 applications involving surrogate models. For example, the field of Bayesian optimization focuses on the definition of 
 acquisition functions targeting the goal of black-box function optimization \citep{reviewBayesOpt}. Acquisition functions for 
-Bayesian inversion should instead encode the explicit goal of estimating the posterior distribution.
+Bayesian inversion should analogously encode the explicit goal of estimating the posterior distribution.
 
-Even with complete knowledge of the true posterior, there remains the question concerning the optimal
-placement of design points for surrogate-based posterior approximation. Results suggest that the points should 
-be sampled from an over-dispersed variant of the true posterior, thereby ensuring adequate coverage of 
-the tails \citep{StuartTeck2,briol2017sampling}. These results are consistent with the intuitive notion that design
+To better appreciate the considerations involved in defining an acquisition function, it is useful to consider how the 
+criterion should behave in the absence of uncertainty. In Bayesian optimization, clearly the ideal behavior is to 
+return the optimum of the function being optimized. It is less clear which arrangement of points would be optimal 
+in representing a posterior distribution. While the answer is generally problem-dependent, results suggest that the 
+points should be sampled from an over-dispersed variant of the true distribution, thereby ensuring adequate 
+coverage of the tails \citep{StuartTeck2,briol2017sampling}. These results are consistent with the intuitive notion that design
 points should be placed in high-probability regions, while also ensuring adequate coverage to constrain the 
 global surrogate behavior. With imperfect information, acquisition functions must balance this ideal with the 
-need to reduce uncertainty in poorly explored regions. 
- 
+need to reduce uncertainty in poorly explored regions.
+
+Similar to TODO, we begin by describing common theoretical frameworks employed when deriving and justifying design criteria.
+We then define various concrete acquisition functions used in the literature. Throughout this section, we consider an
+emulator $\targetEm$ that has been conditioned on an existing design $(\design, \target(\design))$, with the goal 
+being to select a new batch $\ParBatch \subset \parSpace$ of $\Nbatch$ design points.
 
 \subsubsection{Frameworks for Design Criteria}
-Similar to the posterior estimators in \Cref{sec:target-map}, design criteria can be derived from rigorous theoretical frameworks.
+Similar to the posterior estimators in \Cref{sec:target-map}, design criteria are commonly derived from rigorous, first-principles frameworks.
 
-\begin{comment}
 \paragraph{Decision Theoretic Framework.}
-Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
+Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting 
+posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
 \begin{equation}
-    \alpha(\batchPar) = \emE_{\batchObs}\left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
+    \alpha(\ParBatch) = \emE \left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
 \end{equation}
-where the outer expectation averages over potential simulation outcomes at $\batchPar$. This effectively anticipates the reduction in posterior approximation error provided by the new data.
+where the outer expectation averages over potential simulation outcomes at $\ParBatch$. This effectively anticipates the reduction in 
+posterior approximation error provided by the new data.
 
 \paragraph{Stepwise Uncertainty Reduction (SUR).}
-Alternatively, SUR strategies seek to minimize an information-theoretic summary of the uncertainty in the quantity of interest \citep{bect2019supermartingale,chevalier2014fast}. If the quantity of interest is the posterior density, this amounts to selecting $\batchPar$ to minimize the expected entropy or integrated variance of the future posterior approximation.
+Alternatively, SUR strategies seek to minimize an information-theoretic summary of the uncertainty in the quantity of interest \citep{bect2019supermartingale,chevalier2014fast}. If the quantity of interest is the posterior density, this amounts to 
+selecting $\ParBatch$ to minimize the expected entropy or integrated variance of the future posterior approximation.
+
+\begin{comment}
 
 \subsubsection{Pointwise Criteria}
 Pointwise criteria assign a utility score to single candidate points $\Par \in \parSpace$. Common examples include Maximum Variance (MaxVar) and Maximum Entropy (MaxEnt), which target the location of highest surrogate uncertainty. While nominally designed for pure sequential settings, these can be adapted for batch acquisition using heuristic strategies. The \inlinedef{Kriging Believer} (or Constant Liar) heuristic \citep{ginsbourger2010kriging} selects a point, temporarily updates the surrogate assuming a deterministic outcome (e.g., the predictive mean), and repeats the process until the batch is filled. This prevents the "clumping" of design points that occurs if one simply selects the top-$k$ maxima of the acquisition function.
