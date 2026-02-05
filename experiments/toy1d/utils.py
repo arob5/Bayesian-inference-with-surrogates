@@ -78,35 +78,35 @@ class SurrogatePost1d:
         self.lpost_samp = self.post_em.sample_lpost(key_samp, self.grid.flat_grid, self.n_mc)
         self.density_grid = get_density_grid(key_ep, self.post_em, self.grid, self.post_true)
 
-    def plot_surrogate(self, **kwargs):
+    def plot_surrogate(self, ax=None, **kwargs):
         if self.plot_surrogate_fn is None:
             return None
         
-        fig, ax = self.plot_surrogate_fn(post_em_1d=self, **kwargs)
+        fig, ax = self.plot_surrogate_fn(post_em_1d=self, ax=ax, **kwargs)
         ax.set_ylabel(self.target_label)
 
         return (fig, ax)
 
-    def plot_log_dens_surrogate(self, **kwargs):
+    def plot_log_dens_surrogate(self, ax=None, **kwargs):
         if self.plot_log_dens_surrogate_fn is None:
             return None
         
-        fig, ax = self.plot_log_dens_surrogate_fn(post_em_1d=self, **kwargs)
+        fig, ax = self.plot_log_dens_surrogate_fn(post_em_1d=self, ax=ax, **kwargs)
         ax.set_ylabel(r'$\log \tilde{\pi}(u)$')
         return fig, ax
     
-    def plot_dens_surrogate(self, **kwargs):
+    def plot_dens_surrogate(self, ax=None, **kwargs):
         if self.plot_dens_surrogate_fn is None:
             return None
 
-        fig, ax = self.plot_dens_surrogate_fn(post_em_1d=self, **kwargs)
+        fig, ax = self.plot_dens_surrogate_fn(post_em_1d=self, ax=ax, **kwargs)
         ax.set_ylabel(r'$\tilde{\pi}(u)$')
         return fig, ax
     
-    def plot_norm_dens_surrogate(self, 
+    def plot_norm_dens_surrogate(self,
                                  interval_prob: float = 0.95,
                                  gp_colors: dict[str,str] | None = None, 
-                                 **kwargs):
+                                 ax=None, **kwargs):
         grid = self.grid
 
         # compute mean and quantiles of normalized density trajectories
@@ -125,20 +125,22 @@ class SurrogatePost1d:
                                         upper=stats['upper'],
                                         points=self.post_em.surrogate.design.X,
                                         true_y=post_true.ravel(),
-                                        colors=gp_colors)
-        ax.set_xlabel('u')
+                                        colors=gp_colors,
+                                        ax=ax)
         ax.set_ylabel(r'$\pi(u)$')
 
         return fig, ax
     
     def plot_post_approx(self,
                          post_ylim: tuple[float,float] | None = None, 
-                         post_colors: dict[str,str] | None = None):
+                         post_colors: dict[str,str] | None = None,
+                         ax=None, **kwargs):
         # posterior approximation plot
         fig, ax = self.density_grid.plot(normalized=True, 
                                          log_scale=False, 
                                          points=self.post_em.surrogate.design.X,
-                                         colors=post_colors)
+                                         colors=post_colors,
+                                         ax=ax)
         
         ax.set_ylabel(r'$\pi(u)$')
         if post_ylim is not None:
@@ -219,7 +221,8 @@ class FwdModelGaussianSurrogateGrid(FwdModelGaussianSurrogate):
 
 def plot_log_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                                 interval_prob: float = 0.95,
-                                gp_colors: dict[str,str] | None = None):
+                                gp_colors: dict[str,str] | None = None,
+                                ax=None, **kwargs):
     assert isinstance(post_em_1d.post_em, FwdModelGaussianSurrogate)
     post_em = post_em_1d.post_em
     post_true = post_em_1d.post_true
@@ -243,14 +246,16 @@ def plot_log_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                                     upper=stats['upper'],
                                     points=post_em.surrogate.design.X,
                                     true_y=lpost_true,
-                                    colors=gp_colors)
+                                    colors=gp_colors,
+                                    ax=ax)
     
     return fig, ax
 
 
 def plot_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                             interval_prob: float = 0.95,
-                            gp_colors: dict[str,str] | None = None):
+                            gp_colors: dict[str,str] | None = None,
+                            ax=None, **kwargs):
     assert isinstance(post_em_1d.post_em, FwdModelGaussianSurrogate)
     post_em = post_em_1d.post_em
     post_true = post_em_1d.post_true
@@ -270,7 +275,8 @@ def plot_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                                     upper=jnp.exp(stats['upper']),
                                     points=post_em.surrogate.design.X,
                                     true_y=jnp.exp(lpost_true),
-                                    colors=gp_colors)
+                                    colors=gp_colors,
+                                    ax=ax, **kwargs)
     
     return fig, ax
 
@@ -307,7 +313,8 @@ class LogDensGPSurrogateGrid(LogDensGPSurrogate):
 
 def plot_lognorm_surrogate(post_em_1d: SurrogatePost1d,
                            interval_prob: float = 0.95,
-                           gp_colors: dict[str,str] | None = None):
+                           gp_colors: dict[str,str] | None = None,
+                           ax=None, **kwargs):
     x = post_em_1d.grid.flat_grid
     surrogate_pred = post_em_1d.surrogate_pred
     design = post_em_1d.post_em.surrogate.design
@@ -318,7 +325,8 @@ def plot_lognorm_surrogate(post_em_1d: SurrogatePost1d,
                            colors=gp_colors,
                            points=design.X,
                            true_y=post_em_1d.f_target(x),
-                           interval_prob=interval_prob)
+                           interval_prob=interval_prob,
+                           ax=ax, **kwargs)
 
 
 # -------------------------------------------------------------------------
@@ -353,7 +361,8 @@ class LogDensClippedGPSurrogateGrid(LogDensClippedGPSurrogate):
 
 def plot_clipped_gp_surrogate(post_em_1d: SurrogatePost1d,
                               interval_prob: float = 0.95,
-                              gp_colors: dict[str,str] | None = None):
+                              gp_colors: dict[str,str] | None = None,
+                              ax=None, **kwargs):
     x = post_em_1d.grid.flat_grid
     gp_pred = post_em_1d.surrogate_pred
     design = post_em_1d.post_em.surrogate.design
@@ -370,12 +379,14 @@ def plot_clipped_gp_surrogate(post_em_1d: SurrogatePost1d,
                                  upper=stats['upper'],
                                  points=design.X,
                                  true_y=lpost_true,
-                                 colors=gp_colors)
+                                 colors=gp_colors,
+                                 ax=ax)
 
 
 def plot_clipped_lnp_surrogate(post_em_1d: SurrogatePost1d,
                                interval_prob: float = 0.95,
-                               gp_colors: dict[str,str] | None = None):
+                               gp_colors: dict[str,str] | None = None,
+                               ax=None, **kwargs):
     x = post_em_1d.grid.flat_grid
     gp_pred = post_em_1d.surrogate_pred
     design = post_em_1d.post_em.surrogate.design
@@ -392,7 +403,8 @@ def plot_clipped_lnp_surrogate(post_em_1d: SurrogatePost1d,
                                  upper=stats['upper'],
                                  points=design.X,
                                  true_y=jnp.exp(lpost_true),
-                                 colors=gp_colors)
+                                 colors=gp_colors,
+                                 ax=ax)
 
 
 def calc_clipped_gaussian_stats(m, sd, b, interval_prob=0.95):
@@ -505,7 +517,8 @@ def calc_dist_from_samples(lpost_samp: Array,
 
 def plot_gp_surrogate(post_em_1d: SurrogatePost1d, 
                       gp_colors: dict[str, str] | None = None, 
-                      interval_prob: float = 0.95):
+                      interval_prob: float = 0.95,
+                      ax=None, **kwargs):
     """Save plot summarizing underlying GP emulator distribution
     
     Agnostic to the underlying surrogate target. `f_target` is the true target
@@ -526,7 +539,8 @@ def plot_gp_surrogate(post_em_1d: SurrogatePost1d,
                                points=design.X,
                                true_y=post_em_1d.f_target(x),
                                colors=gp_colors,
-                               interval_prob=interval_prob)
+                               interval_prob=interval_prob,
+                               ax=ax)
 
     return fig_em, ax_em
 
@@ -538,7 +552,8 @@ def plot_lognorm_1d(x,
                     points=None,
                     true_y=None,
                     interval_prob=0.95,
-                    interval_alpha=0.3):
+                    interval_alpha=0.3,
+                    ax=None, **kwargs):
     """
     Plot lognormal process marginals, using log-scale for y-axis.
     true_y should be on log-scale.
@@ -558,7 +573,8 @@ def plot_lognorm_1d(x,
                                     colors=colors,
                                     points=points,
                                     true_y=true_y,
-                                    interval_alpha=interval_alpha)
+                                    interval_alpha=interval_alpha,
+                                    ax=ax)
 
     # Force ticks to land on nice powers of 10
     ln_10 = jnp.log(10)
@@ -573,37 +589,3 @@ def plot_lognorm_1d(x,
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(log_formatter))
 
     return fig, ax
-
-
-
-# def save_clipped_ldens_em_plots(key, grid, f_target, post_em, post_true, out_dir, gp_colors, 
-#                                 post_colors, interval_prob, n_mc=int(1e5), **kwargs):
-#     """
-#     Surrogate plots for log-density emulator
-#     """
-#     key, key_grid, key_samp = jr.split(key, 3)
-#     dens_grid = get_density_grid(key_grid, grid, post_em, post_true)
-#     surr = post_em.surrogate
-#     filename_label = 'clipem'
-
-#     fig_gp, ax_gp = plot_marginal_pred_1d(x=grid.flat_grid.ravel(),
-#                                           mean=post_em.expected_surrogate_approx().log_density(grid.flat_grid),
-#                                           lower=log_lower,
-#                                           upper=log_upper,
-#                                           colors=colors,
-#                                           points=points,
-#                                           true_y=true_y,
-#                                           interval_alpha=interval_alpha)
-
-    # unnormalized posterior surrogate plot
-    # fig_dens, ax_dens = plot_lognorm_1d(x=grid.flat_grid.ravel(),
-    #                                     mean=pred.mean,
-    #                                     sd=pred.stdev,
-    #                                     points=surr.design.X,
-    #                                     true_y=jnp.exp(f_target(grid.flat_grid)),
-    #                                     colors=gp_colors,
-    #                                     interval_prob=interval_prob)
-    # ax_dens.set_ylabel(r'$\tilde{\pi}(u)$')
-    # fig_dens.savefig(out_dir / f'dens_dist_{filename_label}.png', bbox_inches='tight')
-
-

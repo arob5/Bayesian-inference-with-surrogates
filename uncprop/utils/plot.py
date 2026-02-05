@@ -210,7 +210,9 @@ def plot_marginal_pred_1d(x: Array,
                           colors: Mapping[str, str] | None = None,
                           points: Array | None = None,
                           true_y: Array | None = None,
-                          interval_alpha: float = 0.3):
+                          interval_alpha: float = 0.3,
+                          ax: Axes | None = None,
+                          **kwargs):
     
     if colors is not None:
         mean_color = colors['mean'] if 'mean' in colors else None
@@ -220,7 +222,11 @@ def plot_marginal_pred_1d(x: Array,
     else:
         mean_color = interval_color = points_color = true_color = None
 
-    fig, ax = plt.subplots()
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
     ax.plot(x, mean, linestyle='-', color=mean_color)
     ax.fill_between(x, lower, upper, alpha=interval_alpha, color=interval_color)
 
@@ -240,7 +246,9 @@ def plot_gp_1d(x: Array,
                points: Array | None = None,
                true_y: Array | None = None,
                interval_prob: float = 0.95,
-               interval_alpha: float = 0.3):
+               interval_alpha: float = 0.3,
+               ax: Axes | None = None,
+               **kwargs):
     """
     If provided, `colors` should have keys 'mean', 'interval',
     'points', 'true'.
@@ -255,4 +263,5 @@ def plot_gp_1d(x: Array,
                                  colors=colors,
                                  points=points,
                                  true_y=true_y,
-                                 interval_alpha=interval_alpha)
+                                 interval_alpha=interval_alpha,
+                                 ax=ax)
