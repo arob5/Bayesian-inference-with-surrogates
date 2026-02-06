@@ -960,19 +960,40 @@ need to reduce uncertainty in poorly explored regions.
 Similar to TODO, we begin by describing common theoretical frameworks employed when deriving and justifying design criteria.
 We then define various concrete acquisition functions used in the literature. Throughout this section, we consider an
 emulator $\targetEm$ that has been conditioned on an existing design $(\design, \target(\design))$, with the goal 
-being to select a new batch $\ParBatch \subset \parSpace$ of $\Nbatch$ design points.
+being to select a new batch $\ParBatch \subset \parSpace$ of $\Nbatch$ design points. Denoting the acquisition function
+by $\acq: \parSpace^\Nbatch \to \R$, the design selection problem is formalized as 
+\begin{equation}
+\ParBatchOpt \Def \argmin_{\ParBatch \in \parSpace^\Nbatch} \acq(\ParBatch).
+\end{equation}
 
 \subsubsection{Frameworks for Design Criteria}
 Similar to the posterior estimators in \Cref{sec:target-map}, design criteria are commonly derived from rigorous, first-principles frameworks.
 
 \paragraph{Decision Theoretic Framework.}
+Recall the unnormalized density decision theoretic framework formalized in \Cref{eq:decision-theory}, whereby
+an unnormalized posterior estimate is chosen as the optimizer of an expected loss $\emE[\loss(\qDens, \postEm)]$
+over candidate functions $\qDens$. The value of this objective function evaluated at the optimizer,
+denoted $\qDens_\Ndesign$, is known as the \textit{Bayes' risk}. A natural design criterion is thus to select the 
+batch $\ParBatch$ that would yield an updated optimum with the lowest possible Bayes' risk:
+\begin{equation}
+\acq(\ParBatch) \Def \emEAug[\loss(\qDens_{\Naugment}, \postEm[\Naugment])]
+\end{equation}
+
+In principle, one could attempt to develop 
+
 Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting 
 posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
 \begin{equation}
-    \alpha(\ParBatch) = \emE \left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
+    \alpha(\ParBatch) = \emE[\Naugment] \left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
 \end{equation}
 where the outer expectation averages over potential simulation outcomes at $\ParBatch$. This effectively anticipates the reduction in 
 posterior approximation error provided by the new data.
+
+\begin{equation}
+\acq(\ParBatch) \Def 
+\int_{\parSpace} \E_{\gamma} \left\{\Var_{\Naugment}[\postDens(\Par; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \gamma]\right\} \ \rho(\Par) d\Par,
+ \label{eq:acq-intvar}
+\end{equation}
 
 \paragraph{Stepwise Uncertainty Reduction (SUR).}
 Alternatively, SUR strategies seek to minimize an information-theoretic summary of the uncertainty in the quantity of interest \citep{bect2019supermartingale,chevalier2014fast}. If the quantity of interest is the posterior density, this amounts to 
@@ -995,6 +1016,8 @@ Here, $\mathbb{V}$ represents the variance of the estimator conditioned on the p
     \item \textbf{Posterior Weighting ($w \approx \postDens$):} Weights the integral by the current posterior approximation. This focuses the design on the posterior mode, but risks getting stuck in local optima if the current approximation is biased.
 \end{itemize}
 Alternatively, one can integrate the variance of the \textit{forward model} $\target$, weighted by the posterior probability. This targets regions where the map is uncertain \textit{and} the probability is high, explicitly coupling the surrogate accuracy to the inference task \citep{sinsbeck2020sequential, activeSubspaceLearning}.
+
+\subsubsection{Solving the Optimization Problem}
 
 \subsection{Tempered Approximations}
 In problems where the likelihood is highly informative, the posterior effectively becomes a "needle in a haystack" relative to the prior. Active learning schemes targeting the true posterior directly may fail to identify the high-mass region, exhausting the budget on exploring negligible areas.

@@ -44,7 +44,7 @@
 % --------------------------------------------------------------------------------------------------
 
 % General notation for representing emulated quantity
-\newcommand{\Em}[1]{{#1}_{\Ndesign}}
+\newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
 % Emulator target
 \newcommand{\target}{\mathsf{f}} % Target map for emulation
@@ -54,7 +54,7 @@
 \newcommand{\emSD}[1][\Ndesign]{s_{#1}}
 \newcommand{\emVar}[1][\Ndesign]{s^2_{#1}}
 \newcommand{\emKer}[1][\Ndesign]{k_{#1}}
-\newcommand{\emDist}{\nu_{\Ndesign}} % Predictive distribution (law) of the emulator (a stochastic process)
+\newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Predictive distribution (law) of the emulator (a stochastic process)
 \newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
 \newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
 \newcommand{\quantileProb}{\alpha}
@@ -82,7 +82,7 @@
 % Surrogate posterior approximations
 \newcommand{\ep}{\mathrm{ep}}
 \newcommand{\eup}{\mathrm{eup}}
-\newcommand{\postEm}{\Em{\postDens}}
+\newcommand{\postEm}[1][\Ndesign]{\Em[#1]{\postDens}}
 \newcommand{\postNormEm}{\Em{\postDensNorm}}
 \newcommand{\normCstEm}{\Em{\normCst}}
 \newcommand{\postApproxEP}{\Em{\postDensNorm}^{\ep}}
@@ -100,6 +100,15 @@
 \newcommand{\idxBasis}{r}
 \newcommand{\dimBasis}{R}
 \newcommand{\basisVec}{\psi}
+
+% --------------------------------------------------------------------------------------------------
+% Active Learning
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\acq}{\mathcal{A}}
+\newcommand{\ParBatchOpt}{\ParBatch_\star}
+\newcommand{\Naugment}{\Ndesign + \Nbatch}
+\newcommand{\emEAug}{\E_{\emDist[\Naugment]}}
 
 % --------------------------------------------------------------------------------------------------
 % Proofs and Theoretical Sections
