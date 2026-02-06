@@ -234,7 +234,7 @@ def plot_marginal_pred_1d(x: Array,
         ax.plot(x, true_y, linestyle='-', color=true_color)
     if points is not None:
         y0,y1 = ax.get_ylim()
-        ax.vlines(points, y0, y1, linestyles='--', colors=points_color)
+        ax.vlines(points, 0, 1, transform=ax.get_xaxis_transform(), linestyles='--', colors=points_color)
     
     return fig, ax
 

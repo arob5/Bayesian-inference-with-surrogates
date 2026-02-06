@@ -93,6 +93,7 @@ class Grid:
              z: Array | list[Array] | None = None,
              titles: list[str] | None = None,
              points: ArrayLike | None = None,
+             ax: Axes | None = None,
              **kwargs) -> tuple[Figure, Sequence[Axes]]:
         """
         Visualize function values at grid points. Values must either be specified 
@@ -120,26 +121,29 @@ class Grid:
             raise ValueError(f'Plot z values have length {z.shape[0]}; expected {self.n_points}')
 
         if self.n_dims == 1:
-            return self._plot_1d(z, titles=titles, points=points, **kwargs)
+            return self._plot_1d(z, titles=titles, points=points, ax=ax, **kwargs)
         elif self.n_dims == 2:
-            return self._plot_2d(z, titles=titles, points=points, **kwargs)
+            return self._plot_2d(z, titles=titles, points=points, ax=ax, **kwargs)
         else:
             raise NotImplementedError(f'No plot() method defined for grid with n_dims = {self.n_dims}')
         
-    def plot_kde(self, samples: Array, **kwargs):
+    def plot_kde(self, samples: Array, ax=None, **kwargs):
         if self.n_dims == 2:
-            return self._plot_2d_kde(samples, **kwargs)
+            return self._plot_2d_kde(samples, ax=ax, **kwargs)
         else:
             raise NotImplementedError(f'No plot_kde() method defined for grid with n_dims = {self.n_dims}')
 
-    def _plot_2d_kde(self, samples: Array, contours: bool = False, **kwargs):
+    def _plot_2d_kde(self, samples: Array, contours: bool = False, ax=None, **kwargs):
         assert self.n_dims == 2
 
         # Fit KDE and evaluate on grid
         kde = gaussian_kde(samples.T)
         zz = kde(self.flat_grid.T).reshape(self.shape)
 
-        fig, ax = plt.subplots()
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.figure
 
         low, high = self.low, self.high
         im = ax.imshow(
@@ -168,12 +172,17 @@ class Grid:
                  points: ArrayLike | None = None,
                  legend: bool = True,
                  colors: Mapping[str, str] | None = None,
+                 ax: Axes | None = None,
                  **kwargs) -> tuple[Figure, Sequence[Axes]]:
         assert self.n_dims == 1
 
         X = self.grid_arrays[0]
         Z = z.reshape(X.shape[0], -1)
-        fig, ax = plt.subplots()
+
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.figure
 
         for i in range(Z.shape[1]):
             label = None if titles is None else titles[i]
@@ -183,7 +192,7 @@ class Grid:
         if points is not None:
             y0,y1 = ax.get_ylim()
             color = colors['aux'] if (colors is not None and 'aux' in colors) else None
-            ax.vlines(points, y0, y1, linestyles='--', colors=color)
+            ax.vlines(points, 0, 1, transform=ax.get_xaxis_transform(), linestyles='--', colors=color)
 
         if legend:
             ax.legend()
@@ -197,6 +206,7 @@ class Grid:
                  **kwargs) -> tuple[Figure, Sequence[Axes]]:
         """
         Note: for now the same points are plotted on each plot
+        Currently does not support plotting on existing axes
         """
         assert self.n_dims == 2
 
@@ -289,6 +299,7 @@ class DensityComparisonGrid:
              normalized: bool = False, 
              log_scale: bool = True,
              points: ArrayLike | None = None,
+             ax: Axes | None = None,
              **kwargs) -> tuple[Figure, Sequence[Axes]]:
         
         if isinstance(dist_names, str):
@@ -302,7 +313,7 @@ class DensityComparisonGrid:
         if not log_scale:
             plot_vals = [jnp.exp(arr) for arr in plot_vals]
 
-        return self.grid.plot(z=plot_vals, titles=dist_names, points=points, **kwargs)
+        return self.grid.plot(z=plot_vals, titles=dist_names, points=points, ax=ax, **kwargs)
 
     def calc_wasserstein2(self, dist_name1, dist_name2, epsilon=None, **kwargs):
         """

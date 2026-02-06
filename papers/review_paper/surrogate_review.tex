@@ -852,43 +852,19 @@ centered at the most uncertain location.
 \end{examplebox}
 
 \begin{figure}
-     \centering
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{lpost_dist_fwdem.png}
-         \caption{\texorpdfstring{$\log \Gaussian(\obs \given \targetEm(\cdot), \likPar)$}{Log Post. Approx., Forward Model Em.}}
-         \label{fig:lpost_dist_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % lpost dist [ldens]
-         \centering
-         \includegraphics[width=\textwidth]{gp_dist_ldensem.png}
-         \caption{Log-Posterior Emulator}
-         \label{fig:lpost_dist_llikem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [fwd]
-         \centering
-         \includegraphics[width=\textwidth]{post_approx_fwdem.png}
-         \caption{$\postDensNorm$ approx}
-         \label{fig:post_norm_approx_fwdem}
-     \end{subfigure}
-     \hfill
-     \begin{subfigure}[b]{0.48\textwidth} % post norm approx [ldens] 
-         \centering
-         \includegraphics[width=\textwidth]{post_approx_ldensem.png}
-         \caption{$\postDensNorm$ approx}
-         \label{fig:post_norm_approx_ldensem}
-     \end{subfigure}
-        \caption{A continuation of the example in \Cref{fig:em_dist_1d}. The top and bottom rows correspond
-        to the forward model and log-likelihood emulation settings, respectively. The first column summarizes
-        the distributions of the log-posterior approximations induced by the underlying emulators, with 
-        the predictive mean in blue and the shaded region containing 90\% of the mass. The second column 
-        plots compares various (normalized) posterior approximations derived from the log-posterior 
-        emulator. Note that even though  the emulators interpolate the design points, the posterior
-        approximations do not owing to the normalization.}
+    \centering
+    \includegraphics[width=\textwidth, height=0.98\textheight, keepaspectratio]{post_approx_grid.pdf}
+
+    \caption{A continuation of the example in \Cref{fig:em_dist_1d}. From left to right, the columns correspond
+    	to the GP forward model emulator, GP log-posterior emulator, and clipped GP log-posterior emulator.
+	The top row summarizes the pointwise marginal distributions of 
+	\texorpdfstring{$\log \postEm(\Par)$}{the log unnormalized posterior approximation}, showing the 
+	mean (magenta line) and 90\% intervals against the true log-posterior (black). The bottom
+	row presents different normalized posterior approximations relative to the true posterior (blue line). The
+	vertical dashed lines indicate the locations of the design points.}
         \label{fig:post_norm_approx_1d}
 \end{figure}
+
  
 \subsubsection{Other Pointwise Estimators}
 The instability of the EUP in log-density emulation (\Cref{ex:eup-ldens-em}) has motivated alternative pointwise estimators.
