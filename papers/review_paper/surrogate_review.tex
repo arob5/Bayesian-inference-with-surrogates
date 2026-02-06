@@ -943,79 +943,179 @@ strategies that are commonly used for this purpose:
 Many active learning algorithms explicitly define a design criterion, or \inlinedef{acquisition function}, that quantifies the utility 
 of running the simulator at a set of candidate locations. This objective function is then optimized at each round
 of the active learning procedure to select the next batch of design points. Similar approaches are also widely applied in other
-applications involving surrogate models. For example, the field of Bayesian optimization focuses on the definition of 
-acquisition functions targeting the goal of black-box function optimization \citep{reviewBayesOpt}. Acquisition functions for 
-Bayesian inversion should analogously encode the explicit goal of estimating the posterior distribution.
+applications involving surrogate models. For example, the field of Bayesian optimization focuses on defining 
+acquisition functions tailored to the optimization of  black-box functions \citep{reviewBayesOpt}. Acquisition functions for 
+Bayesian inversion are analogous, but should instead encode the explicit goal of estimating the posterior distribution.
 
 To better appreciate the considerations involved in defining an acquisition function, it is useful to consider how the 
 criterion should behave in the absence of uncertainty. In Bayesian optimization, clearly the ideal behavior is to 
-return the optimum of the function being optimized. It is less clear which arrangement of points would be optimal 
-in representing a posterior distribution. While the answer is generally problem-dependent, results suggest that the 
-points should be sampled from an over-dispersed variant of the true distribution, thereby ensuring adequate 
-coverage of the tails \citep{StuartTeck2,briol2017sampling}. These results are consistent with the intuitive notion that design
-points should be placed in high-probability regions, while also ensuring adequate coverage to constrain the 
-global surrogate behavior. With imperfect information, acquisition functions must balance this ideal with the 
-need to reduce uncertainty in poorly explored regions.
+return the optimum of the function being optimized. In the present context, it is less clear which arrangement of points 
+is optimal in representing a posterior distribution. Results suggest that the points should be sampled from an 
+over-dispersed variant of the posterior, thereby ensuring adequate coverage of the tails \citep{StuartTeck2,briol2017sampling}. 
+These results are consistent with the intuitive notion that design points should be placed in high-probability regions, while also 
+ensuring adequate coverage to constrain the global surrogate behavior. With imperfect information, acquisition functions must 
+balance this ideal with the need to reduce uncertainty in poorly explored regions.
 
-Similar to TODO, we begin by describing common theoretical frameworks employed when deriving and justifying design criteria.
-We then define various concrete acquisition functions used in the literature. Throughout this section, we consider an
-emulator $\targetEm$ that has been conditioned on an existing design $(\design, \target(\design))$, with the goal 
-being to select a new batch $\ParBatch \subset \parSpace$ of $\Nbatch$ design points. Denoting the acquisition function
-by $\acq: \parSpace^\Nbatch \to \R$, the design selection problem is formalized as 
+The following sections explore design criteria that seek to navigate this particular flavor of an exploration-exploitation tradeoff.
+We begin by formalizing the problem, discuss theoretical frameworks used for deriving design criteria, and then 
+offer a survey of concrete acquisitions used in the literature. We close the section with a brief discussion of practical methods for 
+carrying out the optimization of acquisition functions. 
+
+\subsubsection{Formalizing the Design Optimization}
+Throughout this section, we consider an emulator $\targetEm$ that has been conditioned on an existing design 
+$(\design, \target(\design))$, with the goal being to select a new batch $\ParBatch \subset \parSpace$ of $\Nbatch$ design points. 
+For an acquisition function $\acq: \parSpace^\Nbatch \to \R$, the design selection problem is formalized as 
 \begin{equation}
 \ParBatchOpt \Def \argmin_{\ParBatch \in \parSpace^\Nbatch} \acq(\ParBatch).
 \end{equation}
+Let $\ParBatchAug \Def \design \cup \ParBatch$ denote the extended set of design points, $\targetEm[\Naugment]$
+the updated surrogate, and $\postEm[\Naugment]$ the resulting unnormalized posterior approximation. We will find 
+it useful to make explicit the dependence of $\targetEm[\Naugment]$ and $\postEm[\Naugment]$ on 
+$(\ParBatch, \target(\ParBatch))$. For this purpose, we let $\batchResponse \Def \target(\ParBatch)$ and write 
+$\targetEm[\Naugment]^{\ParBatch,\batchResponse}$ and $\postEm[\Naugment]^{\ParBatch,\batchResponse}$.
+We utilize similar notation for other quantities depending on $\ParBatch$ and $\batchResponse$.
+
+\begin{remark}
+The particular process of updating the surrogate from $\targetEm$ to $\targetEm[\Naugment]$ will depend on the
+particular model in use. For GP surrogates, this entails conditioning 
+$\targetEm[\Naugment] \Def \targetEm \given [\targetEm(\ParBatch) = \target(\ParBatch)]$, typically requiring 
+$\BigO(\Ndesign^2 \Nbatch + \Nbatch^3)$ operations. The GP hyperparameters may also be updated, at the 
+cost of $\BigO([\Ndesign + \Nbatch]^3)$ scaling. For parametric models, the surrogate update will entail 
+re-estimation of the model parameters using the augmented dataset.
+\end{remark}
+
 
 \subsubsection{Frameworks for Design Criteria}
 Similar to the posterior estimators in \Cref{sec:target-map}, design criteria are commonly derived from rigorous, first-principles frameworks.
 
 \paragraph{Decision Theoretic Framework.}
 Recall the unnormalized density decision theoretic framework formalized in \Cref{eq:decision-theory}, whereby
-an unnormalized posterior estimate is chosen as the optimizer of an expected loss $\emE[\loss(\qDens, \postEm)]$
-over candidate functions $\qDens$. The value of this objective function evaluated at the optimizer,
-denoted $\qDens_\Ndesign$, is known as the \textit{Bayes' risk}. A natural design criterion is thus to select the 
-batch $\ParBatch$ that would yield an updated optimum with the lowest possible Bayes' risk:
+an unnormalized posterior estimate is chosen as the optimizer of an expected loss:
 \begin{equation}
-\acq(\ParBatch) \Def \emEAug[\loss(\qDens_{\Naugment}, \postEm[\Naugment])]
+\qDens_\Ndesign \Def \argmin_{\qDens \in \qSpace} \emE[\loss(\qDens, \postEm)].
 \end{equation}
-
-In principle, one could attempt to develop 
-
-Following the perspective in \Cref{sec:decision-theory}, one can select the design that minimizes the expected loss of the resulting 
-posterior estimator. For an unnormalized density estimator $\qDens$, we seek the design $\batchPar$ that minimizes the expected future risk:
+The minimal value of the objective function is known as the \textit{Bayes' risk}:
 \begin{equation}
-    \alpha(\ParBatch) = \emE[\Naugment] \left[ \min_{\qDens} \emE_{\targetEm | \batchObs} [\loss(\qDens, \postEm)] \right],
+\bayesrisk \Def \emE[\loss(\qDens_\Ndesign, \postEm[\Ndesign])].
 \end{equation}
-where the outer expectation averages over potential simulation outcomes at $\ParBatch$. This effectively anticipates the reduction in 
-posterior approximation error provided by the new data.
-
+If the surrogate is updated using $(\ParBatch, \batchResponse)$, it will yield a corresponding Bayes' risk
+$\bayesrisk[\Naugment]^{\ParBatch,\batchResponse}$. A natural design strategy is to choose $\ParBatch$
+so that this risk is as small as possible. The problem, of course, 
+is that we generally cannot compute this quantity without evaluating $\batchResponse = \target(\ParBatch)$.
+Thus, we marginalize these values under the assumption $\batchResponse \sim \emDist(\ParBatch)$, which
+models the unobserved responses according to the current surrogate. This yields an acquisition function of the form 
 \begin{equation}
-\acq(\ParBatch) \Def 
-\int_{\parSpace} \E_{\gamma} \left\{\Var_{\Naugment}[\postDens(\Par; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \gamma]\right\} \ \rho(\Par) d\Par,
- \label{eq:acq-intvar}
-\end{equation}
+\acq(\ParBatch) \Def \E_{\batchResponse \sim \emDist(\ParBatch)}\left[\bayesrisk[\Naugment]^{\ParBatch,\batchResponse}\right].
+\end{equation} 
+Below we will explore some special cases where the Bayes' risk is not a function of $\batchResponse$, thus conveniently 
+eliminating the expectation over $\targetEm(\ParBatch)$.
 
 \paragraph{Stepwise Uncertainty Reduction (SUR).}
-Alternatively, SUR strategies seek to minimize an information-theoretic summary of the uncertainty in the quantity of interest \citep{bect2019supermartingale,chevalier2014fast}. If the quantity of interest is the posterior density, this amounts to 
-selecting $\ParBatch$ to minimize the expected entropy or integrated variance of the future posterior approximation.
+\textit{Stepwise Uncertainty Reduction (SUR)} is another theoretical framework that has been used to develop 
+and analyze sequential design algorithms for applications such as optimization and 
+reliability analysis \citep{supermartingaleSUR,BectSUR}. The
+framework has also recently been used in solving Bayesian inverse problems \citep{lartaudSUR}.
+Let $\surmetric(\targetEm)$ denote a metric that maps to some scalar-valued notion of uncertainty we would
+like to minimize. SUR acquisition functions are defined as the expected one-step-ahead uncertainty
+\begin{equation}
+\acq(\ParBatch) \Def \E_{\batchResponse \sim \emDist(\ParBatch)}\left[\surmetric(\targetEm[\Naugment]^{\ParBatch,\batchResponse})\right].
+\end{equation}
+This framework is quite general, and particular choices of $\surmetric$ coincide with criteria derived using the 
+Bayesian decision theoretic approach. The primary benefit of SUR is theoretical, as it provides general conditions 
+to ensure that the uncertainty will converge to zero if the algorithm is repeated indefinitely. 
+
+\subsubsection{Local Single-Point Criteria}
+Before describing acquisition functions derived from the above frameworks, we introduce some 
+common heuristic strategies. When optimizing for a single design point ($\Nbatch = 1$), an intuitive 
+strategy is to simply select the input where the uncertainty in $\postNormEm(\Par)$ is largest.
+Owing to the challenge of dealing with the random normalizing constant $\normCstEm$,
+previous work has opted to instead target the uncertainty in the unnormalized density 
+$\postEm(\Par)$. If predictive variance
+is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
+\begin{equation}
+\acq(\Par) \Def -\Var_{\Ndesign}[\postEm(\Par)], \label{eq:acq-maxvar}
+\end{equation}
+which is negated to align with our convention of minimizing acquisition functions.
+Alternative ``maximum uncertainty'' criteria can be defined by changing the measure
+of uncertainty (e.g., variance, entropy, interquartile range) and the target quantity
+(e.g., $\postEm$, $\targetEm$). For example, targeting the 
+maximum variance of $\targetEm(\Par)$ yields a classical criterion 
+used for exploration of response surfaces \citep[Section 6.2.1]{gramacy2020surrogates}.
+However, this criterion tends not to perform well in the Bayesian inference setting
+since it does not take into account the magnitude of the posterior density. 
+It may be that $\targetEm(\Par)$ is highly uncertain, but 
+$\postDens(\Par; \targetEm)$ concentrates on a very small value.
+The maximum variance criterion is utilized 
+in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017,AlawiehIterativeGP}.
+In the GP log-density emulator setting (\Cref{eq:llik-em-Gaussian})
+$\postEm[\Ndesign](\Par)$ is log-normal. Given the heavy tails and asymmetry of a log-normal 
+random variable, \citep{VehtariParallelGP,wang2018adaptive} argue that the variance provides a 
+misleading measure of uncertainty in this setting, instead favoring the entropy or interquartile range. 
+
+As an alternative to these maximum uncertainty criteria, \citet{gp_surrogates_random_exploration}
+suggest explicitly decoupling exploration and exploitation by selecting one point 
+that maximizes $\emE[\log \postEm(\Par)]$ and randomly sampling a second point from 
+$\priorDens$. \citet{Takhtaganov2018AdaptiveBayesianGP} employs the expected improvement
+criterion from Bayesian optimization to target the placement of new design points in high-posterior regions.
+
+While nominally designed for the pure sequential $\Nbatch = 1$ settings, these single-point criteria can be 
+adapted for batch acquisition using heuristic strategies. The \textit{Kriging Believer} and \textit{Constant Liar} heuristics
+\citep{Ginsbourger2010}.
+\todo[inline]{clean this up / move some to example box / describe these better}
+
+\subsubsection{Global Multipoint Criteria}
+While computationally convenient, single-point criteria suffer from two primary drawbacks: (1) they are not 
+naturally defined in the batch sequential setting; and (2) they are purely local, neglecting the global impact a 
+new design point has across $\parSpace$. The latter property commonly results in maximum uncertainty 
+criteria targeting points in the edges or tails of the parameter space. We now introduce a class of acquisition
+functions, referred to as \inlinedef{Expected Conditional Uncertainty (ECU)} criteria, that address 
+both of these limitations.
+
+Intuitively, ECU acquisitions arise from the following logic: we would like to select an input batch 
+$\ParBatch$ that results in an updated (unnormalized) posterior estimate $\postEm[\Naugment]$ with the lowest
+possible uncertainty on average over $\parSpace$. Given that we cannot typically compute this uncertainty without
+observing $\target(\ParBatch)$, we utilize the same approach described for the Bayes' risk 
+and marginalize over this quantity with respect to the current predictive distribution $\emDist$. As a concrete example, 
+if we again choose variance as our measure of uncertainty, we have
+\begin{equation}
+\acq(\ParBatch) \Def 
+\int_{\parSpace} \E_{\gamma} \left\{\Var_{\Naugment}[\postDens(\Par; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \gamma]\right\} \ \weightdens(\Par) \d\Par,
+ \label{eq:acq-intvar}
+\end{equation}
+Variations of 
+ECU criteria can be created by changing the measure of uncertainty (e.g., variance, entropy, interquartile range),
+the target quantity (e.g., $\postEm$, $\funcEm$), and the weighting measure $\weightdens$.
+For example, targeting the variance of $\funcEm$ with uniform weighting measure yields the
+classical integrated mean squared prediction error \citep{Mercer_kernels_IVAR}.
+
+Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
+in ECU criteria is not tractable. This is especially the case in our present setting,
+and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR,botorch},
+\begin{align}
+&\acq(\ParBatch) \Def \frac{1}{J}
+\sum_{j=1}^{J} \E_{\gamma} \left\{\Var_{\Naugment}[\postDens(\Par_j; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \gamma]\right\},
+&&\Par_j \overset{\mathrm{iid}}{\sim} \weightdens.
+ \label{eq:acq-intvar-saa}
+\end{align}
+The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
+\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. 
+The expected variance terms in the summands admit closed forms in the Gaussian 
+settings of \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian}, as shown below. As an alternative to 
+\Cref{eq:acq-intvar-saa}, we can consider an ECU criterion that targets uncertainty in the underlying
+emulator $\targetEm[\Ndesign]$, but acknowledges the goal of posterior approximation through the choice
+of $\weightdens$; i.e., 
+\begin{align}
+&\acq(\ParBatch) \Def \frac{1}{J}
+\sum_{j=1}^{J} \Var_{\Naugment}[\targetEm[\Naugment](\Par_j)],
+&&\Par_j \overset{\mathrm{iid}}{\sim} \hat{\postNormEm},
+ \label{eq:acq-intvar-lartaud-saa}
+\end{align}
+where $\hat{\postNormEm}$ is any of the approximate posteriors from \Cref{sec:post-approx}.
+An acquisition function of this form is proposed in \citet{weightedIVAR}, and compares 
+favorably against \Cref{eq:acq-intvar-saa}.
+
 
 \begin{comment}
-
-\subsubsection{Pointwise Criteria}
-Pointwise criteria assign a utility score to single candidate points $\Par \in \parSpace$. Common examples include Maximum Variance (MaxVar) and Maximum Entropy (MaxEnt), which target the location of highest surrogate uncertainty. While nominally designed for pure sequential settings, these can be adapted for batch acquisition using heuristic strategies. The \inlinedef{Kriging Believer} (or Constant Liar) heuristic \citep{ginsbourger2010kriging} selects a point, temporarily updates the surrogate assuming a deterministic outcome (e.g., the predictive mean), and repeats the process until the batch is filled. This prevents the "clumping" of design points that occurs if one simply selects the top-$k$ maxima of the acquisition function.
-
-\subsubsection{Global Criteria}
-Global criteria assess uncertainty integrated over the entire parameter space. These are naturally suited for batch selection, as the reduction in integrated uncertainty can be conditioned on a set of candidate points simultaneously.
-Crucially, the "goal" of the inference can be encoded into the integration measure. A generic global criterion takes the form:
-\begin{equation}
-    \alpha(\batchPar) = \int_{\parSpace} \mathbb{V}[\qDens(\Par) \mid \batchPar] \, w(\Par) \, \d\Par.
-\end{equation}
-Here, $\mathbb{V}$ represents the variance of the estimator conditioned on the proposed batch. The weight function $w(\Par)$ dictates the focus:
-\begin{itemize}
-    \item \textbf{Prior Weighting ($w = \priorDens$):} Reduces uncertainty globally according to the prior support. This is robust but may waste effort on low-likelihood regions.
-    \item \textbf{Posterior Weighting ($w \approx \postDens$):} Weights the integral by the current posterior approximation. This focuses the design on the posterior mode, but risks getting stuck in local optima if the current approximation is biased.
-\end{itemize}
-Alternatively, one can integrate the variance of the \textit{forward model} $\target$, weighted by the posterior probability. This targets regions where the map is uncertain \textit{and} the probability is high, explicitly coupling the surrogate accuracy to the inference task \citep{sinsbeck2020sequential, activeSubspaceLearning}.
 
 \subsubsection{Solving the Optimization Problem}
 
