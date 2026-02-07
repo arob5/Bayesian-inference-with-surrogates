@@ -1178,22 +1178,34 @@ to utilize a sample average approximation
 &&\Par_j \overset{\mathrm{iid}}{\sim} \weightdens,
  \label{eq:acq-intvar-saa}
 \end{align}
-in which the $\Par_j$ are sampled once and then fixed, yielding the 
-
-This is especially the case in our present setting,
-and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR,botorch},
-\begin{align}
-&\acq(\ParBatch) \Def \frac{1}{J}
-\sum_{j=1}^{J} \E_{\gamma} \left\{\Var_{\Naugment}[\postDens(\Par_j; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \gamma]\right\},
-&&\Par_j \overset{\mathrm{iid}}{\sim} \weightdens.
- \label{eq:acq-intvar-saa}
-\end{align}
-The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
-\Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. 
-
+in which the $\Par_j$ are sampled once and then fixed, maintaining a deterministic 
+objective function \citep{Mercer_kernels_IVAR,botorch}.
 
 \paragraph{Other Approaches.}
 Uncertainty in acceptance probability, sampling-based approaches (Murray SBI paper fixed-point iteration, Istem, etc.)
+
+The batch design methods discussed above are generic active learning techniques, not unique to our particular
+context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
+current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
+\citet{FerEmulation} instead sample from a mixture of the current approximate posterior and the prior, with the mixture weights 
+representing a user-defined tuning parameter. \citet{turbulenceModelAdaptiveLHS} considers a 
+similar prior-posterior mixture, with a latin hypercube adjustment to encourage the new design 
+points to be spread out. 
+\citet{adaptiveMultimodal} samples from the current approximate posterior, and
+then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
+closely related to the \textit{calibrate, emulate, sample} workflow \citep{CES}.
+\citet{hydrologicalModel2} consider a similar strategy, using parameters sampled from an MCMC
+proposal as additional design points.
+
+These sampling-based approaches enjoy the practical benefits of being inherently parallel and not requiring the solution
+of a difficult optimization problem. In this sense, they are similar in spirit to Thompson sampling for
+batch Bayesian optimization \citep{parallelBOThompson}. We conjecture that such approaches may be superior to 
+alternatives in the large $\Nbatch$, small $\Nrounds$ setting. We expect the performance of this approach to be closely 
+tied to the choice of approximate posterior; e.g., samples from the plug-in mean posterior will likely under-explore the 
+parameter space. The \citet{FerEmulation} approach of sampling from a mixture of the prior and approximate posterior might
+be viewed as a more scalable analog of the method in \citet{gp_surrogates_random_exploration}, in the sense of 
+explicitly decoupling exploration and exploitation. We believe further work is warranted to better understand the 
+behavior of these methods, and their applicability to large-scale batch design.
 
 \begin{comment}
 
