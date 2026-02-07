@@ -1007,8 +1007,7 @@ models the unobserved responses according to the current surrogate. This yields 
 \begin{equation}
 \acq(\ParBatch) \Def \E_{\batchResponse \sim \emDist(\ParBatch)}\left[\bayesrisk[\Naugment]^{\ParBatch,\batchResponse}\right].
 \end{equation} 
-Below we will explore some special cases where the Bayes' risk is not a function of $\batchResponse$, thus conveniently 
-eliminating the expectation over $\targetEm(\ParBatch)$. In principle, this framework could be modified to consider a loss
+In principle, this framework could be modified to consider a loss
 $\loss(\qDensNorm, \postNormEm)$ between \textit{normalized} densities (as in \Cref{eq:random-measure-variational}).
 To our knowledge this has not been considered in practice due to the practical difficulties caused by the normalizing constant.
 
@@ -1038,7 +1037,7 @@ previous work has opted to instead target the uncertainty in the unnormalized de
 $\postEm(\Par)$. If predictive variance
 is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
 \begin{equation}
-\acq^{\mathrm{maxvar}}(\Par) \Def -\Var_{\emDist}[\postEm(\Par)], \label{eq:acq-maxvar}
+\acq(\Par) \Def -\Var_{\emDist}[\postEm(\Par)], \label{eq:acq-maxvar}
 \end{equation}
 which is negated to align with our convention of minimizing acquisition functions.
 Alternative ``maximum uncertainty'' criteria can be defined by changing the measure
@@ -1049,10 +1048,11 @@ for which uncertainty is assessed (e.g., $\postEm$, $\targetEm$).
 {Maximum Variance, Log-Density Emulator}
 {maxvar-ldens}
 Consider the Gaussian log-density emulation setting from \Cref{ex:eup-ldens-em}
-where $\postEm(\Par) = \priorDens(\Par) \Exp{\targetEm(\Par)}$, $\targetEm \sim \GP(\emMean, \emKer)$.
+where $\postEm(\Par) = \priorDens(\Par) \Exp{\targetEm(\Par)}$, 
+$\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$.
 In this case, the maximum variance acquisition is
 \begin{equation}
-\acq^{\mathrm{maxvar}}(\Par) = -\priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)},
+\acq(\Par) = -\priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)},
 \end{equation}
 which favors the selection of points both where the current log-likelihood estimate $\emMean(\Par)$ and the surrogate 
 uncertainty $\emVar(\Par)$ are large. This criterion is used in 
@@ -1093,18 +1093,19 @@ observing $\batchResponse = \target(\ParBatch)$, we utilize the same approach de
 and marginalize over this quantity with respect to the current predictive distribution $\emDist$. As a concrete example, 
 if we again choose variance as our measure of uncertainty, we obtain the expected conditional variance
 \begin{equation}
-\acq^{\mathrm{evar}}(\ParBatch) \Def 
+\acq(\ParBatch) \Def 
 \int_{\parSpace} 
-\E_{\gamma} \left\{\Var_{\emDist[\Naugment]}[\postDens(\Par; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \ParBatch, \gamma]\right\} \ \weightdens(\Par) \d\Par,
+\E_{\gamma \sim \emDist(\ParBatch)} \left\{\Var_{\emDist[\Naugment]}[\postDens(\Par; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \ParBatch, \gamma]\right\} \ \weightdens(\d\Par),
  \label{eq:acq-intvar}
 \end{equation}
-where $\weightdens$ is a density over $\parSpace$. ECU criteria naturally accommodate batch acquisitions since 
-$\ParBatch$ enters as a conditioning variable. Variations of ECU criteria can be created by changing the measure 
-of uncertainty (e.g., variance, entropy, interquartile range), the target quantity (e.g., $\postEm$, $\funcEm$), and the 
-weighting measure $\weightdens$. For example, targeting the variance of $\funcEm$ with uniform weighting measure 
+where $\weightdens$ is a measure over $\parSpace$. Variations of ECU criteria can be created by changing the measure 
+of uncertainty (e.g., variance, entropy, interquartile range), the target quantity (e.g., $\postEm$, $\targetEm$), and the 
+weighting measure $\weightdens$. For example, targeting the variance of $\targetEm$ with uniform $\weightdens$ 
 yields the classical integrated mean squared prediction error \citep{Mercer_kernels_IVAR}. As illustrated in the below
-examples, both the Bayesian decision theoretic and the SUR frameworks produce produce acquisitions of the
-ECU variety.
+examples, both the Bayesian decision theoretic and the SUR frameworks produce acquisitions of the
+ECU variety. The expected variance term in \Cref{eq:acq-intvar} admits a closed form in the settings of 
+\Cref{ex:eup-ldens-em,ex:eup-fwd-em}, as shown below. These examples also demonstrate how ECU
+criteria can be interpreted within the decision theoretic and SUR frameworks.
 
 \begin{examplebox}
 {Expected Conditional Variance, Log-Density Emulator}
@@ -1114,7 +1115,7 @@ variance. With this setup, the ECU-variance criterion in \Cref{eq:acq-intvar} re
 \begin{equation}
 \acq(\ParBatch) = \int_{\parSpace} 
 \Var\left[\postEm(\Par) \given \targetEm(\ParBatch) = \emMean[\Ndesign](\ParBatch) \right] \varInflation_{\Ndesign}(\Par; \ParBatch)
-\weightdens(\Par) \d\Par
+\weightdens(\d\Par)
 \label{eq:acq-intvar-saa-ldens}
 \end{equation}
 where
@@ -1133,42 +1134,53 @@ The second term accounts for the uncertainty in the true response: the penalty
 $\emVar[\Ndesign](\Par) - \emVar[\Naugment](\Par)$ is large when the input batch $\ParBatch$ is highly 
 ``influential.''
 
-\todo[inline]{connection to decision theory and SUR}
-
+The expected conditional variance acquisition corresponds to the Bayes' risk under an $L^2$ 
+loss \citet{VehtariParallelGP}. It can also be viewed as an SUR acquisition with uncertainty metric
+$\surmetric(\targetEm) \Def \int \Var_{\emDist}[\postEm(\Par)] \weightdens(\d\Par)$.
 This acquisition is considered in \citet{VehtariParallelGP}, but the authors ultimately recommend
-alternative robust criteria based on the interquartile range in place of the variance.
+alternative robust criteria defined using the interquartile range in place of the variance.
 \end{examplebox}
 
 \begin{examplebox}
 {Expected Conditional Variance, Forward Model Emulator}
 {evar-ldens}
+Consider the Gaussian forward model setting with 
+$\postEm(\Par) = \priorDens(\Par) \Gaussian(\obs \given \targetEm(\Par), \likPar)$, 
+$\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$. Letting 
+$\CovComb(\Par) \Def \likPar + \emVar(\Par)$, the expected conditional variance criterion
+simplifies to
 \begin{align}
-\acq(\ParBatch) &= \frac{1}{J}
-\sum_{j=1}^{J} \priorDens^2(\Par_j) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - \label{eq:acq-intvar-saa-fwd} \\
-&\qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par_j), \CovComb(\Par_j) - \frac{1}{2}\CovComb[\Naugment](\Par_j) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par_j))^{1/2}} \bigg], \nonumber
+\acq(\ParBatch) &= 
+\int_{\parSpace} \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - \label{eq:acq-int-var-fwd} \\
+&\qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}} \bigg] \weightdens(\d\Par) \nonumber
 \end{align}
-where $\CovComb(\Par) \Def \likPar + \emKer(\Par)$ and $\CovComb[\Naugment](\Par) \Def \likPar + \emKer[\Naugment](\Par)$.  
 \citet{SinsbeckNowak} are the first to propose an ECU-variance criterion in the forward model emulation setting,
-and briefly note the above closed-form expression in the Gaussian special case.
-\citet{Surer2023sequential} also derive this expression, but in the particular case of the multi-output basis vector model
-in \Cref{basis_func_model}.
-
-\citet{weightedIVAR} consider an alternative ECU-variance criterion in the Gaussian forward model emulator setting:
-\begin{align}
-&\acq(\ParBatch) \Def \frac{1}{J}
-\sum_{j=1}^{J} \emKer[\Naugment(\Par_j),
-&&\Par_j \sim \postApproxNormMarg.
- \label{eq:acq-intvar-lartaud}
-\end{align}
-The summands target uncertainty in $\fwdEm[\Ndesign]$ rather than $\postEm[\Ndesign]$, while the weighting measure
-is chosen to target the goal of posterior approximation. This has the 
-benefit of being much easier to compute, since the GP variance $\emKer[\Naugment](\Par)$ is independent of the 
-unseen response $\fwd(\parMat)$. \citet{weightedIVAR} establish asymptotic convergence results for this criterion
-using the stepwise uncertainty reduction framework \citep{BectSUR}. 
+and \citet{Surer2023sequential} utilize a similar acquisition. \citet{weightedIVAR} alternatively consider a criterion of the form
+\begin{equation}
+\acq(\ParBatch) = \int_{\parSpace} \emVar(\Par) \postApproxEUPNorm(\d\Par),
+\end{equation}
+corresponding to the SUR uncertainty metric 
+$\surmetric(\targetEm) \Def \int \Var_{\emDist}[\targetEm(\Par)] \postApproxEUPNorm(\d\Par)$. 
+The integrand considers uncertainty
+in the forward model emulator (exploration), while the measure $\weightdens = \postApproxEUPNorm$ 
+weights by the current posterior approximation (exploitation).  
 \end{examplebox}
 
-Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer integral (over $\parSpace$) 
-in ECU criteria is not tractable. This is especially the case in our present setting,
+Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer 
+integral (over $\parSpace$) in ECU criteria is not tractable. Monte Carlo approximations
+would yield a stochastic optimization problem. A simpler and more common solution is 
+to utilize a sample average approximation
+\begin{align}
+&\acq(\ParBatch) \Def \frac{1}{J}
+\sum_{j=1}^{J} 
+\E_{\gamma \sim \emDist(\ParBatch)} 
+\left\{\Var_{\emDist[\Naugment]}[\postDens(\Par_j; \targetEm[\Naugment]^{\ParBatch,\gamma}) \given \ParBatch, \gamma]\right\},
+&&\Par_j \overset{\mathrm{iid}}{\sim} \weightdens,
+ \label{eq:acq-intvar-saa}
+\end{align}
+in which the $\Par_j$ are sampled once and then fixed, yielding the 
+
+This is especially the case in our present setting,
 and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR,botorch},
 \begin{align}
 &\acq(\ParBatch) \Def \frac{1}{J}
@@ -1178,21 +1190,10 @@ and thus we focus on the sample average approximation \citep{Mercer_kernels_IVAR
 \end{align}
 The $\Par_j$ are sampled at the beginning of the sequential design round and then fixed, so that
 \Cref{eq:acq-intvar-saa} is viewed as a deterministic objective function. 
-The expected variance terms in the summands admit closed forms in the Gaussian 
-settings of \Cref{eq:fwd-em-Gaussian,eq:llik-em-Gaussian}, as shown below. As an alternative to 
-\Cref{eq:acq-intvar-saa}, we can consider an ECU criterion that targets uncertainty in the underlying
-emulator $\targetEm[\Ndesign]$, but acknowledges the goal of posterior approximation through the choice
-of $\weightdens$; i.e., 
-\begin{align}
-&\acq(\ParBatch) \Def \frac{1}{J}
-\sum_{j=1}^{J} \Var_{\Naugment}[\targetEm[\Naugment](\Par_j)],
-&&\Par_j \overset{\mathrm{iid}}{\sim} \hat{\postNormEm},
- \label{eq:acq-intvar-lartaud-saa}
-\end{align}
-where $\hat{\postNormEm}$ is any of the approximate posteriors from \Cref{sec:post-approx}.
-An acquisition function of this form is proposed in \citet{weightedIVAR}, and compares 
-favorably against \Cref{eq:acq-intvar-saa}.
 
+
+\paragraph{Other Approaches.}
+Uncertainty in acceptance probability, sampling-based approaches (Murray SBI paper fixed-point iteration, Istem, etc.)
 
 \begin{comment}
 
