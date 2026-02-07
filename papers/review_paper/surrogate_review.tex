@@ -1008,7 +1008,9 @@ models the unobserved responses according to the current surrogate. This yields 
 \acq(\ParBatch) \Def \E_{\batchResponse \sim \emDist(\ParBatch)}\left[\bayesrisk[\Naugment]^{\ParBatch,\batchResponse}\right].
 \end{equation} 
 Below we will explore some special cases where the Bayes' risk is not a function of $\batchResponse$, thus conveniently 
-eliminating the expectation over $\targetEm(\ParBatch)$.
+eliminating the expectation over $\targetEm(\ParBatch)$. In principle, this framework could be modified to consider a loss
+$\loss(\qDensNorm, \postNormEm)$ between \textit{normalized} densities (as in \Cref{eq:random-measure-variational}).
+To our knowledge this has not been considered in practice due to the practical difficulties caused by the normalizing constant.
 
 \paragraph{Stepwise Uncertainty Reduction (SUR).}
 \textit{Stepwise Uncertainty Reduction (SUR)} is another theoretical framework that has been used to develop 
@@ -1024,46 +1026,56 @@ This framework is quite general, and particular choices of $\surmetric$ coincide
 Bayesian decision theoretic approach. The primary benefit of SUR is theoretical, as it provides general conditions 
 to ensure that the uncertainty will converge to zero if the algorithm is repeated indefinitely. 
 
-\subsubsection{Local Single-Point Criteria}
+\subsubsection{Concrete Acquisitions}
+We now provide a survey of design criteria used in the literature.
+
+\paragraph{Local Single-Point Criteria.}
 Before describing acquisition functions derived from the above frameworks, we introduce some 
 common heuristic strategies. When optimizing for a single design point ($\Nbatch = 1$), an intuitive 
-strategy is to simply select the input where the uncertainty in $\postNormEm(\Par)$ is largest.
+approach is to simply select the input where the uncertainty in $\postNormEm(\Par)$ is largest.
 Owing to the challenge of dealing with the random normalizing constant $\normCstEm$,
 previous work has opted to instead target the uncertainty in the unnormalized density 
 $\postEm(\Par)$. If predictive variance
 is used as the measure of uncertainty, this yields the \textit{maximum variance} criterion
 \begin{equation}
-\acq(\Par) \Def -\Var_{\Ndesign}[\postEm(\Par)], \label{eq:acq-maxvar}
+\acq^{\mathrm{maxvar}}(\Par) \Def -\Var_{\emDist}[\postEm(\Par)], \label{eq:acq-maxvar}
 \end{equation}
 which is negated to align with our convention of minimizing acquisition functions.
 Alternative ``maximum uncertainty'' criteria can be defined by changing the measure
 of uncertainty (e.g., variance, entropy, interquartile range) and the target quantity
-(e.g., $\postEm$, $\targetEm$). For example, targeting the 
-maximum variance of $\targetEm(\Par)$ yields a classical criterion 
-used for exploration of response surfaces \citep[Section 6.2.1]{gramacy2020surrogates}.
-However, this criterion tends not to perform well in the Bayesian inference setting
-since it does not take into account the magnitude of the posterior density. 
-It may be that $\targetEm(\Par)$ is highly uncertain, but 
-$\postDens(\Par; \targetEm)$ concentrates on a very small value.
-The maximum variance criterion is utilized 
-in \citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017,AlawiehIterativeGP}.
-In the GP log-density emulator setting (\Cref{eq:llik-em-Gaussian})
-$\postEm[\Ndesign](\Par)$ is log-normal. Given the heavy tails and asymmetry of a log-normal 
-random variable, \citep{VehtariParallelGP,wang2018adaptive} argue that the variance provides a 
-misleading measure of uncertainty in this setting, instead favoring the entropy or interquartile range. 
+for which uncertainty is assessed (e.g., $\postEm$, $\targetEm$). 
 
-As an alternative to these maximum uncertainty criteria, \citet{gp_surrogates_random_exploration}
-suggest explicitly decoupling exploration and exploitation by selecting one point 
-that maximizes $\emE[\log \postEm(\Par)]$ and randomly sampling a second point from 
-$\priorDens$. \citet{Takhtaganov2018AdaptiveBayesianGP} employs the expected improvement
+\begin{examplebox}
+{Maximum Variance Criteria, Log-Density Emulator}
+{maxvar}
+Consider the Gaussian log-density emulation setting from \Cref{ex:eup-ldens-em}
+where $\postEm(\Par) = \priorDens(\Par) \Exp{\targetEm(\Par)}$, $\targetEm \sim \GP(\emMean, \emKer)$.
+In this case, the maximum variance acquisition is
+\begin{equation}
+\acq^{\mathrm{maxvar}}(\Par) = -\priorDens^2(\Par) \left[\Exp{\emVar(\Par)} - 1 \right] \Exp{2\emMean(\Par) + \emVar(\Par)},
+\end{equation}
+which favors the selection of points both where the current log-likelihood estimate $\emMean(\Par)$ and the surrogate 
+uncertainty $\emVar(\Par)$ are large. This criterion is used in 
+\citet{Lueckmann2018LikelihoodfreeIW,Kandasamy_2017,AlawiehIterativeGP}, though
+\citep{VehtariParallelGP,wang2018adaptive} argue that it provides a misleading measure of uncertainty due to the 
+heavy tails of $\postEm(\Par)$. They propose using the interquartile range or entropy as more robust 
+uncertainty metrics in this setting.
+\end{examplebox}
+
+Various other single-point acquisition strategies have been explored in the literature. 
+\citet{Takhtaganov2018AdaptiveBayesianGP} employ the expected improvement
 criterion from Bayesian optimization to target the placement of new design points in high-posterior regions.
+\citet{gp_surrogates_random_exploration} explicitly decouple exploration and exploitation through
+a two-point strategy where the first point is chosen as the maximizer of the current log-posterior
+estimate (exploitation) and the second is sampled from $\priorDens$ (exploration).
 
-While nominally designed for the pure sequential $\Nbatch = 1$ settings, these single-point criteria can be 
-adapted for batch acquisition using heuristic strategies. The \textit{Kriging Believer} and \textit{Constant Liar} heuristics
-\citep{Ginsbourger2010}.
-\todo[inline]{clean this up / move some to example box / describe these better}
+While nominally designed for the pure sequential $\Nbatch = 1$ setting, single-point criteria can be 
+adapted for batch acquisition using heuristic strategies. The simple approach of selecting the $\Nbatch$
+points with the largest acquisition values can result in a batch of very similar points. Heuristics 
+like the \textit{Kriging Believer} and \textit{Constant Liar} strategies \citep{Ginsbourger2010} seek
+to prevent this undesirable ``clumping'' behavior.
 
-\subsubsection{Global Multipoint Criteria}
+\paragraph{Global Multipoint Criteria.}
 While computationally convenient, single-point criteria suffer from two primary drawbacks: (1) they are not 
 naturally defined in the batch sequential setting; and (2) they are purely local, neglecting the global impact a 
 new design point has across $\parSpace$. The latter property commonly results in maximum uncertainty 
