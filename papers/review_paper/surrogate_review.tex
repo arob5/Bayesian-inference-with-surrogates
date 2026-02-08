@@ -967,6 +967,7 @@ $(\design, \target(\design))$, with the goal being to select a new batch $\ParBa
 For an acquisition function $\acq: \parSpace^\Nbatch \to \R$, the design selection problem is formalized as 
 \begin{equation}
 \ParBatchOpt \Def \argmin_{\ParBatch \in \parSpace^\Nbatch} \acq(\ParBatch).
+\label{eq:acq-opt}
 \end{equation}
 Let $\ParBatchAug \Def \design \cup \ParBatch$ denote the extended set of design points, $\targetEm[\Naugment]$
 the updated surrogate, and $\postEm[\Naugment]$ the resulting unnormalized posterior approximation. We will find 
@@ -1047,7 +1048,7 @@ for which uncertainty is assessed (e.g., $\postEm$, $\targetEm$).
 \begin{examplebox}
 {Maximum Variance, Log-Density Emulator}
 {maxvar-ldens}
-Consider the Gaussian log-density emulation setting from \Cref{ex:eup-ldens-em}
+Consider the Gaussian log-likelihood emulation setting from \Cref{ex:eup-ldens-em}
 where $\postEm(\Par) = \priorDens(\Par) \Exp{\targetEm(\Par)}$, 
 $\targetEm(\Par) \sim \Gaussian(\emMean(\Par), \emVar(\Par))$.
 In this case, the maximum variance acquisition is
@@ -1071,7 +1072,7 @@ estimate (exploitation) and the second is sampled from $\priorDens$ (exploration
 
 While nominally designed for the pure sequential $\Nbatch = 1$ setting, single-point criteria can be 
 adapted for batch acquisition using heuristic strategies. The simple approach of selecting the $\Nbatch$
-points with the largest acquisition values can result in a batch of very similar points. Heuristics 
+points with the smallest acquisition values can result in a batch of very similar points. Heuristics 
 like the \textit{Kriging Believer} and \textit{Constant Liar} strategies \citep{Ginsbourger2010} seek
 to prevent this undesirable ``clumping'' behavior.
 
@@ -1086,7 +1087,7 @@ both of these limitations.
 Intuitively, ECU acquisitions arise from the following logic: we would like to select an input batch 
 $\ParBatch$ that results in an updated (unnormalized) posterior estimate $\postEm[\Naugment]$ with the lowest
 possible uncertainty on average over $\parSpace$
-\footnote{As before, this could be extended to operate directly on the normalized densities. While arguably more correct,
+\footnote{As before, this could be extended to operate directly on the normalized densities. While arguably more principled,
 this also leads to more challenging calculations}. 
 Given that we cannot typically compute this uncertainty without
 observing $\batchResponse = \target(\ParBatch)$, we utilize the same approach described for the Bayes' risk 
@@ -1101,9 +1102,11 @@ if we again choose variance as our measure of uncertainty, we obtain the expecte
 where $\weightdens$ is a measure over $\parSpace$. Variations of ECU criteria can be created by changing the measure 
 of uncertainty (e.g., variance, entropy, interquartile range), the target quantity (e.g., $\postEm$, $\targetEm$), and the 
 weighting measure $\weightdens$. For example, targeting the variance of $\targetEm$ with uniform $\weightdens$ 
-yields the classical integrated mean squared prediction error \citep{Mercer_kernels_IVAR}. As illustrated in the below
-examples, both the Bayesian decision theoretic and the SUR frameworks produce acquisitions of the
-ECU variety. The expected variance term in \Cref{eq:acq-intvar} admits a closed form in the settings of 
+yields the classical integrated mean squared prediction error \citep{Mercer_kernels_IVAR}.
+\citet{gpEmMCMC} target uncertainty in the acceptance probability of a Metropolis-Hastings
+algorithm, deriving ECU-style acquisitions using a Bayesian decision theoretic framework.
+
+The expected variance term in \Cref{eq:acq-intvar} admits a closed form in the settings of
 \Cref{ex:eup-ldens-em,ex:eup-fwd-em}, as shown below. These examples also demonstrate how ECU
 criteria can be interpreted within the decision theoretic and SUR frameworks.
 
@@ -1152,7 +1155,7 @@ simplifies to
 \begin{align}
 \acq(\ParBatch) &= 
 \int_{\parSpace} \priorDens^2(\Par) \bigg[\frac{\Gaussian\left(\obs \given \emMean(\Par), \CovComb(\Par) - \frac{1}{2}\likPar \right)}{2^{\dimObs/2} \det(2\pi \likPar)^{1/2}} - \label{eq:acq-int-var-fwd} \\
-&\qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}} \bigg] \weightdens(\d\Par) \nonumber
+&\qquad\qquad \frac{\Gaussian\left(\obs \given \emMean(\Par), \CovComb(\Par) - \frac{1}{2}\CovComb[\Naugment](\Par) \right)}{2^{\dimObs/2} \det(2\pi \CovComb[\Naugment](\Par))^{1/2}} \bigg] \weightdens(\d\Par). \nonumber
 \end{align}
 \citet{SinsbeckNowak} are the first to propose an ECU-variance criterion in the forward model emulation setting,
 and \citet{Surer2023sequential} utilize a similar acquisition. \citet{weightedIVAR} alternatively consider a criterion of the form
@@ -1168,7 +1171,7 @@ weights by the current posterior approximation (exploitation).
 
 Outside of special cases \citep{Binois_2018,MakTargetedVar,Koermer2024} the outer 
 integral (over $\parSpace$) in ECU criteria is not tractable. Monte Carlo approximations
-would yield a stochastic optimization problem. A simpler and more common solution is 
+are possible but would yield a stochastic optimization problem. A simpler and more common solution is 
 to utilize a sample average approximation
 \begin{align}
 &\acq(\ParBatch) \Def \frac{1}{J}
@@ -1181,18 +1184,45 @@ to utilize a sample average approximation
 in which the $\Par_j$ are sampled once and then fixed, maintaining a deterministic 
 objective function \citep{Mercer_kernels_IVAR,botorch}.
 
-\paragraph{Other Approaches.}
-Uncertainty in acceptance probability, sampling-based approaches (Murray SBI paper fixed-point iteration, Istem, etc.)
+\subsubsection{Solving the Optimization Problem}
+We comment briefly on algorithms to actually carry out the optimization of the acquisition 
+function in \Cref{eq:acq-opt}. Detailed treatments of this topic are available across the Bayesian 
+optimization and computer experiments literatures \citep{maxAcq,botorch,gramacy2020surrogates,WynnDiscreteExchange}.
+In general, the task of minimizing $\acq(\ParBatch)$ involves a challenging non-convex optimization problem over
+$\dimPar\Nbatch$ variables. Gradient-based optimization of acquisitions defined by sample-average approximations
+(\Cref{eq:acq-intvar-saa}) has been shown perform favorably in moderate dimensions \citet{Mercer_kernels_IVAR}.
+This approach is implemented in the \verb+BoTorch+ Python package \citep{botorch}. Alternatively, a large portion of the literature 
+eschews continuous optimization in favor of discrete methods. These algorithms take the form of a subset selection 
+problem, with the optimal batch selected from a finite set of candidate points. This presents a 
+challenging combinatorial optimization problem, commonly solved by employing stochastic exchange 
+algorithms (e.g., Federov exchange) to find a local minimum \citep{FederovExchange,WynnDiscreteExchange,LOEPPKY20101452}
+\footnote{Exchange algorithms can also be employed to optimize over continuous space and leverage gradient information.}.
 
-The batch design methods discussed above are generic active learning techniques, not unique to our particular
-context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
-current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
-\citet{FerEmulation} instead sample from a mixture of the current approximate posterior and the prior, with the mixture weights 
-representing a user-defined tuning parameter. \citet{turbulenceModelAdaptiveLHS} considers a 
-similar prior-posterior mixture, with a latin hypercube adjustment to encourage the new design 
-points to be spread out. 
-\citet{adaptiveMultimodal} samples from the current approximate posterior, and
-then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
+To avoid the joint optimization over $\parSpace^{\Nbatch}$ altogether, greedy approximations are also common in 
+practice \citep{VehtariParallelGP,Surer2023sequential}. These methods seek to approximate the 
+joint optimum using a sequence of $\Nbatch$ simpler optimization problems over $\parSpace$. 
+Since this procedure proceeds one point at a time, it provides the opportunity to use single-point criteria in batch optimization. 
+Under this approach, the first point $\Par_1$ is selected
+by optimizing $\acq(\Par)$ as in the pure sequential setting. The remaining $b = 2, \dots, \Nbatch - 1$ points are added
+sequentially by minimizing $\acq(\ParBatch_{1:b-1} \cup \{\Par\})$ with respect to $\Par$. In pure sequential design, 
+the response $\target(\Par_b)$ is observed every iteration. Greedy batch design differs in that $\target(\Par_b)$
+is not observed until the entire batch has been selected. This implies that the objective function must be 
+approximated in solving this sequence of optimization problems, typically by imputing the $\target(\Par_b)$
+with pseudo-observations. \textit{Kriging Believer} and \textit{Constant Liar} are two such popular heuristics
+\citep{Ginsbourger2010}. An extension of this approach consists of generating multiple candidate 
+batches using these heuristics, and then leveraging a batch acquisition function to select among
+the candidates \citep{Chevalier2013}. 
+
+\subsubsection{Sampling-Based Approaches}
+Instead of explicitly defining an acquisition function, the structure of a Bayesian inverse problem suggests
+a simple alternative: sample the batch $\ParBatch$ from the current posterior estimate (e.g., $\postApproxEP$).
+This yields an active learning procedure with the form of a fixed-point iteration; the current posterior estimate is 
+used to select the next design batch, which is then used to update the posterior estimate, and so on \citep{murrayNPE}. 
+\citep{hydrologicalModel,quantileApprox} both adopt this strategy. \citet{FerEmulation} instead sample from a mixture of 
+the current approximate posterior and the prior, with the mixture weights representing a user-defined tuning parameter.
+\citet{turbulenceModelAdaptiveLHS} considers a similar prior-posterior mixture, with a latin hypercube adjustment to 
+encourage the new design points to be spread out. \citet{adaptiveMultimodal} samples from the current approximate 
+posterior, and then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
 closely related to the \textit{calibrate, emulate, sample} workflow \citep{CES}.
 \citet{hydrologicalModel2} consider a similar strategy, using parameters sampled from an MCMC
 proposal as additional design points.
@@ -1207,9 +1237,13 @@ be viewed as a more scalable analog of the method in \citet{gp_surrogates_random
 explicitly decoupling exploration and exploitation. We believe further work is warranted to better understand the 
 behavior of these methods, and their applicability to large-scale batch design.
 
-\begin{comment}
 
-\subsubsection{Solving the Optimization Problem}
+The batch design methods discussed above are generic active learning techniques, not unique to our particular
+context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
+current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
+
+
+\begin{comment}
 
 \subsection{Tempered Approximations}
 In problems where the likelihood is highly informative, the posterior effectively becomes a "needle in a haystack" relative to the prior. Active learning schemes targeting the true posterior directly may fail to identify the high-mass region, exhausting the budget on exploring negligible areas.
