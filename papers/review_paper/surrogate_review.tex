@@ -1230,7 +1230,7 @@ might be viewed as an instance of this approach.
 Overall, sampling-based approaches offer a promising avenue in large-scale applications where parallelization is crucial, 
 and the simulator cost only allows for a few rounds of sequential design with large batch sizes.
 
-\subsection{Tempered Approximations} \label{sec:tempering}
+\subsection{Tempered Targets} \label{sec:tempering}
 The sequential design strategies of the previous section are motivated by the observation
 that a static, prior-based design will often fail to allocate points in high-density regions when the 
 posterior is concentrated. They address this problem by building up the design sequentially,
@@ -1245,7 +1245,7 @@ One approach to mitigate this issue builds on the recognition that it may be unr
 counterproductive to directly target the posterior in the initial stages of the algorithm. 
 Instead, the surrogate target can be allowed to vary over the rounds in the active 
 learning procedure, tracking a sequence of intermediate distributions that bridge
-between the prior and posterior. Since the earlier distributions will be less concentrated, the surrogate 
+between the prior and posterior. Since the earlier distributions are less concentrated, the surrogate 
 approximation will tend to be more reasonable and thus more useful in guiding the placement of the 
 next round of design points. \inlinedef{Tempering} strategies of this form are widely utilized in 
 computational statistics; in this section, we focus on their use in conjunction with surrogate models. 
@@ -1258,37 +1258,73 @@ This approach forms the basis of sequential Monte Carlo (SMC) algorithms, used b
 estimation in time-varying systems (i.e., particle filters) as well as posterior estimation for 
 static inverse problems \todo{cite}. Unlike MCMC, these methods are naturally parallelizable,
 but can still require many likelihood evaluations. Surrogate models offer one avenue to 
-lowering this cost.
+lower this cost, and may be integrated into a tempering framework in a variety of different 
+ways. 
 
-While tempering methods are diverse, we restrict our focus to two broad categories:
-(1) SMC methods primarily relying on importance sampling techniques; and (2) algorithms that 
-utilize approximate Kalman-style updates to traverse between the bridging distributions. 
+In particular, the combination of these methods raises the question of fitting local versus 
+global surrogates. One approach consists of continually augmenting the design set over
+the course of the algorithm, reflecting the goal of maintaining a global surrogate fit 
+over $\parSpace$. On the other hand, 
+it may be advantageous to discard certain design points, aiming to maintain a smaller design
+optimized for local approximation of the current target $\pi_t$.
 
-\paragraph{SMC Methods.}
-\citet{BilionisBayesSurrogates} utilize SMC to characterize the EUP approximation under a GP 
-forward model emulator, but do not actively adapt the surrogate design. \citet{quantileApprox} 
-leverage SMC with a GP log-posterior surrogate, augmenting the design by sampling new 
-points from the current posterior approximation at each iteration. \citet{activeReducedTempering} 
-propose an adaptive SMC scheme that actively samples new design points to reduce surrogate error, 
-in addition to using an entropy-based criterion to adapt the temperature schedule $\{\beta_t\}$.
+\begin{remark}
+The role of the intermediate distributions $\pi_t$ may differ slightly depending on the emulator target.
+In forward model emulation, the emulator target $\fwd$ is constant over $t$. However, the design
+strategy will vary over $t$ to produce an approximation of $\fwd$ geared towards estimating 
+$\pi_t$. On the other hand, in log-density emulation the target map $\target$ changes with $t$. 
+At iteration $t$, a log-posterior surrogate will be fit to design points of the form $(\Par, \log \pi_t(\Par))$.
+Note that design points from previous rounds can still be re-used without additional model simulations.
+For example, in the case of geometric bridging distributions 
+$\log \pi_t(\Par) = \log \priorDens(\Par) + \beta_t \log \lik(\Par)$,
+implying that previous likelihood evaluations simply need to be rescaled for use in future steps.
+\end{remark}
 
-\paragraph{Kalman Methods.}
+While tempering methods are diverse, we restrict our focus to three broad categories:
+(1) algorithms relying on sequential importance sampling; (2) algorithms that 
+utilize approximate Kalman-style updates to traverse between the bridging distributions;
+and (3) other related methods using tempering.
+
+\paragraph{Importance Sampling.}
+In principle, importance sampling provides the means to transform samples from a prior proposal 
+distribution into posterior samples using evaluations of the likelihood function.
+When utilizing tempering, these updates are applied sequentially such that $\pi_t$ acts as the 
+proposal distribution for $\pi_{t+1}$. To reduce the computational cost of the likelihood evaluations, 
+surrogates can be leveraged in various ways to approximate these updates. One natural strategy is to replace 
+$\pi_t$ with a surrogate-based estimate $\hat{\pi}_t$, then apply the importance sampling 
+machinery to sample $\hat{\pi}_{t+1}$. Samples from $\hat{\pi}_{t+1}$ can then 
+be chosen as the new batch of design points. \citet{quantileApprox} adopt this approach
+with a GP log-posterior surrogate, never discarding design points and thus maintaining 
+a global surrogate approximation throughout the algorithm. By contrast, \citet{Li_2014}
+focus on the construction of \textit{local} polynomial chaos surrogates. The $\hat{\pi}_t$
+are estimated using a variational approximation, with the variational objective approximated
+using importance sampling and the current surrogate model.
+\citet{activeReducedTempering} propose an adaptive SMC scheme that actively samples new 
+design points to reduce surrogate error. Both \citet{Li_2014,activeReducedTempering}
+automatically adapt the temperature schedule $\{\beta_t\}$, negating the need for 
+a priori specification.
+
+\paragraph{Kalman Updates.}
+While importance sampling techniques are widely applicable, they can suffer from known pathologies
+in moderate to high dimensions. Kalman methods, rooted in linear Gaussian methodology, sacrifice 
+exactness for robustness and are widely used in high-dimensional settings \todo{cite}. 
+
 Calibrate, Emulate, Sample (CES)
-
-
-
-- Youssef work, Joseph work
-- EKI type methods
-- SIS type methods (like paper I read on plane, quantile estimator, Bilionis)
 - Interleaving SIS/EKI updates and surrogate updates
+
+\paragraph{Other Approaches.}
+Finally, while their approach does not 
+strictly utilize importance sampling, we highlight deterministic sampling methods using 
+minimum energy designs \citep{JosephMEDSampling,JosephMinEnergy}. These algorithms utilize 
+both tempering and local GP surrogates in a sequential posterior sampling scheme.
+
+\citep{wang2018adaptive,adaptiveMultimodal} 
 
 
 In problems where the likelihood is highly informative, the posterior effectively becomes a "needle in a haystack" relative to the prior. Active learning schemes targeting the true posterior directly may fail to identify the high-mass region, exhausting the budget on exploring negligible areas.
 
 The surrogate is constructed sequentially to approximate each $\pi_t$ in turn. By the time the algorithm targets $\pi_T$, the surrogate has already resolved the broader basins of attraction, preventing mode collapse. This strategy is closely related to Sequential Monte Carlo (SMC) and has been adapted for surrogate modeling in methods such as \textit{adaptive Gaussian process approximation} \citep{wang2018adaptive, adaptiveMultimodal} and Ensemble Kalman Inversion \citep{EKI_review}.
 
-\todo[inline]{\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
-to approximate a sequence of functions designed to be more regular than the log-likelihood.}
 
 \begin{comment}
 
