@@ -106,7 +106,6 @@
 
 \maketitle
 
-
 \section{Introduction}
 In fields ranging from climate science \citep{ESM_modeling_2pt0} \todo{one more citation} to astrophysics
 \citep{VarmaBlackHole2019,npeAstrophysics}, the scientific process increasingly relies on complex, computationally
@@ -154,14 +153,6 @@ We adopt a generic probabilistic perspective, encompassing both
 Rather than focusing on a specific model class, we provide a unified treatment of the workflow, 
 highlighting how sequential design and probabilistic uncertainty quantification can be leveraged to 
 tackle the aforementioned challenges.
-
-\todo[inline]{
-\begin{enumerate}
-\item Add paper organization here
-\item Add section walking through surrogate-based modular Bayesian workflow, with a diagram.
-\item Improve citations in introduction
-\end{enumerate}
-}
 
 % Background
 \section{Bayesian Inference with Expensive Models} \label{sec:background}
@@ -1161,6 +1152,7 @@ simplifies to
 and \citet{Surer2023sequential} utilize a similar acquisition. \citet{weightedIVAR} alternatively consider a criterion of the form
 \begin{equation}
 \acq(\ParBatch) = \int_{\parSpace} \emVar(\Par) \postApproxEUPNorm(\d\Par),
+\label{eq:weighted-ivar}
 \end{equation}
 corresponding to the SUR uncertainty metric 
 $\surmetric(\targetEm) \Def \int \Var_{\emDist}[\targetEm(\Par)] \postApproxEUPNorm(\d\Par)$. 
@@ -1190,7 +1182,7 @@ function in \Cref{eq:acq-opt}. Detailed treatments of this topic are available a
 optimization and computer experiments literatures \citep{maxAcq,botorch,gramacy2020surrogates,WynnDiscreteExchange}.
 In general, the task of minimizing $\acq(\ParBatch)$ involves a challenging non-convex optimization problem over
 $\dimPar\Nbatch$ variables. Gradient-based optimization of acquisitions defined by sample-average approximations
-(\Cref{eq:acq-intvar-saa}) has been shown perform favorably in moderate dimensions \citet{Mercer_kernels_IVAR}.
+(\Cref{eq:acq-intvar-saa}) has been shown to perform favorably in moderate dimensions \citet{Mercer_kernels_IVAR}.
 This approach is implemented in the \verb+BoTorch+ Python package \citep{botorch}. Alternatively, a large portion of the literature 
 eschews continuous optimization in favor of discrete methods. These algorithms take the form of a subset selection 
 problem, with the optimal batch selected from a finite set of candidate points. This presents a 
@@ -1214,45 +1206,91 @@ batches using these heuristics, and then leveraging a batch acquisition function
 the candidates \citep{Chevalier2013}. 
 
 \subsubsection{Sampling-Based Approaches}
-Instead of explicitly defining an acquisition function, the structure of a Bayesian inverse problem suggests
-a simple alternative: sample the batch $\ParBatch$ from the current posterior estimate (e.g., $\postApproxEP$).
+Instead of optimizing an explicit acquisition function, the particular goal of posterior approximation
+suggests a simple alternative: sample the batch $\ParBatch$ from the current posterior estimate (e.g., $\postApproxEP$).
 This yields an active learning procedure with the form of a fixed-point iteration; the current posterior estimate is 
-used to select the next design batch, which is then used to update the posterior estimate, and so on \citep{murrayNPE}. 
-\citep{hydrologicalModel,quantileApprox} both adopt this strategy. \citet{FerEmulation} instead sample from a mixture of 
-the current approximate posterior and the prior, with the mixture weights representing a user-defined tuning parameter.
-\citet{turbulenceModelAdaptiveLHS} considers a similar prior-posterior mixture, with a latin hypercube adjustment to 
-encourage the new design points to be spread out. \citet{adaptiveMultimodal} samples from the current approximate 
-posterior, and then updates these samples with an iteration of an ensemble Kalman algorithm; this method is 
-closely related to the \textit{calibrate, emulate, sample} workflow \citep{CES}.
-\citet{hydrologicalModel2} consider a similar strategy, using parameters sampled from an MCMC
-proposal as additional design points.
+used to select the next batch, which is then used to update the posterior estimate, and so on 
+\citep{murrayNPE,hydrologicalModel,quantileApprox,hydrologicalModel2}. \citet{FerEmulation} adopt a 
+variant of this strategy, sampling from a mixture of the current approximate posterior and the prior, with the mixture 
+weights representing a user-defined tuning parameter. \citet{turbulenceModelAdaptiveLHS} consider a similar 
+prior-posterior mixture, with a latin hypercube adjustment to 
+encourage the new design points to be spread out. \citet{adaptiveMultimodal} draw samples from the current approximate 
+posterior, and then update these samples with an iteration of an ensemble Kalman algorithm, a method with close
+connections to the \textit{calibrate, emulate, sample} workflow (\citet{CES}; see \Cref{sec:tempering}).
 
-These sampling-based approaches enjoy the practical benefits of being inherently parallel and not requiring the solution
-of a difficult optimization problem. In this sense, they are similar in spirit to Thompson sampling for
-batch Bayesian optimization \citep{parallelBOThompson}. We conjecture that such approaches may be superior to 
-alternatives in the large $\Nbatch$, small $\Nrounds$ setting. We expect the performance of this approach to be closely 
-tied to the choice of approximate posterior; e.g., samples from the plug-in mean posterior will likely under-explore the 
-parameter space. The \citet{FerEmulation} approach of sampling from a mixture of the prior and approximate posterior might
-be viewed as a more scalable analog of the method in \citet{gp_surrogates_random_exploration}, in the sense of 
-explicitly decoupling exploration and exploitation. We believe further work is warranted to better understand the 
-behavior of these methods, and their applicability to large-scale batch design.
+These sampling-based approaches enjoy the practical benefits of being inherently parallel and avoiding a difficult
+optimization problem. In this sense, they are similar in spirit to Thompson sampling for
+batch Bayesian optimization \citep{parallelBOThompson}. Sampling from a mixture of the prior
+and current posterior estimate can be viewed as an explicit decoupling of exploration and exploitation, similar to the
+methods proposed in \citet{gp_surrogates_random_exploration}. One can also imagine combining the strengths of
+sampling-based and optimization-based approaches by first sampling candidates from the current posterior estimate 
+and then running an optimization algorithm to select the final subset; the ECU acquisition in \Cref{eq:weighted-ivar} 
+might be viewed as an instance of this approach. 
+
+Overall, sampling-based approaches offer a promising avenue in large-scale applications where parallelization is crucial, 
+and the simulator cost only allows for a few rounds of sequential design with large batch sizes.
+
+\subsection{Tempered Approximations} \label{sec:tempering}
+The sequential design strategies of the previous section are motivated by the observation
+that a static, prior-based design will often fail to allocate points in high-density regions when the 
+posterior is concentrated. They address this problem by building up the design sequentially,
+targeting the placement of points where the surrogate-estimated posterior is large, balanced
+with exploration of regions with high surrogate uncertainty. A concern with such algorithms is that 
+they may require many iterations to identify the high-density regions, 
+exhausting the budget exploring unimportant areas. This problem arises when the surrogate 
+approximation of the posterior is quite poor in the early stages of the algorithm, causing 
+acquisition functions based on the surrogate to inefficiently explore the parameter space.
+
+One approach to mitigate this issue builds on the recognition that it may be unrealistic and 
+counterproductive to directly target the posterior in the initial stages of the algorithm. 
+Instead, the surrogate target can be allowed to vary over the rounds in the active 
+learning procedure, tracking a sequence of intermediate distributions that bridge
+between the prior and posterior. Since the earlier distributions will be less concentrated, the surrogate 
+approximation will tend to be more reasonable and thus more useful in guiding the placement of the 
+next round of design points. \inlinedef{Tempering} strategies of this form are widely utilized in 
+computational statistics; in this section, we focus on their use in conjunction with surrogate models. 
+
+Tempering algorithms traverse from prior to posterior through a sequence of interpolating
+distributions $\pi_0, \pi_1, \dots, \pi_T$, where $\pi_0$ is the prior and $\pi_T = \postDensNorm$
+the posterior. Common choices are based on geometric bridges of the form 
+$\pi_t(\Par) \propto \priorDens(\Par) \lik(\Par)^{\beta_t}$ with $0 = \beta_0 < \dots < \beta_T = 1$.
+This approach forms the basis of sequential Monte Carlo (SMC) algorithms, used both for statistical 
+estimation in time-varying systems (i.e., particle filters) as well as posterior estimation for 
+static inverse problems \todo{cite}. Unlike MCMC, these methods are naturally parallelizable,
+but can still require many likelihood evaluations. Surrogate models offer one avenue to 
+lowering this cost.
+
+While tempering methods are diverse, we restrict our focus to two broad categories:
+(1) SMC methods primarily relying on importance sampling techniques; and (2) algorithms that 
+utilize approximate Kalman-style updates to traverse between the bridging distributions. 
+
+\paragraph{SMC Methods.}
+\citet{BilionisBayesSurrogates} utilize SMC to characterize the EUP approximation under a GP 
+forward model emulator, but do not actively adapt the surrogate design. \citet{quantileApprox} 
+leverage SMC with a GP log-posterior surrogate, augmenting the design by sampling new 
+points from the current posterior approximation at each iteration. \citet{activeReducedTempering} 
+propose an adaptive SMC scheme that actively samples new design points to reduce surrogate error, 
+in addition to using an entropy-based criterion to adapt the temperature schedule $\{\beta_t\}$.
+
+\paragraph{Kalman Methods.}
+Calibrate, Emulate, Sample (CES)
 
 
-The batch design methods discussed above are generic active learning techniques, not unique to our particular
-context. However, the specific goal of posterior approximation suggests a natural alternative: select the batch by sampling from the 
-current approximate posterior. \citep{hydrologicalModel,quantileApprox} both adopt this strategy.
+
+- Youssef work, Joseph work
+- EKI type methods
+- SIS type methods (like paper I read on plane, quantile estimator, Bilionis)
+- Interleaving SIS/EKI updates and surrogate updates
 
 
-\begin{comment}
-
-\subsection{Tempered Approximations}
 In problems where the likelihood is highly informative, the posterior effectively becomes a "needle in a haystack" relative to the prior. Active learning schemes targeting the true posterior directly may fail to identify the high-mass region, exhausting the budget on exploring negligible areas.
 
-A powerful remedy is \inlinedef{tempering}: introducing a sequence of intermediate distributions $\pi_0, \pi_1, \dots, \pi_T$, where $\pi_0 = \priorDens$ and $\pi_T = \postDens$. Common choices involve geometric bridges of the form $\pi_t(\Par) \propto \priorDens(\Par) \lik(\Par)^{\beta_t}$ with $0 = \beta_0 < \dots < \beta_T = 1$.
 The surrogate is constructed sequentially to approximate each $\pi_t$ in turn. By the time the algorithm targets $\pi_T$, the surrogate has already resolved the broader basins of attraction, preventing mode collapse. This strategy is closely related to Sequential Monte Carlo (SMC) and has been adapted for surrogate modeling in methods such as \textit{adaptive Gaussian process approximation} \citep{wang2018adaptive, adaptiveMultimodal} and Ensemble Kalman Inversion \citep{EKI_review}.
 
 \todo[inline]{\citep{wang2018adaptive,adaptiveMultimodal} present a related method in which surrogates are constructed 
 to approximate a sequence of functions designed to be more regular than the log-likelihood.}
+
+\begin{comment}
 
 \subsection{MCMC-based Exploration}
 A third class of strategies weaves the design construction directly into the execution of an MCMC chain. Rather than distinct "training" and "sampling" phases, the MCMC sampler acts as the exploration engine.
