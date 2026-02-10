@@ -112,20 +112,50 @@ In fields ranging from climate science \citep{ESM_modeling_2pt0} \todo{one more 
 expensive computer simulations. Many such computer models contain parameters with values that cannot be specified
 a priori or estimated experimentally. Therefore, a critical task in many scientific workflows is to estimate values
 of these parameters that are consistent with observed data, a process sometimes called 
-\textit{parameter calibration} \citep{paramLSM} \todo{one more citation}.
+\textit{parameter calibration} \citep{computerModelCalibrationReview}.
 Bayesian inference offers a principled framework for parameter inference, providing mechanisms to 
-quantify parameter uncertainty and balance prior information with observed data.
-However, standard Bayesian inference algorithms (e.g., Markov chain Monte Carlo) 
-require evaluating the likelihood function tens to hundreds of thousands of times. When a single simulation takes 
-minutes or hours, this cost renders these standard approaches intractable.
+quantify parameter uncertainty and balance prior information with observed data \citep{KOH}.
+However, Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) or Amortized 
+Bayesian Inference (ABI) require evaluating the likelihood function tens to hundreds of thousands of times. 
+When a single simulation takes minutes or hours, this cost renders these standard approaches intractable.
 To overcome this barrier, a rich literature has developed around \textit{surrogate modeling} (i.e., \textit{emulation}). The core 
 idea is to replace the expensive simulator with a statistical approximation, trained on a sparse set of simulator runs, that is 
 computationally cheap to evaluate \citep{KOH,gramacy2020surrogates}. By substituting this emulator into the inference pipeline, 
 one seeks to characterize the posterior distribution at a fraction of the cost.
 
+While conceptually straightforward, replacing the true model with an approximation introduces many methodological
+and conceptual challenges. Invariably, the surrogate is an imperfect representation of the true
+model. Posterior estimates derived using the surrogate will inherit these imperfections, prompting the 
+concern of biased and overconfident inference.
+
+\subsection{Scope and Contributions}
+This review synthesizes the methodological landscape of surrogate-based Bayesian inference, 
+focusing on the dual goals of \textit{uncertainty propagation} (accounting for surrogate error) and 
+\textit{uncertainty reduction} (surrogate refinement via active learning). Contributions in this 
+area are highly interdisciplinary, spanning the statistical, applied mathematics, engineering, and 
+machine learning literatures. To provide a unifying viewpoint, we avoid focusing on particular 
+surrogate model classes. Instead, we adopt a generic probabilistic perspective that encompasses any 
+regression or interpolation model that provides some notion of predictive uncertainty in addition 
+to point estimates. Our framework is also agnostic to the particular quantity that is emulated,
+encompassing both \textit{forward model emulation} (emulating simulator outputs) and 
+\textit{log-density emulation} (directly emulating the log-likelihood or log-posterior surface).
+We thus provide a unified treatment of the surrogate-based Bayesian workflow, highlighting 
+how probabilistic uncertainty quantification and active learning can be leveraged to 
+tackle the aforementioned challenges.
+
+The remainder of this review is structured as follows. \Cref{sec:background} provides background 
+on Bayesian inference in the context of expensive computer models. \Cref{sec:surrogates}
+introduces the concept of a probabilistic surrogate model, highlighting several popular 
+model classes. \Cref{sec:target-map} discusses the decision as to which quantity to actually 
+emulate, defining the distinction between forward model and log-density emulators. 
+\Cref{sec:post-approx,sec:active-learning} address the two core questions forming the 
+focus of this review. The former discusses the construction of surrogate-based 
+posterior approximations that properly incorporate emulator uncertainty, while the latter
+reviews active learning algorithms that sequentially build up surrogate models.  
+
 \subsection{Challenges in Surrogate-Based Bayesian Inference}
-While conceptually straightforward, replacing the true model with an approximation introduces methodological
-and conceptual challenges. While some of these difficulties are generic within the broader context of surrogate modeling,
+
+While some of these difficulties are generic within the broader context of surrogate modeling,
 others are unique to the use of emulators within a Bayesian workflow \citep{BurknerSurrogate}:
 
 \begin{enumerate}
@@ -143,16 +173,6 @@ others are unique to the use of emulators within a Bayesian workflow \citep{Burk
     regions requires the very knowledge of the posterior geometry that the surrogate is intended to provide.
 \end{enumerate}
 
-\subsection{Scope and Contributions}
-This review synthesizes the methodological landscape of surrogate-based Bayesian inference, 
-focusing on the dual goals of \textit{uncertainty propagation} (accounting for surrogate error) and 
-\textit{uncertainty reduction} (surrogate refinement via active learning). 
-We adopt a generic probabilistic perspective, encompassing both 
-\textit{forward model emulation} (emulating simulator outputs) and 
-\textit{log-density emulation} (directly emulating the log-likelihood or log-posterior surface).
-Rather than focusing on a specific model class, we provide a unified treatment of the workflow, 
-highlighting how sequential design and probabilistic uncertainty quantification can be leveraged to 
-tackle the aforementioned challenges.
 
 % Background
 \section{Bayesian Inference with Expensive Models} \label{sec:background}
@@ -246,7 +266,7 @@ In this case, the computational
 cost of evaluating $\postDens(\Par)$ can be high, owing to the dependence on the numerical solver $\solutionOp(\Par)$.
 \end{examplebox}
 
-\section{Surrogate Models}
+\section{Surrogate Models} \label{sec:surrogates}
 Given the inference bottleneck imposed by a computationally expensive posterior density, many methods have emerged
 aiming to approximate the posterior using only a small set of density evaluations. Many such approaches 
 consist of replacing a computationally-limiting component of the model with a cheap \inlinedef{surrogate}, thus enabling 
