@@ -184,7 +184,7 @@ URL = {https://doi.org/10.1214/17-AOS1629}
   publisher =    {PMLR},
   pdf = 	 {http://proceedings.mlr.press/v80/chen18f/chen18f.pdf},
   url = 	 {https://proceedings.mlr.press/v80/chen18f.html},
-  abstract = 	 {An important task in computational statistics and machine learning is to approximate a posterior distribution $p(x)$ with an empirical measure supported on a set of representative points $\{x_i\}_{i=1}^n$. This paper focuses on methods where the selection of points is essentially deterministic, with an emphasis on achieving accurate approximation when $n$ is small. To this end, we present Stein Points. The idea is to exploit either a greedy or a conditional gradient method to iteratively minimise a kernel Stein discrepancy between the empirical measure and $p(x)$. Our empirical results demonstrate that Stein Points enable accurate approximation of the posterior at modest computational cost. In addition, theoretical results are provided to establish convergence of the method.}
+  abstract = {An important task in computational statistics and machine learning is to approximate a posterior distribution $p(x)$ with an empirical measure supported on a set of representative points $\{x_i\}_{i=1}^n$. This paper focuses on methods where the selection of points is essentially deterministic, with an emphasis on achieving accurate approximation when $n$ is small. To this end, we present Stein Points. The idea is to exploit either a greedy or a conditional gradient method to iteratively minimise a kernel Stein discrepancy between the empirical measure and $p(x)$. Our empirical results demonstrate that Stein Points enable accurate approximation of the posterior at modest computational cost. In addition, theoretical results are provided to establish convergence of the method.}
 }
 
 
@@ -927,6 +927,15 @@ author = {Arvind K. Saibaba and Pranjal Prasad and Eric {de Sturler} and Eric Mi
       url={https://arxiv.org/abs/1701.06619}
 }
 
+@book{gelmanBDA,
+  title={Bayesian Data Analysis},
+  author={Gelman, Andrew and Carlin, John B and Stern, Hal S and Dunson, David B and Vehtari, Aki and Rubin, Donald B},
+  year={2013},
+  publisher={CRC Press},
+  edition={3rd},
+  address={Boca Raton, FL}
+}
+
 % Curse and blessing of multimodal posteriors
 @article{multimodalYao,
   author  = {Yuling Yao and Aki Vehtari and Andrew Gelman},
@@ -1438,7 +1447,8 @@ publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372},
 author = {Oliver R.A. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, 
 title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification},
  journal = {Journal of Open Source Software} }
-
+ 
+ 
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
 %  ---------------------------------------------------------------------------------------------------
@@ -1722,6 +1732,18 @@ eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101},
 abstract = {Abstract Climate projections continue to be marred by large uncertainties, which originate in processes that need to be parameterized, such as clouds, convection, and ecosystems. But rapid progress is now within reach. New computational tools and methods from data assimilation and machine learning make it possible to integrate global observations and local high-resolution simulations in an Earth system model (ESM) that systematically learns from both and quantifies uncertainties. Here we propose a blueprint for such an ESM. We outline how parameterization schemes can learn from global observations and targeted high-resolution simulations, for example, of clouds and convection, through matching low-order statistics between ESMs, observations, and high-resolution simulations. We illustrate learning algorithms for ESMs with a simple dynamical system that shares characteristics of the climate system; and we discuss the opportunities the proposed framework presents and the challenges that remain to realize it.},
 year = {2017}
 }
+
+@article{ESMReview,
+title = {Evolution and prospects of Earth system models: Challenges and opportunities},
+journal = {Earth-Science Reviews},
+volume = {260},
+pages = {104986},
+year = {2025},
+issn = {0012-8252},
+doi = {https://doi.org/10.1016/j.earscirev.2024.104986},
+url = {https://www.sciencedirect.com/science/article/pii/S0012825224003143},
+author = {Xiaoduo Pan and Deliang Chen and Baoxiang Pan and Xiaozhong Huang and Kun Yang and Shilong Piao and Tianjun Zhou and Yongjiu Dai and Fahu Chen and Xin Li},
+keywords = {Machine learning, Aritificial intelligence, Anthroposphere, Lithosphere, Cryosphere, Data assimilation, Dual-drivers, Big data analysis}}
 
 
 % ---------------------------------------------------------------------------------------------------

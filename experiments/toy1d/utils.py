@@ -4,7 +4,7 @@
 from jax import config
 config.update('jax_enable_x64', True)
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, Sequence, Mapping
 from typing import Any
 from dataclasses import dataclass
 
@@ -202,21 +202,23 @@ class FwdModelGaussianSurrogateGrid(FwdModelGaussianSurrogate):
 
         return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
 
-    def sample_lpost(self, key, x, n=1):
-        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
-        fwd_samp = self.surrogate(x).sample(key, n=n) # (n, n_x)
-        log_prior_dens = self.log_prior(x)
-
+    def log_dens_from_target(self, x: Array, f_pred: Array) -> Array:
         y = self.y
         noise_cov_tril = self.noise_cov_tril
+        log_prior_dens = self.log_prior(x)
 
-        log_lik_vals = jnp.zeros(fwd_samp.shape)
-        for i in range(fwd_samp.shape[1]):
-            l = _gaussian_log_density_tril(y, m=fwd_samp[:,i].reshape(-1,1), L=noise_cov_tril)
+        log_lik_vals = jnp.zeros(f_pred.shape)
+        for i in range(f_pred.shape[1]):
+            l = _gaussian_log_density_tril(y, m=f_pred[:,i].reshape(-1,1), L=noise_cov_tril)
             log_lik_vals = log_lik_vals.at[:,i].set(l)
 
         log_post_samp = log_prior_dens + log_lik_vals
         return log_post_samp
+
+    def sample_lpost(self, key, x, n=1):
+        """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
+        fwd_samp = self.surrogate(x).sample(key, n=n) # (n, n_x)
+        return self.log_dens_from_target(x, fwd_samp) 
     
 
 def plot_log_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
@@ -250,6 +252,7 @@ def plot_log_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
                                     ax=ax)
     
     return fig, ax
+
 
 
 def plot_dens_surrogate_fwd(post_em_1d: SurrogatePost1d,
@@ -306,6 +309,9 @@ class LogDensGPSurrogateGrid(LogDensGPSurrogate):
 
             return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
     
+    def log_dens_from_target(self, x: Array, f_pred: Array) -> Array:
+        return f_pred
+
     def sample_lpost(self, key, x, n=1):
         """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
         return self.surrogate(x).sample(key, n=n) # (n, n_x)
@@ -354,6 +360,9 @@ class LogDensClippedGPSurrogateGrid(LogDensClippedGPSurrogate):
 
             return DistributionFromDensity(log_dens=log_dens, dim=input_dim)
     
+    def log_dens_from_target(self, x: Array, f_pred: Array) -> Array:
+        return f_pred
+
     def sample_lpost(self, key, x, n=1):
         """Sample realizations of unnormalized log-posterior surrogate at finite set of points"""
         return self.sample_surrogate_pred(key, x, n=n) # (n, n_x)
@@ -587,5 +596,75 @@ def plot_lognorm_1d(x,
         return f"$10^{{{int(round(exponent))}}}$"
 
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(log_formatter))
+
+    return fig, ax
+
+
+# -------------------------------------------------------------------------
+# Acquisition Functions
+# -------------------------------------------------------------------------
+
+def plot_pw_acq_multi_target(key: PRNGKey,
+                             post_em_1d: SurrogatePost1d,
+                             n_mc: int = int(1e5),
+                             ax=None, **kwargs):
+    
+    # emulator predictions
+    grid = post_em_1d.grid
+    pred = post_em_1d.post_em.surrogate(grid.flat_grid)
+    samp = pred.sample(key, n=n_mc)
+    samp_pw_ldens = norm.logpdf(samp, loc=pred.mean, scale=pred.stdev)
+    X = post_em_1d.post_em.surrogate.design.X
+
+    n_plots = 4
+    if ax is None:
+        fig, ax = plt.subplots(nrows=4, ncols=1)
+        ax = ax.ravel()
+    else:
+        ax = ax.ravel()
+        assert len(ax) == n_plots
+        fig = ax[0].figure
+
+    # surrogate
+    plot_pw_acq(samp, samp_pw_ldens, grid, points=X, ax=ax[0], **kwargs)
+
+    # log-density
+    ldens_samp = post_em_1d.post_em.log_dens_from_target(grid.flat_grid, samp)
+    plot_pw_acq(ldens_samp, samp_pw_ldens, grid, points=X, ax=ax[1], **kwargs)
+
+    # density
+    dens_samp = jnp.exp(ldens_samp)
+    plot_pw_acq(dens_samp, samp_pw_ldens, grid, points=X, ax=ax[2], **kwargs)
+
+    # normalized density
+    dens_norm_samp, _ = normalize_density_over_grid(ldens_samp, 
+                                                    cell_area=grid.cell_area,
+                                                    return_log=False)
+    plot_pw_acq(dens_norm_samp, samp_pw_ldens, grid, points=X, ax=ax[3], **kwargs)
+
+    return fig, ax
+
+
+def plot_pw_acq(samp: Array,
+                samp_pw_ldens: Array,
+                grid: Grid,
+                points: Array | None = None,
+                ax=None, **kwargs):
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    def scale(x):
+        return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
+    
+    maxvar = -1 * jnp.var(samp, axis=0)
+    maxent = jnp.mean(samp_pw_ldens, axis=0)
+    maxiqr = -1 * (jnp.quantile(samp, q=0.75, axis=0) - jnp.quantile(samp, q=0.25, axis=0))
+    
+    fig, ax = grid.plot(z=scale(maxvar), points=points, ax=ax, **kwargs)
+    fig, ax = grid.plot(z=scale(maxent), ax=ax, **kwargs)
+    fig, ax = grid.plot(z=scale(maxiqr), ax=ax, **kwargs)
 
     return fig, ax

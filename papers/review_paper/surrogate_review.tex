@@ -107,14 +107,14 @@
 \maketitle
 
 \section{Introduction}
-In fields ranging from climate science \citep{ESM_modeling_2pt0} \todo{one more citation} to astrophysics
+In fields ranging from climate science \citep{ESM_modeling_2pt0,ESMReview} to astrophysics
 \citep{VarmaBlackHole2019,npeAstrophysics}, the scientific process increasingly relies on complex, computationally
 expensive computer simulations. Many such computer models contain parameters with values that cannot be specified
 a priori or estimated experimentally. Therefore, a critical task in many scientific workflows is to estimate values
 of these parameters that are consistent with observed data, a process sometimes called 
 \textit{parameter calibration} \citep{computerModelCalibrationReview}.
 Bayesian inference offers a principled framework for parameter inference, providing mechanisms to 
-quantify parameter uncertainty and balance prior information with observed data \citep{KOH}.
+quantify parameter uncertainty and balance prior information with observed data \citep{gelmanBDA}.
 However, Bayesian inference algorithms such as Markov chain Monte Carlo (MCMC) or Amortized 
 Bayesian Inference (ABI) require evaluating the likelihood function tens to hundreds of thousands of times. 
 When a single simulation takes minutes or hours, this cost renders these standard approaches intractable.
@@ -123,10 +123,34 @@ idea is to replace the expensive simulator with a statistical approximation, tra
 computationally cheap to evaluate \citep{KOH,gramacy2020surrogates}. By substituting this emulator into the inference pipeline, 
 one seeks to characterize the posterior distribution at a fraction of the cost.
 
-While conceptually straightforward, replacing the true model with an approximation introduces many methodological
-and conceptual challenges. Invariably, the surrogate is an imperfect representation of the true
-model. Posterior estimates derived using the surrogate will inherit these imperfections, prompting the 
-concern of biased and overconfident inference.
+While conceptually straightforward, introducing surrogates within the Bayesian workflow presents several 
+methodological and conceptual challenges. Most evidently, there is the modeling challenge of fitting 
+an accurate surrogate with sparse training data. The quantities often targeted by emulators 
+(e.g., simulator outputs or the log-likelihood surface) tend to be high-dimensional or non-stationary, 
+posing a challenge for standard predictive models. This difficulty is compounded by the fact that the
+posterior distribution often concentrates in a small, unknown subset of the prior support. The sparse
+set of simulator training data may completely miss this ``needle in a haystack.'' A surrogate
+that is accurate in a global, prior-averaged sense may nonetheless fail to provide a reasonable
+approximation in this key high-density region. Even if these issues are adequately addressed,
+the surrogate will invariably be an imperfect representation of the true model. Posterior estimates derived 
+using the surrogate will inherit these imperfections, prompting concerns that the resulting inference can be 
+both biased and overconfident. We focus this article around two complementary ideas that address these concerns:
+
+\paragraph{Active Learning.} 
+Subject to a limited computational budget, simulations from the exact
+model should be utilized as efficiently as possible in training the surrogate. Algorithms that 
+actively design the simulation schedule---targeting simulations with the greatest potential for reducing
+error in the posterior approximation---can significantly improve upon baseline passive approaches.
+Sequential design of simulations offers the opportunity to iteratively identify the high-density regions,
+mitigating the ``needly in a haystack'' issue.
+
+\paragraph{Uncertainty Propagation.}
+To avoid overconfident inference, uncertainties in the surrogate model can be propagated within the
+posterior approximation. While many different uncertainty-aware posterior estimates have been
+proposed, the typical effect is to broaden the distribution, reflecting an additional source of uncertainty
+within the Bayesian model. Acknowledging this uncertainty is crucial for downstream decision-making
+and scientific inquiry.
+
 
 \subsection{Scope and Contributions}
 This review synthesizes the methodological landscape of surrogate-based Bayesian inference, 
@@ -146,32 +170,16 @@ tackle the aforementioned challenges.
 The remainder of this review is structured as follows. \Cref{sec:background} provides background 
 on Bayesian inference in the context of expensive computer models. \Cref{sec:surrogates}
 introduces the concept of a probabilistic surrogate model, highlighting several popular 
-model classes. \Cref{sec:target-map} discusses the decision as to which quantity to actually 
-emulate, defining the distinction between forward model and log-density emulators. 
+model classes. \Cref{sec:target-map} discusses the decision as to which quantity to 
+target for emulation, drawing a distinction between forward model and log-density emulators. 
 \Cref{sec:post-approx,sec:active-learning} address the two core questions forming the 
 focus of this review. The former discusses the construction of surrogate-based 
-posterior approximations that properly incorporate emulator uncertainty, while the latter
-reviews active learning algorithms that sequentially build up surrogate models.  
-
-\subsection{Challenges in Surrogate-Based Bayesian Inference}
-
-While some of these difficulties are generic within the broader context of surrogate modeling,
-others are unique to the use of emulators within a Bayesian workflow \citep{BurknerSurrogate}:
-
-\begin{enumerate}
-    \item \textbf{Concentrated Posteriors:} When data are informative, the posterior mass often concentrates in a small, 
-    unknown subset of the prior support. A sparse set of simulator evaluations is likely to completely miss this 
-    ``needle in a haystack'', yielding a surrogate that is uninformed in the most relevant regions. 
-    \item \textbf{Non-Stationary Target Surfaces:} Surrogate models are often trained to emulate quantities such as 
-    simulator outputs or the log-likelihood function. These target surfaces can be highly non-stationary and span many 
-    orders of magnitude. Standard emulators (e.g., stationary Gaussian processes) often struggle to model such surfaces 
-    sufficiently well to resolve the posterior geometry.
-    \item \textbf{Uncertainty Propagation:} Surrogate error translates directly into posterior bias. Ignoring this error can lead to
-    biased and overconfident inference, necessitating frameworks to construct uncertainty-aware posterior estimates.
-    \item \textbf{The Chicken and Egg Problem:} A globally-accurate surrogate model is not necessarily required for accurate
-    posterior inference. Rather, high surrogate accuracy is necessary in high-density regions. However, identifying these 
-    regions requires the very knowledge of the posterior geometry that the surrogate is intended to provide.
-\end{enumerate}
+posterior approximations that properly incorporate emulator uncertainty. The latter
+focuses on active learning algorithms that sequentially build up a surrogate model 
+optimized for posterior approximation. \Cref{sec:connections} emphasizes connections
+with related literatures, including simulation-based inference, modular Bayesian inference,
+and computer experiments.
+\todo[inline]{Complete once final sections are determined.}
 
 
 % Background
@@ -1345,6 +1353,11 @@ In problems where the likelihood is highly informative, the posterior effectivel
 
 The surrogate is constructed sequentially to approximate each $\pi_t$ in turn. By the time the algorithm targets $\pi_T$, the surrogate has already resolved the broader basins of attraction, preventing mode collapse. This strategy is closely related to Sequential Monte Carlo (SMC) and has been adapted for surrogate modeling in methods such as \textit{adaptive Gaussian process approximation} \citep{wang2018adaptive, adaptiveMultimodal} and Ensemble Kalman Inversion \citep{EKI_review}.
 
+\section{Connection to Other Literatures} \label{sec:connections}
+\subsection{Amortized and Simulation-Based Inference} \label{sec:sbi}
+\subsection{Computer Model Calibration}
+\subsection{Modular Bayesian Inference}
+
 
 \begin{comment}
 
@@ -1408,12 +1421,6 @@ the intermediate distributions as well.
 This section is a catch-all for techniques that do sequential design within a single MCMC algorithm. This includes so-called 
 ``exact-approximate'' schemes which are designed to eventually sample from the true posterior, as well as approximate
 schemes that only acquire new points until some sort of budget is exhausted. 
-
-
-\section{Connection to Other Literatures}
-\subsection{Amortized and Simulation-Based Inference} \label{sec:sbi}
-\subsection{Computer Model Calibration}
-\subsection{Modular Bayesian Inference}
 
 
 For GP surrogates, a variety of design criteria (i.e., acquisition functions) have been 
