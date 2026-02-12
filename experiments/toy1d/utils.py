@@ -609,11 +609,9 @@ def plot_pw_acq_multi_target(key: PRNGKey,
                              n_mc: int = int(1e5),
                              ax=None, **kwargs):
     
-    # emulator predictions
+    # emulator predictive samples
     grid = post_em_1d.grid
-    pred = post_em_1d.post_em.surrogate(grid.flat_grid)
-    samp = pred.sample(key, n=n_mc)
-    samp_pw_ldens = norm.logpdf(samp, loc=pred.mean, scale=pred.stdev)
+    samp = post_em_1d.post_em.sample_surrogate_pred(key, grid.flat_grid, n=n_mc)
     X = post_em_1d.post_em.surrogate.design.X
 
     n_plots = 4
@@ -626,27 +624,26 @@ def plot_pw_acq_multi_target(key: PRNGKey,
         fig = ax[0].figure
 
     # surrogate
-    plot_pw_acq(samp, samp_pw_ldens, grid, points=X, ax=ax[0], **kwargs)
+    plot_pw_acq(samp, grid, points=X, ax=ax[0], **kwargs)
 
     # log-density
     ldens_samp = post_em_1d.post_em.log_dens_from_target(grid.flat_grid, samp)
-    plot_pw_acq(ldens_samp, samp_pw_ldens, grid, points=X, ax=ax[1], **kwargs)
+    plot_pw_acq(ldens_samp, grid, points=X, ax=ax[1], **kwargs)
 
     # density
     dens_samp = jnp.exp(ldens_samp)
-    plot_pw_acq(dens_samp, samp_pw_ldens, grid, points=X, ax=ax[2], **kwargs)
+    plot_pw_acq(dens_samp, grid, points=X, ax=ax[2], **kwargs)
 
     # normalized density
     dens_norm_samp, _ = normalize_density_over_grid(ldens_samp, 
                                                     cell_area=grid.cell_area,
                                                     return_log=False)
-    plot_pw_acq(dens_norm_samp, samp_pw_ldens, grid, points=X, ax=ax[3], **kwargs)
+    plot_pw_acq(dens_norm_samp, grid, points=X, ax=ax[3], **kwargs)
 
     return fig, ax
 
 
 def plot_pw_acq(samp: Array,
-                samp_pw_ldens: Array,
                 grid: Grid,
                 points: Array | None = None,
                 ax=None, **kwargs):
@@ -660,7 +657,7 @@ def plot_pw_acq(samp: Array,
         return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
     
     maxvar = -1 * jnp.var(samp, axis=0)
-    maxent = jnp.mean(samp_pw_ldens, axis=0)
+    maxent = -1 * fast_entropy_vmap(samp)
     maxiqr = -1 * (jnp.quantile(samp, q=0.75, axis=0) - jnp.quantile(samp, q=0.25, axis=0))
     
     fig, ax = grid.plot(z=scale(maxvar), points=points, ax=ax, **kwargs)
@@ -668,3 +665,64 @@ def plot_pw_acq(samp: Array,
     fig, ax = grid.plot(z=scale(maxiqr), ax=ax, **kwargs)
 
     return fig, ax
+
+
+def fast_kde_1d(samples, grid_size=1024, bandwidth_scale=1.0):
+    """
+    Fast 1D KDE using linear binning and FFT.
+    Works with vmap for batch processing.
+    """
+    n = samples.shape[0]
+    
+    # Buffer to the range to avoid edge effects
+    s_min, s_max = jnp.min(samples), jnp.max(samples)
+    range_width = s_max - s_min
+    grid_min = s_min - 0.5 * range_width
+    grid_max = s_max + 0.5 * range_width
+    grid = jnp.linspace(grid_min, grid_max, grid_size)
+    dx = grid[1] - grid[0]
+    
+    # Silverman's Rule for bandwidth
+    sigma = jnp.std(samples)
+    h = bandwidth_scale * (1.06 * sigma * n**(-1/5))
+    
+    # Linear Binning (O(n))
+    sample_indices = (samples - grid_min) / dx
+    lower_indices = jnp.floor(sample_indices).astype(int)
+    upper_indices = lower_indices + 1
+    weights_upper = sample_indices - lower_indices
+    weights_lower = 1.0 - weights_upper
+    
+    # at2 to scatter weights into the grid
+    counts = jnp.zeros(grid_size)
+    counts = counts.at[lower_indices].add(weights_lower, indices_are_sorted=False, unique_indices=False)
+    counts = counts.at[upper_indices].add(weights_upper, indices_are_sorted=False, unique_indices=False)
+    
+    # ]Prepare the Gaussian Kernel in Frequency Domain
+    # The kernel is centered at zero; we use periodic wrapping for FFT convolution
+    # Kernel: K(x) = (1/sqrt(2*pi*h^2)) * exp(-0.5 * (x/h)^2)
+    half_grid = (grid_size // 2)
+    dist_from_zero = jnp.fft.fftfreq(grid_size, d=1/grid_size) * (grid_max - grid_min)
+    kernel_values = (1.0 / (jnp.sqrt(2 * jnp.pi) * h)) * jnp.exp(-0.5 * (dist_from_zero / h)**2)
+    
+    # Convolution via FFT (O(G log G))
+    counts_fft = jnp.fft.fft(counts)
+    kernel_fft = jnp.fft.fft(kernel_values)
+    density = jnp.fft.ifft(counts_fft * kernel_fft).real
+    
+    # Normalize
+    density = density / (n * dx)
+    
+    return grid, density
+
+# Vectorized version for many sets of samples
+vectorized_kde = jax.jit(jax.vmap(fast_kde_1d, in_axes=(1, None, None), out_axes=(1, 1)))
+
+
+def estimate_entropy_fast(samples):
+    grid, density = fast_kde_1d(samples)
+    # Map density back to original samples to compute E[log p(x)]
+    log_p = jnp.log(jnp.interp(samples, grid, density) + 1e-10) 
+    return -jnp.mean(log_p)
+
+fast_entropy_vmap = jax.jit(jax.vmap(estimate_entropy_fast, in_axes=1))
