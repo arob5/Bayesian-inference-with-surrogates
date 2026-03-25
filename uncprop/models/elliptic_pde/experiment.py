@@ -1,6 +1,7 @@
 # uncprop/models/elliptic_pde/experiment.py
 from pathlib import Path
 from typing import Any, NamedTuple
+import time
 
 import jax
 import jax.numpy as jnp
@@ -109,13 +110,16 @@ class PDEReplicate(Replicate):
         # save to disk
         if write_to_file:
             jnp.savez(out_dir / 'design.npz', X=self.design.X, y=self.design.y)
+            jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
 
 
     def __call__(self, 
                  key: PRNGKey,
                  out_dir: Path,
+                 rho_vals: list[float],
                  mcmc_settings: dict[str, Any] | None = None,
-                 mcwmh_settings: dict[str, Any] | None = None,  
+                 mcwmh_settings: dict[str, Any] | None = None,
+                 rkpcn_settings: dict[str, Any] | None = None,  
                  **kwargs):
         
         key, key_init_mcmc, key_seed_mcmc, key_mcwmh = jr.split(key, 4)
@@ -124,6 +128,8 @@ class PDEReplicate(Replicate):
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
         if mcwmh_settings is None:
             mcwmh_settings = {'n_chains': 100, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 100}
+        if rkpcn_settings is None:
+            rkpcn_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
 
         # sampling distributions
         dists = {
@@ -139,6 +145,8 @@ class PDEReplicate(Replicate):
         mcmc_info = {}
         print('\tRunning samplers')
         for key, (dist_name, dist) in zip(mcmc_keys, dists.items()):
+            jax.clear_caches()
+            print(f'\t\t{dist_name}')
             mcmc_results = sample_distribution(
                 key=key,
                 dist=dist,
@@ -149,17 +157,42 @@ class PDEReplicate(Replicate):
 
             mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
             mcmc_info[dist_name] = mcmc_results
+        jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
 
         # expected posterior: MCwMH
+        start_mcwmh = time.perf_counter()
         samp_mcwmh = sample_mcwmh(key=key_mcwmh,
                                   posterior_surrogate=self.posterior_surrogate,
                                   prop_cov_init=mcmc_info['mean']['prop_cov'][0],
                                   **mcwmh_settings)
         mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
-
-        # write results
+        end_mcwmh = time.perf_counter()
         jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
-        jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
+        print(f'mcwmh time: {end_mcwmh - start_mcwmh:.6f} seconds')
+
+        # rkpcn samplers
+        rkpcn_output = {}
+        rkpcn_prop_cov = jnp.cov(mcmc_samp['eup'], rowvar=False)
+
+        start_rkpcn = time.perf_counter()
+        for rho in rho_vals:
+            print(f'\trho = {rho}')
+            key, key_rkpcn = jr.split(key)
+
+            samp_rkpcn = sample_rkpcn(key=key_rkpcn,
+                                      posterior=self.posterior,
+                                      surrogate_post=self.posterior_surrogate,
+                                      initial_position=initial_position,
+                                      prop_cov=rkpcn_prop_cov,
+                                      rho=rho,
+                                      **rkpcn_settings)
+            tag = f'rkpcn{int(rho*100)}'                          
+            rkpcn_output[tag] = samp_rkpcn
+
+        end_rkpcn = time.perf_counter()
+        mcmc_samp = mcmc_samp | rkpcn_output
+        jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
+        print(f'rkpcn time: {end_rkpcn - start_rkpcn:.6f} seconds')
 
         return None
 

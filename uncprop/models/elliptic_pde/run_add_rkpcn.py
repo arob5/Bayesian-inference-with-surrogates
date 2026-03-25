@@ -1,18 +1,20 @@
 #!/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/.venv/bin/python -u
-#$ -N w2_30
+#$ -N rep_test_nojit
 #$ -P gpsurr
 #$ -j y
 #$ -l h_rt=12:00:00
-#$ -l mem_per_core=12G
-#$ -pe omp 2
+#$ -l mem_per_core=64G
+#$ -pe omp 1
 #
 # Helper script to add run rkpcn sampler and saved results for existing experiment.
 
 from jax import config
 config.update('jax_enable_x64', True)
+config.update('jax_disable_jit', True)
 
 import os
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -20,6 +22,7 @@ import jax.numpy as jnp
 import jax.random as jr
 
 from uncprop.models.elliptic_pde.experiment import (
+    PDEReplicate,
     load_rep,
     read_samp,
     sample_rkpcn,
@@ -33,15 +36,61 @@ os.environ['NUM_INTRA_THREADS'] = '1'
 os.environ['NPROC'] = '1'
 os.environ['XLA_FLAGS'] = '--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1 inter_op_parallelism_threads=1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['--xla_gpu_force_compilation_parallelism'] = '1'
 
 timestamp = datetime.now()
 
 print(f'Executable: {sys.executable}', flush=True)
 print('Timestamp:', timestamp.strftime("%Y-%m-%d %H:%M:%S"))
 
-experiment_name = 'pde_experiment'
+# ---------------------------
+# Single replicate test
+# ---------------------------
+
+import resource
+print('RLIMIT_AS:', resource.getrlimit(resource.RLIMIT_AS))
+
 base_dir = Path('/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates')
-base_out_dir = base_dir / 'out'
+output_dir = base_dir / 'test_replicate'
+rho_vals = [0.0, 0.9, 0.95, 0.99, 0.999]
+output_dir.mkdir(exist_ok=True)
+
+key = jr.key(32424)
+key_init, key_run = jr.split(key)
+jnp.savez(output_dir / 'rep_keys.npz',
+          base_key=jr.key_data(key),
+          rep_init_key=jr.key_data(key_init),
+          rep_run_key=jr.key_data(key_run))
+
+start = time.perf_counter()
+rep = PDEReplicate(key=key_init,
+                   out_dir=output_dir,
+                   n_design=30,
+                   num_rff=1500,
+                   write_to_file=True)
+end = time.perf_counter()
+print(f'Rep init time: {end - start:.6f} seconds')
+
+start = time.perf_counter()
+rep(key=key_run,
+    out_dir=output_dir,
+    rho_vals=rho_vals,
+    mcmc_settings={'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5},
+    mcwmh_settings={'n_chains': 1000, 'n_samp_per_chain': 1, 'n_burnin': 20_000, 'thin_window': 1},
+    rkpcn_settings={'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5})
+end = time.perf_counter()
+print(f'Rep run time: {end - start:.6f} seconds')
+
+
+
+# ---------------------------
+# rkpcn samp
+# ---------------------------
+
+# experiment_name = 'pde_experiment'
+# base_dir = Path('/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates')
+# base_out_dir = base_dir / 'out'
+
 # experiment_dir = base_out_dir / experiment_name
 # key = jr.key(523342)
 
@@ -92,22 +141,26 @@ base_out_dir = base_dir / 'out'
 #             print(e)
 
 
-output_dir = base_dir / 'out' / 'final'
-key = jr.key(12343)
+# ---------------------------
+# Wasserstein
+# ---------------------------
 
-from uncprop.models.elliptic_pde.experiment import (
-    summarize_wasserstein_design_reps,
-)
+# output_dir = base_dir / 'out' / 'final'
+# key = jr.key(12343)
 
-key, key_w2 = jr.split(key)
-n_design = 30
+# from uncprop.models.elliptic_pde.experiment import (
+#     summarize_wasserstein_design_reps,
+# )
 
-print('n_design: ', n_design)
-w2_results_n, eps_n = summarize_wasserstein_design_reps(key_w2, 
-                                                        base_out_dir, 
-                                                        experiment_name, 
-                                                        n_design=n_design, 
-                                                        rep_idcs=range(100),
-                                                        output_dir=output_dir)
-jnp.savez(output_dir / f'w2_ndesign_{n_design}.npz', **w2_results_n)
-print('epsilon:', eps_n)
+# key, key_w2 = jr.split(key)
+# n_design = 30
+
+# print('n_design: ', n_design)
+# w2_results_n, eps_n = summarize_wasserstein_design_reps(key_w2, 
+#                                                         base_out_dir, 
+#                                                         experiment_name, 
+#                                                         n_design=n_design, 
+#                                                         rep_idcs=range(100),
+#                                                         output_dir=output_dir)
+# jnp.savez(output_dir / f'w2_ndesign_{n_design}.npz', **w2_results_n)
+# print('epsilon:', eps_n)
