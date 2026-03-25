@@ -144,15 +144,20 @@ class VSEMReplicate(Replicate):
             mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
             mcmc_info[dist_name] = mcmc_results
 
+        # Use the adapted proposal covariance from the exact posterior sampler
+        # for the rkpcn sampler's u-update proposal
+        prop_cov = mcmc_info['exact']['prop_cov']
+
         rkpcn_keys = jr.split(key_seed_rkpcn, len(rkpcn_rho_vals))
         rkpcn_samp = {}
-        
+
         for i, alg_name in enumerate(rkpcn_rho_vals.keys()):
-            mcmc_samp[alg_name] = _run_mcmc_rkpcn(key=rkpcn_keys[i], 
+            mcmc_samp[alg_name] = _run_mcmc_rkpcn(key=rkpcn_keys[i],
                                                   rho=rkpcn_rho_vals[alg_name],
                                                   posterior=self.posterior,
                                                   surrogate_post=surr,
                                                   initial_position=initial_position,
+                                                  prop_cov=prop_cov,
                                                   **rkpcn_settings)
 
 
@@ -307,13 +312,12 @@ def _run_mcmc_rkpcn(key: PRNGKey,
         rho: float
     f_update_info = UpdateInfo(rho=rho)
 
-    initial_state, kernel = init_rkpcn_kernel(key=key_ker,
-                                              log_density=log_density,
-                                              gp=gp,
-                                              initial_position=initial_position,
-                                              u_prop_cov=prop_cov,
-                                              f_update_fn=_f_update_pcn_proposal,
-                                              f_update_info=f_update_info)
+    init_fn, kernel = init_rkpcn_kernel(key=key_ker,
+                                        log_density=log_density,
+                                        gp=gp,
+                                        f_update_fn=_f_update_pcn_proposal,
+                                        f_update_info=f_update_info)
+    initial_state = init_fn(key_ker, jnp.squeeze(initial_position), prop_cov)
 
     # run sampler
     n_samples_total = n_burnin + thin_window * n_samples

@@ -1,8 +1,8 @@
 """
 Minimal viable test for the VSEM experiment pipeline.
 
-Runs a single replicate with reduced settings (small grid, few design points)
-to verify the experiment code works end-to-end after reorganization.
+Runs a single replicate with reduced settings (small grid, few design points,
+short MCMC chains) to verify the experiment code works end-to-end.
 This does NOT run the full paper experiment — see experiments/vsem/runner.py for that.
 """
 from jax import config
@@ -55,14 +55,11 @@ def test_vsem_replicate_setup():
         print("test_vsem_replicate_setup: PASSED")
 
 
-def test_vsem_experiment_setup_via_framework():
+def test_vsem_experiment_one_rep():
     """
-    Test that the Experiment framework correctly initializes a VSEM replicate.
-    This verifies that setup_kwargs are correctly passed through the framework.
-
-    NOTE: The full __call__ (MCMC sampling) phase of VSEMReplicate has a
-    pre-existing issue with rkpcn prop_cov argument. This test only verifies
-    the setup phase works through the Experiment framework.
+    Test the full experiment pipeline with 1 replicate through the Experiment
+    framework: setup, MCMC sampling (exact + approximate posteriors), rkpcn
+    sampler, density comparison, and coverage computation.
     """
     key = jr.key(42)
 
@@ -73,6 +70,11 @@ def test_vsem_experiment_setup_via_framework():
             'n_grid': 5,
             'n_design': 4,
             'surrogate_tag': 'gp',
+        }
+        run_kwargs = {
+            'rkpcn_rho_vals': {'rkpcn_0.9': 0.9},
+            'mcmc_settings': {'n_samples': 10, 'n_burnin': 50, 'thin_window': 1},
+            'rkpcn_settings': {'n_samples': 10, 'n_burnin': 50, 'thin_window': 1},
         }
 
         def subdir_name_fn(setup_kw, run_kw):
@@ -87,19 +89,23 @@ def test_vsem_experiment_setup_via_framework():
             subdir_name_fn=subdir_name_fn,
         )
 
-        # Directly test that the framework can initialize a replicate
-        rep = experiment.init_replicate(
-            rep_idx=0,
+        results, failed_reps, skipped_reps = experiment(
+            run_kwargs=run_kwargs,
             setup_kwargs=setup_kwargs,
-            rep_subdir=out_dir / 'rep_0',
         )
 
-        assert rep.posterior is not None
-        assert rep.posterior_surrogate is not None
-        print("test_vsem_experiment_setup_via_framework: PASSED")
+        assert len(failed_reps) == 0, f"Replicates failed: {failed_reps}"
+
+        # Verify the replicate has expected outputs
+        rep = results[0]
+        assert rep.density_comparison is not None, "Density comparison not computed"
+        assert rep.coverage_results is not None, "Coverage results not computed"
+        assert rep.mcmc_results is not None, "MCMC results not stored"
+
+        print("test_vsem_experiment_one_rep: PASSED")
 
 
 if __name__ == '__main__':
     test_vsem_replicate_setup()
-    test_vsem_experiment_setup_via_framework()
+    test_vsem_experiment_one_rep()
     print("\nAll VSEM tests passed!")

@@ -20,12 +20,13 @@ gp_tags = ['gp', 'clip_gp']
 design_settings = [(4, 1e-4), (8, 1e-3), (16, 1e-2)] # (n_design, jitter)
 setups = [(tag, n, jitter) for tag in gp_tags for n, jitter in design_settings]
 
-setup_kwargs: dict[str, Any] = {'n_grid': 50, 
+setup_kwargs: dict[str, Any] = {'n_grid': 50,
                                 'n_design': None,
-                                'noise_sd': 1.0, 
+                                'noise_sd': 1.0,
                                 'verbose': False,
-                                'jitter': None}
-run_kwargs: dict[str, Any] = {'surrogate_tag': None}
+                                'jitter': None,
+                                'surrogate_tag': None}
+run_kwargs: dict[str, Any] = {}
 
 num_reps = 100
 backup_frequency = 10
@@ -33,7 +34,7 @@ experiment_name = 'vsem'
 out_dir = base_dir / 'out' / experiment_name
 
 def _make_subdir_name(setup_kwargs, run_kwargs):
-    return f'{run_kwargs['surrogate_tag']}_N{setup_kwargs['n_design']}'
+    return f'{setup_kwargs["surrogate_tag"]}_N{setup_kwargs["n_design"]}'
 
 
 # -----------------------------------------------------------------------------
@@ -52,11 +53,10 @@ def run_vsem_experiment():
     for tag, n, jitter in setups:
         setup_kwargs['n_design'] = n
         setup_kwargs['jitter'] = jitter
-        run_kwargs['surrogate_tag'] = tag
+        setup_kwargs['surrogate_tag'] = tag
 
-        results = experiment(run_kwargs=run_kwargs, 
-                             setup_kwargs=setup_kwargs, 
-                             backup_frequency=backup_frequency)
+        results = experiment(run_kwargs=run_kwargs,
+                             setup_kwargs=setup_kwargs)
         all_results.append(results)
 
     return all_results
