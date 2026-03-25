@@ -184,7 +184,7 @@ URL = {https://doi.org/10.1214/17-AOS1629}
   publisher =    {PMLR},
   pdf = 	 {http://proceedings.mlr.press/v80/chen18f/chen18f.pdf},
   url = 	 {https://proceedings.mlr.press/v80/chen18f.html},
-  abstract = 	 {An important task in computational statistics and machine learning is to approximate a posterior distribution $p(x)$ with an empirical measure supported on a set of representative points $\{x_i\}_{i=1}^n$. This paper focuses on methods where the selection of points is essentially deterministic, with an emphasis on achieving accurate approximation when $n$ is small. To this end, we present Stein Points. The idea is to exploit either a greedy or a conditional gradient method to iteratively minimise a kernel Stein discrepancy between the empirical measure and $p(x)$. Our empirical results demonstrate that Stein Points enable accurate approximation of the posterior at modest computational cost. In addition, theoretical results are provided to establish convergence of the method.}
+  abstract = {An important task in computational statistics and machine learning is to approximate a posterior distribution $p(x)$ with an empirical measure supported on a set of representative points $\{x_i\}_{i=1}^n$. This paper focuses on methods where the selection of points is essentially deterministic, with an emphasis on achieving accurate approximation when $n$ is small. To this end, we present Stein Points. The idea is to exploit either a greedy or a conditional gradient method to iteratively minimise a kernel Stein discrepancy between the empirical measure and $p(x)$. Our empirical results demonstrate that Stein Points enable accurate approximation of the posterior at modest computational cost. In addition, theoretical results are provided to establish convergence of the method.}
 }
 
 
@@ -251,6 +251,17 @@ author = {Hüllermeier, E. and Waegeman, W.},
   booktitle = {Advances in Neural Information Processing Systems 33},
   year = 2020,
   url = {http://arxiv.org/abs/1910.06403}
+}
+
+% Optimizing acquisition functions
+@misc{maxAcq,
+      title={Maximizing acquisition functions for Bayesian optimization}, 
+      author={James T. Wilson and Frank Hutter and Marc Peter Deisenroth},
+      year={2018},
+      eprint={1805.10196},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1805.10196}, 
 }
 
 % Thompson sampling
@@ -916,6 +927,15 @@ author = {Arvind K. Saibaba and Pranjal Prasad and Eric {de Sturler} and Eric Mi
       url={https://arxiv.org/abs/1701.06619}
 }
 
+@book{gelmanBDA,
+  title={Bayesian Data Analysis},
+  author={Gelman, Andrew and Carlin, John B and Stern, Hal S and Dunson, David B and Vehtari, Aki and Rubin, Donald B},
+  year={2013},
+  publisher={CRC Press},
+  edition={3rd},
+  address={Boca Raton, FL}
+}
+
 % Curse and blessing of multimodal posteriors
 @article{multimodalYao,
   author  = {Yuling Yao and Aki Vehtari and Andrew Gelman},
@@ -1204,6 +1224,19 @@ abstract = {Abstract The past few decades have witnessed an explosive synergy be
 year = {2021}
 }
 
+@article{activeReducedTempering,
+author = {C\'{e}rou, Fr\'{e}d\'{e}ric and H\'{e}as, Patrick and Rousset, Mathias},
+title = {Adaptive Reduced Tempering for Bayesian Inverse Problems and Rare Event Simulation},
+journal = {SIAM/ASA Journal on Uncertainty Quantification},
+volume = {13},
+number = {4},
+pages = {2022-2053},
+year = {2025},
+doi = {10.1137/24M170510X},
+URL = { https://doi.org/10.1137/24M170510X},
+eprint = { https://doi.org/10.1137/24M170510X}
+}
+
 % Utilize a plug-in estimator for the likelihood which computes a quantile of the emulator distribution, the idea being that something like the 90th percentile represents 
 % a conservative estimate of the true likelihood. They also incorporate bound constraints to account for the fact that they are emulating a non-negative quantity (in their 
 % case, the unnormalized log Gaussian likelihood). 
@@ -1230,6 +1263,17 @@ publisher = {Taylor & Francis},
 doi = {10.1198/106186008X320681},
 URL = {https://doi.org/10.1198/106186008X320681},
 eprint = { https://doi.org/10.1198/106186008X320681}
+}
+
+@article{BliznyukMCMC,
+author = {Bliznyuk, Nikolay and Ruppert, David and Shoemaker, Christine},
+year = {2012},
+month = {04},
+pages = {476-495},
+title = {Local Derivative-Free Approximation of Computationally Expensive Posterior Densities},
+volume = {21},
+journal = {Journal of Computational and Graphical Statistics - J COMPUT GRAPH STAT},
+doi = {10.1080/10618600.2012.681255}
 }
 
 % Bayesian quadrature. Emulate log-integrand with GP. 
@@ -1414,7 +1458,8 @@ publisher = {The Open Journal}, volume = {9}, number = {97}, pages = {6372},
 author = {Oliver R.A. Dunbar and Melanie Bieli and Alfredo Garbuno-Iñigo and Michael Howland and Andre Nogueira de Souza and Laura Anne Mansfield and Gregory L. Wagner and N. Efrat-Henrici}, 
 title = {CalibrateEmulateSample.jl: Accelerated Parametric Uncertainty Quantification},
  journal = {Journal of Open Source Software} }
-
+ 
+ 
 %  ---------------------------------------------------------------------------------------------------
 % Log-likelihood emulation with non-GP models. 
 %  ---------------------------------------------------------------------------------------------------
@@ -1698,6 +1743,18 @@ eprint = {https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1002/2017GL076101},
 abstract = {Abstract Climate projections continue to be marred by large uncertainties, which originate in processes that need to be parameterized, such as clouds, convection, and ecosystems. But rapid progress is now within reach. New computational tools and methods from data assimilation and machine learning make it possible to integrate global observations and local high-resolution simulations in an Earth system model (ESM) that systematically learns from both and quantifies uncertainties. Here we propose a blueprint for such an ESM. We outline how parameterization schemes can learn from global observations and targeted high-resolution simulations, for example, of clouds and convection, through matching low-order statistics between ESMs, observations, and high-resolution simulations. We illustrate learning algorithms for ESMs with a simple dynamical system that shares characteristics of the climate system; and we discuss the opportunities the proposed framework presents and the challenges that remain to realize it.},
 year = {2017}
 }
+
+@article{ESMReview,
+title = {Evolution and prospects of Earth system models: Challenges and opportunities},
+journal = {Earth-Science Reviews},
+volume = {260},
+pages = {104986},
+year = {2025},
+issn = {0012-8252},
+doi = {https://doi.org/10.1016/j.earscirev.2024.104986},
+url = {https://www.sciencedirect.com/science/article/pii/S0012825224003143},
+author = {Xiaoduo Pan and Deliang Chen and Baoxiang Pan and Xiaozhong Huang and Kun Yang and Shilong Piao and Tianjun Zhou and Yongjiu Dai and Fahu Chen and Xin Li},
+keywords = {Machine learning, Aritificial intelligence, Anthroposphere, Lithosphere, Cryosphere, Data assimilation, Dual-drivers, Big data analysis}}
 
 
 % ---------------------------------------------------------------------------------------------------
@@ -2114,6 +2171,33 @@ eprint = {https://www.pnas.org/doi/pdf/10.1073/pnas.1710231115}}
   year = {2024}
 }
 
+@article{VarmaBlackHole2019,
+   title={Surrogate models for precessing binary black hole simulations with unequal masses},
+   volume={1},
+   ISSN={2643-1564},
+   url={http://dx.doi.org/10.1103/PhysRevResearch.1.033015},
+   DOI={10.1103/physrevresearch.1.033015},
+   number={3},
+   journal={Physical Review Research},
+   publisher={American Physical Society (APS)},
+   author={Varma, Vijay and Field, Scott E. and Scheel, Mark A. and Blackman, Jonathan and Gerosa, Davide and Stein, Leo C. and Kidder, Lawrence E. and Pfeiffer, Harald P.},
+   year={2019},
+   month=oct }
+
+@article{npeAstrophysics,
+  title = {Real-Time Gravitational Wave Science with Neural Posterior Estimation},
+  author = {Dax, Maximilian and Green, Stephen R. and Gair, Jonathan and Macke, Jakob H. and Buonanno, Alessandra and Sch\"olkopf, Bernhard},
+  journal = {Phys. Rev. Lett.},
+  volume = {127},
+  issue = {24},
+  pages = {241103},
+  numpages = {7},
+  year = {2021},
+  month = {Dec},
+  publisher = {American Physical Society},
+  doi = {10.1103/PhysRevLett.127.241103},
+  url = {https://link.aps.org/doi/10.1103/PhysRevLett.127.241103}
+}
 
 %  ---------------------------------------------------------------------------------------------------
 % Uncertainty Propagation for surrogates
@@ -2228,6 +2312,29 @@ doi = {10.48550/arXiv.1708.08719}
       url={https://arxiv.org/abs/2202.09968}, 
 }
 
+@article{Bissiri2016,
+   title={A General Framework for Updating Belief Distributions},
+   volume={78},
+   ISSN={1467-9868},
+   url={http://dx.doi.org/10.1111/rssb.12158},
+   DOI={10.1111/rssb.12158},
+   number={5},
+   journal={Journal of the Royal Statistical Society Series B: Statistical Methodology},
+   publisher={Oxford University Press (OUP)},
+   author={Bissiri, P. G. and Holmes, C. C. and Walker, S. G.},
+   year={2016},
+   month=feb, pages={1103–1130} }
+
+@misc{knoblauch2019,
+      title={Generalized Variational Inference: Three arguments for deriving new Posteriors}, 
+      author={Jeremias Knoblauch and Jack Jewson and Theodoros Damoulas},
+      year={2019},
+      eprint={1904.02063},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1904.02063}, 
+}
+
 % Variational semi-modular inference
 @misc{cutVar,
       title={Scalable Semi-Modular Inference with Variational Meta-Posteriors}, 
@@ -2313,14 +2420,16 @@ doi = {10.1186/s12874-015-0022-1}
 
 
 % Stand in for our noisy MCMC paper
-@unpublished{surrogateNoisyMCMC,
-  title={Uncertainty Propagation and Active Learning for Bayesian Inference with Surrogate Models},
-  author={Andrew G. Roberts and Jonathan Huggins and Michael Dietze},
-  journal={ArXiv},
-  year={2025},
-  volume={},
-  url={}
+@misc{ourSurrPropPaper,
+      title={Propagating Surrogate Uncertainty in Bayesian Inverse Problems}, 
+      author={Andrew Gerard Roberts and Michael Dietze and Jonathan H. Huggins},
+      year={2026},
+      eprint={2601.03532},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME},
+      url={https://arxiv.org/abs/2601.03532}, 
 }
+
 
 % Stand in for our review paper
 @unpublished{reviewPaper,
@@ -2455,7 +2564,7 @@ eprint = {https://doi.org/10.1198/106186005X76983}
 
 
 % ---------------------------------------------------------------------------------------------------
-% Approximate Bayesian Computation (ABC)
+% Simulation-Based Inference
 % ---------------------------------------------------------------------------------------------------
 
 % An approximate likelihood perspective on ABC methods
@@ -2483,6 +2592,16 @@ URL = {https://doi.org/10.1214/18-SS120}
   url={https://api.semanticscholar.org/CorpusID:43920918}
 }
 
+@misc{Lueckmann2017,
+      title={Flexible statistical inference for mechanistic models of neural dynamics}, 
+      author={Jan-Matthis Lueckmann and Pedro J. Goncalves and Giacomo Bassetto and Kaan Öcal and Marcel Nonnenmacher and Jakob H. Macke},
+      year={2017},
+      eprint={1711.01861},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1711.01861}, 
+}
+
 % Uncertainty-aware amortized inference
 @misc{BurknerAmortized,
       title={Uncertainty-Aware Surrogate-based Amortized Bayesian Inference for Computationally Expensive Models}, 
@@ -2493,6 +2612,21 @@ URL = {https://doi.org/10.1214/18-SS120}
       primaryClass={stat.ML},
       url={https://arxiv.org/abs/2505.08683}, 
 }
+
+
+% Neural posterior estimation
+@inproceedings{murrayNPE,
+ author = {Papamakarios, George and Murray, Iain},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {D. Lee and M. Sugiyama and U. Luxburg and I. Guyon and R. Garnett},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Fast epsilon-free Inference of Simulation Models with Bayesian Conditional Density Estimation},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2016/file/6aca97005c68f1206823815f66102863-Paper.pdf},
+ volume = {29},
+ year = {2016}
+}
+
 
 % Application to ABC. Emulate log-likelihood with quadratic mean function.
 @InProceedings{llikEmABC,
@@ -2689,6 +2823,16 @@ doi="10.1007/978-3-642-10701-6_6",
 url="https://doi.org/10.1007/978-3-642-10701-6_6"
 }
 
+@misc{lartaudSUR,
+      title={Sequential design for surrogate modeling in Bayesian inverse problems}, 
+      author={Paul Lartaud and Philippe Humbert and Josselin Garnier},
+      year={2025},
+      eprint={2402.16520},
+      archivePrefix={arXiv},
+      primaryClass={stat.ME},
+      url={https://arxiv.org/abs/2402.16520}, 
+}
+
 
 % Orthogonal array based LHS; discussion of different methods for batch sequential design. Emphasis on space-filling. 
 @article{LOEPPKY20101452,
@@ -2714,7 +2858,7 @@ month = {01},
 pages = {},
 title = {Theory of Optimal Experiments Designs}
 }
-
+i
 % Federov Exchange in discrete space
 @article{WynnDiscreteExchange,
  ISSN = {00034851, 21688990},
@@ -2844,6 +2988,76 @@ doi = {10.1007/978-3-319-27926-8_4}
       archivePrefix={arXiv},
       primaryClass={stat.ME}
 }
+
+% Papers I need to read/include:
+% Accelerating sequential Monte Carlo with surrogate likelihoods
+% Uncertainty Quantification in Simulation-based Inference (thesis)
+% Automatic Posterior Transformation for Likelihood-Free Inference
+% Neural Methods for Amortized Inference
+% Gaussian Processes to Speed up Hybrid Monte Carlo for Expensive Bayesian Integrals
+% Local Derivative-Free Approximation of Computationally Expensive Posterior Densities
+% Multiblock Parameter Calibration in Computer Models
+% A Function Emulation Approach for Doubly Intractable Distributions
+% Inverse Gaussian Process regression for likelihood-free inference
+% Active emulation of computer codes with Gaussian processes -- Application to remote sensing
+% Efficient MCMC schemes for computationally expensive posterior distributions
+% Total uncertainty quantification in inverse solutions with deep learning surrogate models
+% Bayesian inference using Gaussian process surrogates in cancer modeling
+% Adaptive Grid-Based Thompson Sampling for Efficient Trajectory Discovery
+% Gearing Gaussian process modeling and sequential design towards stochastic simulators
+% Markov chain Monte Carlo without likelihoods
+% Moving Target Monte Carlo
+% Adaptive independent sticky MCMC algorithms (build up approximation over time using set of design points)
+% Rate-optimal refinement strategies for local approximation MCMC.
+% Parallel local approximation MCMC for expensive models.
+% Accelerating MCMC via kriging-based adaptive independent proposals and delayed rejection.
+% Deep importance sampling based on regression for model inversion and emulation.
+% DRAM: efficient adaptive MCMC.
+% Non-linear regression models for Approximate Bayesian Computation
+% Approximate Bayesian Computation via Regression Density Estimation -> discusses approximating likelihood vs posterior
+% Second Villani paper and two Semler papers
+% EMULATORS FOR STOCHASTIC SIMULATION CODES
+% Approximate Bayesian Computation via Regression Density Estimation
+% A practical guide to pseudo-marginal methods for computational inference in systems biology [psuedo marg vs abc paper]
+
+
+% TODOs:
+% - Include algs for exact MH/MCwM/PM --- also include algs for exact IS/Noisy IS
+% - Decide whether to use D_N notation for training data
+% - Add discussion of conceptual considerations for uncertainty propagation
+% - Add section to workflow on model checking for the surrogate (classical GP metrics, simulation-based, benefits of modular, checking induced dists/tails etc.)
+% - Include Burkner's "sample sum" approximations
+% - Include some of Wilkonson's ideas: discussion of prior-based space filling design, quadratic mean function, local GP emulator via removing implausible regions (add to sequential section)
+% - Discuss diagnostics/validation for emulator -> maybe also include upper bounds and integrability requirements here
+% - Note that EUP can also be approximated with "noisy importance sampling" (survey noisy MC paper / Bilionis paper)
+% - Differentiate our review from noisy/expensive MC survey paper: we focus more on UQ/active learning, prob approach, and more conceptual (not purely algorithmic)
+% - Need to explain why we don't always consider "iterative refinement"/exact approaches better
+% Mention MCwM as alternative to pseudo-marginal, and connect to EP
+% Discuss mcwmh-joint and issues therein
+% Double check that onsite surrogates approach does in fact treat each output independently
+% Should also have neural network example, where uncertainty is empirical distribution over set of parameters
+% Add appendix section going through all of the GP derivations; note in intro that GP case is considered for illustration
+
+% 
+% Major sections still to add:
+%
+% (1) Model checking section
+%	emulator model checks, simulation-based checking, check tails of induced approximations, quadratic mean, integrability, benefit of modular approach, etc.
+% (2) Noisy MCMC section
+%     add algorithm box comparing MCMC, pseudo-marginal, and mcwmh, equivalence of mcwmh/EP in special case, equivalence of 
+%    Jarvenpaa pushforward uncertainty approach and EP, consequence of noisy MCMC with correlated samples, connection to naive cut
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

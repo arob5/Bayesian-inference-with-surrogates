@@ -51,8 +51,7 @@ def fit_pde_surrogate(key: PRNGKey,
     else:
         raise ValueError(f'Invalid design method {design_method}')
  
-    design = construct_design(key=key_design,
-                              design_method=design_method, 
+    design = construct_design(key=key_design, 
                               n_design=n_design, 
                               prior_sampler=prior_sampler,
                               f=posterior.likelihood.forward_model)

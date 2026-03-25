@@ -10,12 +10,13 @@ import seaborn as sns
 import jax.numpy as jnp
 import numpy as np
 import math
+from jax.scipy.stats import norm
 
 from uncprop.custom_types import Array
 
 def set_plot_theme():
-    sns.set_theme(style='white', palette='colorblind')
-    sns.set_context("paper", font_scale=1.5)
+    sns.set_theme(style='ticks', palette='colorblind')
+    sns.set_context('paper', font_scale=1.5)
 
     # Specific Paul Tol color scheme when comparing different posteriors
     colors = {
@@ -200,3 +201,67 @@ def plot_coverage_curve_reps(log_coverage: Array,
         axs[0].legend()
 
     return fig, axs
+
+
+def plot_marginal_pred_1d(x: Array,
+                          mean: Array,
+                          lower: Array,
+                          upper: Array,
+                          colors: Mapping[str, str] | None = None,
+                          points: Array | None = None,
+                          true_y: Array | None = None,
+                          interval_alpha: float = 0.3,
+                          ax: Axes | None = None,
+                          **kwargs):
+    
+    if colors is not None:
+        mean_color = colors['mean'] if 'mean' in colors else None
+        interval_color = colors['interval'] if 'interval' in colors else None
+        points_color = colors['points'] if 'points' in colors else None
+        true_color = colors['true'] if 'true' in colors else None
+    else:
+        mean_color = interval_color = points_color = true_color = None
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    ax.plot(x, mean, linestyle='-', color=mean_color)
+    ax.fill_between(x, lower, upper, alpha=interval_alpha, color=interval_color)
+
+    if true_y is not None:
+        ax.plot(x, true_y, linestyle='-', color=true_color)
+    if points is not None:
+        y0,y1 = ax.get_ylim()
+        ax.vlines(points, 0, 1, transform=ax.get_xaxis_transform(), linestyles='--', colors=points_color)
+    
+    return fig, ax
+
+
+def plot_gp_1d(x: Array,
+               mean: Array,
+               sd: Array,
+               colors: Mapping[str, str] | None = None,
+               points: Array | None = None,
+               true_y: Array | None = None,
+               interval_prob: float = 0.95,
+               interval_alpha: float = 0.3,
+               ax: Axes | None = None,
+               **kwargs):
+    """
+    If provided, `colors` should have keys 'mean', 'interval',
+    'points', 'true'.
+    """
+    q = (1 - interval_prob) / 2
+    shift = jnp.abs(norm.ppf(q))
+
+    return plot_marginal_pred_1d(x=x,
+                                 mean=mean,
+                                 lower=mean-shift*sd,
+                                 upper=mean+shift*sd,
+                                 colors=colors,
+                                 points=points,
+                                 true_y=true_y,
+                                 interval_alpha=interval_alpha,
+                                 ax=ax)

@@ -49,7 +49,6 @@ def fit_vsem_surrogate(key: PRNGKey,
         raise ValueError(f'Invalid design method {design_method}')
 
     design = construct_design(key=key_design,
-                              design_method=design_method, 
                               n_design=n_design, 
                               prior_sampler=prior_sampler,
                               f=lambda x: posterior.log_density(x))

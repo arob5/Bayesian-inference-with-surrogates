@@ -4,6 +4,15 @@
 \usepackage{dsfont}
 
 
+% Emphasize works inline (e.g., for defining terms, etc.)
+\newcommand{\inlinedef}[1]{\textbf{#1}}
+
+
+% --------------------------------------------------------------------------------------------------
+% Bayesian inverse problem.
+% --------------------------------------------------------------------------------------------------
+\newcommand{\GaussianCDF}{\Phi}
+
 % --------------------------------------------------------------------------------------------------
 % Bayesian inverse problem.
 % --------------------------------------------------------------------------------------------------
@@ -23,9 +32,9 @@
 \newcommand{\llik}{\mathcal{L}} % Log-likelihood 
 \newcommand{\lik}{\mathsf{L}} % Likelihood 
 \newcommand{\priorDens}{\pi_0} % Prior density 
-\newcommand{\postDens}{\pi} % Unnormalized posterior density.
-\newcommand{\lpost}{\llik^{\postDens}} % Log unnormalized posterior density.
-\newcommand{\postDensNorm}{\overline{\pi}} % Normalized posterior density.
+\newcommand{\postDens}{\tilde{\pi}}
+\newcommand{\postDensNorm}{\pi}
+
 \newcommand{\normCst}{Z} % Normalizing constant for posterior density. 
 \newcommand{\likPar}{\Sigma} % Likelihood parameter
 \newcommand{\ParTrue}{\Par_{\star}}
@@ -35,18 +44,21 @@
 % --------------------------------------------------------------------------------------------------
 
 % General notation for representing emulated quantity
-\newcommand{\Em}[1]{{#1}_{\Ndesign}}
+\newcommand{\Em}[2][\Ndesign]{{#2}_{#1}}
 
 % Emulator target
 \newcommand{\target}{\mathsf{f}} % Target map for emulation
 \newcommand{\targetEm}[1][\Ndesign]{f_{#1}} % Emulator for target quantity
 \newcommand{\targetTraj}{f} % Trajectory of emulator for target map
 \newcommand{\emMean}[1][\Ndesign]{\mu_{#1}}
+\newcommand{\emSD}[1][\Ndesign]{s_{#1}}
 \newcommand{\emVar}[1][\Ndesign]{s^2_{#1}}
 \newcommand{\emKer}[1][\Ndesign]{k_{#1}}
-\newcommand{\emDist}{\nu_{\Ndesign}} % Predictive distribution (law) of the emulator (a stochastic process)
+\newcommand{\emDist}[1][\Ndesign]{\nu_{#1}} % Predictive distribution (law) of the emulator (a stochastic process)
 \newcommand{\emDistPrior}{\emDist_0} % Prior predictive distribution of emulator
 \newcommand{\emE}{\E_{\emDist}} % Expectation wrt emulator distribution.
+\newcommand{\quantileProb}{\alpha}
+\newcommand{\emQ}{\mathbb{Q}^\quantileProb_{\Ndesign}} % Quantile wrt emulator distribution
 \newcommand{\emObs}{z} % The design set used to train the emulator.
 \newcommand{\targetRange}{\mathbb{F}} % Codomain for the target function.
 \newcommand{\emLik}{\lik_{\target}} % Likelihood for emulator model for training on simulation data
@@ -70,7 +82,7 @@
 % Surrogate posterior approximations
 \newcommand{\ep}{\mathrm{ep}}
 \newcommand{\eup}{\mathrm{eup}}
-\newcommand{\postEm}{\Em{\postDens}}
+\newcommand{\postEm}[1][\Ndesign]{\Em[#1]{\postDens}}
 \newcommand{\postNormEm}{\Em{\postDensNorm}}
 \newcommand{\normCstEm}{\Em{\normCst}}
 \newcommand{\postApproxEP}{\Em{\postDensNorm}^{\ep}}
@@ -78,6 +90,7 @@
 \newcommand{\postApproxEUP}{\Em{\postDens}^{\eup}}
 \newcommand{\postApproxEUPNorm}{\Em{\postDensNorm}^{\eup}}
 \newcommand{\postApproxNormMean}{\Em{\postDensNorm}^{\mathrm{mean}}}
+\newcommand{\postApproxQuantileNorm}{\Em{\postDensNorm}^{\quantileProb}}
 
 % Likelihood approximations.
 \newcommand{\likApproxEP}{\Em{\lik}^{\ep}}
@@ -89,15 +102,37 @@
 \newcommand{\basisVec}{\psi}
 
 % --------------------------------------------------------------------------------------------------
+% Active Learning
+% --------------------------------------------------------------------------------------------------
+
+\newcommand{\acq}{\mathcal{A}}
+\newcommand{\ParBatchOpt}{\ParBatch_\star}
+\newcommand{\Naugment}{\Ndesign + \Nbatch}
+\newcommand{\ParBatchAug}{\ParBatch_{\Naugment}}
+\newcommand{\emEAug}{\E_{\emDist[\Naugment]}}
+\newcommand{\bayesrisk}[1][\Ndesign]{\risk_{#1}}
+\newcommand{\weightdens}{\rho}
+\newcommand{\batchResponse}{\gamma}
+\newcommand{\surmetric}{\mathcal{H}}
+\newcommand{\CovComb}[1][\Ndesign]{C_{#1}}
+\newcommand{\varInflation}{\tau}
+
+% --------------------------------------------------------------------------------------------------
 % Proofs and Theoretical Sections
 % --------------------------------------------------------------------------------------------------
 
 % Variational formulation.
 \newcommand{\qMeas}{Q} % Generic prob measure on parSpace (used in variational formulation)
-\newcommand{\qDens}{q} % Density of qDens.
-\newcommand{\qSpace}{\mathcal{Q}} % Space of densities or measures.
+\newcommand{\qDensNorm}{q} % Density of qDens.
+\newcommand{\qSpaceNorm}{\mathcal{Q}} % Space of densities or measures.
+\newcommand{\qDens}{\tilde{q}} % Density of qDens.
+\newcommand{\qSpace}{\tilde{\mathcal{Q}}} % Space of densities or measures.
 \newcommand{\loss}{\mathcal{L}}
-\newcommand{\qDensOpt}{\qDens_{\mathrm{opt}}} % Solution of optimization problem
+\newcommand{\gibbsloss}{\ell}
+\newcommand{\gibbsrate}{\beta}
+\newcommand{\risk}{\mathcal{R}}
+\newcommand{\qDensNormOpt}{\qDensNorm_{\mathrm{opt}}} % Solution of optimization problem
+\newcommand{\qDensOpt}{\qDens_{\mathrm{opt}}} 
 \newcommand{\qMeasOpt}{\qMeas_{\mathrm{opt}}}
 
 % Analyzing EUP vs. EP
@@ -125,7 +160,7 @@
 \newcommand{\sampleIndex}{k} % Generic index for samples. 
 \newcommand{\NSample}{K} % Generic variable for algorithms that draw a set of samples (e.g., MCMC)
 \newcommand{\indexSample}[2][\sampleIndex]{{#2}_{#1}}
-\newcommand{\indexMCMC}[2][\mcmcIndex]{\indexSample[{#1}]{#2}}
+\newcommand{\indexMCMC}[2][\sampleIndex]{\indexSample[{#1}]{#2}}
 \newcommand{\NMCMC}{\NSample} % Number MCMC samples
 \newcommand{\accProbMH}{\alpha} % Metropolis-Hastings acceptance probability
 
@@ -162,7 +197,7 @@
 \newcommand{\indexState}[2][\stateIndex]{{#2}^{({#1})}}
 \newcommand{\solutionOp}{\mathcal{S}}
 \newcommand{\obsOp}{\mathcal{H}}
-\newcommand{\timeIndex}{\mcmcIndex}
+\newcommand{\timeIndex}{\sampleIndex}
 \newcommand{\indexTime}[2][\timeIndex]{{#2}_{#1}}
 \newcommand{\NTimeStep}{\NSample}
 \newcommand{\forcing}{w}
