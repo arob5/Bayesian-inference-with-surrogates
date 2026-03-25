@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import jax.random as jr
-from uncprop.models.vsem.experiment import VSEMReplicate, VSEMExperiment
+from experiment import VSEMReplicate, VSEMExperiment
 
-base_dir = Path('/Users/andrewroberts/Desktop/git-repos/bip-surrogates-paper')
+base_dir = Path(__file__).resolve().parents[2]  # repo root
 
 
 # -----------------------------------------------------------------------------

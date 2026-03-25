@@ -1,4 +1,4 @@
-# uncprop/models/vsem/experiment.py
+# experiments/vsem/experiment.py
 from pathlib import Path
 from typing import Any, NamedTuple
 from types import MappingProxyType
