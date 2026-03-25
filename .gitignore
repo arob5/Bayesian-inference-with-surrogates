@@ -35,3 +35,6 @@ figures/
 ## Python packaging
 *.egg-info/
 
+## Claude Code
+CLAUDE.md
+
