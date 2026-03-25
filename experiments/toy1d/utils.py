@@ -606,9 +606,12 @@ def plot_lognorm_1d(x,
 
 def plot_pw_acq_multi_target(key: PRNGKey,
                              post_em_1d: SurrogatePost1d,
+                             colors: dict[str, str],
                              n_mc: int = int(1e5),
+                             mask: Sequence[int] | None = None,
                              ax=None, **kwargs):
-    
+    keys = jr.split(key, 4)
+
     # emulator predictive samples
     grid = post_em_1d.grid
     samp = post_em_1d.post_em.sample_surrogate_pred(key, grid.flat_grid, n=n_mc)
@@ -623,29 +626,39 @@ def plot_pw_acq_multi_target(key: PRNGKey,
         assert len(ax) == n_plots
         fig = ax[0].figure
 
+    if mask is None:
+        mask = []
+
     # surrogate
-    plot_pw_acq(samp, grid, points=X, ax=ax[0], **kwargs)
+    if 0 not in mask:
+        plot_pw_acq(keys[0], samp, grid, points=X, ax=ax[0], colors=colors, **kwargs)
 
     # log-density
     ldens_samp = post_em_1d.post_em.log_dens_from_target(grid.flat_grid, samp)
-    plot_pw_acq(ldens_samp, grid, points=X, ax=ax[1], **kwargs)
+    if 1 not in mask:
+        plot_pw_acq(keys[1], ldens_samp, grid, points=X, ax=ax[1], colors=colors, **kwargs)
 
     # density
     dens_samp = jnp.exp(ldens_samp)
-    plot_pw_acq(dens_samp, grid, points=X, ax=ax[2], **kwargs)
+    if 2 not in mask:
+        plot_pw_acq(keys[2], dens_samp, grid, points=X, ax=ax[2], colors=colors, **kwargs)
 
     # normalized density
     dens_norm_samp, _ = normalize_density_over_grid(ldens_samp, 
                                                     cell_area=grid.cell_area,
                                                     return_log=False)
-    plot_pw_acq(dens_norm_samp, grid, points=X, ax=ax[3], **kwargs)
+    if 3 not in mask:
+        plot_pw_acq(keys[3], dens_norm_samp, grid, points=X, ax=ax[3], colors=colors, **kwargs)
 
     return fig, ax
 
 
-def plot_pw_acq(samp: Array,
+def plot_pw_acq(key: PRNGKey,
+                samp: Array,
                 grid: Grid,
+                colors: dict[str, str],
                 points: Array | None = None,
+                interval_prob: float = 0.95,
                 ax=None, **kwargs):
 
     if ax is None:
@@ -656,13 +669,35 @@ def plot_pw_acq(samp: Array,
     def scale(x):
         return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
     
-    maxvar = -1 * jnp.var(samp, axis=0)
-    maxent = -1 * fast_entropy_vmap(samp)
-    maxiqr = -1 * (jnp.quantile(samp, q=0.75, axis=0) - jnp.quantile(samp, q=0.25, axis=0))
+    maxvar = scale(-1 * jnp.var(samp, axis=0))
+    maxent = scale(-1 * fast_entropy_vmap(samp))
+    maxiqr = scale(-1 * (jnp.quantile(samp, q=0.75, axis=0) - jnp.quantile(samp, q=0.25, axis=0)))
     
-    fig, ax = grid.plot(z=scale(maxvar), points=points, ax=ax, **kwargs)
-    fig, ax = grid.plot(z=scale(maxent), ax=ax, **kwargs)
-    fig, ax = grid.plot(z=scale(maxiqr), ax=ax, **kwargs)
+    fig, ax = grid.plot(z=[maxvar, maxent, maxiqr], 
+                        points=points, ax=ax, 
+                        titles=['var', 'ent', 'iqr'],
+                        colors=colors,
+                        **kwargs)
+    
+    # minimizing points
+    angles = jr.uniform(key, minval=0, maxval=360, shape=(3,))
+    maxvar_idx = jnp.argmin(maxvar)
+    maxent_idx = jnp.argmin(maxent)
+    maxiqr_idx = jnp.argmin(maxiqr)
+    x = grid.flat_grid.ravel()
+
+    ax.plot(x[maxvar_idx], maxvar[maxvar_idx], marker=(5, 1, angles[0]), markersize=30, 
+            color=colors['var'], linestyle='None')
+    ax.plot(x[maxent_idx], maxent[maxent_idx], marker=(5, 1, angles[1]), markersize=30, 
+            color=colors['ent'], linestyle='None')
+    ax.plot(x[maxiqr_idx], maxiqr[maxiqr_idx], marker=(5, 1, angles[2]), markersize=30, 
+            color=colors['iqr'], linestyle='None')
+    
+    # Summarize predictive distribution in background of plot
+    q = (1 - interval_prob) / 2
+    quantiles = scale(jnp.quantile(samp, q=jnp.array([q, 1-q]), axis=0))
+    ax.fill_between(x, y1=quantiles[0], y2=quantiles[1], 
+                    color=colors['interval'], alpha=0.3, zorder=-1)
 
     return fig, ax
 
@@ -726,3 +761,8 @@ def estimate_entropy_fast(samples):
     return -jnp.mean(log_p)
 
 fast_entropy_vmap = jax.jit(jax.vmap(estimate_entropy_fast, in_axes=1))
+
+
+# -------------------------------------------------------------------------
+# Tempering
+# -------------------------------------------------------------------------

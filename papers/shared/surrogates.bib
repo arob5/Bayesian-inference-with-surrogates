@@ -2989,6 +2989,76 @@ doi = {10.1007/978-3-319-27926-8_4}
       primaryClass={stat.ME}
 }
 
+% Papers I need to read/include:
+% Accelerating sequential Monte Carlo with surrogate likelihoods
+% Uncertainty Quantification in Simulation-based Inference (thesis)
+% Automatic Posterior Transformation for Likelihood-Free Inference
+% Neural Methods for Amortized Inference
+% Gaussian Processes to Speed up Hybrid Monte Carlo for Expensive Bayesian Integrals
+% Local Derivative-Free Approximation of Computationally Expensive Posterior Densities
+% Multiblock Parameter Calibration in Computer Models
+% A Function Emulation Approach for Doubly Intractable Distributions
+% Inverse Gaussian Process regression for likelihood-free inference
+% Active emulation of computer codes with Gaussian processes -- Application to remote sensing
+% Efficient MCMC schemes for computationally expensive posterior distributions
+% Total uncertainty quantification in inverse solutions with deep learning surrogate models
+% Bayesian inference using Gaussian process surrogates in cancer modeling
+% Adaptive Grid-Based Thompson Sampling for Efficient Trajectory Discovery
+% Gearing Gaussian process modeling and sequential design towards stochastic simulators
+% Markov chain Monte Carlo without likelihoods
+% Moving Target Monte Carlo
+% Adaptive independent sticky MCMC algorithms (build up approximation over time using set of design points)
+% Rate-optimal refinement strategies for local approximation MCMC.
+% Parallel local approximation MCMC for expensive models.
+% Accelerating MCMC via kriging-based adaptive independent proposals and delayed rejection.
+% Deep importance sampling based on regression for model inversion and emulation.
+% DRAM: efficient adaptive MCMC.
+% Non-linear regression models for Approximate Bayesian Computation
+% Approximate Bayesian Computation via Regression Density Estimation -> discusses approximating likelihood vs posterior
+% Second Villani paper and two Semler papers
+% EMULATORS FOR STOCHASTIC SIMULATION CODES
+% Approximate Bayesian Computation via Regression Density Estimation
+% A practical guide to pseudo-marginal methods for computational inference in systems biology [psuedo marg vs abc paper]
+
+
+% TODOs:
+% - Include algs for exact MH/MCwM/PM --- also include algs for exact IS/Noisy IS
+% - Decide whether to use D_N notation for training data
+% - Add discussion of conceptual considerations for uncertainty propagation
+% - Add section to workflow on model checking for the surrogate (classical GP metrics, simulation-based, benefits of modular, checking induced dists/tails etc.)
+% - Include Burkner's "sample sum" approximations
+% - Include some of Wilkonson's ideas: discussion of prior-based space filling design, quadratic mean function, local GP emulator via removing implausible regions (add to sequential section)
+% - Discuss diagnostics/validation for emulator -> maybe also include upper bounds and integrability requirements here
+% - Note that EUP can also be approximated with "noisy importance sampling" (survey noisy MC paper / Bilionis paper)
+% - Differentiate our review from noisy/expensive MC survey paper: we focus more on UQ/active learning, prob approach, and more conceptual (not purely algorithmic)
+% - Need to explain why we don't always consider "iterative refinement"/exact approaches better
+% Mention MCwM as alternative to pseudo-marginal, and connect to EP
+% Discuss mcwmh-joint and issues therein
+% Double check that onsite surrogates approach does in fact treat each output independently
+% Should also have neural network example, where uncertainty is empirical distribution over set of parameters
+% Add appendix section going through all of the GP derivations; note in intro that GP case is considered for illustration
+
+% 
+% Major sections still to add:
+%
+% (1) Model checking section
+%	emulator model checks, simulation-based checking, check tails of induced approximations, quadratic mean, integrability, benefit of modular approach, etc.
+% (2) Noisy MCMC section
+%     add algorithm box comparing MCMC, pseudo-marginal, and mcwmh, equivalence of mcwmh/EP in special case, equivalence of 
+%    Jarvenpaa pushforward uncertainty approach and EP, consequence of noisy MCMC with correlated samples, connection to naive cut
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
