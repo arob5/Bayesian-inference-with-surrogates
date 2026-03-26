@@ -205,6 +205,13 @@ class VSEMReplicate(Replicate):
                   probs=coverage_results[1],
                   dist_names=coverage_results[3])
 
+        # --- Save grid info (needed for post-hoc grid-based analysis) ---
+        jnp.savez(out_dir / 'grid_info.npz',
+                  low=self.grid.low,
+                  high=self.grid.high,
+                  n_points_per_dim=self.grid.n_points_per_dim,
+                  dim_names=self.grid.dim_names)
+
         # --- Save setup info ---
         jnp.savez(out_dir / 'setup_info.npz',
                   vsem_params=self.vsem_params,
@@ -294,34 +301,111 @@ def read_rep_diagnostics(rep_dir: str | Path) -> dict:
     return dict(jnp.load(rep_dir / 'diagnostics.npz'))
 
 
+def _load_rep_grid(rep_dir):
+    """Load the Grid and DensityComparisonGrid for a replicate."""
+    rep_dir = Path(rep_dir)
+    gi = dict(jnp.load(rep_dir / 'grid_info.npz'))
+    grid = Grid(low=gi['low'], high=gi['high'],
+                n_points_per_dim=gi['n_points_per_dim'],
+                dim_names=gi['dim_names'])
+    grid_dens = dict(jnp.load(rep_dir / 'grid_densities.npz'))
+    dcg = DensityComparisonGrid(grid=grid, log_dens_grid=grid_dens)
+    return grid, dcg
+
+
+def compute_w2_rep(key, rep_dir, n_grid_samples=1000,
+                   subsample=None, epsilon=None, sinkhorn_kwargs=None):
+    """Compute sample-based W2 distances to grid-based EP for one replicate.
+
+    All W2 distances are computed in a consistent sample-based manner:
+      - EP reference: samples drawn from the grid-based EP density
+      - exact/mean/eup: samples drawn from their grid-based densities
+      - rkpcn: MCMC samples (the only representation available)
+
+    Using grid-based samples for exact/mean/eup avoids MCMC convergence
+    issues and ensures comparability with the RKPCN sample-based W2.
+
+    Args:
+        key: PRNG key
+        rep_dir: path to replicate directory
+        n_grid_samples: number of samples to draw from each grid-based distribution
+        subsample: subsample all sets to this many points (None = use all)
+        epsilon: Sinkhorn regularization (None = auto from reference geometry)
+        sinkhorn_kwargs: kwargs for Sinkhorn solver
+
+    Returns:
+        (results_dict, epsilon) where results_dict maps method names to
+        scalar W2 distances
+    """
+    from uncprop.utils.wasserstein import compute_wasserstein_comparison
+
+    if sinkhorn_kwargs is None:
+        sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
+
+    rep_dir = Path(rep_dir)
+    grid, dcg = _load_rep_grid(rep_dir)
+    mcmc_samp = read_rep_samples(rep_dir)
+
+    # Build unified sample dict using grid-based samples for distributions
+    # with densities on the grid, and MCMC samples for RKPCN
+    key_ep, key_grid, key_w2 = jr.split(key, 3)
+
+    # EP reference: draw from grid-based density
+    samp = {}
+    samp['ep'] = dcg.sample_from_grid(key_ep, dist_name='ep',
+                                       num_samples=n_grid_samples)
+
+    # Grid-based distributions: draw from their grid densities
+    grid_keys = jr.split(key_grid, 3)
+    for i, nm in enumerate(['exact', 'mean', 'eup']):
+        if nm in dcg.log_dens_grid:
+            samp[nm] = dcg.sample_from_grid(grid_keys[i], dist_name=nm,
+                                             num_samples=n_grid_samples)
+
+    # RKPCN: use MCMC samples directly
+    for nm in mcmc_samp:
+        if nm.startswith('rkpcn'):
+            samp[nm] = mcmc_samp[nm]
+
+    results, epsilon = compute_wasserstein_comparison(
+        samples=samp,
+        reference_key='ep',
+        subsample=subsample,
+        key=key_w2,
+        epsilon=epsilon,
+        sinkhorn_kwargs=sinkhorn_kwargs,
+    )
+
+    return results, epsilon
+
+
 def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
-                               reference_key='ep',
+                               n_grid_samples=1000,
                                subsample=None,
                                output_dir=None,
                                sinkhorn_kwargs=None):
     """
-    Compute whitened W2 distance to grid-based EP for all reps in a setup.
+    Compute sample-based W2 distance to EP for all reps in a setup.
 
-    The same regularization parameter epsilon is used across all reps and
-    approximating distributions for consistency — auto-computed from the
-    first rep's reference geometry.
+    All distributions (exact, mean, eup, rkpcn) are compared to the
+    grid-based EP using a consistent sample-based methodology
+    (see compute_w2_rep). The same Sinkhorn epsilon is used across
+    all reps for consistency (auto-computed from the first rep).
 
     Args:
-        key: PRNG key for subsampling
+        key: PRNG key
         base_dir: experiment base directory (contains subdir_name/)
         subdir_name: e.g. 'gp_N4', 'clip_gp_N16'
         rep_idcs: list of replicate indices to process
-        reference_key: sample dict key for reference distribution (default 'ep')
-        subsample: number of samples to subsample (None = use all)
-        output_dir: if set, save intermediate results here
+        n_grid_samples: number of EP reference samples per rep
+        subsample: subsample RKPCN chains (None = use all)
+        output_dir: if set, save results here
         sinkhorn_kwargs: kwargs for Sinkhorn solver
 
     Returns:
         (results_dict, epsilon) where results_dict maps method names to
         (n_reps,) arrays of W2 distances
     """
-    from uncprop.utils.wasserstein import compute_wasserstein_comparison
-
     if sinkhorn_kwargs is None:
         sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
 
@@ -343,13 +427,12 @@ def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
         try:
             print(f'Rep {rep_idx}')
             rep_dir = setup_dir / f'rep{rep_idx}'
-            samp = read_rep_samples(rep_dir)
 
-            rep_results, eps = compute_wasserstein_comparison(
-                samples=samp,
-                reference_key=reference_key,
-                subsample=subsample,
+            rep_results, eps = compute_w2_rep(
                 key=w2_keys[i],
+                rep_dir=rep_dir,
+                n_grid_samples=n_grid_samples,
+                subsample=subsample,
                 epsilon=eps,
                 sinkhorn_kwargs=sinkhorn_kwargs,
             )

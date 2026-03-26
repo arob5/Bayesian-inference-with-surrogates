@@ -50,9 +50,14 @@ def subdir_name(tag, n):
 # W2 computation
 # -----------------------------------------------------------------------------
 
-def compute_w2_all_setups(base_dir, num_reps=100, reference_key='ep',
+def compute_w2_all_setups(base_dir, num_reps=100,
                           subsample=None, output_dir=None, seed=42):
-    """Compute W2 distances for all setups that have completed reps."""
+    """Compute W2 distances to EP for all setups that have completed reps.
+
+    Uses a two-track approach:
+      - Grid-based W2 for exact/mean/eup (true distribution comparison)
+      - Sample-based W2 for RKPCN (grid-sampled EP as reference)
+    """
     base_dir = Path(base_dir)
     key = jr.key(seed)
     all_results = {}
@@ -70,15 +75,6 @@ def compute_w2_all_setups(base_dir, num_reps=100, reference_key='ep',
             print(f'Skipping {sname} (no completed reps)')
             continue
 
-        # Check if reference chain converged (low acceptance rate = stuck chain)
-        diag = summarize_diagnostics(base_dir, sname, completed)
-        ref_accept_key = f'{reference_key}_accept_rate'
-        if ref_accept_key in diag:
-            median_accept = float(np.median(np.array(diag[ref_accept_key])))
-            if median_accept < 0.05:
-                print(f'  WARNING: {reference_key} median acceptance rate = {median_accept:.4f}')
-                print(f'  W2 results may be unreliable (chain likely not converged)')
-
         key, subkey = jr.split(key)
         print(f'\nComputing W2 for {sname} ({len(completed)} reps)')
 
@@ -87,12 +83,12 @@ def compute_w2_all_setups(base_dir, num_reps=100, reference_key='ep',
             base_dir=base_dir,
             subdir_name=sname,
             rep_idcs=completed,
-            reference_key=reference_key,
             subsample=subsample,
             output_dir=output_dir,
         )
         all_results[sname] = results
-        print(f'  epsilon={eps:.6f}')
+        if eps is not None:
+            print(f'  sample-based epsilon={eps:.6f}')
 
     return all_results
 
@@ -191,6 +187,10 @@ def plot_w2_by_design_size(w2_results, surrogate_tag='gp', figsize=(8, 5)):
     for v in relevant.values():
         all_methods.update(v.keys())
     methods = sorted(all_methods)
+
+    if len(methods) == 0:
+        print(f"No methods with results for {surrogate_tag}")
+        return None, None
 
     n_designs = len(relevant)
     design_names = sorted(relevant.keys())

@@ -329,7 +329,9 @@ class DensityComparisonGrid:
         solver = sinkhorn.Sinkhorn(**kwargs)
         out = solver(prob)
 
-        print(out.converged)
+        if not out.converged:
+            import warnings
+            warnings.warn(f'Sinkhorn did not converge for {dist_name1} vs {dist_name2}')
 
         return jnp.sqrt(out.primal_cost)
     
