@@ -277,12 +277,12 @@ def sample_rkpcn(key: PRNGKey,
     
     # run sampler
     n_samples_total = n_burnin + thin_window * n_samples
-    out = mcmc_loop(key=key_samp,
-                    kernel=kernel,
-                    initial_state=initial_state,
-                    num_samples=n_samples_total)
+    states, infos = mcmc_loop(key=key_samp,
+                              kernel=kernel,
+                              initial_state=initial_state,
+                              num_samples=n_samples_total)
 
-    samp = out.position[n_burnin:]
+    samp = states.position[n_burnin:]
 
     return samp[::thin_window]
 

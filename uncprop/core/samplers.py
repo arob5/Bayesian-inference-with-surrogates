@@ -27,21 +27,21 @@ from uncprop.core.surrogate import GPJaxSurrogate, SurrogateDistribution
 from uncprop.utils.distribution import _sample_gaussian_tril, _sample_batch_gaussian_tril
 
 
-def mcmc_loop(key: PRNGKey, 
-              kernel: UpdateFn, 
-              initial_state: State, 
+def mcmc_loop(key: PRNGKey,
+              kernel: UpdateFn,
+              initial_state: State,
               num_samples: int = 4000):
-    """Main MCMC loop for all samplers"""
+    """Main MCMC loop for all samplers. Returns (states, infos)."""
 
     @jax.jit
     def one_step(state, key):
-        state, _ = kernel(key, state)
-        return state, state
+        state, info = kernel(key, state)
+        return state, (state, info)
 
     keys = jax.random.split(key, num_samples)
-    _, states = jax.lax.scan(one_step, initial_state, keys)
+    _, (states, infos) = jax.lax.scan(one_step, initial_state, keys)
 
-    return states
+    return states, infos
 
 
 def mcmc_loop_multiple_chains(key: PRNGKey,
@@ -49,18 +49,18 @@ def mcmc_loop_multiple_chains(key: PRNGKey,
                               initial_state: State,
                               num_samples: int = 4000,
                               num_chains: int = 4):
-    """Vectorized MCMC loop over multiple chains"""
+    """Vectorized MCMC loop over multiple chains. Returns (states, infos)."""
 
     @jax.jit
     def one_step(states, key):
         keys = jr.split(key, num_chains)
-        states, _ = jax.vmap(kernel)(keys, states)
-        return states, states
-    
+        states, infos = jax.vmap(kernel)(keys, states)
+        return states, (states, infos)
+
     keys = jr.split(key, num_samples)
-    _, states = jax.lax.scan(one_step, initial_state, keys)
-    
-    return states
+    _, (states, infos) = jax.lax.scan(one_step, initial_state, keys)
+
+    return states, infos
 
 
 def sample_distribution(key: PRNGKey,
@@ -119,20 +119,24 @@ def sample_distribution(key: PRNGKey,
                                                       n_chains=n_chains)
     
     n_samples_total = n_burnin + thin_window * n_samples
-    states = jax.block_until_ready(
-        mcmc_loop_multiple_chains(key=key_warmup_samp,
-                                  kernel=kernel,
-                                  initial_state=initial_state,
-                                  num_samples=n_samples_total,
-                                  num_chains=n_chains)
-    )
-        
+    states, infos = mcmc_loop_multiple_chains(key=key_warmup_samp,
+                                              kernel=kernel,
+                                              initial_state=initial_state,
+                                              num_samples=n_samples_total,
+                                              num_chains=n_chains)
+    jax.block_until_ready(states)
+
     # drop burnin and thin
     positions = states.position[n_burnin:]
     positions = positions[::thin_window]
 
+    # mean acceptance rate (over all chains and iterations)
+    accept_rate = float(jnp.mean(infos.acceptance_rate))
+
     return {'positions': positions,
             'states': states,
+            'infos': infos,
+            'accept_rate': accept_rate,
             'prop_cov': prop_cov,
             'kernel': kernel,
             'initial_state': initial_state}
@@ -195,12 +199,12 @@ def sample_distribution_old(key: PRNGKey,
                                                                  initial_log_scale=0.0,
                                                                  n_chains=n_chains)
 
-        warmup_samp = mcmc_loop_multiple_chains(key=key_warmup_samp,
-                                                kernel=warmup_kernel,
-                                                initial_state=initial_state,
-                                                num_samples=n_warmup,
-                                                num_chains=n_chains)
-        
+        warmup_samp, warmup_infos = mcmc_loop_multiple_chains(key=key_warmup_samp,
+                                                               kernel=warmup_kernel,
+                                                               initial_state=initial_state,
+                                                               num_samples=n_warmup,
+                                                               num_chains=n_chains)
+
         # extract initial position and proposal covariance from warmup
         initial_position, prop_cov = _extract_tuned_warmup_quantities(warmup_samp)
     else:
@@ -215,20 +219,24 @@ def sample_distribution_old(key: PRNGKey,
 
     n_samples_total = n_burnin + thin_window * n_samples
 
-    states = jax.block_until_ready(
-        mcmc_loop_multiple_chains(key=key_samp, 
-                                  kernel=kernel,
-                                  initial_state=initial_state,
-                                  num_samples=n_samples_total,
-                                  num_chains=n_chains)
-    )
-    
+    states, infos = mcmc_loop_multiple_chains(key=key_samp,
+                                              kernel=kernel,
+                                              initial_state=initial_state,
+                                              num_samples=n_samples_total,
+                                              num_chains=n_chains)
+    jax.block_until_ready(states)
+
     # drop burnin and thin
     positions = states.position[n_burnin:]
     positions = positions[::thin_window]
 
+    # mean acceptance rate
+    accept_rate = float(jnp.mean(infos.acceptance_rate))
+
     return {'positions': positions,
             'states': states,
+            'infos': infos,
+            'accept_rate': accept_rate,
             'warmup_samp': warmup_samp,
             'prop_cov': prop_cov,
             'kernel': kernel,

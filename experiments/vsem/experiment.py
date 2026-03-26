@@ -152,13 +152,14 @@ class VSEMReplicate(Replicate):
         rkpcn_samp = {}
 
         for i, alg_name in enumerate(rkpcn_rho_vals.keys()):
-            mcmc_samp[alg_name] = _run_mcmc_rkpcn(key=rkpcn_keys[i],
-                                                  rho=rkpcn_rho_vals[alg_name],
-                                                  posterior=self.posterior,
-                                                  surrogate_post=surr,
-                                                  initial_position=initial_position,
-                                                  prop_cov=prop_cov,
-                                                  **rkpcn_settings)
+            samp, accept_rate = _run_mcmc_rkpcn(key=rkpcn_keys[i],
+                                                rho=rkpcn_rho_vals[alg_name],
+                                                posterior=self.posterior,
+                                                surrogate_post=surr,
+                                                initial_position=initial_position,
+                                                prop_cov=prop_cov,
+                                                **rkpcn_settings)
+            mcmc_samp[alg_name] = samp
 
 
         self.density_comparison = density_comparison
@@ -321,14 +322,15 @@ def _run_mcmc_rkpcn(key: PRNGKey,
 
     # run sampler
     n_samples_total = n_burnin + thin_window * n_samples
-    out = mcmc_loop(key=key_samp,
-                    kernel=kernel,
-                    initial_state=initial_state,
-                    num_samples=n_samples_total)
+    states, infos = mcmc_loop(key=key_samp,
+                              kernel=kernel,
+                              initial_state=initial_state,
+                              num_samples=n_samples_total)
 
-    samp = out.position[n_burnin:]
+    samp = states.position[n_burnin:]
+    accept_rate = float(jnp.mean(infos.accept_prob))
 
-    return samp[::thin_window]
+    return samp[::thin_window], accept_rate
 
 # -----------------------------------------------------------------------------
 # Helper functions for analysis/plotting
