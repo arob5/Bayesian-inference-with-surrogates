@@ -159,10 +159,12 @@ class VSEMReplicate(Replicate):
         # --- RKPCN samplers ---
         # Use the adapted proposal covariance from the exact posterior MCMC as
         # the u-proposal for RKPCN. In this synthetic experiment we have access
-        # to the exact posterior, so using its adapted covariance is justified.
+        # to the exact posterior, so using it for convenience to demonstrate
+        # the behavior of rkpcn under reasonable tuning.
         # In practice, an adaptive RKPCN warmup phase could be used instead.
-        # Note: the EUP covariance is not suitable here because log-density
-        # emulators can cause the EUP to concentrate in very small regions.
+        # Note: in general, the EUP covariance could be used to initialize the
+        #   rkpcn proposal. However, in this log-density emulation case, the 
+        #   EUP covariance is typically very concentrated and not useful.
         prop_cov = mcmc_info['exact']['prop_cov']
 
         if len(rkpcn_rho_vals) > 0:
