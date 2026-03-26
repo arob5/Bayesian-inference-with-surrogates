@@ -1,4 +1,4 @@
-# experiments/linear_Gaussian/inverse_problem_setup.py
+# uncprop/models/linear_Gaussian/inverse_problem_setup.py
 """
 Helpers to construct the linear Gaussian deconvolution inverse problem
 """
@@ -7,8 +7,8 @@ import numpy as np
 from scipy.linalg import toeplitz
 import matplotlib.pyplot as plt
 
-from LinGaussTest import LinGaussInvProb
-from Gaussian import Gaussian
+from uncprop.models.linear_Gaussian.LinGaussInvProb import LinGaussInvProb
+from uncprop.models.linear_Gaussian.Gaussian import Gaussian
 
 
 def make_inverse_problem(rng, d, noise_sd, ker_length, ker_lengthscale, 

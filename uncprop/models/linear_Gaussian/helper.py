@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.linalg import solve_triangular, cholesky
 from scipy.special import logsumexp
 
-from Gaussian import Gaussian
+from uncprop.models.linear_Gaussian.Gaussian import Gaussian
 from modmcmc import State, BlockMCMCSampler, LogDensityTerm, TargetDensity
 from modmcmc.kernels import GaussMetropolisKernel, DiscretePCNKernel, UncalibratedDiscretePCNKernel, mvn_logpdf
 

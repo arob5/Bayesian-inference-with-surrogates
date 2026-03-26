@@ -1,12 +1,13 @@
-# experiments/linear_Gaussian/run_coverage_test.py
+# experiments/linear_Gaussian/runner.py
 import os
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from Gaussian import Gaussian
-from LinGaussTest import LinGaussInvProb, LinGaussTest
+from uncprop.models.linear_Gaussian.Gaussian import Gaussian
+from uncprop.models.linear_Gaussian.LinGaussInvProb import LinGaussInvProb
+from LinGaussTest import LinGaussTest
 
 def run_coverage_test(rng, n_reps, m0, C0, Sig, G, Q_true, Q=None, 
                       include_mcmc=True, n_mcmc=100_000,
@@ -295,9 +296,10 @@ if __name__ == "__main__":
     import pickle
     import matplotlib.pyplot as plt
 
-    from inverse_problem_setup import make_inverse_problem, summarize_setup, get_forward_model
-    from Gaussian import Gaussian
-    from LinGaussTest import LinGaussInvProb, LinGaussTest
+    from uncprop.models.linear_Gaussian.inverse_problem_setup import make_inverse_problem, summarize_setup, get_forward_model
+    from uncprop.models.linear_Gaussian.Gaussian import Gaussian
+    from uncprop.models.linear_Gaussian.LinGaussInvProb import LinGaussInvProb
+    from LinGaussTest import LinGaussTest
 
     rng = np.random.default_rng(532124)
 
