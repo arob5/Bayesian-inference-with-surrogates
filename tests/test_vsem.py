@@ -12,16 +12,19 @@ import importlib.util
 import tempfile
 from pathlib import Path
 
+import jax.numpy as jnp
 import jax.random as jr
 
 # Import experiment.py by path to avoid module name collisions
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
-    "vsem_experiment", REPO_ROOT / "experiments" / "vsem" / "experiment.py")
+    "vsem_experiment", REPO_ROOT / "experiments" / "vsem" / "experiment.py"
+)
 _vsem_exp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_vsem_exp)
 VSEMReplicate = _vsem_exp.VSEMReplicate
-VSEMExperiment = _vsem_exp.VSEMExperiment
+
+from uncprop.utils.experiment import Experiment
 
 
 def test_vsem_replicate_setup():
@@ -62,7 +65,7 @@ def test_vsem_experiment_one_rep():
     """
     Test the full experiment pipeline with 1 replicate through the Experiment
     framework: setup, MCMC sampling (exact + approximate posteriors), rkpcn
-    sampler, density comparison, and coverage computation.
+    sampler, per-rep saving, and coverage computation.
     """
     key = jr.key(42)
 
@@ -75,7 +78,7 @@ def test_vsem_experiment_one_rep():
             'surrogate_tag': 'gp',
         }
         run_kwargs = {
-            'rkpcn_rho_vals': {'rkpcn_0.9': 0.9},
+            'rkpcn_rho_vals': {'rkpcn90': 0.9},
             'mcmc_settings': {'n_samples': 10, 'n_burnin': 50, 'thin_window': 1},
             'rkpcn_settings': {'n_samples': 10, 'n_burnin': 50, 'thin_window': 1},
         }
@@ -83,7 +86,7 @@ def test_vsem_experiment_one_rep():
         def subdir_name_fn(setup_kw, run_kw):
             return f'{setup_kw["surrogate_tag"]}_N{setup_kw["n_design"]}'
 
-        experiment = VSEMExperiment(
+        experiment = Experiment(
             name='vsem_test',
             num_reps=1,
             base_out_dir=out_dir,
@@ -99,11 +102,39 @@ def test_vsem_experiment_one_rep():
 
         assert len(failed_reps) == 0, f"Replicates failed: {failed_reps}"
 
-        # Verify the replicate has expected outputs
-        rep = results[0]
-        assert rep.density_comparison is not None, "Density comparison not computed"
-        assert rep.coverage_results is not None, "Coverage results not computed"
-        assert rep.mcmc_results is not None, "MCMC results not stored"
+        # __call__ returns None now (per-rep saving)
+        assert results[0] is None, "Expected None return from replicate"
+
+        # Verify per-rep files were saved
+        rep_dir = out_dir / 'gp_N4' / 'rep0'
+        assert rep_dir.exists(), f"Rep directory not found: {rep_dir}"
+
+        samples_path = rep_dir / 'samples.npz'
+        assert samples_path.exists(), "samples.npz not saved"
+        samples = dict(jnp.load(samples_path))
+        expected_keys = {'exact', 'mean', 'eup', 'ep', 'rkpcn90'}
+        assert expected_keys.issubset(samples.keys()), \
+            f"Missing sample keys. Expected {expected_keys}, got {set(samples.keys())}"
+
+        # Check sample shapes (n_samples=10, dim=2)
+        for name in expected_keys:
+            assert samples[name].shape == (10, 2), \
+                f"Wrong shape for {name}: {samples[name].shape}"
+
+        diagnostics_path = rep_dir / 'diagnostics.npz'
+        assert diagnostics_path.exists(), "diagnostics.npz not saved"
+        diag = dict(jnp.load(diagnostics_path))
+        assert 'exact_accept_rate' in diag, "Missing exact_accept_rate"
+        assert 'rkpcn90_accept_rate' in diag, "Missing rkpcn90_accept_rate"
+
+        grid_dens_path = rep_dir / 'grid_densities.npz'
+        assert grid_dens_path.exists(), "grid_densities.npz not saved"
+
+        coverage_path = rep_dir / 'coverage.npz'
+        assert coverage_path.exists(), "coverage.npz not saved"
+
+        setup_path = rep_dir / 'setup_info.npz'
+        assert setup_path.exists(), "setup_info.npz not saved"
 
         print("test_vsem_experiment_one_rep: PASSED")
 

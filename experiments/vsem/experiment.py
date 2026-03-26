@@ -4,6 +4,7 @@ from typing import Any, NamedTuple
 from types import MappingProxyType
 from collections.abc import Mapping
 
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 
@@ -14,14 +15,14 @@ from uncprop.core.inverse_problem import Posterior
 from uncprop.models.vsem.inverse_problem import generate_vsem_inv_prob_rep
 
 from uncprop.models.vsem.surrogate import (
-    fit_vsem_surrogate, 
-    VSEMPosteriorSurrogate, 
+    fit_vsem_surrogate,
+    VSEMPosteriorSurrogate,
     LogDensClippedGPSurrogate,
 )
 from uncprop.core.samplers import (
-    sample_distribution, 
-    mcmc_loop, 
-    init_rkpcn_kernel, 
+    sample_distribution,
+    mcmc_loop,
+    init_rkpcn_kernel,
     _f_update_pcn_proposal,
 )
 
@@ -101,16 +102,19 @@ class VSEMReplicate(Replicate):
         self.surrogate_pred = self.posterior_surrogate.surrogate(grid.flat_grid)
 
 
-    def __call__(self, 
-                 key: PRNGKey, 
-                 out_dir: PRNGKey,
-                 rkpcn_rho_vals: dict[str, float],
+    def __call__(self,
+                 key: PRNGKey,
+                 out_dir: Path,
+                 rkpcn_rho_vals: dict[str, float] | None = None,
                  mcmc_settings: dict[str, Any] | None = None,
                  rkpcn_settings: dict[str, Any] | None = None,
                  **kwargs):
-        
+
+        out_dir = Path(out_dir)
         key, key_ep, key_init_mcmc, key_seed_mcmc, key_seed_rkpcn = jr.split(key, 5)
 
+        if rkpcn_rho_vals is None:
+            rkpcn_rho_vals = {}
         if mcmc_settings is None:
             mcmc_settings = {'n_samples': 1000, 'n_burnin': 50_000, 'thin_window': 5}
         if rkpcn_settings is None:
@@ -126,16 +130,19 @@ class VSEMReplicate(Replicate):
         }
         density_comparison = DensityComparisonGrid(grid=self.grid, distributions=dists)
 
-        # run samplers
+        # --- Standard MCMC samplers (exact, mean, eup, ep) ---
         initial_position = self.posterior.prior.sample(key_init_mcmc)
         mcmc_keys = jr.split(key_seed_mcmc, len(dists))
 
         mcmc_samp = {}
         mcmc_info = {}
+        diagnostics = {}
         print('\tRunning samplers')
-        for key, (dist_name, dist) in zip(mcmc_keys, dists.items()):
+        for mcmc_key, (dist_name, dist) in zip(mcmc_keys, dists.items()):
+            jax.clear_caches()
+            print(f'\t\t{dist_name}')
             mcmc_results = sample_distribution(
-                key=key,
+                key=mcmc_key,
                 dist=dist,
                 initial_position=initial_position,
                 **mcmc_settings
@@ -143,137 +150,74 @@ class VSEMReplicate(Replicate):
 
             mcmc_samp[dist_name] = mcmc_results['positions'].squeeze(1)
             mcmc_info[dist_name] = mcmc_results
+            diagnostics[f'{dist_name}_accept_rate'] = mcmc_results['accept_rate']
+            print(f'\t\t  accept rate: {mcmc_results["accept_rate"]:.4f}')
 
-        # Use the adapted proposal covariance from the exact posterior sampler
-        # for the rkpcn sampler's u-update proposal
+        # save standard MCMC samples (incremental save in case RKPCN fails)
+        jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
+
+        # --- RKPCN samplers ---
+        # Use the adapted proposal covariance from the exact posterior MCMC as
+        # the u-proposal for RKPCN. In this synthetic experiment we have access
+        # to the exact posterior, so using its adapted covariance is justified.
+        # In practice, an adaptive RKPCN warmup phase could be used instead.
+        # Note: the EUP covariance is not suitable here because log-density
+        # emulators can cause the EUP to concentrate in very small regions.
         prop_cov = mcmc_info['exact']['prop_cov']
 
-        rkpcn_keys = jr.split(key_seed_rkpcn, len(rkpcn_rho_vals))
-        rkpcn_samp = {}
+        if len(rkpcn_rho_vals) > 0:
+            rkpcn_keys = jr.split(key_seed_rkpcn, len(rkpcn_rho_vals))
 
-        for i, alg_name in enumerate(rkpcn_rho_vals.keys()):
-            samp, accept_rate = _run_mcmc_rkpcn(key=rkpcn_keys[i],
-                                                rho=rkpcn_rho_vals[alg_name],
-                                                posterior=self.posterior,
-                                                surrogate_post=surr,
-                                                initial_position=initial_position,
-                                                prop_cov=prop_cov,
-                                                **rkpcn_settings)
-            mcmc_samp[alg_name] = samp
+            for i, alg_name in enumerate(rkpcn_rho_vals.keys()):
+                jax.clear_caches()
+                rho = rkpcn_rho_vals[alg_name]
+                print(f'\t\t{alg_name} (rho={rho})')
+                samp, accept_rate = _run_mcmc_rkpcn(
+                    key=rkpcn_keys[i],
+                    rho=rho,
+                    posterior=self.posterior,
+                    surrogate_post=surr,
+                    initial_position=initial_position,
+                    prop_cov=prop_cov,
+                    **rkpcn_settings
+                )
+                mcmc_samp[alg_name] = samp
+                diagnostics[f'{alg_name}_accept_rate'] = accept_rate
+                print(f'\t\t  accept rate: {accept_rate:.4f}')
 
+            # save all samples (overwrite with RKPCN included)
+            jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
 
-        self.density_comparison = density_comparison
-        self.coverage_results = self.density_comparison.calc_coverage(baseline='exact')
-        self.mcmc_results = mcmc_results
+        # --- Save diagnostics ---
+        jnp.savez(out_dir / 'diagnostics.npz',
+                  **{k: jnp.array(v) for k, v in diagnostics.items()})
 
-        return self
+        # --- Save grid densities per-rep ---
+        jnp.savez(out_dir / 'grid_densities.npz',
+                  **{nm: density_comparison.log_dens_grid[nm] for nm in dists})
+
+        # --- Coverage (grid-based, comparing to exact posterior) ---
+        coverage_results = density_comparison.calc_coverage(baseline='exact')
+        jnp.savez(out_dir / 'coverage.npz',
+                  log_coverage=coverage_results[0],
+                  probs=coverage_results[1],
+                  dist_names=coverage_results[3])
+
+        # --- Save setup info ---
+        jnp.savez(out_dir / 'setup_info.npz',
+                  vsem_params=self.vsem_params,
+                  vsem_param_names=self.vsem_param_names,
+                  design_x=self.design.X,
+                  design_y=self.design.y.ravel(),
+                  pred_mean=self.surrogate_pred.mean.ravel(),
+                  pred_var=self.surrogate_pred.variance.ravel())
+
+        return None
     
-
-class VSEMExperiment(Experiment):
-
-    def collect_results(self, results, failed_reps, *args, **kwargs):
-        """
-        Note that in the below comments `n_reps` is the number of non-failed replicates.
-        """
-
-        # Only format non-failed iterations
-        results = [rep for i, rep in enumerate(results) if i not in failed_reps]
-        if len(results) == 0:
-            return None
-        
-        # inverse problem data realization
-        vsem_params = jnp.vstack([rep.vsem_params for rep in results])
-        driver = jnp.stack([rep.posterior.likelihood.model.driver for rep in results], axis=0)
-        vsem_output = jnp.stack([rep.posterior.likelihood.data.vsem_output for rep in results], axis=0)
-        observable = jnp.stack([rep.posterior.likelihood.data.observable for rep in results], axis=0)
-        observation = jnp.stack([rep.posterior.likelihood.data.observation for rep in results], axis=0)
-        
-        # design points
-        design_x = jnp.stack([rep.design.X for rep in results], axis=0) # (n_reps, n_design, d)
-        design_y = jnp.vstack([rep.design.y.ravel() for rep in results]) # (n_reps, n_design)
-
-        # surrogate mean/variance predictions at grid points; each (n_reps, n_grid)
-        pred_mean = jnp.vstack([rep.surrogate_pred.mean.ravel() for rep in results])
-        pred_var = jnp.vstack([rep.surrogate_pred.variance.ravel() for rep in results])
-
-        # unnormalized log-densities of each distribution over grid points; dict of (n_reps, n_grid)
-        names = list(results[0].density_comparison.distributions.keys())
-        log_dens_approx = {}
-        for nm in names:
-            log_dens_approx[nm] = jnp.vstack([
-                rep.density_comparison.log_dens_grid[nm] for rep in results
-            ])
-
-        # coverage results
-        log_coverage = jnp.stack(
-            [rep.coverage_results[0] for rep in results], 
-            axis=0
-        )
-
-        probs = results[0].coverage_results[1]
-        dist_names = results[0].coverage_results[3]
-
-        info = {'vsem_params': vsem_params,
-                'driver': driver,
-                'vsem_output': vsem_output,
-                'observable': observable,
-                'observation': observation,
-                'pred_mean': pred_mean,
-                'pred_var': pred_var,
-                'design_x': design_x,
-                'design_y': design_y,
-                'log_coverage': log_coverage,
-                'probs': probs,
-                'dist_names': dist_names,
-                'vsem_param_names': results[0].vsem_param_names}
-
-        return info, log_dens_approx
-
-
-    def save_results(self, 
-                     subdir: Path,
-                     results: list, 
-                     failed_reps: list, 
-                     *args, **kwargs):
-        results_dict, log_dens_dict = self.collect_results(results, failed_reps)
-
-        if results_dict is None:
-            print('Results list is length 0. Not saving')
-            return None
-        
-        # save grid info (constant across reps)
-        grid = results[0].grid
-        jnp.savez(subdir / 'grid_info.npz', 
-                  low=grid.low,
-                  high=grid.high,
-                  n_points_per_dim=grid.n_points_per_dim,
-                  dim_names=grid.dim_names)
-
-        jnp.savez(subdir / 'results.npz', **results_dict)
-        jnp.savez(subdir / 'log_dens.npz', **log_dens_dict)
-        jnp.savez(subdir / 'logging_info.npz', failed_reps=failed_reps, key=jr.key_data(self.base_key))
-
 
 # -----------------------------------------------------------------------------
 # Helper functions for running experiment
 # -----------------------------------------------------------------------------
-
-def _run_mcmc_exact(key: PRNGKey, posterior: Posterior, n_samples: int):
-    key_init_pos, key_samp = jr.split(key)
-    initial_position = posterior.prior.sample(key_init_pos).squeeze()
-
-    results = sample_distribution(key=key,
-                                  dist=posterior,
-                                  initial_position=initial_position,
-                                  n_samples=n_samples,
-                                  n_warmup=50_000,
-                                  thin_window=3)
-    
-    samp = results[0]
-    prop_cov = results[3]
-
-    return samp, prop_cov
-
 
 def _run_mcmc_rkpcn(key: PRNGKey,
                     posterior: Posterior,
