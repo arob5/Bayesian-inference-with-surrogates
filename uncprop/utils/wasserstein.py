@@ -94,6 +94,8 @@ def compute_wasserstein_comparison(
             epsilon=None
         )
         fixed_epsilon = ref_geom.epsilon
+        # floor to avoid numerical issues when reference samples are concentrated
+        fixed_epsilon = max(float(fixed_epsilon), 1e-4)
     else:
         fixed_epsilon = epsilon
 
