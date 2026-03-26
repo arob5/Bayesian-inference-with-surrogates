@@ -1,8 +1,8 @@
 # Modular Uncertainty Propagation for Surrogate-Based Bayesian Inverse Problems
 
 This repo contains the code for reproducing the experiments in the paper
-[Propagating Surrogate Uncertainty in Bayesian Inverse Problems](https://www.arxiv.org/abs/2601.03532), as well as a review/synthesis
-paper on uncertainty quantification/active learning for probabilistic surrogates (to appear on arXiv soon). The primary dependencies are packages from the JAX ecosystem (JAX, NumPyro, GPjax, blackjax).
+[Propagating Surrogate Uncertainty in Bayesian Inverse Problems](https://www.arxiv.org/abs/2601.03532), as well as the review paper
+[Surrogate-Based Bayesian Inference: Uncertainty Quantification and Active Learning](https://arxiv.org/abs/2603.13646). The primary dependencies are packages from the JAX ecosystem (JAX, NumPyro, GPjax, blackjax).
 
 ## Dependencies
 To replicate the environment used to run the experiments:
@@ -101,13 +101,18 @@ A single replicate takes approximately 1–2 minutes on a modern laptop.
 
 #### Post-hoc analysis
 
-After all replicates have completed, compute Wasserstein distances and generate plots:
+After all replicates have completed, generate all paper figures and diagnostics in a single step:
 ```bash
 cd experiments/vsem
 python analyze.py --experiment-name vsem
 ```
 
-This computes the W2 distance from each posterior approximation (exact, mean, EUP, RKPCN) to the grid-based expected posterior (EP), summarizes acceptance rate diagnostics, and saves box plot figures to `out/vsem/`.
+This produces:
+- **Coverage/calibration plots** (`vsem_coverage_gp.pdf`, `vsem_coverage_clip_gp.pdf`): 3×3 grids showing coverage curves across design sizes and approximation methods
+- **W2 distance box plots** (`w2_boxplots.pdf`, `w2_by_design_*.pdf`): Wasserstein-2 distance from each posterior approximation (exact, mean, EUP, RKPCN) to the grid-based expected posterior (EP)
+- **Acceptance rate diagnostics**: printed to stdout for all samplers and configurations
+
+All plots are saved to `out/vsem/`.
 
 ### Elliptic PDE Experiment
 

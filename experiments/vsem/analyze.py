@@ -154,7 +154,7 @@ def plot_w2_boxplots(w2_results, title=None, figsize=(10, 5)):
 
         bp = ax.boxplot(data, tick_labels=method_names, vert=True, patch_artist=True)
         ax.set_title(sname)
-        ax.set_ylabel('W₂ to EP' if i == 0 else '')
+        ax.set_ylabel('$W_2$ to EP' if i == 0 else '')
         ax.tick_params(axis='x', rotation=45)
 
     if title:
@@ -162,6 +162,117 @@ def plot_w2_boxplots(w2_results, title=None, figsize=(10, 5)):
     fig.tight_layout()
 
     return fig, axes
+
+
+def load_coverage_data(base_dir, subdir_name, rep_idcs):
+    """Load and stack coverage data across replicates.
+
+    Returns:
+        dict with 'log_coverage' (n_reps, n_dists, n_probs),
+        'probs' (n_probs,), 'dist_names' list
+    """
+    setup_dir = Path(base_dir) / subdir_name
+    coverages = []
+
+    for rep_idx in rep_idcs:
+        cov_path = setup_dir / f'rep{rep_idx}' / 'coverage.npz'
+        if cov_path.exists():
+            cov = dict(jnp.load(cov_path))
+            coverages.append(cov['log_coverage'])
+
+    if len(coverages) == 0:
+        return None
+
+    first = dict(jnp.load(setup_dir / f'rep{rep_idcs[0]}' / 'coverage.npz'))
+    return {
+        'log_coverage': jnp.stack(coverages, axis=0),
+        'probs': first['probs'],
+        'dist_names': list(first['dist_names']),
+    }
+
+
+def plot_coverage_grid(base_dir, surrogate_tag, num_reps=100, figsize_scale=3.0):
+    """Generate the 3x3 coverage plot for a surrogate type.
+
+    Rows = design sizes (N=4, 8, 16), columns = approximations (mean, eup, ep).
+    Each panel shows the median and 5th-95th percentile band of the coverage
+    curve across replicates, matching the paper figure format.
+
+    Args:
+        base_dir: experiment base directory
+        surrogate_tag: 'gp' or 'clip_gp'
+        num_reps: total number of replicates
+        figsize_scale: controls subplot size
+
+    Returns:
+        (fig, axes) or (None, None) if no data
+    """
+    from uncprop.utils.plot import set_plot_theme, plot_coverage_curve_reps
+
+    colors = set_plot_theme()
+    ndesign = [4, 8, 16]
+    approx = ['mean', 'eup', 'ep']
+
+    fig, axs = plt.subplots(len(ndesign), len(approx),
+                            figsize=(figsize_scale * len(approx),
+                                     figsize_scale * len(ndesign)))
+
+    has_data = False
+
+    for n_idx, n in enumerate(ndesign):
+        sname = subdir_name(surrogate_tag, n)
+        completed, _ = check_completion_status(base_dir, sname, num_reps)
+
+        if len(completed) == 0:
+            continue
+
+        cov_data = load_coverage_data(base_dir, sname, completed)
+        if cov_data is None:
+            continue
+
+        has_data = True
+        dist_names = cov_data['dist_names']
+
+        for dist_idx, dist_name in enumerate(approx):
+            ax = axs[n_idx, dist_idx]
+
+            if dist_name not in dist_names:
+                continue
+
+            idx = dist_names.index(dist_name)
+            plot_coverage_curve_reps(
+                log_coverage=cov_data['log_coverage'][:, [idx], :],
+                probs=cov_data['probs'],
+                names=[dist_name],
+                colors=colors,
+                qmin=0.05, qmax=0.95,
+                single_plot=True,
+                ax=ax,
+                alpha=0.2,
+            )
+
+            # Format: titles on top row, y-labels on left column
+            if n_idx == 0:
+                ax.set_title(dist_name, fontsize=ax.title.get_fontsize() * 1.5)
+            if n_idx != len(ndesign) - 1:
+                ax.set_xlabel('')
+            else:
+                ax.set_xlabel('nominal')
+            if dist_idx == 0:
+                ax.set_ylabel(f'actual (N = {n})')
+            else:
+                ax.set_ylabel('')
+
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.remove()
+
+    if not has_data:
+        plt.close(fig)
+        return None, None
+
+    fig.tight_layout()
+    return fig, axs
 
 
 def plot_w2_by_design_size(w2_results, surrogate_tag='gp', figsize=(8, 5)):
@@ -213,9 +324,9 @@ def plot_w2_by_design_size(w2_results, surrogate_tag='gp', figsize=(8, 5)):
 
         ax.set_title(method)
         ax.set_xlabel('N (design size)')
-        ax.set_ylabel('W₂ to EP' if j == 0 else '')
+        ax.set_ylabel('$W_2$ to EP' if j == 0 else '')
 
-    fig.suptitle(f'{surrogate_tag}: W₂ to EP by design size')
+    fig.suptitle(f'{surrogate_tag}: $W_2$ to EP by design size')
     fig.tight_layout()
 
     return fig, axes
@@ -254,6 +365,15 @@ def main():
     print('\n--- Diagnostics ---')
     print_diagnostics_all_setups(base_dir, args.num_reps)
 
+    # Coverage plots
+    print('\n--- Coverage Plots ---')
+    for tag in gp_tags:
+        fig, _ = plot_coverage_grid(base_dir, tag, num_reps=args.num_reps)
+        if fig is not None:
+            out_path = base_dir / f'vsem_coverage_{tag}.pdf'
+            fig.savefig(out_path, bbox_inches='tight')
+            print(f'Saved: {out_path}')
+
     # W2
     print('\n--- W2 Distances ---')
     w2 = compute_w2_all_setups(
@@ -271,8 +391,8 @@ def main():
             arr = np.array(vals)
             print(f'  {method}: median={np.median(arr):.4f}, mean={np.mean(arr):.4f}')
 
-    # Plots
-    fig, _ = plot_w2_boxplots(w2, title='W₂ to EP across setups')
+    # W2 plots
+    fig, _ = plot_w2_boxplots(w2, title='$W_2$ to EP across setups')
     if fig is not None:
         out_path = base_dir / 'w2_boxplots.pdf'
         fig.savefig(out_path, bbox_inches='tight')
