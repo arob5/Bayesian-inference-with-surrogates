@@ -139,7 +139,36 @@ def test_vsem_experiment_one_rep():
         print("test_vsem_experiment_one_rep: PASSED")
 
 
+def test_wasserstein2_sinkhorn():
+    """Test that W2 computation works on synthetic 2D samples."""
+    from uncprop.utils.wasserstein import wasserstein2_sinkhorn, compute_wasserstein_comparison
+
+    rng = jnp.array(jr.key(0))  # just for reproducibility
+    # Two 2D Gaussians with different means
+    x_ref = jr.normal(jr.key(1), (100, 2))
+    x_shifted = jr.normal(jr.key(2), (100, 2)) + jnp.array([2.0, 0.0])
+
+    w2 = wasserstein2_sinkhorn(x_ref, x_shifted, epsilon=0.05)
+    assert jnp.isfinite(w2), f"W2 is not finite: {w2}"
+    assert float(w2) > 0.0, f"W2 should be positive, got {w2}"
+
+    # W2 with itself should be small
+    w2_self = wasserstein2_sinkhorn(x_ref, x_ref, epsilon=0.05)
+    assert float(w2_self) < float(w2), "W2 with self should be smaller than with shifted"
+
+    # Test compute_wasserstein_comparison
+    samples = {'ref': x_ref, 'shifted': x_shifted, 'same': x_ref}
+    results, eps = compute_wasserstein_comparison(samples, reference_key='ref')
+    assert 'shifted' in results, "Missing shifted key in results"
+    assert 'same' in results, "Missing same key in results"
+    assert float(results['shifted']) > float(results['same']), \
+        "Shifted should have larger W2 than same"
+
+    print("test_wasserstein2_sinkhorn: PASSED")
+
+
 if __name__ == '__main__':
     test_vsem_replicate_setup()
     test_vsem_experiment_one_rep()
+    test_wasserstein2_sinkhorn()
     print("\nAll VSEM tests passed!")
