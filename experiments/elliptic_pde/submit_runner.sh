@@ -3,7 +3,7 @@
 #$ -j y
 #$ -l h_rt=12:00:00
 #$ -l mem_per_core=12G
-#$ -P gpsurr
+#$ -P bayesij
 #$ -pe omp 1
 #$ -t 25-30 -tc 1    # cap number run concurrently to reduce chance of XLA compilation issues
 #

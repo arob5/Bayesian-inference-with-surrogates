@@ -1,6 +1,6 @@
 #!/usr/bin/env python -u
 #$ -N run_manual
-#$ -P gpsurr
+#$ -P bayesij
 #$ -j y
 #$ -l h_rt=12:00:00
 #$ -l mem_per_core=12G

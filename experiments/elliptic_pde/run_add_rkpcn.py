@@ -1,6 +1,6 @@
 #!/usr/bin/env python -u
 #$ -N rep_test_nojit
-#$ -P gpsurr
+#$ -P bayesij
 #$ -j y
 #$ -l h_rt=12:00:00
 #$ -l mem_per_core=64G
