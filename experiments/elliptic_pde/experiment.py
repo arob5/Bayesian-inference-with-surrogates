@@ -8,9 +8,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jax.scipy.linalg import solve_triangular
 
-from ott.geometry import pointcloud
-from ott.solvers.linear import sinkhorn
-from ott.problems.linear import linear_problem
+from uncprop.utils.wasserstein import wasserstein2_sinkhorn, compute_wasserstein_comparison
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -513,88 +511,6 @@ def assemble_coverage_reps(base_out_dir, experiment_name, n_design, probs,
         coverage_list.append(jnp.stack(list(coverage.values())))
 
     return jnp.stack(coverage_list)
-
-
-def wasserstein2_sinkhorn(
-    x_ref: jnp.ndarray,
-    x_approx: jnp.ndarray,
-    epsilon: float = 0.05,
-    **kwargs
-):
-    """
-    Compute entropic-regularized W2 distance between two empirical distributions.
-
-    Args:
-        x_ref:     (N, d) reference samples
-        x_approx:  (M, d) approximating samples
-        epsilon:   Sinkhorn regularization strength
-        **kwargs:  forwarded to Sinkhorn()
-
-    Returns:
-        Scalar W2 distance
-    """
-    geom = pointcloud.PointCloud(x_ref, x_approx, epsilon=epsilon)
-    prob = linear_problem.LinearProblem(geom)
-    solver = sinkhorn.Sinkhorn(**kwargs)
-    out = solver(prob)
-    return jnp.sqrt(out.reg_ot_cost)
-
-
-def compute_wasserstein_comparison(
-    samples: dict,
-    reference_key: str,
-    subsample: int | None = None,
-    key: jax.random.PRNGKey = jax.random.PRNGKey(0),
-    epsilon: float | None = None,
-    sinkhorn_kwargs: dict | None = None
-):
-    sinkhorn_kwargs = sinkhorn_kwargs or {}
-    ref_samples = samples[reference_key]
-    n, d = ref_samples.shape
-    
-    # whitening matrix (Mahalanobis): Cov[(X-mu) @ W] = I
-    mu_ref = jnp.mean(ref_samples, axis=0)
-    cov_ref = jnp.cov(ref_samples, rowvar=False) + 1e-8 * jnp.eye(d)
-    L = jax.scipy.linalg.cholesky(cov_ref, lower=True)
-    W = jax.scipy.linalg.solve_triangular(L.T, jnp.eye(d), lower=False)
-
-    def whiten(samples):
-        centered = samples - mu_ref
-        return jnp.dot(centered, W)
-
-    # Transform all chains using the reference's geometry
-    samples = {
-        k: whiten(v) for k, v in samples.items()
-    }
-
-    # choose regularization level using reference geometry
-    if epsilon is None:
-        ref_geom = pointcloud.PointCloud(
-            samples[reference_key], 
-            samples[reference_key], 
-            epsilon=None
-        )
-        fixed_epsilon = ref_geom.epsilon
-    else:
-        fixed_epsilon = epsilon
-
-    # optional subsampling
-    if subsample is not None:
-        for k, v in samples.items():
-            key_choice, key, = jr.split(key)
-            idx = jr.choice(key_choice, v.shape[0], (subsample,), replace=False)
-            samples[k] = v[idx]
-
-    results = {}
-
-    for name, x in samples.items():
-        if name == reference_key:
-            continue
-
-        w2 = wasserstein2_sinkhorn(samples[reference_key], x, epsilon=fixed_epsilon, **sinkhorn_kwargs)
-        results[name] = w2
-
-    return results, fixed_epsilon
 
 
 def summarize_wasserstein_design_reps(key, base_out_dir, 
