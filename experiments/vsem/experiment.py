@@ -277,83 +277,140 @@ def _run_mcmc_rkpcn(key: PRNGKey,
     return samp[::thin_window], accept_rate
 
 # -----------------------------------------------------------------------------
-# Helper functions for analysis/plotting
+# Post-hoc analysis: loading, W2 computation, diagnostics
 # -----------------------------------------------------------------------------
 
-def load_results(out_dir: str | Path, subdir_names: list[str]):
-    out_dir = Path(out_dir)
-    results = {}
-
-    for nm in subdir_names:
-        subdir = out_dir / nm
-        results[nm] = {}
-        res = results[nm]
-
-        res['logging_info'] = jnp.load(subdir / 'logging_info.npz')
-        res['grid_info'] = jnp.load(subdir / 'grid_info.npz')
-        res['results'] = jnp.load(subdir / 'results.npz')
-        res['log_dens'] = jnp.load(subdir / 'log_dens.npz')
-
-    return results
+def read_rep_samples(rep_dir: str | Path) -> dict:
+    """Load MCMC samples from a replicate directory."""
+    rep_dir = Path(rep_dir)
+    return dict(jnp.load(rep_dir / 'samples.npz'))
 
 
-def summarize_rep(out_dir: str | Path, subdir_name: str, rep_idx: int, n_reps: int):
-    subdir = Path(out_dir) / subdir_name
-
-    # check if rep failed
-    info = jnp.load(subdir / 'logging_info.npz')
-    failed_reps = info['failed_reps']
-    if rep_idx in failed_reps:
-        print(f'Replicate {rep_idx} failed.')
-        return None
-    
-    # adjust rep index (necessary if some reps failed)
-    if len(failed_reps) > 0:
-        all_rep_idx = [idx for idx in range(n_reps)]
-        rep_idx = all_rep_idx.index(rep_idx)
-    
-    # Load grid for plots
-    grid_info = jnp.load(subdir / 'grid_info.npz')
-
-    grid = Grid(low=grid_info['low'],
-                high=grid_info['high'],
-                n_points_per_dim=grid_info['n_points_per_dim'],
-                dim_names=grid_info['dim_names'])
-    
-    # load results
-    results = jnp.load(subdir / 'results.npz')
-    log_dens = jnp.load(subdir / 'log_dens.npz')
-
-    # Produce plots
-    gp_plot = _summarize_rep_gp(log_dens, results, grid, rep_idx)
-    post_approx_plots = _summarize_rep_post_approx(log_dens, results, grid, rep_idx)
-    plots = [gp_plot] + post_approx_plots
-
-    return grid, results, log_dens, plots
+def read_rep_diagnostics(rep_dir: str | Path) -> dict:
+    """Load diagnostics from a replicate directory."""
+    rep_dir = Path(rep_dir)
+    return dict(jnp.load(rep_dir / 'diagnostics.npz'))
 
 
-def _summarize_rep_gp(log_dens, results, grid, rep_idx):
-    exact = log_dens['exact'][rep_idx]
-    pred_mean = results['pred_mean'][rep_idx]
-    pred_sd = jnp.sqrt(results['pred_var'])[rep_idx]
-    design_x = results['design_x'][rep_idx]
+def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
+                               reference_key='ep',
+                               subsample=None,
+                               output_dir=None,
+                               sinkhorn_kwargs=None):
+    """
+    Compute whitened W2 distance to grid-based EP for all reps in a setup.
 
-    fig, ax = grid.plot(z=[exact, pred_mean, pred_sd],
-                        titles=['exact', 'mean', 'sd'],
-                        points=design_x,  max_cols=3)
-    
-    return (fig, ax)
+    The same regularization parameter epsilon is used across all reps and
+    approximating distributions for consistency — auto-computed from the
+    first rep's reference geometry.
+
+    Args:
+        key: PRNG key for subsampling
+        base_dir: experiment base directory (contains subdir_name/)
+        subdir_name: e.g. 'gp_N4', 'clip_gp_N16'
+        rep_idcs: list of replicate indices to process
+        reference_key: sample dict key for reference distribution (default 'ep')
+        subsample: number of samples to subsample (None = use all)
+        output_dir: if set, save intermediate results here
+        sinkhorn_kwargs: kwargs for Sinkhorn solver
+
+    Returns:
+        (results_dict, epsilon) where results_dict maps method names to
+        (n_reps,) arrays of W2 distances
+    """
+    from uncprop.utils.wasserstein import compute_wasserstein_comparison
+
+    if sinkhorn_kwargs is None:
+        sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
+
+    w2_keys = jr.split(key, len(rep_idcs))
+    setup_dir = Path(base_dir) / subdir_name
+    results = []
+    eps = None
+
+    if output_dir is not None:
+        output_path = Path(output_dir) / f'w2_{subdir_name}.npz'
+    else:
+        output_path = None
+
+    def _combine_results(res):
+        keys = res[0].keys()
+        return {k: jnp.stack([r[k] for r in res]) for k in keys}
+
+    for i, rep_idx in enumerate(rep_idcs):
+        try:
+            print(f'Rep {rep_idx}')
+            rep_dir = setup_dir / f'rep{rep_idx}'
+            samp = read_rep_samples(rep_dir)
+
+            rep_results, eps = compute_wasserstein_comparison(
+                samples=samp,
+                reference_key=reference_key,
+                subsample=subsample,
+                key=w2_keys[i],
+                epsilon=eps,
+                sinkhorn_kwargs=sinkhorn_kwargs,
+            )
+            results.append(rep_results)
+
+            if i > 0 and i % 20 == 0:
+                if output_path is not None:
+                    jnp.savez(output_path, **_combine_results(results))
+                jax.clear_caches()
+        except Exception as e:
+            print(f'Failed rep {rep_idx}: {e}')
+
+    if len(results) == 0:
+        return {}, eps
+
+    results = _combine_results(results)
+
+    if output_path is not None:
+        jnp.savez(output_path, **results)
+
+    return results, eps
 
 
-def _summarize_rep_post_approx(log_dens, results, grid, rep_idx):
-    log_dens_rep = {nm: arr[rep_idx] for nm, arr in log_dens.items()}
-    post_approx_grid = DensityComparisonGrid(grid=grid, log_dens_grid=log_dens_rep)
-    design_x = results['design_x'][rep_idx]
+def summarize_diagnostics(base_dir, subdir_name, rep_idcs):
+    """Load and aggregate diagnostics across replicates.
 
-    log_dens_comparison_plot = post_approx_grid.plot(normalized=True, log_scale=True, 
-                                                     max_cols=4, points=design_x)
-    dens_comparison_plot = post_approx_grid.plot(normalized=True, log_scale=False, 
-                                                 max_cols=4, points=design_x)
-    coverage_grid = post_approx_grid.plot_coverage(baseline='exact', probs=results['probs'])
+    Returns:
+        dict mapping diagnostic names to (n_reps,) arrays
+    """
+    setup_dir = Path(base_dir) / subdir_name
+    all_diag = []
 
-    return [log_dens_comparison_plot, dens_comparison_plot, coverage_grid]
+    for rep_idx in rep_idcs:
+        rep_dir = setup_dir / f'rep{rep_idx}'
+        diag_path = rep_dir / 'diagnostics.npz'
+        if diag_path.exists():
+            all_diag.append(dict(jnp.load(diag_path)))
+        else:
+            print(f'Missing diagnostics for rep {rep_idx}')
+
+    if len(all_diag) == 0:
+        return {}
+
+    keys = all_diag[0].keys()
+    return {k: jnp.stack([d[k] for d in all_diag]) for k in keys}
+
+
+def check_completion_status(base_dir, subdir_name, num_reps):
+    """Check which replicates have completed (have samples.npz).
+
+    Returns:
+        (completed, missing) lists of rep indices
+    """
+    setup_dir = Path(base_dir) / subdir_name
+    completed = []
+    missing = []
+
+    for i in range(num_reps):
+        rep_dir = setup_dir / f'rep{i}'
+        if (rep_dir / 'samples.npz').exists():
+            completed.append(i)
+        else:
+            missing.append(i)
+
+    print(f'{subdir_name}: {len(completed)}/{num_reps} completed, {len(missing)} missing')
+    return completed, missing
