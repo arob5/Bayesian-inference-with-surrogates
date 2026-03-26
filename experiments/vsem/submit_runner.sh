@@ -18,8 +18,10 @@
 # https://github.com/jax-ml/jax/issues/1539
 # https://github.com/jax-ml/jax/issues/16215
 
-# Activate virtual environment - update this path for your environment
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# SGE copies scripts to a spool directory before execution, so dirname "$0"
+# does not point to the repo. Use SGE_O_WORKDIR (the submission directory)
+# instead. This assumes qsub is run from experiments/vsem/.
+REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
 source "${REPO_DIR}/.venv/bin/activate"
 
 # Debug and version info

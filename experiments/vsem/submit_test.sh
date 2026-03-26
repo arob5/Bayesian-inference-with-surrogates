@@ -21,7 +21,10 @@
 # Note: uses experiment-name "vsem_scc_test" to avoid interfering with
 # the real experiment output.
 
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# SGE copies scripts to a spool directory before execution, so dirname "$0"
+# does not point to the repo. Use SGE_O_WORKDIR (the submission directory)
+# instead. This assumes qsub is run from experiments/vsem/.
+REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
 source "${REPO_DIR}/.venv/bin/activate"
 
 echo "JOB_ID=$JOB_ID SGE_TASK_ID=$SGE_TASK_ID"
