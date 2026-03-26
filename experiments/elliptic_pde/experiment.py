@@ -1,4 +1,4 @@
-# uncprop/models/elliptic_pde/experiment.py
+# experiments/elliptic_pde/experiment.py
 from pathlib import Path
 from typing import Any, NamedTuple
 import time
@@ -182,7 +182,7 @@ class PDEReplicate(Replicate):
             samp_rkpcn = sample_rkpcn(key=key_rkpcn,
                                       posterior=self.posterior,
                                       surrogate_post=self.posterior_surrogate,
-                                      initial_position=initial_position,
+                                      initial_position=initial_position.squeeze(),
                                       prop_cov=rkpcn_prop_cov,
                                       rho=rho,
                                       **rkpcn_settings)

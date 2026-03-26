@@ -1,4 +1,4 @@
-#!/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/.venv/bin/python -u
+#!/usr/bin/env python -u
 #$ -N rep_test_nojit
 #$ -P gpsurr
 #$ -j y
@@ -21,7 +21,7 @@ from datetime import datetime
 import jax.numpy as jnp
 import jax.random as jr
 
-from uncprop.models.elliptic_pde.experiment import (
+from experiment import (
     PDEReplicate,
     load_rep,
     read_samp,
@@ -50,7 +50,7 @@ print('Timestamp:', timestamp.strftime("%Y-%m-%d %H:%M:%S"))
 import resource
 print('RLIMIT_AS:', resource.getrlimit(resource.RLIMIT_AS))
 
-base_dir = Path('/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates')
+base_dir = Path(__file__).resolve().parents[2]  # repo root
 output_dir = base_dir / 'test_replicate'
 rho_vals = [0.0, 0.9, 0.95, 0.99, 0.999]
 output_dir.mkdir(exist_ok=True)

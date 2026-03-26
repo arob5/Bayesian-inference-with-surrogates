@@ -8,17 +8,20 @@ This does NOT run the full paper experiment — see experiments/vsem/runner.py f
 from jax import config
 config.update('jax_enable_x64', True)
 
-import sys
+import importlib.util
 import tempfile
 from pathlib import Path
 
 import jax.random as jr
 
-# Add experiments/vsem to path so we can import experiment.py
+# Import experiment.py by path to avoid module name collisions
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / 'experiments' / 'vsem'))
-
-from experiment import VSEMReplicate, VSEMExperiment
+_spec = importlib.util.spec_from_file_location(
+    "vsem_experiment", REPO_ROOT / "experiments" / "vsem" / "experiment.py")
+_vsem_exp = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_vsem_exp)
+VSEMReplicate = _vsem_exp.VSEMReplicate
+VSEMExperiment = _vsem_exp.VSEMExperiment
 
 
 def test_vsem_replicate_setup():

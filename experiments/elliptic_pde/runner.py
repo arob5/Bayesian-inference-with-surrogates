@@ -10,11 +10,11 @@ import math
 import jax.random as jr
 import jax.numpy as jnp
 
-from uncprop.models.elliptic_pde.experiment import PDEReplicate
+from experiment import PDEReplicate
 from uncprop.utils.experiment import Experiment
 
 
-base_dir = Path('/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates')
+base_dir = Path(__file__).resolve().parents[2]  # repo root
 base_out_dir = base_dir / 'out'
 
 # -----------------------------------------------------------------------------

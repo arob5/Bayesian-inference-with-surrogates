@@ -1,4 +1,4 @@
-#!/projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/.venv/bin/python -u
+#!/usr/bin/env python -u
 #$ -N run_manual
 #$ -P gpsurr
 #$ -j y
@@ -9,7 +9,7 @@
 import sys
 from datetime import datetime
 
-from uncprop.models.elliptic_pde.runner import main_manual
+from runner import main_manual
 
 timestamp = datetime.now()
 

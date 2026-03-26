@@ -19,7 +19,9 @@
 # https://github.com/jax-ml/jax/issues/1539
 # https://github.com/jax-ml/jax/issues/16215
 
-source /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/.venv/bin/activate
+# Activate virtual environment - update this path for your environment
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+source "${REPO_DIR}/.venv/bin/activate"
 
 # Debug and version info
 echo "JOB_ID=$JOB_ID SGE_TASK_ID=$SGE_TASK_ID"
@@ -53,7 +55,7 @@ TASK_ID=$((SGE_TASK_ID - 1))
 # sleep between 0-30 seconds - trying to avoid JAX compilation issues due to concurrency
 sleep $((RANDOM % 30))
 
-exec python -u /projectnb/dietzelab/arober/Bayesian-inference-with-surrogates/uncprop/models/elliptic_pde/runner.py \
+exec python -u "${REPO_DIR}/experiments/elliptic_pde/runner.py" \
     --task-id ${TASK_ID} \
     --rep-chunk-size 10 \
     --experiment-name pde_experiment
