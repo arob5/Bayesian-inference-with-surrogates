@@ -112,137 +112,162 @@ def plot_trace_all_params(samples_dict, method, param_names=None,
 # 2D density contour comparison
 # ---------------------------------------------------------------------------
 
-def plot_2d_kde_comparison(samples_dict, methods=None, param_indices=(0, 1),
-                           param_names=None, n_grid=100, levels=8,
-                           figsize=None):
-    """2D KDE contour overlay for comparing distributions.
+def _log_dens_to_contour_data(log_dens_flat, grid_shape):
+    """Convert flat log-density to normalized 2D density for contour plotting.
+
+    Returns None if the density is degenerate (all -inf, all identical, etc.).
+    """
+    log_dens = np.array(log_dens_flat).ravel()
+
+    # Filter out -inf and check for degeneracy
+    finite_mask = np.isfinite(log_dens)
+    if finite_mask.sum() < 10:
+        return None
+
+    # Shift for numerical stability and exponentiate
+    log_max = log_dens[finite_mask].max()
+    dens = np.exp(log_dens - log_max)
+    dens[~finite_mask] = 0.0
+
+    # Check for near-zero variance
+    if dens.max() - dens.min() < 1e-15:
+        return None
+
+    return dens.reshape(grid_shape)
+
+
+def _kde_contour_data(samples, param_indices, xg, yg):
+    """Compute KDE on a grid from MCMC samples. Returns (Xg, Yg, Z) or None."""
+    i, j = param_indices
+    samp = np.array(samples)
+    x, y = samp[:, i], samp[:, j]
+
+    Xg, Yg = np.meshgrid(xg, yg)
+    positions = np.vstack([Xg.ravel(), Yg.ravel()])
+
+    try:
+        kde = gaussian_kde(np.vstack([x, y]))
+        Z = kde(positions).reshape(Xg.shape)
+        return Xg, Yg, Z
+    except np.linalg.LinAlgError:
+        return None
+
+
+def _get_contour_for_method(method, grid_densities, samples_dict,
+                            grid_info, param_indices):
+    """Get 2D contour data for a method, preferring grid-based density.
+
+    For methods with grid densities (exact, mean, eup, ep), uses the
+    analytical density evaluated on the grid. For sample-only methods
+    (rkpcn*), falls back to KDE from MCMC samples.
+
+    Returns (Xg, Yg, Z) or None if neither approach works.
+    """
+    # Try grid-based density first
+    if (grid_densities is not None and grid_info is not None
+            and method in grid_densities):
+        log_dens = grid_densities[method]
+        shape = tuple(int(n) for n in grid_info['n_points_per_dim'])
+        Z = _log_dens_to_contour_data(log_dens, shape)
+        if Z is not None:
+            low = np.array(grid_info['low'])
+            high = np.array(grid_info['high'])
+            xg = np.linspace(low[0], high[0], shape[0])
+            yg = np.linspace(low[1], high[1], shape[1])
+            Xg, Yg = np.meshgrid(xg, yg)
+            return Xg, Yg, Z
+
+    # Fall back to KDE from samples
+    if method in samples_dict:
+        samp = np.array(samples_dict[method])
+        # Determine a reasonable grid range from samples
+        i, j = param_indices
+        x, y = samp[:, i], samp[:, j]
+        if np.ptp(x) < 1e-10 or np.ptp(y) < 1e-10:
+            return None  # degenerate
+        pad = 0.15
+        xg = np.linspace(x.min() - pad * np.ptp(x),
+                          x.max() + pad * np.ptp(x), 80)
+        yg = np.linspace(y.min() - pad * np.ptp(y),
+                          y.max() + pad * np.ptp(y), 80)
+        return _kde_contour_data(samp, param_indices, xg, yg)
+
+    return None
+
+
+def plot_contour_vs_ep(data, methods=None, param_names=None,
+                       levels=10, figsize_per_panel=(5, 4.5),
+                       ncols=3):
+    """Side-by-side panels, each showing one method (red) vs EP (blue).
+
+    Uses grid-based densities when available; falls back to KDE for
+    sample-only methods (rkpcn).
 
     Args:
-        samples_dict: {method_name: (n_samples, dim) array}
-        methods: which methods to plot
-        param_indices: tuple of two parameter dimensions to plot
-        param_names: axis labels
-        n_grid: grid resolution for KDE
+        data: dict from load_rep_data (must have 'samples', may have
+              'grid_densities' and 'grid_info')
+        methods: list of method names to compare against EP
+        param_names: axis labels [u1, u2]
         levels: number of contour levels
     """
-    if methods is None:
-        methods = list(samples_dict.keys())
+    samples = data['samples']
+    grid_densities = data.get('grid_densities')
+    grid_info = data.get('grid_info')
+    param_indices = (0, 1)
+
     if param_names is None:
-        param_names = [f'param[{i}]' for i in param_indices]
-    if figsize is None:
-        figsize = (8, 7)
+        dim = np.array(samples[list(samples.keys())[0]]).shape[1]
+        param_names = [f'u{i+1}' for i in range(dim)]
 
-    i, j = param_indices
-
-    # Compute range from all methods
-    all_x = np.concatenate([np.array(samples_dict[m])[:, i] for m in methods])
-    all_y = np.concatenate([np.array(samples_dict[m])[:, j] for m in methods])
-    pad = 0.1
-    x_range = (all_x.min() - pad * np.ptp(all_x), all_x.max() + pad * np.ptp(all_x))
-    y_range = (all_y.min() - pad * np.ptp(all_y), all_y.max() + pad * np.ptp(all_y))
-
-    xg = np.linspace(*x_range, n_grid)
-    yg = np.linspace(*y_range, n_grid)
-    Xg, Yg = np.meshgrid(xg, yg)
-    positions = np.vstack([Xg.ravel(), Yg.ravel()])
-
-    fig, ax = plt.subplots(figsize=figsize)
-    cmap_names = ['Blues', 'Reds', 'Greens', 'Oranges', 'Purples',
-                  'Greys', 'YlOrBr', 'PuBu']
-    color_cycle = ['tab:blue', 'tab:red', 'tab:green', 'tab:orange',
-                   'tab:purple', 'tab:gray', 'tab:brown', 'tab:cyan']
-
-    for idx, method in enumerate(methods):
-        samp = np.array(samples_dict[method])
-        x, y = samp[:, i], samp[:, j]
-
-        try:
-            kde = gaussian_kde(np.vstack([x, y]))
-            Z = kde(positions).reshape(n_grid, n_grid)
-            cmap = cmap_names[idx % len(cmap_names)]
-            ax.contour(Xg, Yg, Z, levels=levels, cmap=cmap, alpha=0.7)
-        except np.linalg.LinAlgError:
-            # KDE fails if samples are degenerate
-            ax.scatter(x, y, s=1, alpha=0.3, label=f'{method} (scatter)')
-
-    # Legend
-    handles = [Line2D([0], [0], color=color_cycle[idx % len(color_cycle)],
-                       lw=2, label=m) for idx, m in enumerate(methods)]
-    ax.legend(handles=handles, fontsize=11)
-
-    ax.set_xlabel(param_names[0], fontsize=13)
-    ax.set_ylabel(param_names[1], fontsize=13)
-    fig.tight_layout()
-    return fig
-
-
-def plot_2d_kde_grid(samples_dict, reference='ep', methods=None,
-                     param_indices=(0, 1), param_names=None,
-                     n_grid=100, levels=8, figsize_per_panel=(5, 4.5)):
-    """Side-by-side panels, each showing one method vs the reference.
-
-    Useful for comparing each approximation to EP individually.
-    """
     if methods is None:
-        methods = [m for m in samples_dict.keys() if m != reference]
-    if param_names is None:
-        param_names = [f'param[{i}]' for i in param_indices]
+        methods = [m for m in samples.keys() if m != 'ep']
+
+    # EP reference contour
+    ep_data = _get_contour_for_method('ep', grid_densities, samples,
+                                       grid_info, param_indices)
 
     n = len(methods)
-    fig, axes = plt.subplots(1, n, figsize=(figsize_per_panel[0] * n,
-                                             figsize_per_panel[1]))
-    if n == 1:
-        axes = [axes]
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols,
+                              figsize=(figsize_per_panel[0] * ncols,
+                                       figsize_per_panel[1] * nrows),
+                              squeeze=False)
 
-    i, j = param_indices
+    for idx, method in enumerate(methods):
+        ax = axes[idx // ncols, idx % ncols]
 
-    # Shared range
-    all_keys = methods + [reference]
-    all_x = np.concatenate([np.array(samples_dict[m])[:, i] for m in all_keys])
-    all_y = np.concatenate([np.array(samples_dict[m])[:, j] for m in all_keys])
-    pad = 0.1
-    x_range = (all_x.min() - pad * np.ptp(all_x), all_x.max() + pad * np.ptp(all_x))
-    y_range = (all_y.min() - pad * np.ptp(all_y), all_y.max() + pad * np.ptp(all_y))
-    xg = np.linspace(*x_range, n_grid)
-    yg = np.linspace(*y_range, n_grid)
-    Xg, Yg = np.meshgrid(xg, yg)
-    positions = np.vstack([Xg.ravel(), Yg.ravel()])
+        method_data = _get_contour_for_method(method, grid_densities,
+                                               samples, grid_info,
+                                               param_indices)
 
-    # Reference KDE (may fail for degenerate samples)
-    ref_samp = np.array(samples_dict[reference])
-    try:
-        ref_kde = gaussian_kde(np.vstack([ref_samp[:, i], ref_samp[:, j]]))
-        Z_ref = ref_kde(positions).reshape(n_grid, n_grid)
-        ref_ok = True
-    except np.linalg.LinAlgError:
-        ref_ok = False
+        # Plot EP reference
+        if ep_data is not None:
+            Xg_ep, Yg_ep, Z_ep = ep_data
+            ax.contour(Xg_ep, Yg_ep, Z_ep, levels=levels,
+                       cmap='Blues', alpha=0.6)
 
-    for ax, method in zip(axes, methods):
-        samp = np.array(samples_dict[method])
-
-        try:
-            kde = gaussian_kde(np.vstack([samp[:, i], samp[:, j]]))
-            Z = kde(positions).reshape(n_grid, n_grid)
-            if ref_ok:
-                ax.contour(Xg, Yg, Z_ref, levels=levels, cmap='Blues', alpha=0.6)
-            else:
-                ax.scatter(ref_samp[:, i], ref_samp[:, j], s=1, alpha=0.3, color='blue')
-            ax.contour(Xg, Yg, Z, levels=levels, cmap='Reds', alpha=0.6)
-        except np.linalg.LinAlgError:
-            if ref_ok:
-                ax.contour(Xg, Yg, Z_ref, levels=levels, cmap='Blues', alpha=0.6)
-            else:
-                ax.scatter(ref_samp[:, i], ref_samp[:, j], s=1, alpha=0.3, color='blue')
-            ax.scatter(samp[:, i], samp[:, j], s=1, alpha=0.3, color='red')
+        # Plot this method
+        if method_data is not None:
+            Xg_m, Yg_m, Z_m = method_data
+            ax.contour(Xg_m, Yg_m, Z_m, levels=levels,
+                       cmap='Reds', alpha=0.6)
+        elif method in samples:
+            # Last resort: scatter
+            samp = np.array(samples[method])
+            ax.scatter(samp[:, 0], samp[:, 1], s=1, alpha=0.3, color='red')
 
         handles = [
-            Line2D([0], [0], color='tab:blue', lw=2, label=reference),
+            Line2D([0], [0], color='tab:blue', lw=2, label='ep'),
             Line2D([0], [0], color='tab:red', lw=2, label=method),
         ]
         ax.legend(handles=handles, fontsize=10)
         ax.set_title(method, fontsize=13)
         ax.set_xlabel(param_names[0])
         ax.set_ylabel(param_names[1])
+
+    # Hide unused axes
+    for idx in range(n, nrows * ncols):
+        axes[idx // ncols, idx % ncols].set_visible(False)
 
     fig.tight_layout()
     return fig
@@ -424,21 +449,13 @@ def main():
                          param_name=param_names[p_idx])
         save_or_show(fig, f'trace_{param_names[p_idx]}')
 
-    # 2D contour: all methods overlaid
+    # 2D contour: each method vs EP (separate panels)
     if dim >= 2:
-        fig = plot_2d_kde_comparison(samp, methods=methods,
-                                     param_indices=(0, 1),
-                                     param_names=param_names[:2])
-        save_or_show(fig, 'kde_overlay')
-
-        # Side-by-side: each method vs EP
         compare_methods = [m for m in methods if m != 'ep']
         if 'ep' in methods and len(compare_methods) > 0:
-            fig = plot_2d_kde_grid(samp, reference='ep',
-                                   methods=compare_methods,
-                                   param_indices=(0, 1),
-                                   param_names=param_names[:2])
-            save_or_show(fig, 'kde_vs_ep')
+            fig = plot_contour_vs_ep(data, methods=compare_methods,
+                                     param_names=param_names[:2])
+            save_or_show(fig, 'contour_vs_ep')
 
     # Autocorrelation
     for p_idx in range(dim):
