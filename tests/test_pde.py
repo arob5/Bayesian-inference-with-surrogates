@@ -97,6 +97,23 @@ def test_pde_replicate_run():
             f"Missing sample keys: {expected_keys - set(samples.keys())}"
         )
 
+        # Verify diagnostics file was written with acceptance rates
+        assert (out_dir / 'diagnostics.npz').exists(), "diagnostics.npz not written"
+        diag = dict(jnp.load(out_dir / 'diagnostics.npz'))
+
+        expected_diag_keys = {
+            'exact_accept_rate', 'mean_accept_rate', 'eup_accept_rate',
+            'rkpcn90_accept_rate',
+        }
+        assert expected_diag_keys <= set(diag.keys()), (
+            f"Missing diagnostic keys: {expected_diag_keys - set(diag.keys())}"
+        )
+
+        # Acceptance rates should be between 0 and 1
+        for k in expected_diag_keys:
+            val = float(diag[k])
+            assert 0.0 <= val <= 1.0, f"{k} = {val} not in [0, 1]"
+
         print("test_pde_replicate_run: PASSED")
 
 

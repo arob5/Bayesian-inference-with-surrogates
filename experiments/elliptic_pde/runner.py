@@ -57,17 +57,19 @@ def make_subdir_name(setup_kwargs, run_kwargs):
 
 # replicate run settings
 run_kwargs = {
-    'mcmc_settings': {'n_samples': 5_000, 'n_burnin': 50_000, 
+    'rho_vals': [0.0, 0.9, 0.95, 0.99],
+    'mcmc_settings': {'n_samples': 5_000, 'n_burnin': 50_000,
                       'thin_window': 1, 'adapt_kwargs': {'gamma_exponent': 0.5}},
-    'mcwmh_settings': {'n_chains': 100, 'n_samp_per_chain': 10, 
+    'mcwmh_settings': {'n_chains': 100, 'n_samp_per_chain': 10,
                        'n_burnin': 10_000, 'thin_window': 500,
-                       'adapt_kwargs': {'gamma_exponent': 0.5}}
+                       'adapt_kwargs': {'gamma_exponent': 0.5}},
+    'rkpcn_settings': {'n_samples': 5_000, 'n_burnin': 10_000, 'thin_window': 5},
 }
 
-# reps that satisfy this condition will be skipped (if overwrite is False) 
+# reps that satisfy this condition will be skipped (if overwrite is False)
 def rep_skip_fn(rep_subdir, rep_idx):
-    samp_path = rep_subdir / 'samples.npz'
-    return samp_path.exists()
+    return ((rep_subdir / 'samples.npz').exists()
+            and (rep_subdir / 'diagnostics.npz').exists())
 
 
 # -----------------------------------------------------------------------------

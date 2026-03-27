@@ -5,15 +5,13 @@
 #$ -l mem_per_core=12G
 #$ -P bayesij
 #$ -pe omp 1
-#$ -t 25-30 -tc 1    # cap number run concurrently to reduce chance of XLA compilation issues
+#$ -t 1-30 -tc 1    # 3 design sizes x 10 chunks = 30 tasks; cap concurrency
 #
-# Array job for executing PDE experiment. It is the users responsibility
-# for setting the task IDs (e.g., `-t 1-30`) and the batch size 
-# (e.g., `--rep-chunk-size 10`) in a compatible manner.
+# Array job for executing PDE experiment. The task IDs and batch size
+# must be compatible: 3 design sizes × ceil(num_reps / rep_chunk_size)
+# tasks total. With 100 reps and chunk size 10: 3 × 10 = 30 tasks.
 #
-# Example:
-# For 3 different design settings, with 100 reps per setting. Batch size of
-# 10 implies 30 jobs, so the task IDs should be specified as `-t 1-30`.
+# RKPCN samplers (rho=0.0, 0.9, 0.95, 0.99) are included via run_kwargs.
 #
 # Issues with JAX running on CPU clusters:
 # https://github.com/jax-ml/jax/issues/1539
