@@ -116,7 +116,83 @@ All plots are saved to `out/vsem/`.
 
 ### Elliptic PDE Experiment
 
-*(Directions to be added.)*
+The elliptic PDE experiment solves a 1D diffusion inverse problem with a Karhunen–Loève parameterized log-permeability field (6 parameters). A batch independent GP surrogate of the forward model is fit, and posterior approximations are compared via MCMC. It runs 100 replicates across 3 design sizes: {10, 20, 30} design points.
+
+#### Running on a cluster (SGE)
+
+From the repo root:
+```bash
+cd experiments/elliptic_pde
+qsub submit_runner.sh
+```
+
+This submits 30 array tasks (3 design sizes × 10 chunks of 10 replicates each). Each task runs a subset of replicates for one design size. Output is saved per-replicate to `out/pde_experiment/n_design_<N>/rep<i>/`.
+
+To monitor progress:
+```bash
+qstat -u $USER
+cat pde_experiment.o*
+```
+
+To check which replicates have completed:
+```bash
+cd experiments/elliptic_pde
+python -c "
+from analyze import check_completion_status
+for n in [10, 20, 30]:
+    completed, missing = check_completion_status('../../out/pde_experiment', n, 100)
+    print(f'n_design={n}: {len(completed)} completed, {len(missing)} missing')
+"
+```
+
+#### Re-running failed replicates
+
+Individual replicates can be re-run using `main_manual()` in `runner.py`:
+```bash
+cd experiments/elliptic_pde
+python -c "
+from runner import main_manual
+main_manual('pde_experiment', n_design=10, rep_idx=[3, 17], write_to_log_file=True, overwrite=True)
+"
+```
+
+The arguments are: experiment name, number of design points, list of replicate indices to run, and whether to overwrite existing output.
+
+#### Running locally
+
+For local testing or running on a machine without a job scheduler:
+```bash
+cd experiments/elliptic_pde
+python -c "
+from runner import main_manual
+main_manual('pde_local_test', n_design=4, rep_idx=[0], write_to_log_file=False)
+"
+```
+
+A single replicate takes approximately 5–15 minutes depending on design size and hardware.
+
+#### Post-hoc analysis
+
+After all replicates have completed, generate all paper figures and diagnostics:
+```bash
+cd experiments/elliptic_pde
+python analyze.py --experiment-name pde_experiment
+```
+
+This produces:
+- **Coverage/calibration plots** (`pde_coverage.pdf`): Grid showing Mahalanobis ellipsoidal coverage curves across design sizes and approximation methods (mean, EUP, EP)
+- **W2 distance box plots** (`pde_w2_ndesign_*.pdf`): Wasserstein-2 distance from each posterior approximation to the MCwMH expected posterior, one plot per design size
+- **Acceptance rate diagnostics**: printed to stdout for all samplers and design sizes
+
+All plots are saved to `out/pde_experiment/`.
+
+#### Per-replicate diagnostics
+
+To investigate the behavior of a specific replicate (e.g., trace plots, scatter plots):
+```bash
+cd experiments/elliptic_pde
+python diagnose_rep.py --experiment-name pde_experiment --n-design 10 --rep 0 --output-dir ../../out/pde_experiment/diag
+```
 
 ### Linear Gaussian Experiment
 
