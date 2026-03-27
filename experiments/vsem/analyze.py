@@ -118,50 +118,70 @@ def print_diagnostics_all_setups(base_dir, num_reps=100):
 # Plotting
 # -----------------------------------------------------------------------------
 
-def plot_w2_boxplots(w2_results, title=None, figsize=(10, 5)):
+def plot_w2_boxplots(w2_results, surrogate_tag, output_dir=None):
     """
-    Box plots of W2 distance to EP, grouped by approximation method.
+    One box plot per design size, matching the PDE paper figure style.
+
+    Methods are ordered left-to-right by descending median. Only plots
+    'cut', 'rkpcn90', 'rkpcn95', 'rkpcn99', and 'eup' (no 'mean'/'exact').
+    'rkpcn0' is relabeled 'cut'.
 
     Args:
         w2_results: dict mapping setup names to dicts of {method: (n_reps,) array}
-        title: optional plot title
-        figsize: figure size
+        surrogate_tag: 'gp' or 'clip_gp'
+        output_dir: if provided, save each figure as PDF here
 
     Returns:
-        (fig, axes) — one subplot per setup
+        list of (fig, ax) tuples, one per design size
     """
-    setup_names = list(w2_results.keys())
-    n_setups = len(setup_names)
+    # Filter to this surrogate tag and sort by design size
+    relevant = {}
+    for k, v in w2_results.items():
+        if k.startswith(surrogate_tag + '_N'):
+            relevant[k] = v
+    design_names = sorted(relevant.keys(), key=lambda s: int(s.split('_N')[1]))
 
-    if n_setups == 0:
-        print("No results to plot")
-        return None, None
+    if not design_names:
+        print(f"No results for {surrogate_tag}")
+        return []
 
-    fig, axes = plt.subplots(1, n_setups, figsize=(figsize[0], figsize[1]),
-                             sharey=True, squeeze=False)
-    axes = axes.ravel()
+    figs = []
+    for i, sname in enumerate(design_names):
+        results = dict(relevant[sname])
 
-    for i, sname in enumerate(setup_names):
-        ax = axes[i]
-        results = w2_results[sname]
+        # Rename rkpcn0 → cut, drop mean/exact
+        if 'rkpcn0' in results:
+            results['cut'] = results.pop('rkpcn0')
+        for drop in ['mean', 'exact']:
+            results.pop(drop, None)
 
         if len(results) == 0:
-            ax.set_title(sname)
             continue
 
-        method_names = sorted(results.keys())
-        data = [np.array(results[m]) for m in method_names]
+        # Order by descending median
+        method_order = sorted(results.keys(),
+                              key=lambda m: np.median(results[m]),
+                              reverse=True)
+        data = [np.array(results[m]) for m in method_order]
 
-        bp = ax.boxplot(data, tick_labels=method_names, vert=True, patch_artist=True)
-        ax.set_title(sname)
-        ax.set_ylabel('$W_2$ to EP' if i == 0 else '')
-        ax.tick_params(axis='x', rotation=45)
+        fig, ax = plt.subplots()
+        ax.boxplot(data, tick_labels=method_order, showfliers=False)
 
-    if title:
-        fig.suptitle(title)
-    fig.tight_layout()
+        if i == 0:
+            ax.set_ylabel('2-Wasserstein', fontsize=30)
+        ax.tick_params(axis='x', labelsize=16)
+        ax.tick_params(axis='y', labelsize=19)
+        fig.tight_layout()
 
-    return fig, axes
+        if output_dir is not None:
+            n = sname.split('_N')[1]
+            out_path = Path(output_dir) / f'vsem_w2_{surrogate_tag}_N{n}.pdf'
+            fig.savefig(out_path, dpi=300, bbox_inches='tight')
+            print(f'Saved: {out_path}')
+
+        figs.append((fig, ax))
+
+    return figs
 
 
 def load_coverage_data(base_dir, subdir_name, rep_idcs):
@@ -275,63 +295,6 @@ def plot_coverage_grid(base_dir, surrogate_tag, num_reps=100, figsize_scale=3.0)
     return fig, axs
 
 
-def plot_w2_by_design_size(w2_results, surrogate_tag='gp', figsize=(8, 5)):
-    """
-    Box plots comparing W2 across design sizes for a single surrogate type.
-
-    Args:
-        w2_results: dict from compute_w2_all_setups
-        surrogate_tag: 'gp' or 'clip_gp'
-        figsize: figure size
-
-    Returns:
-        (fig, axes)
-    """
-    # Filter to relevant setups
-    relevant = {k: v for k, v in w2_results.items() if k.startswith(surrogate_tag)}
-    if not relevant:
-        print(f"No results for {surrogate_tag}")
-        return None, None
-
-    # Get all method names across setups
-    all_methods = set()
-    for v in relevant.values():
-        all_methods.update(v.keys())
-    methods = sorted(all_methods)
-
-    if len(methods) == 0:
-        print(f"No methods with results for {surrogate_tag}")
-        return None, None
-
-    n_designs = len(relevant)
-    design_names = sorted(relevant.keys())
-
-    fig, axes = plt.subplots(1, len(methods), figsize=figsize, sharey=True, squeeze=False)
-    axes = axes.ravel()
-
-    for j, method in enumerate(methods):
-        ax = axes[j]
-        data = []
-        labels = []
-        for dname in design_names:
-            if method in relevant[dname]:
-                data.append(np.array(relevant[dname][method]))
-                # Extract N from name like 'gp_N4'
-                labels.append(dname.split('_N')[1])
-
-        if data:
-            ax.boxplot(data, tick_labels=labels, vert=True, patch_artist=True)
-
-        ax.set_title(method)
-        ax.set_xlabel('N (design size)')
-        ax.set_ylabel('$W_2$ to EP' if j == 0 else '')
-
-    fig.suptitle(f'{surrogate_tag}: $W_2$ to EP by design size')
-    fig.tight_layout()
-
-    return fig, axes
-
-
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
@@ -391,19 +354,10 @@ def main():
             arr = np.array(vals)
             print(f'  {method}: median={np.median(arr):.4f}, mean={np.mean(arr):.4f}')
 
-    # W2 plots
-    fig, _ = plot_w2_boxplots(w2, title='$W_2$ to EP across setups')
-    if fig is not None:
-        out_path = base_dir / 'w2_boxplots.pdf'
-        fig.savefig(out_path, bbox_inches='tight')
-        print(f'\nSaved: {out_path}')
-
+    # W2 box plots (one per design size, PDE paper style)
+    print('\n--- W2 Box Plots ---')
     for tag in gp_tags:
-        fig, _ = plot_w2_by_design_size(w2, surrogate_tag=tag)
-        if fig is not None:
-            out_path = base_dir / f'w2_by_design_{tag}.pdf'
-            fig.savefig(out_path, bbox_inches='tight')
-            print(f'Saved: {out_path}')
+        plot_w2_boxplots(w2, surrogate_tag=tag, output_dir=base_dir)
 
 
 if __name__ == '__main__':
