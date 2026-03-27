@@ -29,12 +29,29 @@ from uncprop.utils.wasserstein import compute_wasserstein_comparison
 from uncprop.custom_types import PRNGKey, Array
 
 
-# ---- Setup definitions (must match runner.py) ----
-design_sizes = [10, 20, 30]
+# ---- Setup definitions ----
+# Default design sizes for the full experiment (matches runner.py).
+# discover_design_sizes() can find whatever is on disk.
+DEFAULT_DESIGN_SIZES = [10, 20, 30]
 
 
 def subdir_name(n_design):
     return f'n_design_{n_design}'
+
+
+def discover_design_sizes(base_dir):
+    """Scan base_dir for n_design_* subdirectories and return sorted list."""
+    base_dir = Path(base_dir)
+    if not base_dir.exists():
+        return []
+    sizes = []
+    for p in base_dir.iterdir():
+        if p.is_dir() and p.name.startswith('n_design_'):
+            try:
+                sizes.append(int(p.name.replace('n_design_', '')))
+            except ValueError:
+                pass
+    return sorted(sizes)
 
 
 # -----------------------------------------------------------------------------
@@ -94,9 +111,11 @@ def summarize_diagnostics(base_dir, n_design, rep_idcs):
     return all_diag
 
 
-def print_diagnostics_all_designs(base_dir, num_reps=100):
+def print_diagnostics_all_designs(base_dir, num_reps=100, design_sizes=None):
     """Print acceptance rate summary for all design sizes."""
     base_dir = Path(base_dir)
+    if design_sizes is None:
+        design_sizes = discover_design_sizes(base_dir)
 
     for n in design_sizes:
         completed, _ = check_completion_status(base_dir, n, num_reps)
@@ -193,9 +212,15 @@ def assemble_coverage_reps(base_dir, n_design, probs,
     return jnp.stack(coverage_list)
 
 
-def plot_coverage_grid(base_dir, num_reps=100, figsize_scale=3.0):
+def plot_coverage_grid(base_dir, num_reps=100, design_sizes=None,
+                       figsize_scale=3.0):
     """Generate coverage plot: rows = design sizes, cols = approximations."""
     base_dir = Path(base_dir)
+    if design_sizes is None:
+        design_sizes = discover_design_sizes(base_dir)
+    if len(design_sizes) == 0:
+        return None, None
+
     probs = jnp.linspace(0.05, 0.99, 20)
     approx_names = ['mean', 'eup', 'ep_mcwmh']
     display_names = {'mean': 'mean', 'eup': 'eup', 'ep_mcwmh': 'ep'}
@@ -315,9 +340,11 @@ def summarize_wasserstein_design_reps(key, base_dir, n_design, rep_idcs,
 
 
 def compute_w2_all_designs(base_dir, num_reps=100, subsample=1000,
-                           output_dir=None, seed=42):
+                           output_dir=None, seed=42, design_sizes=None):
     """Compute W2 distances to EP for all design sizes."""
     base_dir = Path(base_dir)
+    if design_sizes is None:
+        design_sizes = discover_design_sizes(base_dir)
     key = jr.key(seed)
     all_results = {}
 
@@ -417,6 +444,10 @@ def main():
     print(f'  base_dir: {base_dir}')
     print(f'  num_reps: {args.num_reps}')
     print('=' * 60)
+
+    # Discover what's on disk
+    design_sizes = discover_design_sizes(base_dir)
+    print(f'  design sizes found: {design_sizes}')
 
     # Status
     print('\n--- Status ---')
