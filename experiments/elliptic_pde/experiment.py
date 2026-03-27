@@ -104,17 +104,19 @@ class PDEReplicate(Replicate):
             jnp.savez(out_dir / 'keys.npz', **{nm: jr.key_data(k) for nm, k in self.keys.items()})
 
 
-    def __call__(self, 
+    def __call__(self,
                  key: PRNGKey,
                  out_dir: Path,
-                 rho_vals: list[float],
+                 rho_vals: list[float] | None = None,
                  mcmc_settings: dict[str, Any] | None = None,
                  mcwmh_settings: dict[str, Any] | None = None,
-                 rkpcn_settings: dict[str, Any] | None = None,  
+                 rkpcn_settings: dict[str, Any] | None = None,
                  **kwargs):
         
         key, key_init_mcmc, key_seed_mcmc, key_mcwmh = jr.split(key, 4)
 
+        if rho_vals is None:
+            rho_vals = [0.0, 0.9, 0.95, 0.99]
         if mcmc_settings is None:
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
         if mcwmh_settings is None:
