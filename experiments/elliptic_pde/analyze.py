@@ -227,7 +227,8 @@ def plot_coverage_grid(base_dir, num_reps=100, design_sizes=None,
 
     fig, axs = plt.subplots(len(design_sizes), len(approx_names),
                             figsize=(figsize_scale * len(approx_names),
-                                     figsize_scale * len(design_sizes)))
+                                     figsize_scale * len(design_sizes)),
+                            squeeze=False)
 
     has_data = False
 
