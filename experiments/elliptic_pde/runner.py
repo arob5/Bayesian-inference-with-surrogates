@@ -60,8 +60,8 @@ run_kwargs = {
     'rho_vals': [0.0, 0.9, 0.95, 0.99],
     'mcmc_settings': {'n_samples': 5_000, 'n_burnin': 50_000,
                       'thin_window': 1, 'adapt_kwargs': {'gamma_exponent': 0.5}},
-    'mcwmh_settings': {'n_chains': 100, 'n_samp_per_chain': 10,
-                       'n_burnin': 10_000, 'thin_window': 500,
+    'mcwmh_settings': {'n_chains': 200, 'n_samp_per_chain': 50,
+                       'n_burnin': 10_000, 'thin_window': 100,
                        'adapt_kwargs': {'gamma_exponent': 0.5}},
     'rkpcn_settings': {'n_samples': 5_000, 'n_burnin': 10_000, 'thin_window': 5},
 }

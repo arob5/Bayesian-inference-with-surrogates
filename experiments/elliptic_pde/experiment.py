@@ -7,7 +7,10 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 
+import numpy as np
+
 from uncprop.custom_types import PRNGKey, Array
+from uncprop.utils.diagnostics import compute_ess
 from uncprop.utils.experiment import Replicate, Experiment
 from uncprop.core.inverse_problem import Posterior
 from uncprop.core.distribution import DistributionFromDensity
@@ -120,7 +123,7 @@ class PDEReplicate(Replicate):
         if mcmc_settings is None:
             mcmc_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
         if mcwmh_settings is None:
-            mcwmh_settings = {'n_chains': 100, 'n_samp_per_chain': 10, 'n_burnin': 10_000, 'thin_window': 100}
+            mcwmh_settings = {'n_chains': 200, 'n_samp_per_chain': 50, 'n_burnin': 10_000, 'thin_window': 100}
         if rkpcn_settings is None:
             rkpcn_settings = {'n_samples': 5000, 'n_burnin': 10_000, 'thin_window': 5}
 
@@ -158,16 +161,29 @@ class PDEReplicate(Replicate):
                   **{k: jnp.array(v) for k, v in diagnostics.items()})
 
         # expected posterior: MCwMH
+        print('\t\tep_mcwmh')
         start_mcwmh = time.perf_counter()
-        samp_mcwmh = sample_mcwmh(key=key_mcwmh,
-                                  posterior_surrogate=self.posterior_surrogate,
-                                  prop_cov_init=mcmc_info['mean']['prop_cov'][0],
-                                  **mcwmh_settings)
-        mcmc_samp['ep_mcwmh'] = samp_mcwmh.reshape(-1, self.posterior.dim)
+        mcwmh_result = sample_mcwmh(
+            key=key_mcwmh,
+            posterior_surrogate=self.posterior_surrogate,
+            prop_cov_init=mcmc_info['mean']['prop_cov'][0],
+            **mcwmh_settings)
+        mcmc_samp['ep_mcwmh'] = mcwmh_result['samples'].reshape(-1, self.posterior.dim)
         end_mcwmh = time.perf_counter()
         jnp.savez(out_dir / 'samples.npz', **mcmc_samp)
+
+        # MCwMH per-chain diagnostics
         diagnostics['mcwmh_time'] = end_mcwmh - start_mcwmh
-        print(f'\t\tmcwmh time: {end_mcwmh - start_mcwmh:.6f} seconds')
+        diagnostics['mcwmh_accept_rates'] = mcwmh_result['accept_rates']
+        diagnostics['mcwmh_ess'] = mcwmh_result['ess']
+        diagnostics['mcwmh_final_logdens'] = mcwmh_result['final_logdens']
+        jnp.savez(out_dir / 'diagnostics.npz',
+                  **{k: jnp.array(v) for k, v in diagnostics.items()})
+
+        median_acc = float(jnp.median(mcwmh_result['accept_rates']))
+        median_ess = float(jnp.median(mcwmh_result['ess']))
+        print(f'\t\t  mcwmh time: {end_mcwmh - start_mcwmh:.1f}s, '
+              f'median accept: {median_acc:.4f}, median ESS: {median_ess:.1f}')
 
         # rkpcn samplers
         rkpcn_output = {}
@@ -211,17 +227,32 @@ def sample_mcwmh(key: PRNGKey,
                  thin_window: int,
                  prop_cov_init: Array | None = None,
                  adapt_kwargs=None):
-    """Monte Carlo within Metropolis-Hastings approximation of the expected posterior"""
+    """Monte Carlo within Metropolis-Hastings approximation of the expected posterior.
+
+    Returns dict with:
+        samples: (n_chains, n_samp_per_chain, dim)
+        accept_rates: (n_chains,) — mean accept rate per chain
+        ess: (n_chains, dim) — ESS per chain per parameter
+        final_logdens: (n_chains,) — log-density at final sample
+    """
 
     key_seed_trajectory, key_seed_mcmc, key_init_positions = jr.split(key, 3)
 
     trajectory_keys = jr.split(key_seed_trajectory, n_chains)
     mcmc_keys = jr.split(key_seed_mcmc, n_chains)
 
-    samp = jnp.zeros((n_chains, n_samp_per_chain, posterior_surrogate.dim))
+    dim = posterior_surrogate.dim
+    samp = jnp.zeros((n_chains, n_samp_per_chain, dim))
+    accept_rates = np.zeros(n_chains)
+    ess = np.zeros((n_chains, dim))
+    final_logdens = np.zeros(n_chains)
+
     initial_positions = posterior_surrogate.posterior.prior.sample(key_init_positions, n_chains)
 
     for i in range(n_chains):
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f'\t\t  chain {i+1}/{n_chains}')
+
         post_traj = posterior_surrogate.sample_trajectory(trajectory_keys[i])
 
         results = sample_distribution(
@@ -235,11 +266,18 @@ def sample_mcwmh(key: PRNGKey,
             adapt_kwargs=adapt_kwargs
         )
 
-        samp = samp.at[i].set(
-            results['positions'].squeeze(1)
-        )
+        chain_samples = results['positions'].squeeze(1)
+        samp = samp.at[i].set(chain_samples)
+        accept_rates[i] = results['accept_rate']
+        ess[i] = compute_ess(np.array(chain_samples))
+        final_logdens[i] = float(results['states'].logdensity[-1])
 
-    return samp
+    return {
+        'samples': samp,
+        'accept_rates': accept_rates,
+        'ess': ess,
+        'final_logdens': final_logdens,
+    }
 
 
 def sample_rkpcn(key: PRNGKey,

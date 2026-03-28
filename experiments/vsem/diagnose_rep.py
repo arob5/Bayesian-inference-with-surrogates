@@ -309,55 +309,7 @@ def plot_autocorrelation(samples_dict, methods=None, param_idx=0,
     return fig
 
 
-def compute_ess(samples, method='batch_means', batch_size=None):
-    """Estimate effective sample size for each parameter.
-
-    Args:
-        samples: (n_samples, dim) array
-        method: 'batch_means' or 'autocorrelation'
-
-    Returns:
-        (dim,) array of ESS estimates
-    """
-    samples = np.array(samples)
-    n, dim = samples.shape
-
-    if method == 'batch_means':
-        if batch_size is None:
-            batch_size = max(1, int(np.sqrt(n)))
-        n_batches = n // batch_size
-        ess = np.zeros(dim)
-        for j in range(dim):
-            x = samples[:n_batches * batch_size, j]
-            batch_means = x.reshape(n_batches, batch_size).mean(axis=1)
-            var_bm = np.var(batch_means, ddof=1)
-            var_x = np.var(x, ddof=1)
-            if var_bm > 0:
-                ess[j] = n * var_x / (batch_size * var_bm)
-            else:
-                ess[j] = n
-        return ess
-
-    elif method == 'autocorrelation':
-        ess = np.zeros(dim)
-        for j in range(dim):
-            x = samples[:, j] - samples[:, j].mean()
-            fft = np.fft.fft(x, n=2 * n)
-            acf = np.fft.ifft(fft * np.conj(fft)).real[:n]
-            acf /= acf[0]
-
-            # Initial monotone sequence estimator (Geyer 1992)
-            tau = 1.0
-            for k in range(1, n // 2):
-                rho_pair = acf[2*k - 1] + acf[2*k]
-                if rho_pair < 0:
-                    break
-                tau += 2 * rho_pair
-            ess[j] = n / tau
-        return ess
-
-    else:
-        raise ValueError(f'Unknown ESS method: {method}')
+from uncprop.utils.diagnostics import compute_ess
 
 
 # ---------------------------------------------------------------------------
