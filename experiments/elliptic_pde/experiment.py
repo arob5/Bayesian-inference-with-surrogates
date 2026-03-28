@@ -270,7 +270,7 @@ def sample_mcwmh(key: PRNGKey,
         samp = samp.at[i].set(chain_samples)
         accept_rates[i] = results['accept_rate']
         ess[i] = compute_ess(np.array(chain_samples))
-        final_logdens[i] = float(results['states'].logdensity[-1])
+        final_logdens[i] = float(jnp.squeeze(results['states'].logdensity[-1]))
 
     return {
         'samples': samp,
