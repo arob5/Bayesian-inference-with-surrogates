@@ -316,6 +316,8 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None,
                         help='Directory to save W2 results')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--skip-w2', action='store_true',
+                        help='Skip W2 computation (just run diagnostics and coverage)')
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[2]
@@ -343,27 +345,30 @@ def main():
             fig.savefig(out_path, bbox_inches='tight')
             print(f'Saved: {out_path}')
 
-    # W2
-    print('\n--- W2 Distances ---')
-    w2 = compute_w2_all_setups(
-        base_dir,
-        num_reps=args.num_reps,
-        subsample=args.subsample,
-        output_dir=args.output_dir,
-        seed=args.seed,
-    )
+    if not args.skip_w2:
+        # W2
+        print('\n--- W2 Distances ---')
+        w2 = compute_w2_all_setups(
+            base_dir,
+            num_reps=args.num_reps,
+            subsample=args.subsample,
+            output_dir=args.output_dir,
+            seed=args.seed,
+        )
 
-    # Print summary
-    for sname, results in w2.items():
-        print(f'\n{sname}:')
-        for method, vals in sorted(results.items()):
-            arr = np.array(vals)
-            print(f'  {method}: median={np.median(arr):.4f}, mean={np.mean(arr):.4f}')
+        # Print summary
+        for sname, results in w2.items():
+            print(f'\n{sname}:')
+            for method, vals in sorted(results.items()):
+                arr = np.array(vals)
+                print(f'  {method}: median={np.median(arr):.4f}, mean={np.mean(arr):.4f}')
 
-    # W2 box plots (one per design size, PDE paper style)
-    print('\n--- W2 Box Plots ---')
-    for tag in gp_tags:
-        plot_w2_boxplots(w2, surrogate_tag=tag, output_dir=base_dir)
+        # W2 box plots (one per design size, PDE paper style)
+        print('\n--- W2 Box Plots ---')
+        for tag in gp_tags:
+            plot_w2_boxplots(w2, surrogate_tag=tag, output_dir=base_dir)
+    else:
+        print('\n--- Skipping W2 computation (--skip-w2) ---')
 
 
 if __name__ == '__main__':
