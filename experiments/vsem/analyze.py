@@ -56,13 +56,16 @@ def subdir_name(tag, n):
 # W2 computation
 # -----------------------------------------------------------------------------
 
-def compute_w2_all_setups(base_dir, num_reps=100,
-                          subsample=None, output_dir=None, seed=42):
-    """Compute W2 distances to EP for all setups that have completed reps.
+def compute_w2_all_setups(base_dir, num_reps=100, output_dir=None, seed=42,
+                          # legacy args (ignored)
+                          subsample=None):
+    """Compute grid-based W2 distances to EP for all setups.
 
-    Uses a two-track approach:
-      - Grid-based W2 for exact/mean/eup (true distribution comparison)
-      - Sample-based W2 for RKPCN (grid-sampled EP as reference)
+    All comparisons are performed entirely on the grid:
+      - exact/mean/eup/ep have analytical grid densities
+      - rkpcn samples are converted to grid densities via KDE
+
+    This avoids instability from sampling diffuse grid-based distributions.
     """
     base_dir = Path(base_dir)
     key = jr.key(seed)
@@ -89,12 +92,9 @@ def compute_w2_all_setups(base_dir, num_reps=100,
             base_dir=base_dir,
             subdir_name=sname,
             rep_idcs=completed,
-            subsample=subsample,
             output_dir=output_dir,
         )
         all_results[sname] = results
-        if eps is not None:
-            print(f'  sample-based epsilon={eps:.6f}')
 
     return all_results
 

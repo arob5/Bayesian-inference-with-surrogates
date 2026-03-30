@@ -23,6 +23,7 @@ from jax.scipy.special import logsumexp
 from jax.lax import cumlogsumexp
 
 from ott.geometry import grid as ott_grid
+from ott.geometry import pointcloud as ott_pointcloud
 from ott.solvers.linear import sinkhorn
 from ott.problems.linear import linear_problem
 
@@ -315,15 +316,40 @@ class DensityComparisonGrid:
 
         return self.grid.plot(z=plot_vals, titles=dist_names, points=points, ax=ax, **kwargs)
 
-    def calc_wasserstein2(self, dist_name1, dist_name2, epsilon=None, **kwargs):
-        """
-        Discrete approximation of 2-Wasserstein using Sinkhorn.
+    def calc_wasserstein2(self, dist_name1, dist_name2, epsilon=None,
+                          min_prob=1e-30, **kwargs):
+        """Discrete approximation of 2-Wasserstein using Sinkhorn.
+
+        Uses a PointCloud geometry with coordinates normalized to [0, 1]
+        per dimension for numerical stability. Probability vectors are
+        clamped to remove near-zero entries (which cause Sinkhorn to
+        diverge) and renormalized.
+
+        Args:
+            dist_name1, dist_name2: names of distributions to compare
+            epsilon: Sinkhorn regularization (None = auto)
+            min_prob: probabilities below this are set to zero
+            **kwargs: forwarded to Sinkhorn solver
+
+        Returns:
+            Scalar W2 distance (in normalized coordinate space)
         """
         densities = self.log_dens_norm_grid
-        p_dist = jnp.exp(densities[dist_name1])
-        q_dist = jnp.exp(densities[dist_name2])
 
-        geom = ott_grid.Grid(x=self.grid.coords, epsilon=epsilon)
+        def _clamp_and_renorm(p):
+            p = jnp.where(p < min_prob, 0.0, p)
+            return p / p.sum()
+
+        p_dist = _clamp_and_renorm(jnp.exp(densities[dist_name1]))
+        q_dist = _clamp_and_renorm(jnp.exp(densities[dist_name2]))
+
+        # Normalize grid coordinates to [0, 1] per dimension for stability
+        pts = jnp.array(self.grid.flat_grid)
+        scale = self.grid.high - self.grid.low
+        scale = jnp.where(scale > 0, scale, 1.0)
+        pts_norm = (pts - self.grid.low) / scale
+
+        geom = ott_pointcloud.PointCloud(pts_norm, pts_norm, epsilon=epsilon)
         prob = linear_problem.LinearProblem(geom, a=p_dist, b=q_dist)
 
         solver = sinkhorn.Sinkhorn(**kwargs)
@@ -333,7 +359,7 @@ class DensityComparisonGrid:
             import warnings
             warnings.warn(f'Sinkhorn did not converge for {dist_name1} vs {dist_name2}')
 
-        return jnp.sqrt(out.primal_cost)
+        return jnp.sqrt(out.reg_ot_cost)
     
 
     def sample_from_grid(self, key: PRNGKey, dist_name: str, num_samples: int):
@@ -349,9 +375,41 @@ class DensityComparisonGrid:
         )
         return self.grid.flat_grid[idx]
 
+    def add_kde_density(self, name: str, samples: np.ndarray,
+                        bw_method=None):
+        """Add a distribution to the grid by fitting a KDE to MCMC samples.
+
+        This converts sample-based representations (e.g., RKPCN output) into
+        grid-based log-densities, enabling grid-based W2 comparison with
+        distributions that have analytical grid densities (exact, mean, eup, ep).
+
+        Uses scipy.stats.gaussian_kde with log-density evaluation for numerical
+        stability. The bandwidth is selected by Scott's rule (default) or can
+        be specified via ``bw_method``.
+
+        Args:
+            name: identifier for this distribution (e.g., 'rkpcn99')
+            samples: (n_samples, d) array of MCMC samples
+            bw_method: bandwidth selection method passed to gaussian_kde.
+                       Default (None) uses Scott's rule.
+        """
+        samples = np.asarray(samples)
+        kde = gaussian_kde(samples.T, bw_method=bw_method)
+
+        # Evaluate log-density on the grid
+        grid_points = np.asarray(self.grid.flat_grid)  # (n_points, d)
+        log_dens = kde.logpdf(grid_points.T)            # (n_points,)
+        log_dens = jnp.array(log_dens)
+
+        # Store unnormalized and normalized versions
+        self.log_dens_grid[name] = log_dens
+        self.log_dens_norm_grid[name] = normalize_density_over_grid(
+            logp=log_dens, cell_area=self.grid.cell_area
+        )[0].squeeze()
+
 
 # -----------------------------------------------------------------------------
-# Helper grid functions 
+# Helper grid functions
 # -----------------------------------------------------------------------------
 
 def normalize_density_over_grid(logp: Array, 

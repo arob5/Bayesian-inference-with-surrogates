@@ -302,43 +302,63 @@ def read_rep_diagnostics(rep_dir: str | Path) -> dict:
 
 
 def _load_rep_grid(rep_dir):
-    """Load the Grid and DensityComparisonGrid for a replicate."""
+    """Load the Grid and DensityComparisonGrid for a replicate.
+
+    Tries to load grid coordinates from grid_info.npz. Falls back to
+    reconstructing from the grid density array size and the known VSEM
+    parameter bounds if grid_info.npz is absent (older runs).
+    """
     rep_dir = Path(rep_dir)
-    gi = dict(jnp.load(rep_dir / 'grid_info.npz'))
-    grid = Grid(low=gi['low'], high=gi['high'],
-                n_points_per_dim=gi['n_points_per_dim'],
-                dim_names=gi['dim_names'])
     grid_dens = dict(jnp.load(rep_dir / 'grid_densities.npz'))
+
+    gi_path = rep_dir / 'grid_info.npz'
+    if gi_path.exists():
+        gi = dict(jnp.load(gi_path))
+        grid = Grid(low=gi['low'], high=gi['high'],
+                    n_points_per_dim=gi['n_points_per_dim'],
+                    dim_names=gi['dim_names'])
+    else:
+        # Fallback: infer from grid density size.  VSEM uses a 2D square
+        # grid over [0,1] x [0,10] with equal points per dimension.
+        import numpy as np
+        n_pts = len(next(iter(grid_dens.values())))
+        n_per_dim = int(np.sqrt(n_pts))
+        grid = Grid(low=np.array([0.0, 0.0]), high=np.array([1.0, 10.0]),
+                    n_points_per_dim=np.array([n_per_dim, n_per_dim]),
+                    dim_names=['av', 'veg_init'])
+
     dcg = DensityComparisonGrid(grid=grid, log_dens_grid=grid_dens)
     return grid, dcg
 
 
-def compute_w2_rep(key, rep_dir, n_grid_samples=1000,
-                   subsample=None, epsilon=None, sinkhorn_kwargs=None):
-    """Compute sample-based W2 distances to grid-based EP for one replicate.
+def compute_w2_rep(rep_dir, epsilon=None, kde_bw_method=None,
+                   sinkhorn_kwargs=None):
+    """Compute grid-based W2 distances to EP for one replicate.
 
-    All W2 distances are computed in a consistent sample-based manner:
-      - EP reference: samples drawn from the grid-based EP density
-      - exact/mean/eup: samples drawn from their grid-based densities
-      - rkpcn: MCMC samples (the only representation available)
+    All W2 distances are computed entirely on the grid, avoiding issues
+    with sampling from diffuse grid-based densities:
 
-    Using grid-based samples for exact/mean/eup avoids MCMC convergence
-    issues and ensures comparability with the RKPCN sample-based W2.
+      - exact/mean/eup/ep: grid-based log-densities loaded from disk
+        (computed analytically during the experiment run).
+      - rkpcn: MCMC samples are converted to grid-based log-densities
+        via KDE (scipy.stats.gaussian_kde), then compared on the grid.
+
+    The grid-based W2 uses OTT-JAX's Sinkhorn solver on the discrete
+    grid geometry, comparing normalized probability vectors directly.
+    This is more stable than the previous sample-based approach, which
+    suffered from diffuse EP samples dominating the W2 computation.
 
     Args:
-        key: PRNG key
         rep_dir: path to replicate directory
-        n_grid_samples: number of samples to draw from each grid-based distribution
-        subsample: subsample all sets to this many points (None = use all)
-        epsilon: Sinkhorn regularization (None = auto from reference geometry)
+        epsilon: Sinkhorn regularization (None = auto from grid geometry)
+        kde_bw_method: bandwidth method for KDE (None = Scott's rule).
+            Can be a scalar factor, 'scott', 'silverman', or a callable.
         sinkhorn_kwargs: kwargs for Sinkhorn solver
 
     Returns:
         (results_dict, epsilon) where results_dict maps method names to
-        scalar W2 distances
+        scalar W2 distances to EP
     """
-    from uncprop.utils.wasserstein import compute_wasserstein_comparison
-
     if sinkhorn_kwargs is None:
         sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
 
@@ -346,60 +366,43 @@ def compute_w2_rep(key, rep_dir, n_grid_samples=1000,
     grid, dcg = _load_rep_grid(rep_dir)
     mcmc_samp = read_rep_samples(rep_dir)
 
-    # Build unified sample dict using grid-based samples for distributions
-    # with densities on the grid, and MCMC samples for RKPCN
-    key_ep, key_grid, key_w2 = jr.split(key, 3)
-
-    # EP reference: draw from grid-based density
-    samp = {}
-    samp['ep'] = dcg.sample_from_grid(key_ep, dist_name='ep',
-                                       num_samples=n_grid_samples)
-
-    # Grid-based distributions: draw from their grid densities
-    grid_keys = jr.split(key_grid, 3)
-    for i, nm in enumerate(['exact', 'mean', 'eup']):
-        if nm in dcg.log_dens_grid:
-            samp[nm] = dcg.sample_from_grid(grid_keys[i], dist_name=nm,
-                                             num_samples=n_grid_samples)
-
-    # RKPCN: use MCMC samples directly
+    # Add RKPCN distributions to the grid via KDE
     for nm in mcmc_samp:
         if nm.startswith('rkpcn'):
-            samp[nm] = mcmc_samp[nm]
+            dcg.add_kde_density(nm, mcmc_samp[nm], bw_method=kde_bw_method)
 
-    results, epsilon = compute_wasserstein_comparison(
-        samples=samp,
-        reference_key='ep',
-        subsample=subsample,
-        key=key_w2,
-        epsilon=epsilon,
-        sinkhorn_kwargs=sinkhorn_kwargs,
-    )
+    # Compute grid-based W2 for all distributions vs EP
+    results = {}
+    for nm in dcg.distribution_names:
+        if nm == 'ep':
+            continue
+        w2 = dcg.calc_wasserstein2(nm, 'ep', epsilon=epsilon,
+                                    **sinkhorn_kwargs)
+        results[nm] = w2
 
     return results, epsilon
 
 
 def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
-                               n_grid_samples=1000,
-                               subsample=None,
                                output_dir=None,
-                               sinkhorn_kwargs=None):
+                               kde_bw_method=None,
+                               sinkhorn_kwargs=None,
+                               # legacy args (ignored)
+                               n_grid_samples=None, subsample=None):
     """
-    Compute sample-based W2 distance to EP for all reps in a setup.
+    Compute grid-based W2 distance to EP for all reps in a setup.
 
-    All distributions (exact, mean, eup, rkpcn) are compared to the
-    grid-based EP using a consistent sample-based methodology
-    (see compute_w2_rep). The same Sinkhorn epsilon is used across
-    all reps for consistency (auto-computed from the first rep).
+    All comparisons are performed entirely on the grid (see compute_w2_rep):
+      - exact/mean/eup/ep have analytical grid densities
+      - rkpcn samples are converted to grid densities via KDE
 
     Args:
-        key: PRNG key
+        key: PRNG key (retained for API compatibility but unused)
         base_dir: experiment base directory (contains subdir_name/)
         subdir_name: e.g. 'gp_N4', 'clip_gp_N16'
         rep_idcs: list of replicate indices to process
-        n_grid_samples: number of EP reference samples per rep
-        subsample: subsample RKPCN chains (None = use all)
         output_dir: if set, save results here
+        kde_bw_method: bandwidth method for KDE of RKPCN samples
         sinkhorn_kwargs: kwargs for Sinkhorn solver
 
     Returns:
@@ -409,7 +412,6 @@ def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
     if sinkhorn_kwargs is None:
         sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000, 'lse_mode': True}
 
-    w2_keys = jr.split(key, len(rep_idcs))
     setup_dir = Path(base_dir) / subdir_name
     results = []
     eps = None
@@ -429,11 +431,9 @@ def summarize_wasserstein_reps(key, base_dir, subdir_name, rep_idcs,
             rep_dir = setup_dir / f'rep{rep_idx}'
 
             rep_results, eps = compute_w2_rep(
-                key=w2_keys[i],
                 rep_dir=rep_dir,
-                n_grid_samples=n_grid_samples,
-                subsample=subsample,
                 epsilon=eps,
+                kde_bw_method=kde_bw_method,
                 sinkhorn_kwargs=sinkhorn_kwargs,
             )
             results.append(rep_results)
