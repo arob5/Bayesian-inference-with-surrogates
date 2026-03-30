@@ -175,8 +175,8 @@ def study_mcwmh_convergence(base_dir, n_design, rep_idx, output_dir,
     # W2 between standard and heavy
     key, key_w2 = jr.split(key)
     w2_std_heavy = wasserstein2_sinkhorn(
-        std_samp, heavy_samp, key=key_w2,
-        sinkhorn_kwargs={'threshold': 1e-6, 'max_iterations': 5000},
+        std_samp, heavy_samp,
+        threshold=1e-6, max_iterations=5000,
     )
     print(f'\nW2(standard, heavy) = {w2_std_heavy:.6f}')
 
@@ -185,8 +185,8 @@ def study_mcwmh_convergence(base_dir, n_design, rep_idx, output_dir,
         if ref_name in existing_samp:
             key, key_ctx = jr.split(key)
             w2_ctx = wasserstein2_sinkhorn(
-                heavy_samp, existing_samp[ref_name], key=key_ctx,
-                sinkhorn_kwargs={'threshold': 1e-6, 'max_iterations': 5000},
+                heavy_samp, existing_samp[ref_name],
+                threshold=1e-6, max_iterations=5000,
             )
             print(f'W2(heavy_EP, {ref_name}) = {w2_ctx:.6f}')
 
@@ -302,8 +302,8 @@ def study_rff_convergence(base_dir, n_design, rep_idx, output_dir,
         for b in rff_vals[i+1:]:
             key, key_w2 = jr.split(key)
             w2 = wasserstein2_sinkhorn(
-                ep_samples[a], ep_samples[b], key=key_w2,
-                sinkhorn_kwargs={'threshold': 1e-6, 'max_iterations': 5000},
+                ep_samples[a], ep_samples[b],
+                threshold=1e-6, max_iterations=5000,
             )
             w2_pairs[(a, b)] = float(w2)
             print(f'  W2(rff={a}, rff={b}) = {w2:.6f}')
@@ -416,8 +416,7 @@ def study_chain_quality(base_dir, n_design, rep_idx, output_dir,
         key, key_w2 = jr.split(key)
         w2_filter = wasserstein2_sinkhorn(
             jnp.array(ep_samp_full), jnp.array(ep_samp_filtered),
-            key=key_w2,
-            sinkhorn_kwargs={'threshold': 1e-6, 'max_iterations': 5000},
+            threshold=1e-6, max_iterations=5000,
         )
         print(f'  W2(full, filtered) = {float(w2_filter):.6f}')
     else:
