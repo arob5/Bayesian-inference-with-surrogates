@@ -2,9 +2,9 @@
 #$ -N pde_validate_ep
 #$ -j y
 #$ -l h_rt=24:00:00
-#$ -l mem_per_core=16G
+#$ -l mem_per_core=8G
 #$ -P bayesij
-#$ -pe omp 1
+#$ -pe omp 2
 #
 # Validate EP baseline for specific PDE replicates.
 #
