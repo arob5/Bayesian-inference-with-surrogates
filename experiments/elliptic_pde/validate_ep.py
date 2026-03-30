@@ -155,6 +155,9 @@ def study_mcwmh_convergence(base_dir, n_design, rep_idx, output_dir,
     print(f'  Median accept rate: {np.median(std_result["accept_rates"]):.4f}')
     print(f'  Median ESS: {np.median(std_result["ess"]):.1f}')
 
+    # Free compiled kernels before recompiling with different shapes
+    jax.clear_caches()
+
     # Run heavy budget
     key, key_heavy = jr.split(key)
     print(f'\nRunning heavy MCwMH ({heavy_settings["n_chains"]} chains '

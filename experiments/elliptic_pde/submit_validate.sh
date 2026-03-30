@@ -2,7 +2,7 @@
 #$ -N pde_validate_ep
 #$ -j y
 #$ -l h_rt=24:00:00
-#$ -l mem_per_core=8G
+#$ -l mem_per_core=16G
 #$ -P bayesij
 #$ -pe omp 1
 #
