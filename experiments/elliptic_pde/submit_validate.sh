@@ -2,23 +2,31 @@
 #$ -N pde_validate_ep
 #$ -j y
 #$ -l h_rt=24:00:00
-#$ -l mem_per_core=16G
+#$ -l mem_per_core=8G
 #$ -P bayesij
 #$ -pe omp 1
 #
 # Validate EP baseline for specific PDE replicates.
-# Runs MCwMH convergence, RFF convergence, and chain quality studies.
 #
 # Usage:
 #   cd experiments/elliptic_pde
+#
+#   # Run just chain quality (fast, ~5 min):
+#   qsub -v STUDIES=chain_quality submit_validate.sh
+#
+#   # Run all 3 studies (slow, several hours):
 #   qsub submit_validate.sh
 #
-# Edit the EXPERIMENT_NAME, N_DESIGN, and REP variables below before submitting.
+#   # Override experiment/design/rep:
+#   qsub -v EXPERIMENT_NAME=pde_experiment,N_DESIGN=20,REP=5 submit_validate.sh
+#
+# All variables below can be overridden via qsub -v.
 
-# --- USER SETTINGS ---
-EXPERIMENT_NAME="pde_local_test2"
-N_DESIGN=4
-REP=0
+# --- USER SETTINGS (override with qsub -v VAR=value) ---
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-pde_local_test2}"
+N_DESIGN="${N_DESIGN:-4}"
+REP="${REP:-0}"
+STUDIES="${STUDIES:-all}"
 # ----------------------
 
 REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
@@ -52,6 +60,13 @@ OUTPUT_DIR="${REPO_DIR}/out/${EXPERIMENT_NAME}/validation"
 
 cd "${SGE_O_WORKDIR}"
 
+# Build studies argument
+if [ "$STUDIES" = "all" ]; then
+    STUDIES_ARG=""
+else
+    STUDIES_ARG="--studies ${STUDIES}"
+fi
+
 exec python -u validate_ep.py \
     --experiment-name ${EXPERIMENT_NAME} \
     --n-design ${N_DESIGN} \
@@ -59,4 +74,5 @@ exec python -u validate_ep.py \
     --output-dir ${OUTPUT_DIR} \
     --heavy-n-chains 500 \
     --heavy-n-samp 200 \
-    --num-rff-values 500 1000 2000
+    --num-rff-values 500 1000 2000 \
+    ${STUDIES_ARG}
