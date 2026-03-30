@@ -194,6 +194,72 @@ cd experiments/elliptic_pde
 python diagnose_rep.py --experiment-name pde_experiment --n-design 10 --rep 0 --output-dir ../../out/pde_experiment/diag
 ```
 
+#### EP baseline validation
+
+The expected posterior (EP) in the PDE experiment is approximated via Monte Carlo within Metropolis-Hastings (MCwMH) using random Fourier feature (RFF) approximated GP trajectories. The `validate_ep.py` script provides three studies to assess the quality of this approximation for specific replicates:
+
+1. **MCwMH convergence**: Re-runs MCwMH at a heavier budget (500 chains × 200 samples) and compares to the standard budget (200 × 50) via W2 distance.
+2. **RFF convergence**: Re-runs MCwMH with different numbers of random Fourier features (e.g., 500, 1000, 2000) and computes pairwise W2 distances to check that the RFF approximation has converged.
+3. **Chain quality**: Post-hoc analysis of per-chain diagnostics (acceptance rates, ESS, final log-density). Identifies outlier chains, visualizes EP samples colored by chain, and reports W2 between full and filtered EP samples.
+
+Run all three studies for a specific replicate:
+```bash
+cd experiments/elliptic_pde
+qsub submit_validate.sh
+```
+
+Or run individual studies (chain quality is fast enough for interactive use):
+```bash
+qsub -v STUDIES=chain_quality submit_validate.sh
+qsub -v STUDIES=mcwmh_convergence submit_validate.sh
+qsub -v STUDIES=rff_convergence submit_validate.sh
+```
+
+Configure which replicate to validate by editing `submit_validate.sh` or passing arguments directly:
+```bash
+python validate_ep.py \
+    --experiment-name pde_experiment \
+    --n-design 10 --rep 0 \
+    --output-dir ../../out/pde_experiment/validation \
+    --studies chain_quality mcwmh_convergence rff_convergence
+```
+
+Output (plots and `.npz` files) is saved to the specified output directory.
+
 ### Linear Gaussian Experiment
 
-*(Directions to be added.)*
+The linear Gaussian experiment provides a closed-form test case where all posterior approximations (exact, mean plug-in, EUP, EP) are available analytically. The parameter space is 100-dimensional with a linear forward model (Gaussian deconvolution) and Gaussian prior. The experiment runs 100 replicates with a calibrated surrogate (Q = G C₀ Gᵀ).
+
+This experiment requires the `modmcmc` package (for MCMC-based EP comparisons), which is not included in the default environment. The analytical comparisons (coverage, KL divergence, Wasserstein distance) do not require `modmcmc`.
+
+#### Running the experiment
+
+From the repo root:
+```bash
+cd experiments/linear_Gaussian
+python runner.py
+```
+
+This runs 100 replicates of the coverage test with the default settings (d=100, noise_sd=0.2, every 4th index observed). Results are saved to `out/` within the experiment directory.
+
+#### Running locally with custom settings
+
+The experiment can also be run from a notebook or script:
+```python
+from uncprop.models.linear_Gaussian.inverse_problem_setup import make_inverse_problem
+from uncprop.models.linear_Gaussian.Gaussian import Gaussian
+from runner import run_coverage_test
+import numpy as np
+
+rng = np.random.default_rng(532124)
+inv_prob, g_conv, grid, idx_obs = make_inverse_problem(
+    rng=rng, d=100, noise_sd=0.2,
+    ker_length=21, ker_lengthscale=20, s=4)
+Q = inv_prob.G @ inv_prob.prior.cov @ inv_prob.G.T
+tests, res, probs = run_coverage_test(
+    rng, n_reps=10, m0=inv_prob.prior.mean,
+    C0=inv_prob.prior.cov, Sig=inv_prob.noise.cov,
+    G=inv_prob.G, Q_true=Q, Q=Q, include_mcmc=False)
+```
+
+Setting `include_mcmc=False` skips the MCMC-based EP approximations (which require `modmcmc`) and only computes the analytical comparisons. The notebooks in `experiments/linear_Gaussian/` provide interactive exploration of the results.
