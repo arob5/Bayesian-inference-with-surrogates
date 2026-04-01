@@ -310,3 +310,61 @@ def plot_samples_vs_ep(results, ep_density, grid, thin=5,
 
     fig.tight_layout()
     return fig, axes
+
+
+# ---------------------------------------------------------------------------
+# Adaptation diagnostics
+# ---------------------------------------------------------------------------
+
+def plot_adaptation_history(result, figsize=(14, 4)):
+    """Plot adaptation history from run_rkpcn_adaptive.
+
+    Shows: (a) proposal scale over adaptation steps,
+    (b) rolling acceptance rate, (c) proposal covariance diagonal entries.
+
+    Args:
+        result: dict from run_rkpcn_adaptive (must have 'adapt_history').
+
+    Returns:
+        (fig, axes).
+    """
+    hist = result.get('adapt_history')
+    if hist is None:
+        print('No adaptation history in this result.')
+        return None, None
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    # Scale
+    ax = axes[0]
+    ax.plot(hist['scales'])
+    ax.set_xlabel('Adaptation step')
+    ax.set_ylabel('Scale factor')
+    ax.set_title('Proposal scale')
+
+    # Accept rate
+    ax = axes[1]
+    ax.plot(hist['accept_rates'])
+    ax.axhline(0.234, color='red', linestyle='--', linewidth=1, label='0.234')
+    ax.set_xlabel('Adaptation step')
+    ax.set_ylabel('Accept rate')
+    ax.set_title('Rolling acceptance rate')
+    ax.legend()
+
+    # Covariance diagonals
+    ax = axes[2]
+    if hist['cov_diags'] is not None and len(hist['cov_diags']) > 0:
+        cov_diags = hist['cov_diags']
+        for j in range(cov_diags.shape[1]):
+            ax.plot(cov_diags[:, j], label=f'dim {j}')
+        ax.set_xlabel('Adaptation step')
+        ax.set_ylabel('Cov diagonal')
+        ax.set_title('Proposal variance per dimension')
+        ax.legend()
+    else:
+        ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                transform=ax.transAxes)
+
+    fig.suptitle(f'Adaptation: {result["label"]}', fontsize=12, y=1.02)
+    fig.tight_layout()
+    return fig, axes
