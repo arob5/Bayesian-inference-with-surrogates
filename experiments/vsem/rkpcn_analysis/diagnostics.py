@@ -170,7 +170,10 @@ def w2_table(results, ep_grid_density, grid, par_names=None,
             from ott.problems.linear import linear_problem
             from ott.solvers.linear import sinkhorn
 
-            x = [jnp.array(grid.axes[i]) for i in range(grid.n_dims)]
+            # Reconstruct per-axis coordinate vectors from Grid attributes
+            x = [jnp.linspace(float(grid.low[i]), float(grid.high[i]),
+                              int(grid.n_points_per_dim[i]))
+                 for i in range(grid.n_dims)]
             geom = ott_grid.Grid(x=x, epsilon=0.01)
 
             a = jnp.exp(logp_ep_norm)
