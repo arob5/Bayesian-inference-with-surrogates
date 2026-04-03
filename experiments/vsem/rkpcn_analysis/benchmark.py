@@ -356,53 +356,264 @@ def plot_benchmark_comparison(
 
 
 # =============================================================================
+# One-call analysis
+# =============================================================================
+
+def analyze_benchmark(
+    output_dir: str | Path,
+    base_dir: str | Path | None = None,
+    setup_name: str | None = None,
+    rep_idx: int | None = None,
+    par_names: list[str] | None = None,
+    compute_w2: bool = True,
+    save_plots: bool = True,
+    thin: int = 5,
+):
+    """Load benchmark results and produce full analysis.
+
+    Prints summary table, computes W2 (optional), generates scatter
+    plots against EP and trace plots. Saves all plots as PDFs.
+
+    This is the main post-processing entry point. Typical usage::
+
+        from rkpcn_analysis.benchmark import analyze_benchmark
+        analyze_benchmark('path/to/benchmark_output',
+                          base_dir='path/to/experiment',
+                          setup_name='clip_gp_N4', rep_idx=0)
+
+    Args:
+        output_dir: Benchmark output directory (from run_benchmark).
+        base_dir: Experiment base directory (for loading grid densities
+            and reference samples). If None, skips EP comparison.
+        setup_name: Setup name (e.g., 'clip_gp_N4'). Required if
+            base_dir is provided.
+        rep_idx: Replicate index. Required if base_dir is provided.
+        par_names: Parameter names for display. Defaults to ['u1', 'u2', ...].
+        compute_w2: Whether to compute W2 distances (requires base_dir).
+        save_plots: Whether to save plots as PDFs to output_dir.
+        thin: Thinning for scatter plots and W2 KDE.
+
+    Returns:
+        dict with 'results', 'w2' (if computed), 'figures'.
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    output_dir = Path(output_dir)
+
+    print('=' * 60)
+    print('Benchmark Analysis')
+    print(f'  output_dir: {output_dir}')
+    print('=' * 60)
+
+    # Load results
+    results = load_benchmark_results(output_dir)
+    if not results:
+        print('No results found.')
+        return {'results': {}, 'w2': {}, 'figures': []}
+
+    meta = load_benchmark_meta(output_dir)
+    print(f'  {len(results)} variants loaded')
+
+    # Summary table
+    print('\n--- Summary ---')
+    print_benchmark_summary(results, par_names=par_names)
+
+    # Load experiment data for EP comparison
+    ep_density = None
+    grid = None
+    reference_samples = None
+    design_points = None
+    figures = []
+
+    if base_dir is not None and setup_name is not None and rep_idx is not None:
+        saved = load_saved_data(Path(base_dir), setup_name, rep_idx)
+
+        if saved['grid_densities'] is not None:
+            ep_density = saved['grid_densities'].get('ep')
+
+        if saved['grid_info'] is not None:
+            gi = saved['grid_info']
+            grid = Grid(
+                low=np.array(gi['low']),
+                high=np.array(gi['high']),
+                n_points_per_dim=np.array(gi['n_points_per_dim'], dtype=int),
+                dim_names=list(gi['dim_names']) if 'dim_names' in gi else None,
+            )
+            if par_names is None and 'dim_names' in gi:
+                par_names = list(gi['dim_names'])
+
+        if saved['samples'] is not None:
+            reference_samples = {}
+            for name in ['exact', 'mean', 'eup']:
+                if name in saved['samples']:
+                    reference_samples[name] = np.array(saved['samples'][name])
+
+        if saved['setup_info'] is not None and 'design_x' in saved['setup_info']:
+            design_points = np.array(saved['setup_info']['design_x'])
+
+    # W2 computation
+    w2 = {}
+    if compute_w2 and ep_density is not None and grid is not None:
+        print('\n--- W2 to EP ---')
+        w2 = compute_benchmark_w2(
+            results, ep_density, grid, thin=thin,
+            reference_samples=reference_samples)
+
+    # Scatter plots vs EP
+    if ep_density is not None and grid is not None:
+        print('\n--- Scatter Plots ---')
+        fig, axes = plot_benchmark_comparison(
+            results, ep_density, grid,
+            reference_samples=reference_samples,
+            thin=thin, design_points=design_points)
+        figures.append(('scatter_vs_ep', fig))
+        if save_plots:
+            path = output_dir / 'scatter_vs_ep.pdf'
+            fig.savefig(path, bbox_inches='tight', dpi=150)
+            print(f'  Saved: {path}')
+        plt.close(fig)
+
+        # Also plot reference distributions separately
+        from .plots import plot_density_heatmaps
+        if saved['grid_densities'] is not None:
+            gd = saved['grid_densities']
+            available = [n for n in ['exact', 'mean', 'eup', 'ep'] if n in gd]
+            fig_hm, _ = plot_density_heatmaps(gd, grid, names=available)
+            figures.append(('density_heatmaps', fig_hm))
+            if save_plots:
+                path = output_dir / 'density_heatmaps.pdf'
+                fig_hm.savefig(path, bbox_inches='tight', dpi=150)
+                print(f'  Saved: {path}')
+            plt.close(fig_hm)
+
+    # Trace plots (for variants with saved traces)
+    has_traces = any(d['trace'] is not None for d in results.values())
+    if has_traces:
+        print('\n--- Trace Plots ---')
+        trace_results = {}
+        for label, data in results.items():
+            if data['trace'] is not None:
+                n_burnin = data['summary']['n_burnin']
+                trace_results[label] = {
+                    'positions': data['trace']['positions'],
+                    'logdensities': data['trace']['logdensities'],
+                    'post_burnin': data['trace']['positions'][n_burnin:],
+                    'n_burnin': n_burnin,
+                }
+
+        if trace_results:
+            from .plots import plot_traces, plot_acf
+            trace_figs = plot_traces(trace_results, par_names=par_names)
+            for j, fig in enumerate(trace_figs):
+                figures.append((f'traces_{j}', fig))
+                if save_plots:
+                    path = output_dir / f'traces_{j}.pdf'
+                    fig.savefig(path, bbox_inches='tight', dpi=150)
+                    print(f'  Saved: {path}')
+                plt.close(fig)
+
+            fig_acf, _ = plot_acf(trace_results, par_names=par_names)
+            figures.append(('acf', fig_acf))
+            if save_plots:
+                path = output_dir / 'acf.pdf'
+                fig_acf.savefig(path, bbox_inches='tight', dpi=150)
+                print(f'  Saved: {path}')
+            plt.close(fig_acf)
+
+    print('\n--- Done ---')
+    return {'results': results, 'w2': w2, 'figures': figures}
+
+
+# =============================================================================
 # CLI entry point
 # =============================================================================
 
 def main():
-    """CLI entry point for running benchmarks."""
+    """CLI entry point with 'run' and 'analyze' subcommands.
+
+    Usage::
+
+        # Run a benchmark
+        python -m rkpcn_analysis.benchmark run \\
+            --experiment-name vsem --setup clip_gp_N4 --rep 0 \\
+            --config rkpcn_analysis/example_benchmark.yaml \\
+            --output-dir ../../out/vsem/benchmarks/clip_gp_N4_rep0
+
+        # Analyze results (after run completes)
+        python -m rkpcn_analysis.benchmark analyze \\
+            --output-dir ../../out/vsem/benchmarks/clip_gp_N4_rep0 \\
+            --experiment-name vsem --setup clip_gp_N4 --rep 0
+    """
     import argparse
-    import yaml
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
     parser = argparse.ArgumentParser(
-        description='Run RKPCN benchmark on a VSEM replicate')
-    parser.add_argument('--experiment-name', type=str, required=True)
-    parser.add_argument('--setup', type=str, required=True,
-                        help='Setup name, e.g., clip_gp_N4')
-    parser.add_argument('--rep', type=int, required=True)
-    parser.add_argument('--config', type=str, required=True,
-                        help='YAML file with variant definitions')
-    parser.add_argument('--output-dir', type=str, required=True)
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--save-trace', action='store_true',
-                        help='Save full unthinned trace per variant')
+        description='RKPCN benchmark: run variants or analyze results')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # --- 'run' subcommand ---
+    run_parser = subparsers.add_parser('run', help='Run benchmark variants')
+    run_parser.add_argument('--experiment-name', type=str, required=True)
+    run_parser.add_argument('--setup', type=str, required=True,
+                            help='Setup name, e.g., clip_gp_N4')
+    run_parser.add_argument('--rep', type=int, required=True)
+    run_parser.add_argument('--config', type=str, required=True,
+                            help='YAML file with variant definitions')
+    run_parser.add_argument('--output-dir', type=str, required=True)
+    run_parser.add_argument('--seed', type=int, default=42)
+    run_parser.add_argument('--save-trace', action='store_true',
+                            help='Save full unthinned trace per variant')
+
+    # --- 'analyze' subcommand ---
+    analyze_parser = subparsers.add_parser('analyze',
+                                            help='Analyze benchmark results')
+    analyze_parser.add_argument('--output-dir', type=str, required=True)
+    analyze_parser.add_argument('--experiment-name', type=str, default=None,
+                                help='For loading EP densities and reference samples')
+    analyze_parser.add_argument('--setup', type=str, default=None)
+    analyze_parser.add_argument('--rep', type=int, default=None)
+    analyze_parser.add_argument('--no-w2', action='store_true',
+                                help='Skip W2 computation')
+
     args = parser.parse_args()
-
-    # Load variant config
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
-    variants = config['variants']
-    common_kwargs = config.get('common_kwargs', {})
-
-    # Reconstruct replicate
     repo_root = Path(__file__).resolve().parents[3]
-    base_dir = repo_root / 'out' / args.experiment_name
 
-    rep, _ = reconstruct_replicate(
-        base_dir, args.setup, args.rep)
+    if args.command == 'run':
+        import yaml
 
-    # Run benchmark
-    key = jr.key(args.seed)
-    run_benchmark(
-        rep=rep,
-        variants=variants,
-        output_dir=args.output_dir,
-        key=key,
-        common_kwargs=common_kwargs,
-        save_full_trace=args.save_trace,
-    )
+        with open(args.config) as f:
+            config = yaml.safe_load(f)
+        variants = config['variants']
+        common_kwargs = config.get('common_kwargs', {})
+
+        base_dir = repo_root / 'out' / args.experiment_name
+        rep, _ = reconstruct_replicate(base_dir, args.setup, args.rep)
+
+        key = jr.key(args.seed)
+        run_benchmark(
+            rep=rep,
+            variants=variants,
+            output_dir=args.output_dir,
+            key=key,
+            common_kwargs=common_kwargs,
+            save_full_trace=args.save_trace,
+        )
+
+    elif args.command == 'analyze':
+        base_dir = None
+        if args.experiment_name is not None:
+            base_dir = repo_root / 'out' / args.experiment_name
+
+        analyze_benchmark(
+            output_dir=args.output_dir,
+            base_dir=base_dir,
+            setup_name=args.setup,
+            rep_idx=args.rep,
+            compute_w2=not args.no_w2,
+        )
 
 
 if __name__ == '__main__':
