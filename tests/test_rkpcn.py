@@ -1,12 +1,12 @@
 """
 Tests for the RKPCN v2 kernel (uncprop/core/rkpcn.py).
 
-Phase 1 tests:
-1. Kernel returns correct state/info types
-2. Kernel is compatible with mcmc_loop
-3. State initialization produces valid state
-4. Multiple u-steps (n_u_steps > 1) runs without error
-5. Integration test with VSEM surrogate (if available)
+Tests cover:
+1. Low-level helpers (MH accept/reject, pCN proposal)
+2. Kernel construction and initialization
+3. Single-step and multi-step execution
+4. mcmc_loop compatibility
+5. Multi-u-steps with iterative GP conditioning
 """
 from jax import config
 config.update('jax_enable_x64', True)
@@ -23,22 +23,19 @@ from uncprop.core.rkpcn import (
     RKPCNInfo,
     build_rkpcn_kernel,
     _mh_accept_reject,
-    _pcn_proposal_batch,
-    gp_condition_sample,
+    _pcn_proposal_univariate,
+    _gp_sample_at,
 )
 from uncprop.core.samplers import mcmc_loop
 
 
 # ---------------------------------------------------------------------------
-# Fixtures: build a simple GP surrogate for testing
+# Fixture: VSEM GP surrogate
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def simple_gp():
-    """Create a simple 1D GP surrogate for testing.
-
-    Uses a small set of design points so the GP is fast.
-    """
+    """Create a GP surrogate from a small VSEM problem."""
     from uncprop.models.vsem.surrogate import fit_vsem_surrogate
     from uncprop.models.vsem.inverse_problem import generate_vsem_inv_prob_rep
 
@@ -67,7 +64,7 @@ def simple_gp():
 
 
 # ---------------------------------------------------------------------------
-# Test: MH accept/reject helper
+# MH accept/reject
 # ---------------------------------------------------------------------------
 
 def test_mh_accept_reject_always_accepts():
@@ -111,46 +108,42 @@ def test_mh_accept_reject_nan_handling():
 
 
 # ---------------------------------------------------------------------------
-# Test: pCN proposal
+# pCN proposal
 # ---------------------------------------------------------------------------
 
-def test_pcn_proposal_rho_zero():
-    """With rho=0, pCN proposal should be independent of x."""
+def test_pcn_univariate_rho_zero():
+    """With rho=0, pCN proposal should be independent of f_u."""
     key = jr.key(42)
-    q, n = 1, 2
-    x = jnp.ones((q, n)) * 10.0
-    mean = jnp.zeros((q, n))
-    cov_tril = jnp.eye(n).reshape(1, n, n)
+    q = 1
+    f_u = jnp.array([10.0])
+    mean = jnp.array([0.0])
+    cov_tril = jnp.array([[[1.0]]])  # (1, 1, 1)
 
-    prop = _pcn_proposal_batch(key, x, mean, cov_tril, rho=0.0)
+    g_u = _pcn_proposal_univariate(key, f_u, mean, cov_tril, rho=0.0)
 
-    # With rho=0: pcn_mean = mean, pcn_tril = cov_tril
-    # So proposal should be centered at mean, not at x
-    assert prop.shape == (q, n)
-    # Proposal should be ~N(0, I), not near x=10
-    assert jnp.all(jnp.abs(prop) < 5.0)  # very unlikely to be near 10
+    assert g_u.shape == (q,)
+    # With rho=0: pcn_mean = mean = 0, so proposal should be ~N(0, 1)
+    assert jnp.abs(g_u[0]) < 5.0  # very unlikely to be near f_u=10
 
 
-def test_pcn_proposal_rho_near_one():
-    """With rho≈1, pCN proposal should be very close to x."""
+def test_pcn_univariate_rho_near_one():
+    """With rho≈1, pCN proposal should be very close to f_u."""
     key = jr.key(42)
-    q, n = 1, 2
-    x = jnp.ones((q, n)) * 5.0
-    mean = jnp.zeros((q, n))
-    cov_tril = jnp.eye(n).reshape(1, n, n)
+    f_u = jnp.array([5.0])
+    mean = jnp.array([0.0])
+    cov_tril = jnp.array([[[1.0]]])
 
-    prop = _pcn_proposal_batch(key, x, mean, cov_tril, rho=0.999)
+    g_u = _pcn_proposal_univariate(key, f_u, mean, cov_tril, rho=0.999)
 
-    # With rho≈1: pcn_mean ≈ x, pcn_tril ≈ 0
-    assert jnp.allclose(prop, x, atol=0.5)
+    assert jnp.abs(g_u[0] - 5.0) < 0.5  # should be close to f_u
 
 
 # ---------------------------------------------------------------------------
-# Test: RKPCN kernel construction and compatibility
+# Kernel construction
 # ---------------------------------------------------------------------------
 
 def test_kernel_construction(simple_gp):
-    """Test that build_rkpcn_kernel returns callable init_fn and kernel_fn."""
+    """build_rkpcn_kernel returns callable init_fn and kernel_fn."""
     posterior, surrogate_post = simple_gp
 
     from uncprop.core.rkpcn import build_log_density_vsem
@@ -165,7 +158,7 @@ def test_kernel_construction(simple_gp):
 
 
 def test_init_fn_returns_valid_state(simple_gp):
-    """Test that init_fn produces a valid RKPCNState."""
+    """init_fn produces a valid RKPCNState with correct shapes."""
     posterior, surrogate_post = simple_gp
 
     from uncprop.core.rkpcn import build_log_density_vsem
@@ -187,8 +180,12 @@ def test_init_fn_returns_valid_state(simple_gp):
     assert state.proposal_tril.shape == (d, d)
 
 
+# ---------------------------------------------------------------------------
+# Single kernel step
+# ---------------------------------------------------------------------------
+
 def test_kernel_single_step(simple_gp):
-    """Test that kernel_fn produces valid state and info after one step."""
+    """kernel_fn produces valid state and info after one step."""
     posterior, surrogate_post = simple_gp
 
     from uncprop.core.rkpcn import build_log_density_vsem
@@ -212,8 +209,12 @@ def test_kernel_single_step(simple_gp):
     assert 0.0 <= float(info.accept_prob) <= 1.0
 
 
+# ---------------------------------------------------------------------------
+# mcmc_loop compatibility
+# ---------------------------------------------------------------------------
+
 def test_kernel_mcmc_loop_compatible(simple_gp):
-    """Test that kernel_fn works with mcmc_loop."""
+    """kernel_fn works with mcmc_loop for multiple steps."""
     posterior, surrogate_post = simple_gp
 
     from uncprop.core.rkpcn import build_log_density_vsem
@@ -236,14 +237,42 @@ def test_kernel_mcmc_loop_compatible(simple_gp):
     assert infos.accept_prob.shape == (n_steps,)
     assert infos.is_accepted.shape == (n_steps,)
 
-    # At least some proposals should be accepted
     accept_rate = float(jnp.mean(infos.accept_prob))
-    assert accept_rate > 0.0, "No proposals accepted — check kernel"
+    assert accept_rate > 0.0, "No proposals accepted"
     print(f"  accept_rate over {n_steps} steps: {accept_rate:.4f}")
 
 
+# ---------------------------------------------------------------------------
+# Multi-u-steps
+# ---------------------------------------------------------------------------
+
 def test_kernel_multi_u_steps(simple_gp):
-    """Test that n_u_steps > 1 runs without error."""
+    """n_u_steps > 1 runs correctly with iterative GP conditioning."""
+    posterior, surrogate_post = simple_gp
+
+    from uncprop.core.rkpcn import build_log_density_vsem
+    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    gp = surrogate_post.surrogate
+
+    config = RKPCNConfig(rho=0.99, n_u_steps=3)
+    init_fn, kernel_fn = build_rkpcn_kernel(config, log_density_fn, gp)
+
+    key = jr.key(0)
+    d = posterior.dim
+    prop_cov = 0.01 * jnp.eye(d)
+    state = init_fn(key, posterior.prior.sample(jr.key(1)), prop_cov)
+
+    # Run a few macro-iterations manually
+    for i in range(5):
+        state, info = kernel_fn(jr.split(jr.key(i + 10))[0], state)
+        assert jnp.isfinite(state.logdensity) or state.logdensity == -jnp.inf
+        assert state.position.shape == (d,)
+
+    print(f"  multi-u final accept_prob: {float(info.accept_prob):.4f}")
+
+
+def test_multi_u_steps_mcmc_loop(simple_gp):
+    """Multi-u-step kernel works with mcmc_loop."""
     posterior, surrogate_post = simple_gp
 
     from uncprop.core.rkpcn import build_log_density_vsem
@@ -262,7 +291,36 @@ def test_kernel_multi_u_steps(simple_gp):
     states, infos = mcmc_loop(jr.key(3), kernel_fn, state, num_samples=n_steps)
 
     assert states.position.shape == (n_steps, d)
-    print(f"  multi-u accept_rate: {float(jnp.mean(infos.accept_prob)):.4f}")
+    print(f"  multi-u mcmc_loop accept_rate: {float(jnp.mean(infos.accept_prob)):.4f}")
+
+
+# ---------------------------------------------------------------------------
+# f-update correctness
+# ---------------------------------------------------------------------------
+
+def test_f_update_changes_f_position(simple_gp):
+    """After one kernel step, f_position should change (pCN perturbation)."""
+    posterior, surrogate_post = simple_gp
+
+    from uncprop.core.rkpcn import build_log_density_vsem
+    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    gp = surrogate_post.surrogate
+
+    config = RKPCNConfig(rho=0.5)  # rho=0.5 gives large perturbation
+    init_fn, kernel_fn = build_rkpcn_kernel(config, log_density_fn, gp)
+
+    key = jr.key(0)
+    d = posterior.dim
+    prop_cov = 0.01 * jnp.eye(d)
+    state = init_fn(key, posterior.prior.sample(jr.key(1)), prop_cov)
+
+    f_before = state.f_position.copy()
+    new_state, _ = kernel_fn(jr.key(2), state)
+    f_after = new_state.f_position
+
+    # With rho=0.5, the pCN step should noticeably change f_position
+    assert not jnp.allclose(f_before, f_after, atol=1e-6), \
+        "f_position did not change after kernel step"
 
 
 if __name__ == '__main__':

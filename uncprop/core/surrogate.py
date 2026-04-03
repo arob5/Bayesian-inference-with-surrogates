@@ -503,17 +503,53 @@ class GPJaxSurrogate(Surrogate):
     def predict(self, input: ArrayLike) -> GaussianFromNumpyro:
         return self._predict_using_precision(input, self.P, self.design)
 
-    def condition_then_predict(self, 
+    def condition(self, given: tuple[Array, Array]) -> "GPJaxSurrogate":
+        """Return a new GPJaxSurrogate conditioned on additional observations.
+
+        Non-destructive: ``self`` is not modified. The returned GP has an
+        updated precision matrix and design set that incorporate the new
+        observations. It supports all existing methods: ``__call__``,
+        ``predict``, ``condition_then_predict``, and further ``condition()``
+        calls for iterative conditioning.
+
+        Parameters
+        ----------
+        given : tuple[Array, Array]
+            ``(X_new, y_new)`` where ``X_new`` has shape ``(m, d)`` and
+            ``y_new`` has shape ``(m, q)``.  Can also be ``(d,)`` and
+            ``(q,)`` for a single point (will be reshaped internally).
+
+        Returns
+        -------
+        GPJaxSurrogate
+            A new surrogate with the conditioning applied.
+
+        Notes
+        -----
+        Uses ``__new__`` to bypass ``__init__`` (which recomputes the
+        precision matrix from scratch via Cholesky). If ``__init__``
+        gains new attributes in the future, they must also be set here.
+        """
+        P_new, design_new = self._update_conditioning_cache(given)
+        conditioned = GPJaxSurrogate.__new__(GPJaxSurrogate)
+        conditioned.gp = self.gp
+        conditioned.design = design_new
+        conditioned.P = P_new
+        conditioned.sig2_obs = self.sig2_obs
+        conditioned.jitter = self.jitter
+        return conditioned
+
+    def condition_then_predict(self,
                                input: ArrayLike,
                                given: tuple[Array, Array]):
         """
         Condition on new design points, then predict using conditioned GP.
-        """        
+        """
         P_new, design_new = self._update_conditioning_cache(given)
         return self._predict_using_precision(input, P_new, design_new)
 
 
-    def _predict_using_precision(self, 
+    def _predict_using_precision(self,
                                  x: ArrayLike, 
                                  P: Array, 
                                  design: Dataset) -> GaussianFromNumpyro:

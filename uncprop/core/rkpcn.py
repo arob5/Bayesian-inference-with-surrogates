@@ -1,6 +1,6 @@
 # uncprop/core/rkpcn.py
 """
-RKPCN v2: Modular Random Kernel preconditioned Crank-Nicolson sampler.
+RKPCN: Modular Random Kernel preconditioned Crank-Nicolson sampler.
 
 This module provides a clean, blackjax-compatible RKPCN implementation
 designed for easy experimentation with algorithm variants. The kernel is
@@ -9,38 +9,45 @@ compatible with ``mcmc_loop`` and ``mcmc_loop_multiple_chains`` from
 
 Algorithm overview
 ------------------
-RKPCN targets the expected posterior (EP):
+RKPCN targets the expected posterior (EP)::
 
-    π̂(u) = E_f[π(u; f)]  where  f ~ GP(μ, k)
+    pi_hat(u) = E_f[pi(u; f)]  where  f ~ GP(mu, k)
 
 by maintaining an extended state (u, f(u)) and alternating:
 
-1. **f-update** (pCN proposal, no MH correction):
-   g = μ + ρ(f − μ) + √(1−ρ²) ξ,  ξ ~ GP(0, k)
+1. **f-update** (pCN proposal at u, no MH correction):
+   Apply pCN to get g(u) from f(u). Condition the GP on {u, g(u)}.
 
-2. **u-update** (MH with proposal covariance Σ_Q):
-   propose ũ ~ N(u, Σ_Q), accept/reject via π(ũ; g) / π(u; g)
+2. **u-update(s)** (MH with proposal covariance Sigma_Q):
+   For each u-step: propose v, sample g(v) from conditioned GP,
+   accept/reject via pi(v; g(v)) / pi(u; g(u)), then condition
+   GP on {v, g(v)} for subsequent steps.
 
-The implementation is designed to be extended with:
-- Multiple u-steps per f-update (Phase 2)
+The f-step and u-steps are cleanly separated. The f-step only instantiates
+the trajectory at the current position u (and later, support points).
+The u-steps iteratively condition the GP as they explore.
+
+Designed for extension with:
 - Adaptive proposal covariance (Phase 3)
 - Bridging strategies between f and g (Phase 5)
 - Support points for normalizing constant estimation (Phase 6)
 
 Usage
 -----
+::
+
     from uncprop.core.rkpcn import RKPCNConfig, build_rkpcn_kernel
     from uncprop.core.samplers import mcmc_loop
 
-    config = RKPCNConfig(rho=0.99)
+    config = RKPCNConfig(rho=0.99, n_u_steps=1)
     init_fn, kernel_fn = build_rkpcn_kernel(config, log_density_fn, gp)
     state = init_fn(key, initial_position, prop_cov)
     states, infos = mcmc_loop(key, kernel_fn, state, num_samples=10_000)
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, NamedTuple
+from dataclasses import dataclass
+from typing import NamedTuple
 from collections.abc import Callable
 
 import jax
@@ -67,11 +74,11 @@ class RKPCNState(NamedTuple):
     position : Array, shape (d,)
         Current parameter position u.
     f_position : Array, shape (q,)
-        Current GP trajectory value f(u), where q is the GP output dim.
+        Current GP trajectory value g(u), where q is the GP output dim.
     logdensity : float
-        Log-density log π̃(u; f) at the current state.
+        Log-density log pi_tilde(u; g(u)) at the current state.
     proposal_tril : Array, shape (d, d)
-        Lower Cholesky factor of the u-proposal covariance Σ_Q.
+        Lower Cholesky factor of the u-proposal covariance Sigma_Q.
     """
     position: Array
     f_position: Array
@@ -85,9 +92,10 @@ class RKPCNInfo(NamedTuple):
     Attributes
     ----------
     accept_prob : float
-        MH acceptance probability for the u-update.
+        MH acceptance probability for the u-update. When n_u_steps > 1,
+        this is the mean acceptance probability across all u-steps.
     is_accepted : bool
-        Whether the u-proposal was accepted.
+        Whether any u-proposal was accepted in this macro-iteration.
     """
     accept_prob: ArrayLike
     is_accepted: ArrayLike
@@ -105,11 +113,12 @@ class RKPCNConfig:
     ----------
     rho : float
         pCN correlation parameter in [0, 1). Controls the magnitude of
-        the f-update: higher rho means smaller perturbations. The
-        approximation error from dropping the f-acceptance step scales
-        as O(√(1−ρ)).
+        the f-update perturbation. Higher rho means smaller steps in
+        trajectory space.
     n_u_steps : int
-        Number of u-updates per f-update (Phase 2). Default 1.
+        Number of u-updates per f-update. More u-steps give the
+        parameter chain time to equilibrate under the current trajectory
+        before the next f-update. Default 1.
     """
     rho: float = 0.99
     n_u_steps: int = 1
@@ -133,11 +142,13 @@ def build_rkpcn_kernel(
     log_density_fn : callable
         Function ``(f, u) -> scalar`` computing the log unnormalized
         density. ``f`` has shape ``(q,)`` (GP output at u) and ``u``
-        has shape ``(d,)``.
+        has shape ``(d,)``. The argument ``u`` is passed for use in
+        enforcing support constraints.
     gp : GPJaxSurrogate
-        The GP surrogate model, supporting ``gp(u)`` for prediction
-        and ``gp.condition_then_predict(u_new, given=(u, f))`` for
-        just-in-time conditioning.
+        The GP surrogate model. Must support ``gp(u)`` for prediction,
+        ``gp.condition(given=(u, f))`` for conditioning, and
+        ``gp.condition_then_predict(u_new, given=(u, f))`` for
+        combined conditioning + prediction.
 
     Returns
     -------
@@ -145,6 +156,7 @@ def build_rkpcn_kernel(
         ``(key, position, prop_cov) -> RKPCNState``
     kernel_fn : callable
         ``(key, state) -> (RKPCNState, RKPCNInfo)``
+        Compatible with ``mcmc_loop`` and ``mcmc_loop_multiple_chains``.
     """
     rho = config.rho
     n_u_steps = config.n_u_steps
@@ -155,32 +167,21 @@ def build_rkpcn_kernel(
     def kernel_fn(key: PRNGKey, state: RKPCNState) -> tuple[RKPCNState, RKPCNInfo]:
         key_f, key_u = jr.split(key)
 
-        # --- f-update: pCN proposal without MH correction ---
-        state, f_at_proposal_cache = _f_update_pcn(
-            key_f, state, gp, log_density_fn, rho,
-        )
+        # --- f-update: univariate pCN at u, condition GP ---
+        state, gp_conditioned = _f_update_pcn(key_f, state, gp, log_density_fn, rho)
 
-        # --- u-update(s) ---
-        # For n_u_steps == 1, the first u-proposal is the one used
-        # in the f-update (its f-value is already cached). For
-        # n_u_steps > 1, additional proposals require JIT conditioning.
-        state, info = _u_update(
-            key_u, state, gp, log_density_fn,
-            f_at_proposal=f_at_proposal_cache,
-            n_steps=n_u_steps,
-        )
+        # --- u-update(s): MH steps using conditioned GP ---
+        state, info = _u_updates(key_u, state, gp_conditioned, log_density_fn, n_u_steps)
 
         return state, info
 
     # ------------------------------------------------------------------
     # Init function
     # ------------------------------------------------------------------
-    def init_fn(
-        key: PRNGKey,
-        position: Array,
-        prop_cov: Array,
-    ) -> RKPCNState:
+    def init_fn(key: PRNGKey, position: Array, prop_cov: Array) -> RKPCNState:
         """Initialize RKPCN state.
+
+        Samples f(u_0) from the GP marginal and evaluates the log-density.
 
         Parameters
         ----------
@@ -193,7 +194,6 @@ def build_rkpcn_kernel(
         position = jnp.atleast_1d(jnp.squeeze(position))
         prop_tril = jnp.linalg.cholesky(prop_cov, upper=False)
 
-        # Sample f(u_0) from the GP marginal
         f_init = gp(position).sample(key).reshape(gp.output_dim)
         lp_init = log_density_fn(f_init, position).squeeze()
 
@@ -208,7 +208,7 @@ def build_rkpcn_kernel(
 
 
 # =============================================================================
-# Internal: f-update
+# f-update: univariate pCN at u
 # =============================================================================
 
 def _f_update_pcn(
@@ -217,146 +217,163 @@ def _f_update_pcn(
     gp: GPJaxSurrogate,
     log_density_fn: Callable,
     rho: float,
-) -> tuple[RKPCNState, Array]:
-    """pCN f-update without Metropolis correction.
+) -> tuple[RKPCNState, GPJaxSurrogate]:
+    """Apply a pCN f-update at the current position u.
 
-    Proposes a new trajectory g via pCN from the current trajectory f,
-    realized at (u, v) where v is a fresh u-proposal. The f-update is
-    accepted unconditionally (α_f ≡ 1).
+    Draws a new trajectory value g(u) via the pCN proposal applied to
+    the current value f(u). Does NOT apply a Metropolis correction
+    (the approximation alpha_f = 1). After the update, conditions the
+    GP on {u, g(u)} to prepare for subsequent u-updates.
+
+    Parameters
+    ----------
+    key : PRNGKey
+    state : RKPCNState
+        Current state with position u and f_position = f(u).
+    gp : GPJaxSurrogate
+        The (unconditioned) GP surrogate.
+    log_density_fn : callable
+        (f, u) -> scalar log-density.
+    rho : float
+        pCN correlation parameter.
 
     Returns
     -------
     state : RKPCNState
-        Updated state with f_position = g(u) and logdensity = log π̃(u; g).
-    g_at_v : Array, shape (q,)
-        The proposed trajectory value g(v) at the u-proposal point.
-        This is cached to avoid redundant JIT conditioning in the
-        subsequent u-update.
+        Updated state with f_position = g(u) and updated logdensity.
+    gp_conditioned : GPJaxSurrogate
+        GP conditioned on {u, g(u)}, ready for u-step predictions.
     """
-    key_jit, key_pcn = jr.split(key)
-
     u = state.position
     fu = state.f_position
 
-    # JIT-condition to sample f(v) | f(u), then apply pCN to get g at (u, v)
-    # We need a u-proposal point for the JIT. Sample one from the proposal.
-    key_pcn, key_v = jr.split(key_pcn)
-    v = _sample_gaussian_tril(key_v, m=u, L=state.proposal_tril).squeeze()
+    # Univariate pCN: g(u) from f(u)
+    # Get the GP marginal at u for the pCN mean and variance
+    gp_at_u = gp(u)
+    gu = _pcn_proposal_univariate(key, fu, gp_at_u.mean, gp_at_u.chol, rho)
 
-    gU, _ = _jit_pcn_proposal(
-        key=key_jit,
-        gp=gp,
-        given=(u, fu),
-        u_new=v,
-        rho=rho,
-    )
-
-    # gU has shape (q, 2): column 0 = g(u), column 1 = g(v)
-    gu = gU[:, 0]
-    gv = gU[:, 1]
-
-    # Update state: f ← g at current position
+    # Update state
     new_logdensity = log_density_fn(gu, u)
     state = state._replace(
-        f_position=gu.reshape(gp.output_dim),
+        f_position=gu,
         logdensity=new_logdensity,
     )
 
-    return state, gv
+    # Condition GP on {u, g(u)} for subsequent u-updates
+    gp_conditioned = gp.condition(given=(u, gu))
+
+    return state, gp_conditioned
 
 
 # =============================================================================
-# Internal: u-update
+# u-update(s): MH steps with iterative GP conditioning
 # =============================================================================
 
-def _u_update(
+def _u_updates(
     key: PRNGKey,
     state: RKPCNState,
-    gp: GPJaxSurrogate,
+    gp_conditioned: GPJaxSurrogate,
     log_density_fn: Callable,
-    f_at_proposal: Array,
-    n_steps: int = 1,
+    n_steps: int,
 ) -> tuple[RKPCNState, RKPCNInfo]:
-    """One or more MH u-updates targeting π(·; g) for the current trajectory g.
+    """Perform one or more MH u-updates under the current trajectory g.
 
-    For the first step, uses the cached f_at_proposal (from the f-update).
-    For subsequent steps (n_steps > 1), proposes new u-positions and
-    JIT-conditions to get g(ũ) at each.
+    At each step:
+    1. Propose v ~ N(u_current, Sigma_Q)
+    2. Sample g(v) from the conditioned GP
+    3. Condition GP on {v, g(v)} (for subsequent steps)
+    4. MH accept/reject using pi(v; g(v)) / pi(u; g(u))
+    5. Update position if accepted
+
+    The conditioning set grows with each step, giving better
+    predictions for subsequent proposals.
 
     Parameters
     ----------
-    f_at_proposal : Array, shape (q,)
-        g(v) at the u-proposal point from the f-update. Used for
-        the first u-step to avoid redundant JIT conditioning.
+    key : PRNGKey
+    state : RKPCNState
+    gp_conditioned : GPJaxSurrogate
+        GP already conditioned on {u, g(u)} from the f-step.
+    log_density_fn : callable
+    n_steps : int
+        Number of u-updates to perform.
 
     Returns
     -------
     state : RKPCNState
         Updated state after all u-steps.
     info : RKPCNInfo
-        Diagnostics from the *last* u-step (accept_prob, is_accepted).
+        accept_prob: mean acceptance probability across all steps.
+        is_accepted: whether any step was accepted.
     """
-    return _multi_u_steps(key, state, gp, log_density_fn, f_at_proposal, n_steps)
+    if n_steps == 1:
+        # Fast path: single u-step, no scan overhead
+        return _single_u_step(key, state, gp_conditioned, log_density_fn)
 
-
-def _single_u_step_cached(
-    key: PRNGKey,
-    state: RKPCNState,
-    log_density_fn: Callable,
-    f_at_proposal: Array,
-) -> tuple[RKPCNState, RKPCNInfo]:
-    """Single u-step using cached f(v) from the f-update."""
-    key_propose, key_accept = jr.split(key)
-
-    u = state.position
-    fu = state.f_position
-
-    # The proposal v was already drawn during the f-update; we need to
-    # recover it. Since we can't pass it through, we re-draw using the
-    # same key structure. But actually, the f-update already evaluated
-    # g(v) — we just need the u-proposal point itself.
+    # Multiple u-steps: use Python loop (not jax.lax.scan) because
+    # each step produces a differently-sized conditioned GP (precision
+    # matrix grows by one row/column). With n_u_steps typically small
+    # (1-10), the unrolled loop overhead is minimal.
     #
-    # Design note: in the current implementation, the u-proposal is
-    # drawn inside _f_update_pcn and g(v) is returned as f_at_proposal.
-    # We need to draw the same v here. We use a fresh key instead and
-    # accept that the first u-proposal differs from the f-update's v.
-    # This is a design simplification — the f-update pre-computes g(v)
-    # for efficiency, but the u-update draws its own proposal.
-    v = _sample_gaussian_tril(key_propose, m=u, L=state.proposal_tril).squeeze()
+    # Note: since n_u_steps is a compile-time constant (from config),
+    # this loop is unrolled at JIT trace time, producing a fixed
+    # computation graph. JAX values stay as traced arrays throughout.
+    total_accept_prob = jnp.array(0.0)
+    any_accepted = jnp.array(False)
 
-    # JIT-condition to get g(v) — but wait, we have f_at_proposal for the
-    # v used in the f-update, not for this new v. For n_u_steps == 1,
-    # we should reuse the f-update's v. Let me restructure.
-    #
-    # Actually, the clean approach: the f-update draws v and returns both
-    # v and g(v). The u-update uses this same v. If rejected, done. If
-    # more steps are needed, draw new proposals.
-    #
-    # For now (Phase 1, n_u_steps=1): we use f_at_proposal as g(v) and
-    # need to know v. But we can't recover v from here.
-    #
-    # Simplest correct approach: pass v through from the f-update.
-    # But NamedTuple state can't carry transient data easily.
-    #
-    # Resolution: the first u-update uses a NEW proposal (not the f-update's v).
-    # This means the f_at_proposal cache is not used for n_u_steps=1.
-    # Instead, we always JIT-condition. This is slightly less efficient but
-    # correct and simple.
-    #
-    # TODO(Phase 2): optimize by passing v through for the first step.
+    keys = jr.split(key, n_steps)
+    for i in range(n_steps):
+        state, gp_conditioned, step_info = _single_u_step_and_condition(
+            keys[i], state, gp_conditioned, log_density_fn)
+        total_accept_prob = total_accept_prob + step_info.accept_prob
+        any_accepted = any_accepted | step_info.is_accepted
 
-    # JIT-condition: get g(v) for this new proposal
-    # We condition g on (u, g(u)) which we know from the f-update.
-    gv = gp_condition_sample(key_accept, gp, state.position, state.f_position, v)
-
-    lp_prop = log_density_fn(gv, v)
-
-    key_mh = jr.fold_in(key_accept, 1)
-    u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
-        key_mh, state.logdensity, lp_prop, u, v,
+    mean_accept = total_accept_prob / n_steps
+    info = RKPCNInfo(
+        accept_prob=mean_accept,
+        is_accepted=any_accepted,
     )
 
-    # Update f_position to track the accepted u
+    return state, info
+
+
+def _single_u_step(
+    key: PRNGKey,
+    state: RKPCNState,
+    gp_conditioned: GPJaxSurrogate,
+    log_density_fn: Callable,
+) -> tuple[RKPCNState, RKPCNInfo]:
+    """Single MH u-step. Does not further condition the GP (no next step).
+
+    Parameters
+    ----------
+    key : PRNGKey
+    state : RKPCNState
+    gp_conditioned : GPJaxSurrogate
+        GP conditioned on all previously observed trajectory values.
+    log_density_fn : callable
+
+    Returns
+    -------
+    state : RKPCNState
+    info : RKPCNInfo
+    """
+    key_prop, key_sample, key_mh = jr.split(key, 3)
+
+    u = state.position
+
+    # Propose v ~ N(u, Sigma_Q)
+    v = _sample_gaussian_tril(key_prop, m=u, L=state.proposal_tril).squeeze()
+
+    # Sample g(v) from GP conditioned on all observed points
+    gv = _gp_sample_at(key_sample, gp_conditioned, v)
+
+    # MH accept/reject
+    lp_prop = log_density_fn(gv, v)
+    u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
+        key_mh, state.logdensity, lp_prop, u, v)
+
+    # Update f_position to track the accepted position's trajectory value
     f_next = jax.lax.cond(
         is_accepted,
         lambda _: gv,
@@ -373,147 +390,134 @@ def _single_u_step_cached(
     return new_state, RKPCNInfo(accept_prob=accept_prob, is_accepted=is_accepted)
 
 
-def _multi_u_steps(
+def _single_u_step_and_condition(
     key: PRNGKey,
     state: RKPCNState,
-    gp: GPJaxSurrogate,
+    gp_conditioned: GPJaxSurrogate,
     log_density_fn: Callable,
-    f_at_proposal: Array,
-    n_steps: int,
-) -> tuple[RKPCNState, RKPCNInfo]:
-    """Multiple u-steps with JIT conditioning for each new proposal.
+) -> tuple[RKPCNState, GPJaxSurrogate, RKPCNInfo]:
+    """Single MH u-step, then condition GP on the evaluated point.
 
-    Uses jax.lax.scan for efficient compilation.
+    Used in the multi-u-step loop. After evaluating g(v), conditions
+    the GP on {v, g(v)} regardless of acceptance (the trajectory value
+    is informative either way).
+
+    Returns
+    -------
+    state : RKPCNState
+    gp_conditioned : GPJaxSurrogate
+        Further conditioned GP.
+    info : RKPCNInfo
     """
-    def scan_body(carry, key_step):
-        state = carry
-        key_prop, key_cond, key_mh = jr.split(key_step, 3)
+    key_prop, key_sample, key_mh = jr.split(key, 3)
 
-        u = state.position
-        v = _sample_gaussian_tril(key_prop, m=u, L=state.proposal_tril).squeeze()
+    u = state.position
 
-        # JIT-condition: sample g(v) | g(u)
-        gv = gp_condition_sample(key_cond, gp, u, state.f_position, v)
-        lp_prop = log_density_fn(gv, v)
+    # Propose v ~ N(u, Sigma_Q)
+    v = _sample_gaussian_tril(key_prop, m=u, L=state.proposal_tril).squeeze()
 
-        u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
-            key_mh, state.logdensity, lp_prop, u, v,
-        )
+    # Sample g(v) from conditioned GP
+    gv = _gp_sample_at(key_sample, gp_conditioned, v)
 
-        f_next = jax.lax.cond(
-            is_accepted,
-            lambda _: gv,
-            lambda _: state.f_position,
-            operand=None,
-        )
+    # Condition GP on {v, g(v)} for subsequent steps
+    gp_conditioned = gp_conditioned.condition(given=(v, gv))
 
-        new_state = state._replace(
-            position=u_next,
-            f_position=f_next,
-            logdensity=lp_next,
-        )
+    # MH accept/reject
+    lp_prop = log_density_fn(gv, v)
+    u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
+        key_mh, state.logdensity, lp_prop, u, v)
 
-        info = RKPCNInfo(accept_prob=accept_prob, is_accepted=is_accepted)
-        return new_state, info
-
-    keys = jr.split(key, n_steps)
-    final_state, all_infos = jax.lax.scan(scan_body, state, keys)
-
-    # Return the last info (for diagnostics)
-    last_info = RKPCNInfo(
-        accept_prob=all_infos.accept_prob[-1],
-        is_accepted=all_infos.is_accepted[-1],
+    f_next = jax.lax.cond(
+        is_accepted,
+        lambda _: gv,
+        lambda _: state.f_position,
+        operand=None,
     )
 
-    return final_state, last_info
+    new_state = state._replace(
+        position=u_next,
+        f_position=f_next,
+        logdensity=lp_next,
+    )
+
+    return new_state, gp_conditioned, RKPCNInfo(accept_prob=accept_prob, is_accepted=is_accepted)
 
 
 # =============================================================================
-# GP conditioning helpers
+# GP helpers
 # =============================================================================
 
-def gp_condition_sample(
+def _gp_sample_at(
     key: PRNGKey,
     gp: GPJaxSurrogate,
-    u_cond: Array,
-    f_cond: Array,
-    u_new: Array,
+    u: Array,
 ) -> Array:
-    """JIT-condition GP on (u_cond, f_cond) and sample at u_new.
+    """Sample g(u) from GP (conditioned or unconditioned) at a single point.
 
     Parameters
     ----------
     key : PRNGKey
     gp : GPJaxSurrogate
-    u_cond : Array, shape (d,)
-        Conditioning input.
-    f_cond : Array, shape (q,)
-        Conditioning value f(u_cond).
-    u_new : Array, shape (d,)
-        New input to predict at.
+    u : Array, shape (d,)
 
     Returns
     -------
-    f_new : Array, shape (q,)
-        Sampled value g(u_new) | g(u_cond) = f_cond.
+    f_u : Array, shape (q,)
     """
-    pred = gp.condition_then_predict(u_new, given=(u_cond, f_cond))
+    pred = gp(u)
     return pred.sample(key).squeeze(0).reshape(gp.output_dim)
 
 
-# =============================================================================
-# JIT pCN proposal
-# =============================================================================
-
-def _jit_pcn_proposal(
+def _pcn_proposal_univariate(
     key: PRNGKey,
-    gp: GPJaxSurrogate,
-    given: tuple[Array, Array],
-    u_new: Array,
+    f_u: Array,
+    mean: Array,
+    cov_tril: Array,
     rho: float,
-) -> tuple[Array, Array]:
-    """JIT-condition then pCN proposal at (u, u_new).
+) -> Array:
+    """Univariate pCN proposal at a single point.
 
-    Given f(u), samples f(u_new) via GP conditioning, then applies the
-    pCN proposal to the pair (f(u), f(u_new)).
+    Applies the pCN formula to the current trajectory value f(u) using
+    the GP marginal distribution at u.
 
     Parameters
     ----------
-    given : (u, f(u))
-        Current conditioning point and value.
-    u_new : Array, shape (d,)
-        New point to condition at.
+    key : PRNGKey
+    f_u : Array, shape (q,)
+        Current trajectory value at u.
+    mean : Array, shape (q,) or (q, 1)
+        GP prior mean at u.
+    cov_tril : Array, shape (q, 1, 1) or similar
+        GP prior Cholesky at u.
     rho : float
         pCN correlation.
 
     Returns
     -------
-    gU : Array, shape (q, 2)
-        pCN proposal at [u, u_new]. Column 0 = g(u), column 1 = g(u_new).
-    f_new : Array, shape (q,)
-        The JIT-sampled f(u_new) (before pCN).
+    g_u : Array, shape (q,)
+        Proposed new trajectory value at u.
     """
-    key_jit, key_pcn = jr.split(key)
+    # Flatten to (q,) for scalar operations
+    mean = mean.ravel()
+    f_u = f_u.ravel()
+    q = f_u.shape[0]
 
-    u, fu = given
+    # pCN: g(u) = mu + rho*(f(u) - mu) + sqrt(1-rho^2)*noise
+    pcn_mean = mean + rho * (f_u - mean)
 
-    # JIT-condition: sample f(u_new) | f(u)
-    f_new = gp.condition_then_predict(u_new, given=given).sample(key_jit).squeeze(0)
+    # Extract marginal std from Cholesky (diagonal of 1x1 Cholesky per output)
+    # cov_tril shape is (q, 1, 1) for a single point
+    std = jnp.abs(cov_tril.ravel())  # (q,)
+    pcn_std = jnp.sqrt(1 - rho**2) * std
 
-    # Stack for pCN at both points
-    U = jnp.vstack([u, u_new])
-    fU = jnp.hstack([
-        jnp.reshape(fu, (gp.output_dim, 1)),
-        jnp.reshape(f_new, (gp.output_dim, 1)),
-    ])
-    fU_dist = gp(U)
-    gU = _pcn_proposal_batch(key_pcn, fU, fU_dist.mean, fU_dist.chol, rho)
+    noise = jr.normal(key, shape=(q,))
+    g_u = pcn_mean + pcn_std * noise
 
-    return gU, f_new.reshape(gp.output_dim)
+    return g_u
 
 
 # =============================================================================
-# Low-level helpers (reused from samplers.py, kept here for independence)
+# MH accept/reject
 # =============================================================================
 
 def _mh_accept_reject(
@@ -526,7 +530,14 @@ def _mh_accept_reject(
 ) -> tuple[Array, Array, Array, Array]:
     """Standard MH accept/reject for symmetric proposals.
 
-    Returns (u_next, lp_next, accept_prob, is_accepted).
+    Handles NaN log-densities by treating them as -inf (auto-reject).
+
+    Returns
+    -------
+    u_next : Array
+    lp_next : float
+    accept_prob : float, in [0, 1]
+    is_accepted : bool
     """
     log_unif = jnp.log(jr.uniform(key))
     log_alpha = jnp.squeeze(lp_prop - lp_curr + log_correction)
@@ -544,33 +555,8 @@ def _mh_accept_reject(
     return u_next, lp_next, accept_prob, is_accepted
 
 
-def _pcn_proposal_batch(
-    key: PRNGKey,
-    x: Array,
-    mean: Array,
-    cov_tril: Array,
-    rho: float,
-) -> Array:
-    """Batched pCN proposal.
-
-    Parameters
-    ----------
-    x : Array, shape (q, n) — current values at n points, q output dims
-    mean : Array, shape (q, n) — GP prior mean at those points
-    cov_tril : Array, shape (q, n, n) — GP prior Cholesky at those points
-    rho : float — pCN correlation
-
-    Returns
-    -------
-    proposal : Array, shape (q, n)
-    """
-    pcn_mean = mean + rho * (x - mean)
-    pcn_tril = jnp.sqrt(1 - rho**2) * cov_tril
-    return _sample_batch_gaussian_tril(key, m=pcn_mean, L=pcn_tril).squeeze(0)
-
-
 # =============================================================================
-# Log-density builders (convenience functions for common setups)
+# Log-density builders
 # =============================================================================
 
 def build_log_density_vsem(posterior, surrogate_post):
@@ -589,7 +575,8 @@ def build_log_density_vsem(posterior, surrogate_post):
     Returns
     -------
     log_density_fn : callable
-        ``(f, u) -> scalar`` log-density function.
+        ``(f, u) -> scalar`` log-density function compatible with
+        ``build_rkpcn_kernel``.
     """
     from uncprop.models.vsem.surrogate import LogDensClippedGPSurrogate
 
