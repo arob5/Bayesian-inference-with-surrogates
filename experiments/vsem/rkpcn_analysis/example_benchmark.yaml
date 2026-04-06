@@ -14,7 +14,8 @@ common_kwargs:
   n_burnin: 50000
 
 # Each variant must have a unique 'label'. Supported keys:
-#   label, rho, n_u_steps, prop_cov_scale, n_total, n_burnin
+#   label, rho, n_u_steps, prop_cov_scale, n_total, n_burnin,
+#   adaptive (bool), adapt_end, adapt_interval, target_accept, gamma_exponent
 variants:
   # --- Baseline rho sweep ---
   - label: cut
@@ -50,3 +51,22 @@ variants:
   - label: rho99_s2.0
     rho: 0.99
     prop_cov_scale: 2.0
+
+  # --- Adaptive proposal ---
+  - label: rho99_adapt
+    rho: 0.99
+    adaptive: true
+
+  - label: rho99_adapt_u3
+    rho: 0.99
+    n_u_steps: 3
+    adaptive: true
+
+  - label: rho99_adapt_s0.1
+    rho: 0.99
+    adaptive: true
+    prop_cov_scale: 0.1
+
+  - label: cut_adapt
+    rho: 0.0
+    adaptive: true

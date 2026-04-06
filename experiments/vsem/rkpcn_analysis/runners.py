@@ -21,6 +21,11 @@ from uncprop.core.rkpcn import (
     build_rkpcn_kernel,
     build_log_density_vsem,
 )
+from uncprop.core.rkpcn_adaptation import (
+    AdaptiveRKPCNConfig,
+    build_adaptive_rkpcn_kernel,
+    get_adapted_proposal_cov,
+)
 from uncprop.core.samplers import mcmc_loop, sample_distribution
 from uncprop.utils.diagnostics import compute_ess
 
@@ -164,4 +169,128 @@ def run_rkpcn_variant(
         'label': label,
         'n_burnin': n_burnin,
         'runtime': runtime,
+    }
+
+
+def run_rkpcn_adaptive_variant(
+    key,
+    rep,
+    rho: float = 0.99,
+    n_u_steps: int = 1,
+    prop_cov=None,
+    n_total: int = 55_000,
+    n_burnin: int = 50_000,
+    adapt_end: int | None = None,
+    adapt_interval: int = 50,
+    target_accept: float = 0.234,
+    gamma_exponent: float = 0.8,
+    initial_position=None,
+    label: str | None = None,
+):
+    """Run an adaptive RKPCN chain and return the full trace.
+
+    Uses the adaptive kernel that tunes the u-proposal covariance
+    during the first ``adapt_end`` iterations (defaults to ``n_burnin``),
+    then freezes for the remainder.
+
+    Args:
+        key: PRNG key.
+        rep: VSEMReplicate.
+        rho: pCN correlation parameter.
+        n_u_steps: Number of u-updates per f-update.
+        prop_cov: Initial proposal covariance (adapted from this starting point).
+        n_total: Total iterations.
+        n_burnin: Burn-in iterations (for post-processing, not adaptation).
+        adapt_end: Stop adapting after this many iterations.
+            Defaults to ``n_burnin`` if not set.
+        adapt_interval: Steps between adaptation updates.
+        target_accept: Target acceptance rate for Robbins-Monro.
+        gamma_exponent: Decay rate for adaptation step size.
+        initial_position: Starting position.
+        label: Display label.
+
+    Returns:
+        Same dict as ``run_rkpcn_variant``, plus:
+            adapted_prop_cov_diag: final adapted proposal covariance diagonal.
+            adaptive: True (flag for downstream code).
+    """
+    key_init, key_samp = jr.split(key)
+
+    surr = rep.posterior_surrogate
+    log_density_fn = build_log_density_vsem(rep.posterior, surr)
+    gp = surr.surrogate
+
+    d = rep.posterior.dim
+
+    if prop_cov is None:
+        prop_cov = 0.01 * jnp.eye(d)
+    elif jnp.ndim(prop_cov) == 0:
+        prop_cov = float(prop_cov) * jnp.eye(d)
+
+    if initial_position is None:
+        initial_position = rep.posterior.prior.sample(key_init)
+    initial_position = jnp.atleast_1d(jnp.squeeze(initial_position))
+
+    if adapt_end is None:
+        adapt_end = n_burnin
+
+    config = RKPCNConfig(rho=rho, n_u_steps=n_u_steps)
+    adapt_config = AdaptiveRKPCNConfig(
+        adapt_end=adapt_end,
+        adapt_interval=adapt_interval,
+        target_accept=target_accept,
+        gamma_exponent=gamma_exponent,
+    )
+
+    init_fn, kernel_fn = build_adaptive_rkpcn_kernel(
+        config, adapt_config, log_density_fn, gp)
+    state = init_fn(key_init, initial_position, prop_cov)
+
+    if label is None:
+        parts = [f'rho{int(rho*100)}', 'adapt']
+        if n_u_steps > 1:
+            parts.append(f'u{n_u_steps}')
+        label = '_'.join(parts)
+
+    print(f'  Running {label} (rho={rho}, n_u_steps={n_u_steps}, '
+          f'adaptive, adapt_end={adapt_end}, '
+          f'n_total={n_total}, n_burnin={n_burnin})...')
+
+    start_time = time.perf_counter()
+    states, infos = mcmc_loop(key=key_samp, kernel=kernel_fn,
+                              initial_state=state, num_samples=n_total)
+    runtime = time.perf_counter() - start_time
+
+    positions = np.array(states.position)
+    logdensities = np.array(states.logdensity)
+    accept_probs = np.array(infos.accept_prob)
+    is_accepted = np.array(infos.is_accepted)
+
+    post_burnin = positions[n_burnin:]
+    ess = compute_ess(post_burnin)
+    accept_rate = float(np.mean(accept_probs[n_burnin:]))
+
+    # Extract final adapted proposal covariance
+    final_tril = np.array(states.proposal_tril[-1])
+    adapted_cov = final_tril @ final_tril.T
+
+    print(f'    accept={accept_rate:.4f}, min_ESS={min(ess):.1f}, '
+          f'n_post={post_burnin.shape[0]}, time={runtime:.1f}s')
+    print(f'    adapted prop_cov diag: {np.diag(adapted_cov)}')
+
+    return {
+        'positions': positions,
+        'logdensities': logdensities,
+        'accept_probs': accept_probs,
+        'is_accepted': is_accepted,
+        'post_burnin': post_burnin,
+        'ess': ess,
+        'accept_rate': accept_rate,
+        'rho': rho,
+        'n_u_steps': n_u_steps,
+        'label': label,
+        'n_burnin': n_burnin,
+        'runtime': runtime,
+        'adapted_prop_cov_diag': np.diag(adapted_cov).tolist(),
+        'adaptive': True,
     }

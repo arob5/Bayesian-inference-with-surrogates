@@ -49,7 +49,7 @@ import jax.random as jr
 import numpy as np
 
 from .reconstruct import reconstruct_replicate, load_saved_data
-from .runners import run_rkpcn_variant, get_adapted_proposal
+from .runners import run_rkpcn_variant, run_rkpcn_adaptive_variant, get_adapted_proposal
 from .diagnostics import summary_table, w2_table, integrated_autocorrelation_time
 from uncprop.utils.diagnostics import compute_ess
 from uncprop.utils.grid import Grid, normalize_density_over_grid
@@ -128,6 +128,7 @@ def run_benchmark(
         kwargs.update(variant)
 
         label = kwargs.pop('label', f'variant_{i}')
+        is_adaptive = kwargs.pop('adaptive', False)
         v_prop_cov = kwargs.pop('prop_cov', prop_cov)
 
         # Handle prop_cov_scale: shorthand for scaling the default prop_cov
@@ -137,8 +138,12 @@ def run_benchmark(
 
         print(f'\n[{i+1}/{len(variants)}] {label}')
 
-        result = run_rkpcn_variant(
-            key=subkey, rep=rep, prop_cov=v_prop_cov, label=label, **kwargs)
+        if is_adaptive:
+            result = run_rkpcn_adaptive_variant(
+                key=subkey, rep=rep, prop_cov=v_prop_cov, label=label, **kwargs)
+        else:
+            result = run_rkpcn_variant(
+                key=subkey, rep=rep, prop_cov=v_prop_cov, label=label, **kwargs)
         all_results[label] = result
 
         # Save per-variant output
@@ -164,6 +169,7 @@ def run_benchmark(
             'label': label,
             'rho': result['rho'],
             'n_u_steps': result.get('n_u_steps', 1),
+            'adaptive': result.get('adaptive', False),
             'accept_rate': result['accept_rate'],
             'min_ess': float(min(result['ess'])),
             'ess': [float(e) for e in result['ess']],
@@ -173,6 +179,8 @@ def run_benchmark(
             'runtime': result.get('runtime', 0.0),
             'prop_cov_diag': np.diag(np.array(v_prop_cov)).tolist(),
         }
+        if result.get('adapted_prop_cov_diag'):
+            summary['adapted_prop_cov_diag'] = result['adapted_prop_cov_diag']
         with open(var_dir / 'summary.json', 'w') as f:
             json.dump(summary, f, indent=2)
 
