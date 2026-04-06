@@ -15,6 +15,7 @@
 
 REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
 source "${REPO_DIR}/.venv/bin/activate"
+export JAX_ENABLE_X64=1
 
 echo "JOB_ID=$JOB_ID"
 hostname

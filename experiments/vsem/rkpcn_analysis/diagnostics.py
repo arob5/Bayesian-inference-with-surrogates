@@ -132,8 +132,12 @@ def w2_table(results, ep_grid_density, grid, par_names=None,
     Returns:
         dict mapping label -> W2 distance.
     """
+    import warnings
     from uncprop.utils.grid import normalize_density_over_grid
     from scipy.stats import gaussian_kde
+    from ott.geometry import pointcloud as ott_pointcloud
+    from ott.problems.linear import linear_problem
+    from ott.solvers.linear import sinkhorn
 
     if sinkhorn_kwargs is None:
         sinkhorn_kwargs = {'threshold': 1e-6, 'max_iterations': 5000}
@@ -142,10 +146,20 @@ def w2_table(results, ep_grid_density, grid, par_names=None,
     logp_ep_norm = normalize_density_over_grid(
         ep_grid_density, cell_area=grid.cell_area)[0].squeeze()
 
+    # Grid points normalized to [0,1] per dimension for numerical stability
     grid_pts = np.array(grid.flat_grid)
+    scale = np.array(grid.high - grid.low)
+    scale = np.where(scale > 0, scale, 1.0)
+    pts_norm = jnp.array((grid_pts - np.array(grid.low)) / scale)
 
-    print(f'{"method":>16s} | {"W2 to EP":>10s} | {"n_samp":>8s}')
-    print('-' * 45)
+    # EP probability vector (clamped and renormalized)
+    min_prob = 1e-30
+    a = jnp.exp(logp_ep_norm)
+    a = jnp.where(a < min_prob, 0.0, a)
+    a = a / a.sum()
+
+    print(f'{"method":>16s} | {"W2 to EP":>10s} | {"converged":>10s} | {"n_samp":>8s}')
+    print('-' * 60)
 
     w2_results = {}
 
@@ -154,46 +168,48 @@ def w2_table(results, ep_grid_density, grid, par_names=None,
         n_samp = samp.shape[0]
 
         if n_samp < 10:
-            print(f'{label:>16s} | {"(too few)":>10s} | {n_samp:8d}')
+            print(f'{label:>16s} | {"(too few)":>10s} | {"":>10s} | {n_samp:8d}')
             continue
 
         try:
-            # KDE on grid
+            # Fit KDE to samples and evaluate on grid
             kde = gaussian_kde(samp.T)
-            log_kde = np.log(kde(grid_pts.T) + 1e-300)
+            log_kde = np.log(np.maximum(kde(grid_pts.T), 1e-300))
 
             logp_kde_norm = normalize_density_over_grid(
                 jnp.array(log_kde), cell_area=grid.cell_area)[0].squeeze()
 
-            # Grid-based W2 via Sinkhorn
-            from ott.geometry import grid as ott_grid
-            from ott.problems.linear import linear_problem
-            from ott.solvers.linear import sinkhorn
-
-            # Reconstruct per-axis coordinate vectors from Grid attributes
-            x = [jnp.linspace(float(grid.low[i]), float(grid.high[i]),
-                              int(grid.n_points_per_dim[i]))
-                 for i in range(grid.n_dims)]
-            geom = ott_grid.Grid(x=x, epsilon=0.01)
-
-            a = jnp.exp(logp_ep_norm)
+            # Probability vector (clamped and renormalized)
             b = jnp.exp(logp_kde_norm)
-
-            # Ensure valid probability vectors
-            a = jnp.clip(a, 0.0)
-            b = jnp.clip(b, 0.0)
-            a = a / a.sum()
+            b = jnp.where(b < min_prob, 0.0, b)
             b = b / b.sum()
 
+            # Check for degenerate distributions
+            n_nonzero_a = int(jnp.sum(a > 0))
+            n_nonzero_b = int(jnp.sum(b > 0))
+            if n_nonzero_b < 5:
+                print(f'{label:>16s} | {"DEGEN":>10s} | {"":>10s} | {n_samp:8d}'
+                      f'  (KDE has {n_nonzero_b} nonzero grid cells)')
+                continue
+
+            # PointCloud geometry with auto epsilon (more robust than Grid)
+            geom = ott_pointcloud.PointCloud(pts_norm, pts_norm, epsilon=None)
             prob = linear_problem.LinearProblem(geom, a=a, b=b)
+
             solver = sinkhorn.Sinkhorn(**sinkhorn_kwargs)
             out = solver(prob)
+
+            converged = bool(out.converged)
             w2 = float(jnp.sqrt(jnp.clip(out.reg_ot_cost, 0.0)))
 
-            print(f'{label:>16s} | {w2:10.4f} | {n_samp:8d}')
+            if not converged:
+                warnings.warn(f'Sinkhorn did not converge for {label}')
+
+            conv_str = 'yes' if converged else 'NO'
+            print(f'{label:>16s} | {w2:10.4f} | {conv_str:>10s} | {n_samp:8d}')
             w2_results[label] = w2
 
         except Exception as e:
-            print(f'{label:>16s} | {"FAILED":>10s} | {n_samp:8d}  ({e})')
+            print(f'{label:>16s} | {"FAILED":>10s} | {"":>10s} | {n_samp:8d}  ({e})')
 
     return w2_results

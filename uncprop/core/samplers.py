@@ -524,6 +524,7 @@ class AdaptationSettings(NamedTuple):
     gamma_exponent: float = 0.8
     scale_numerator: float = 10.0
     jitter: float = 1e-6
+    min_log_scale: float = -10.0
 
 
 def init_adaptation_state(
@@ -578,6 +579,7 @@ def update_adaptation(
     diff = batch_accept_rate - settings.target_accept
     scale_adjustment = settings.scale_numerator * gamma * diff
     new_log_scale = adapt_state.log_scale + scale_adjustment
+    new_log_scale = jnp.maximum(new_log_scale, settings.min_log_scale)
 
     # Update Covariance (Stochastic Approximation / exponential moving average)
     # C_new = (1-gamma)*C_old + gamma*C_batch

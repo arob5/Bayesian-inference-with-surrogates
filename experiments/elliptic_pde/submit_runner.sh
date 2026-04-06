@@ -22,6 +22,7 @@
 # instead. This assumes qsub is run from experiments/<experiment_name>/.
 REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
 source "${REPO_DIR}/.venv/bin/activate"
+export JAX_ENABLE_X64=1
 
 # Debug and version info
 echo "JOB_ID=$JOB_ID SGE_TASK_ID=$SGE_TASK_ID"

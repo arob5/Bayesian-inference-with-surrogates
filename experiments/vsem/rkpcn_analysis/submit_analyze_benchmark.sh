@@ -24,6 +24,7 @@
 
 REPO_DIR="$(cd "${SGE_O_WORKDIR}/../.." && pwd)"
 source "${REPO_DIR}/.venv/bin/activate"
+export JAX_ENABLE_X64=1
 
 # Thread-limiting for JAX (W2 via Sinkhorn can be multi-threaded)
 export OMP_NUM_THREADS=1
