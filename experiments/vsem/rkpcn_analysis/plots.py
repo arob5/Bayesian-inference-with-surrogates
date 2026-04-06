@@ -292,12 +292,31 @@ def plot_samples_vs_ep(results, ep_density, grid, thin=5,
         # Scatter
         if label in (reference_samples or {}):
             samp = np.array(reference_samples[label][::thin])
-            color = 'green'
+            ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='green')
         else:
-            samp = results[label]['post_burnin'][::thin]
-            color = 'red'
+            res = results[label]
+            per_chain = res.get('per_chain_results')
 
-        ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c=color)
+            if per_chain is not None and len(per_chain) > 1:
+                # Multi-chain: color by chain index
+                chain_colors = plt.cm.Set1(np.linspace(0, 1, len(per_chain)))
+                for m, cr in enumerate(per_chain):
+                    cs = cr['post_burnin'][::thin]
+                    ax.scatter(cs[:, 0], cs[:, 1], alpha=0.3, s=5,
+                               c=[chain_colors[m]], label=f'ch{m}')
+            else:
+                # Single chain
+                samp = res['post_burnin'][::thin]
+                ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='red')
+
+            # Init positions as stars
+            init_pos = res.get('init_positions')
+            if init_pos is not None:
+                ip = np.array(init_pos)
+                ax.scatter(ip[:, 0], ip[:, 1], marker='*', s=200,
+                           c='yellow', edgecolors='black', zorder=10,
+                           linewidths=1.0, label='init')
+
         ax.set_title(label, fontsize=11)
         ax.set_xlabel(grid.dim_names[0])
         if c == 0:

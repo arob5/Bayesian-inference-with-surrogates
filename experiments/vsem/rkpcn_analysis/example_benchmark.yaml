@@ -70,3 +70,23 @@ variants:
   - label: cut_adapt
     rho: 0.0
     adaptive: true
+
+  # --- Multi-chain ---
+  - label: rho99_4ch
+    rho: 0.99
+    n_chains: 4
+    adaptive: true
+    weight_method: pritchard
+    init_method: high_density_spread
+
+  - label: cut_4ch
+    rho: 0.0
+    n_chains: 4
+    adaptive: true
+    weight_method: pritchard
+
+  - label: rho90_4ch
+    rho: 0.9
+    n_chains: 4
+    adaptive: true
+    weight_method: pritchard

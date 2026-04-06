@@ -49,7 +49,10 @@ import jax.random as jr
 import numpy as np
 
 from .reconstruct import reconstruct_replicate, load_saved_data
-from .runners import run_rkpcn_variant, run_rkpcn_adaptive_variant, get_adapted_proposal
+from .runners import (
+    run_rkpcn_variant, run_rkpcn_adaptive_variant,
+    run_rkpcn_multi_chain, get_adapted_proposal,
+)
 from .diagnostics import summary_table, w2_table, integrated_autocorrelation_time
 from uncprop.utils.diagnostics import compute_ess
 from uncprop.utils.grid import Grid, normalize_density_over_grid
@@ -129,6 +132,8 @@ def run_benchmark(
 
         label = kwargs.pop('label', f'variant_{i}')
         is_adaptive = kwargs.pop('adaptive', False)
+        is_multi_chain = kwargs.pop('n_chains', 1) > 1
+        n_chains = kwargs.get('n_chains', 1) if not is_multi_chain else kwargs.pop('n_chains', 4)
         v_prop_cov = kwargs.pop('prop_cov', prop_cov)
 
         # Handle prop_cov_scale: shorthand for scaling the default prop_cov
@@ -138,7 +143,13 @@ def run_benchmark(
 
         print(f'\n[{i+1}/{len(variants)}] {label}')
 
-        if is_adaptive:
+        if is_multi_chain or n_chains > 1:
+            # Multi-chain: 'adaptive' is passed through as a kwarg
+            result = run_rkpcn_multi_chain(
+                key=subkey, rep=rep, n_chains=n_chains,
+                prop_cov=v_prop_cov, label=label,
+                adaptive=is_adaptive, **kwargs)
+        elif is_adaptive:
             result = run_rkpcn_adaptive_variant(
                 key=subkey, rep=rep, prop_cov=v_prop_cov, label=label, **kwargs)
         else:
@@ -170,6 +181,8 @@ def run_benchmark(
             'rho': result['rho'],
             'n_u_steps': result.get('n_u_steps', 1),
             'adaptive': result.get('adaptive', False),
+            'multi_chain': result.get('multi_chain', False),
+            'n_chains': result.get('n_chains', 1),
             'accept_rate': result['accept_rate'],
             'min_ess': float(min(result['ess'])),
             'ess': [float(e) for e in result['ess']],
@@ -179,6 +192,12 @@ def run_benchmark(
             'runtime': result.get('runtime', 0.0),
             'prop_cov_diag': np.diag(np.array(v_prop_cov)).tolist(),
         }
+        if result.get('chain_weights') is not None:
+            summary['chain_weights'] = result['chain_weights'].tolist()
+            summary['n_failed_chains'] = int(result['failed_mask'].sum())
+            summary['n_modes'] = len(set(result['mode_labels']))
+            summary['weight_method'] = result.get('weight_method', 'unknown')
+            summary['init_positions'] = result['init_positions'].tolist()
         if result.get('adapted_prop_cov_diag'):
             summary['adapted_prop_cov_diag'] = result['adapted_prop_cov_diag']
         with open(var_dir / 'summary.json', 'w') as f:

@@ -27,6 +27,15 @@ from uncprop.core.rkpcn_adaptation import (
     get_adapted_proposal_cov,
 )
 from uncprop.core.samplers import mcmc_loop, sample_distribution
+from uncprop.core.chain_combiner import (
+    run_multi_chain,
+    compute_chain_weights,
+    detect_failed_chains,
+    identify_duplicate_modes,
+    combine_chains,
+    select_initial_positions,
+    print_multi_chain_summary,
+)
 from uncprop.utils.diagnostics import compute_ess
 
 
@@ -293,4 +302,164 @@ def run_rkpcn_adaptive_variant(
         'runtime': runtime,
         'adapted_prop_cov_diag': np.diag(adapted_cov).tolist(),
         'adaptive': True,
+    }
+
+
+def run_rkpcn_multi_chain(
+    key,
+    rep,
+    n_chains: int = 4,
+    rho: float = 0.99,
+    n_u_steps: int = 1,
+    prop_cov=None,
+    n_total: int = 55_000,
+    n_burnin: int = 50_000,
+    adaptive: bool = True,
+    adapt_interval: int = 50,
+    target_accept: float = 0.234,
+    init_method: str = 'high_density_spread',
+    weight_method: str = 'pritchard',
+    label: str | None = None,
+):
+    """Run multiple RKPCN chains from diverse starting positions.
+
+    Combines the chains using importance-like weights (Pritchard or
+    other method), detects failed chains, and identifies duplicate modes.
+
+    Parameters
+    ----------
+    key : PRNG key
+    rep : VSEMReplicate
+    n_chains : int
+        Number of chains to run.
+    rho : float
+        pCN correlation parameter (shared across chains).
+    n_u_steps : int
+        u-steps per f-update (shared across chains).
+    prop_cov : initial proposal covariance. If None, uses 0.01*I.
+    n_total : total iterations per chain.
+    n_burnin : burn-in per chain.
+    adaptive : whether to use adaptive proposal.
+    adapt_interval : adaptation batch size.
+    target_accept : target acceptance rate for adaptation.
+    init_method : initial position selection strategy.
+    weight_method : chain weighting method ('equal', 'mean_logdens', 'pritchard').
+    label : display label.
+
+    Returns
+    -------
+    dict with standard result fields (post_burnin = pooled samples), plus:
+        n_chains, chain_weights, per_chain_results, failed_mask,
+        mode_labels, init_positions, sample_weights
+    """
+    key_init, key_chains = jr.split(key)
+
+    surr = rep.posterior_surrogate
+    log_density_fn = build_log_density_vsem(rep.posterior, surr)
+    gp = surr.surrogate
+    d = rep.posterior.dim
+
+    if prop_cov is None:
+        prop_cov = 0.01 * jnp.eye(d)
+    elif jnp.ndim(prop_cov) == 0:
+        prop_cov = float(prop_cov) * jnp.eye(d)
+
+    if label is None:
+        label = f'rho{int(rho*100)}_{n_chains}ch'
+
+    # Select diverse starting positions
+    print(f'  Selecting {n_chains} initial positions (method={init_method})...')
+    init_positions = select_initial_positions(
+        key_init, gp=gp, prior=rep.posterior.prior,
+        n_chains=n_chains, method=init_method)
+    init_positions = np.array(init_positions)
+    print(f'    positions: {init_positions}')
+
+    # Build kernel factory
+    config = RKPCNConfig(rho=rho, n_u_steps=n_u_steps)
+
+    if adaptive:
+        adapt_config = AdaptiveRKPCNConfig(
+            adapt_end=n_burnin,
+            adapt_interval=adapt_interval,
+            target_accept=target_accept,
+        )
+        def build_kernel_fn():
+            return build_adaptive_rkpcn_kernel(
+                config, adapt_config, log_density_fn, gp)
+    else:
+        def build_kernel_fn():
+            return build_rkpcn_kernel(config, log_density_fn, gp)
+
+    # Run all chains
+    print(f'  Running {label} ({n_chains} chains, rho={rho}, '
+          f'n_u_steps={n_u_steps}, adaptive={adaptive})...')
+    chain_results = run_multi_chain(
+        key=key_chains,
+        build_kernel_fn=build_kernel_fn,
+        init_positions=jnp.array(init_positions),
+        n_steps=n_total,
+        prop_cov=prop_cov,
+        n_burnin=n_burnin,
+    )
+
+    # Detect failures
+    failed_mask, fail_diag = detect_failed_chains(chain_results)
+
+    # Identify modes
+    mode_labels = identify_duplicate_modes(chain_results)
+
+    # Compute weights
+    weights = compute_chain_weights(
+        chain_results, method=weight_method,
+        n_burnin=n_burnin, failed_mask=failed_mask)
+
+    # Print summary
+    par_names = list(rep.grid.dim_names) if hasattr(rep, 'grid') else None
+    print_multi_chain_summary(
+        chain_results, weights, failed_mask, mode_labels, par_names)
+
+    # Combine chains
+    pooled_samples, sample_weights = combine_chains(
+        chain_results, weights, n_burnin=0)  # post_burnin already stripped
+
+    # Aggregate diagnostics
+    total_runtime = sum(r['runtime'] for r in chain_results)
+    pooled_ess = compute_ess(pooled_samples) if pooled_samples.shape[0] > 10 else np.zeros(d)
+    # Weighted mean acceptance rate
+    mean_accept = float(np.average(
+        [r['accept_rate'] for r in chain_results], weights=weights))
+
+    # Build logdensity array (concatenated post-burnin)
+    all_ld = np.concatenate([r['logdensities'][n_burnin:] for r in chain_results])
+
+    print(f'  Pooled: {pooled_samples.shape[0]} samples, '
+          f'min_ESS={min(pooled_ess):.1f}, '
+          f'weighted_accept={mean_accept:.4f}, '
+          f'total_time={total_runtime:.1f}s')
+
+    return {
+        'post_burnin': pooled_samples,
+        'sample_weights': sample_weights,
+        'logdensities': all_ld,
+        'positions': np.concatenate([r['positions'] for r in chain_results]),
+        'accept_probs': np.concatenate([r['accept_probs'] for r in chain_results]),
+        'is_accepted': np.concatenate([
+            r['accept_probs'] > 0.5 for r in chain_results]),
+        'ess': pooled_ess,
+        'accept_rate': mean_accept,
+        'rho': rho,
+        'n_u_steps': n_u_steps,
+        'label': label,
+        'n_burnin': n_burnin,
+        'runtime': total_runtime,
+        # Multi-chain specific
+        'n_chains': n_chains,
+        'chain_weights': weights,
+        'per_chain_results': chain_results,
+        'failed_mask': failed_mask,
+        'mode_labels': mode_labels,
+        'init_positions': init_positions,
+        'weight_method': weight_method,
+        'multi_chain': True,
     }
