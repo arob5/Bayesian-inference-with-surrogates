@@ -420,6 +420,28 @@ def analyze_benchmark(
     print('\n--- Summary ---')
     print_benchmark_summary(results, par_names=par_names)
 
+    # Detailed per-variant diagnostics
+    print('\n--- Per-Variant Diagnostics ---')
+    for label, data in results.items():
+        s = data['summary']
+        samp = data['post_burnin']
+        print(f'\n  [{label}]')
+        print(f'    rho={s["rho"]}, n_u_steps={s.get("n_u_steps",1)}, '
+              f'n_burnin={s["n_burnin"]}, n_post={s["n_post_burnin"]}')
+        print(f'    accept_rate={s["accept_rate"]:.4f}, '
+              f'min_ESS={s["min_ess"]:.1f}, '
+              f'IAT(logdens)={s["iat_logdensity"]:.1f}, '
+              f'runtime={s.get("runtime",0):.1f}s')
+        print(f'    ESS per dim: {s["ess"]}')
+        print(f'    prop_cov_diag: {s.get("prop_cov_diag", "N/A")}')
+        if samp is not None:
+            d = samp.shape[1]
+            names = par_names or [f'u{j}' for j in range(d)]
+            for j, p in enumerate(names):
+                print(f'    {p}: mean={samp[:, j].mean():.4f}, '
+                      f'std={samp[:, j].std():.4f}, '
+                      f'range=[{samp[:, j].min():.4f}, {samp[:, j].max():.4f}]')
+
     # Load experiment data for EP comparison
     ep_density = None
     grid = None
