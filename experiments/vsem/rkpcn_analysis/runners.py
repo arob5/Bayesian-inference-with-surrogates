@@ -442,16 +442,16 @@ def run_rkpcn_multi_chain(
         'post_burnin': pooled_samples,
         'sample_weights': sample_weights,
         'logdensities': all_ld,
-        'positions': np.concatenate([r['positions'] for r in chain_results]),
-        'accept_probs': np.concatenate([r['accept_probs'] for r in chain_results]),
+        'positions': pooled_samples,  # for multi-chain, positions = pooled post-burnin
+        'accept_probs': np.concatenate([r['accept_probs'][n_burnin:] for r in chain_results]),
         'is_accepted': np.concatenate([
-            r['accept_probs'] > 0.5 for r in chain_results]),
+            r['accept_probs'][n_burnin:] > 0.5 for r in chain_results]),
         'ess': pooled_ess,
         'accept_rate': mean_accept,
         'rho': rho,
         'n_u_steps': n_u_steps,
         'label': label,
-        'n_burnin': n_burnin,
+        'n_burnin': 0,  # post_burnin and logdensities are already trimmed
         'runtime': total_runtime,
         # Multi-chain specific
         'n_chains': n_chains,

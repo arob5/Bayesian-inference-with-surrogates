@@ -167,6 +167,9 @@ def compute_chain_weights(
 
         for m, res in enumerate(chain_results):
             ld = res['logdensities'][n_burnin:]
+            if len(ld) == 0:
+                log_weights[m] = -np.inf
+                continue
             mean_ld = float(np.mean(ld))
 
             if method == 'mean_logdens':

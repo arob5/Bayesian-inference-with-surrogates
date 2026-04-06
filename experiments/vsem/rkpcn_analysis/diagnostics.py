@@ -26,8 +26,10 @@ def autocorrelation(x, max_lag=2000):
         1D array of length max_lag.
     """
     x = np.asarray(x, dtype=np.float64)
-    x = x - np.mean(x)
     n = len(x)
+    if n < 2:
+        return np.zeros(max_lag)
+    x = x - np.mean(x)
     var = np.var(x)
     if var < 1e-15:
         return np.zeros(max_lag)
