@@ -163,8 +163,20 @@ def run_benchmark(
 
         # Samples (post-burnin only, thinned for storage)
         thin = max(1, result['post_burnin'].shape[0] // 2000)
-        np.savez(var_dir / 'samples.npz',
-                 post_burnin=result['post_burnin'][::thin])
+        save_dict = {'post_burnin': result['post_burnin'][::thin]}
+
+        # For multi-chain: also save per-chain samples and metadata
+        per_chain = result.get('per_chain_results')
+        if per_chain is not None:
+            for m, cr in enumerate(per_chain):
+                pb = cr['post_burnin'][::thin]
+                save_dict[f'chain{m}_post_burnin'] = pb
+            if result.get('chain_weights') is not None:
+                save_dict['chain_weights'] = result['chain_weights']
+            if result.get('init_positions') is not None:
+                save_dict['init_positions'] = result['init_positions']
+
+        np.savez(var_dir / 'samples.npz', **save_dict)
 
         # Full trace (optional)
         if save_full_trace:
@@ -237,9 +249,24 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         # Load samples
         samples_path = var_dir / 'samples.npz'
         post_burnin = None
+        per_chain_results = None
+        chain_weights = None
+        init_positions = None
+
         if samples_path.exists():
             data = np.load(samples_path)
             post_burnin = data['post_burnin']
+
+            # Reconstruct per-chain data if available
+            chain_keys = sorted([k for k in data.files if k.startswith('chain') and k.endswith('_post_burnin')])
+            if chain_keys:
+                per_chain_results = []
+                for ck in chain_keys:
+                    per_chain_results.append({'post_burnin': data[ck]})
+                if 'chain_weights' in data.files:
+                    chain_weights = data['chain_weights']
+                if 'init_positions' in data.files:
+                    init_positions = data['init_positions']
 
         # Load trace if available
         trace = None
@@ -251,6 +278,9 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         results[label] = {
             'summary': summary,
             'post_burnin': post_burnin,
+            'per_chain_results': per_chain_results,
+            'chain_weights': chain_weights,
+            'init_positions': init_positions,
             'trace': trace,
         }
 
@@ -512,17 +542,34 @@ def analyze_benchmark(
 
     # Scatter plots vs EP
     if ep_density is not None and grid is not None:
+        from .plots import plot_samples_vs_ep, plot_samples_vs_ep_annotated
+
+        # Plain scatter (pooled samples, single color per variant)
         print('\n--- Scatter Plots ---')
-        fig, axes = plot_benchmark_comparison(
-            results, ep_density, grid,
-            reference_samples=reference_samples,
-            thin=thin, design_points=design_points)
+        plot_results_for_scatter = {}
+        for label, data in results.items():
+            if data['post_burnin'] is not None:
+                plot_results_for_scatter[label] = data
+        fig, axes = plot_samples_vs_ep(
+            plot_results_for_scatter, ep_density, grid,
+            reference_samples=reference_samples, thin=thin)
         figures.append(('scatter_vs_ep', fig))
         if save_plots:
             path = output_dir / 'scatter_vs_ep.pdf'
             fig.savefig(path, bbox_inches='tight', dpi=150)
             print(f'  Saved: {path}')
         plt.close(fig)
+
+        # Annotated scatter (per-chain colors + init positions)
+        fig_ann, axes_ann = plot_samples_vs_ep_annotated(
+            plot_results_for_scatter, ep_density, grid,
+            reference_samples=reference_samples, thin=thin)
+        figures.append(('scatter_vs_ep_annotated', fig_ann))
+        if save_plots:
+            path = output_dir / 'scatter_vs_ep_annotated.pdf'
+            fig_ann.savefig(path, bbox_inches='tight', dpi=150)
+            print(f'  Saved: {path}')
+        plt.close(fig_ann)
 
         # Also plot reference distributions separately
         from .plots import plot_density_heatmaps

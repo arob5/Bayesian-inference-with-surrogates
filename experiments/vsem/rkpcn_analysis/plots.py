@@ -242,36 +242,39 @@ def plot_acf(results, par_names=None, max_lag=2000, figsize=(14, 5)):
 # Scatter / contour comparison plots
 # ---------------------------------------------------------------------------
 
+def _setup_ep_contours(ep_density, grid):
+    """Compute EP contour data for scatter plots."""
+    import jax.numpy as jnp
+    n = grid.n_points_per_dim
+    xx = np.array(grid.flat_grid[:, 0]).reshape(n[1], n[0])
+    yy = np.array(grid.flat_grid[:, 1]).reshape(n[1], n[0])
+    logp_norm = normalize_density_over_grid(
+        ep_density, cell_area=grid.cell_area)[0].squeeze()
+    p_ep = np.array(np.exp(np.array(logp_norm))).reshape(n[1], n[0])
+    return xx, yy, p_ep
+
+
 def plot_samples_vs_ep(results, ep_density, grid, thin=5,
                        reference_samples=None, figsize_per=5):
-    """Scatter plot of RKPCN samples overlaid on EP density contours.
+    """Scatter plot of pooled samples overlaid on EP density contours.
 
-    Each variant gets its own panel. EP density is shown as filled contours
-    in the background.
+    For multi-chain variants, shows the **pooled** (weighted) samples
+    in a single color. Use ``plot_samples_vs_ep_annotated`` for
+    per-chain coloring and init position markers.
 
     Args:
         results: dict mapping label -> result dict.
         ep_density: (n_grid,) log EP density on grid (unnormalized).
         grid: Grid object.
         thin: thinning factor for scatter points.
-        reference_samples: optional dict of {name: (n, d) array} to plot
-            in additional panels (e.g., exact, mean, eup samples).
+        reference_samples: optional dict of {name: (n, d) array}.
         figsize_per: size per panel.
 
     Returns:
         (fig, axes).
     """
-    import jax.numpy as jnp
+    xx, yy, p_ep = _setup_ep_contours(ep_density, grid)
 
-    n = grid.n_points_per_dim
-    xx = np.array(grid.flat_grid[:, 0]).reshape(n[1], n[0])
-    yy = np.array(grid.flat_grid[:, 1]).reshape(n[1], n[0])
-
-    logp_norm = normalize_density_over_grid(
-        ep_density, cell_area=grid.cell_area)[0].squeeze()
-    p_ep = np.array(np.exp(np.array(logp_norm))).reshape(n[1], n[0])
-
-    # Determine number of panels
     ref_names = list(reference_samples.keys()) if reference_samples else []
     all_labels = ref_names + list(results.keys())
     n_panels = len(all_labels)
@@ -285,44 +288,109 @@ def plot_samples_vs_ep(results, ep_density, grid, thin=5,
     for idx, label in enumerate(all_labels):
         r, c = divmod(idx, ncols)
         ax = axes[r, c]
-
-        # EP contours
         ax.contourf(xx, yy, p_ep, levels=15, alpha=0.5, cmap='Blues')
 
-        # Scatter
         if label in (reference_samples or {}):
             samp = np.array(reference_samples[label][::thin])
             ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='green')
         else:
-            res = results[label]
-            per_chain = res.get('per_chain_results')
-
-            if per_chain is not None and len(per_chain) > 1:
-                # Multi-chain: color by chain index
-                chain_colors = plt.cm.Set1(np.linspace(0, 1, len(per_chain)))
-                for m, cr in enumerate(per_chain):
-                    cs = cr['post_burnin'][::thin]
-                    ax.scatter(cs[:, 0], cs[:, 1], alpha=0.3, s=5,
-                               c=[chain_colors[m]], label=f'ch{m}')
-            else:
-                # Single chain
-                samp = res['post_burnin'][::thin]
-                ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='red')
-
-            # Init positions as stars
-            init_pos = res.get('init_positions')
-            if init_pos is not None:
-                ip = np.array(init_pos)
-                ax.scatter(ip[:, 0], ip[:, 1], marker='*', s=200,
-                           c='yellow', edgecolors='black', zorder=10,
-                           linewidths=1.0, label='init')
+            # Always plot pooled post_burnin in a single color
+            samp = results[label]['post_burnin'][::thin]
+            ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='red')
 
         ax.set_title(label, fontsize=11)
         ax.set_xlabel(grid.dim_names[0])
         if c == 0:
             ax.set_ylabel(grid.dim_names[1])
 
-    # Hide unused axes
+    for idx in range(n_panels, nrows * ncols):
+        r, c = divmod(idx, ncols)
+        axes[r, c].set_visible(False)
+
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_samples_vs_ep_annotated(results, ep_density, grid, thin=5,
+                                  reference_samples=None, figsize_per=5):
+    """Annotated scatter plot: per-chain colors + init positions.
+
+    For multi-chain variants, each chain is plotted in a distinct color
+    with transparency proportional to its Pritchard weight. Chain
+    initializations are shown as star markers.
+
+    For single-chain variants, behaves like ``plot_samples_vs_ep``.
+
+    Args:
+        results: dict mapping label -> result dict.
+        ep_density: (n_grid,) log EP density on grid.
+        grid: Grid object.
+        thin: thinning factor.
+        reference_samples: optional dict of {name: (n, d) array}.
+        figsize_per: size per panel.
+
+    Returns:
+        (fig, axes).
+    """
+    xx, yy, p_ep = _setup_ep_contours(ep_density, grid)
+
+    ref_names = list(reference_samples.keys()) if reference_samples else []
+    all_labels = ref_names + list(results.keys())
+    n_panels = len(all_labels)
+    ncols = min(4, n_panels)
+    nrows = int(np.ceil(n_panels / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols,
+                              figsize=(figsize_per * ncols, figsize_per * nrows),
+                              squeeze=False)
+
+    for idx, label in enumerate(all_labels):
+        r, c = divmod(idx, ncols)
+        ax = axes[r, c]
+        ax.contourf(xx, yy, p_ep, levels=15, alpha=0.5, cmap='Blues')
+
+        if label in (reference_samples or {}):
+            samp = np.array(reference_samples[label][::thin])
+            ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='green')
+        else:
+            res = results[label]
+            per_chain = res.get('per_chain_results')
+            weights = res.get('chain_weights')
+
+            if per_chain is not None and len(per_chain) > 1:
+                n_ch = len(per_chain)
+                chain_colors = plt.cm.Set1(np.linspace(0, 1, min(n_ch, 9)))
+
+                for m, cr in enumerate(per_chain):
+                    cs = cr['post_burnin'][::thin]
+                    # Scale alpha by weight (min 0.1 so all chains visible)
+                    w = weights[m] if weights is not None else 1.0 / n_ch
+                    alpha = max(0.1, min(0.6, w * n_ch * 0.3))
+                    ax.scatter(cs[:, 0], cs[:, 1], alpha=alpha, s=5,
+                               c=[chain_colors[m % len(chain_colors)]],
+                               label=f'ch{m} (w={w:.2f})')
+
+                # Init positions as stars, colored by chain
+                init_pos = res.get('init_positions')
+                if init_pos is not None:
+                    ip = np.array(init_pos)
+                    for m in range(min(len(ip), n_ch)):
+                        ax.scatter(ip[m, 0], ip[m, 1], marker='*', s=250,
+                                   c=[chain_colors[m % len(chain_colors)]],
+                                   edgecolors='black', zorder=10,
+                                   linewidths=1.0)
+
+                ax.legend(fontsize=6, loc='lower right', markerscale=2)
+            else:
+                # Single chain
+                samp = res['post_burnin'][::thin]
+                ax.scatter(samp[:, 0], samp[:, 1], alpha=0.3, s=5, c='red')
+
+        ax.set_title(label, fontsize=11)
+        ax.set_xlabel(grid.dim_names[0])
+        if c == 0:
+            ax.set_ylabel(grid.dim_names[1])
+
     for idx in range(n_panels, nrows * ncols):
         r, c = divmod(idx, ncols)
         axes[r, c].set_visible(False)
