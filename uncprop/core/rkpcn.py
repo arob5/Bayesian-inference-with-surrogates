@@ -1,8 +1,8 @@
 # uncprop/core/rkpcn.py
 """
-RKPCN: Modular Random Kernel preconditioned Crank-Nicolson sampler.
+Random Kernel preconditioned Crank-Nicolson sampler (RKpCN)
 
-This module provides a clean, blackjax-compatible RKPCN implementation
+This module provides a blackjax-compatible RKpCN implementation
 designed for easy experimentation with algorithm variants. The kernel is
 compatible with ``mcmc_loop`` and ``mcmc_loop_multiple_chains`` from
 ``uncprop.core.samplers``.
@@ -23,9 +23,11 @@ by maintaining an extended state (u, f(u)) and alternating:
    accept/reject via pi(v; g(v)) / pi(u; g(u)), then condition
    GP on {v, g(v)} for subsequent steps.
 
-The f-step and u-steps are cleanly separated. The f-step only instantiates
-the trajectory at the current position u (and later, support points).
-The u-steps iteratively condition the GP as they explore.
+While motivated by an infinite-dimensional formulation, the f-update
+only requires instantiating the function f at a finite set of points.
+This is typically the current value of u and the proposed value of
+u, implying that the algorithm primarily works with bivariate 
+Gaussian distributions.
 
 Designed for extension with:
 - Adaptive proposal covariance (Phase 3)
@@ -114,7 +116,7 @@ class RKPCNConfig:
     rho : float
         pCN correlation parameter in [0, 1). Controls the magnitude of
         the f-update perturbation. Higher rho means smaller steps in
-        trajectory space.
+        function space.
     n_u_steps : int
         Number of u-updates per f-update. More u-steps give the
         parameter chain time to equilibrate under the current trajectory
@@ -221,9 +223,9 @@ def _f_update_pcn(
     """Apply a pCN f-update at the current position u.
 
     Draws a new trajectory value g(u) via the pCN proposal applied to
-    the current value f(u). Does NOT apply a Metropolis correction
-    (the approximation alpha_f = 1). After the update, conditions the
-    GP on {u, g(u)} to prepare for subsequent u-updates.
+    the current value f(u). Does NOT apply a Metropolis correction.
+    After the update, conditions the GP on {u, g(u)} to prepare for 
+    subsequent u-updates.
 
     Parameters
     ----------
@@ -285,8 +287,8 @@ def _u_updates(
     4. MH accept/reject using pi(v; g(v)) / pi(u; g(u))
     5. Update position if accepted
 
-    The conditioning set grows with each step, giving better
-    predictions for subsequent proposals.
+    The conditioning set grows with each step. One point is added to the 
+    cache each step, regardless of whether it is accepted or not.
 
     Parameters
     ----------
@@ -306,8 +308,8 @@ def _u_updates(
         accept_prob: mean acceptance probability across all steps.
         is_accepted: whether any step was accepted.
     """
+    # Fast path
     if n_steps == 1:
-        # Fast path: single u-step, no scan overhead
         return _single_u_step(key, state, gp_conditioned, log_density_fn)
 
     # Multiple u-steps: use Python loop (not jax.lax.scan) because
@@ -324,7 +326,8 @@ def _u_updates(
     keys = jr.split(key, n_steps)
     for i in range(n_steps):
         state, gp_conditioned, step_info = _single_u_step_and_condition(
-            keys[i], state, gp_conditioned, log_density_fn)
+            keys[i], state, gp_conditioned, log_density_fn
+        )
         total_accept_prob = total_accept_prob + step_info.accept_prob
         any_accepted = any_accepted | step_info.is_accepted
 
@@ -371,7 +374,8 @@ def _single_u_step(
     # MH accept/reject
     lp_prop = log_density_fn(gv, v)
     u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
-        key_mh, state.logdensity, lp_prop, u, v)
+        key_mh, state.logdensity, lp_prop, u, v
+    )
 
     # Update f_position to track the accepted position's trajectory value
     f_next = jax.lax.cond(
@@ -425,7 +429,8 @@ def _single_u_step_and_condition(
     # MH accept/reject
     lp_prop = log_density_fn(gv, v)
     u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
-        key_mh, state.logdensity, lp_prop, u, v)
+        key_mh, state.logdensity, lp_prop, u, v
+    )
 
     f_next = jax.lax.cond(
         is_accepted,
