@@ -3,7 +3,7 @@
 #$ -j y
 #$ -l h_rt=6:00:00
 #$ -l mem_per_core=8G
-#$ -P bayesij
+#$ -P robustvb
 #$ -pe omp 1
 #
 # Submit an RKPCN benchmark run on a VSEM replicate.

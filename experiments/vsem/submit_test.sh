@@ -3,7 +3,7 @@
 #$ -j y
 #$ -l h_rt=2:00:00
 #$ -l mem_per_core=8G
-#$ -P bayesij
+#$ -P robustvb
 #$ -pe omp 1
 #$ -t 1-2 -tc 1
 #

@@ -3,7 +3,7 @@
 #$ -j y
 #$ -l h_rt=12:00:00
 #$ -l mem_per_core=12G
-#$ -P bayesij
+#$ -P robustvb
 #$ -pe omp 1
 #$ -t 1-30 -tc 1    # 3 design sizes x 10 chunks = 30 tasks; cap concurrency
 #

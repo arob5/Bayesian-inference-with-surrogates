@@ -3,7 +3,7 @@
 #$ -j y
 #$ -l h_rt=4:00:00
 #$ -l mem_per_core=8G
-#$ -P bayesij
+#$ -P robustvb
 #$ -pe omp 4
 #
 # Batch job for VSEM post-hoc analysis (W2 computation is CPU-intensive).
