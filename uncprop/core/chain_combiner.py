@@ -199,24 +199,248 @@ def compute_chain_weights(
 
 
 # =============================================================================
-# Chain diagnostics
+# R-hat convergence diagnostic
 # =============================================================================
+
+def compute_split_rhat(chains: list[np.ndarray]) -> np.ndarray:
+    """Compute split R-hat across a list of chains.
+
+    For each chain, splits it in half and treats each half as an
+    independent sub-chain. Then computes R-hat across all 2*M
+    sub-chains using the standard formula::
+
+        W = mean(within-chain variance)
+        B = n * var(sub-chain means)
+        V = ((n-1)/n) * W + B/n
+        R-hat = sqrt(V/W)
+
+    Parameters
+    ----------
+    chains : list of (N_m, d) arrays
+        Each chain must have the same dimensionality d.
+        Different chains can have different lengths N_m (each is
+        split at its midpoint).
+
+    Returns
+    -------
+    rhat : (d,) array of R-hat values per dimension.
+        Returns NaN for dimensions where within-chain variance is zero.
+    """
+    if len(chains) == 0:
+        return np.array([])
+
+    d = chains[0].shape[1]
+
+    # Split each chain at its midpoint → 2*M sub-chains
+    sub_chains = []
+    for chain in chains:
+        n = chain.shape[0]
+        half = n // 2
+        if half < 2:
+            # Too short to split meaningfully
+            continue
+        sub_chains.append(chain[:half])
+        sub_chains.append(chain[half:2 * half])  # ensure equal lengths
+
+    if len(sub_chains) < 2:
+        return np.full(d, np.nan)
+
+    M = len(sub_chains)
+    # Use the minimum length among sub-chains (should all be equal after split)
+    n = min(sc.shape[0] for sc in sub_chains)
+    sub_chains = [sc[:n] for sc in sub_chains]
+
+    # Stack: (M, n, d)
+    stacked = np.stack(sub_chains, axis=0)
+
+    # Per-dimension R-hat
+    # Within-chain variance W (mean of per-chain sample variances)
+    # Use sample variance (ddof=1)
+    chain_vars = np.var(stacked, axis=1, ddof=1)  # (M, d)
+    W = np.mean(chain_vars, axis=0)  # (d,)
+
+    # Between-chain variance B = n * var(chain_means)
+    chain_means = np.mean(stacked, axis=1)  # (M, d)
+    B = n * np.var(chain_means, axis=0, ddof=1)  # (d,)
+
+    # V = ((n-1)/n) * W + B/n
+    V = ((n - 1) / n) * W + B / n
+
+    # R-hat
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rhat = np.sqrt(V / W)
+
+    # NaN propagation for zero-variance dimensions is intentional
+    return rhat
+
+
+def _max_rhat(chains: list[np.ndarray]) -> float:
+    """Compute max R-hat across dimensions for a set of chains.
+
+    Returns NaN if any dimension has NaN R-hat (zero within-chain variance).
+    """
+    rhat_per_dim = compute_split_rhat(chains)
+    if len(rhat_per_dim) == 0 or np.any(np.isnan(rhat_per_dim)):
+        return float('nan')
+    return float(np.max(rhat_per_dim))
+
+
+# =============================================================================
+# Within-chain convergence assessment
+# =============================================================================
+
+def assess_within_chain_convergence(
+    positions: np.ndarray,
+    rhat_threshold: float = 1.1,
+    min_samples: int = 500,
+    min_ess: float = 10.0,
+    burnin_step_frac: float = 0.1,
+    max_iterations: int = 20,
+) -> dict:
+    """Assess single-chain convergence via split R-hat with adaptive burn-in.
+
+    Starts from the full set of positions and iteratively increases
+    burn-in until the single-chain split R-hat (splitting the
+    remaining samples in half and treating the halves as 2 sub-chains)
+    is below ``rhat_threshold``, or until the number of remaining
+    samples falls below ``min_samples``.
+
+    After R-hat passes, verifies that minimum ESS across dimensions
+    exceeds ``min_ess``. This catches stuck chains whose within-chain
+    variance is technically non-zero but still essentially trivial.
+
+    Parameters
+    ----------
+    positions : (N, d) array
+        Full post-burnin chain positions (i.e., samples already past
+        any initial burn-in configured at run time).
+    rhat_threshold : float
+        Chain considered converged if max R-hat < this value.
+    min_samples : int
+        Minimum number of samples to keep. Chain fails if convergence
+        requires discarding more.
+    min_ess : float
+        Minimum ESS required after burn-in selection (guards against
+        stuck chains that pass R-hat trivially).
+    burnin_step_frac : float
+        At each iteration, discard this fraction of remaining samples.
+    max_iterations : int
+        Maximum burn-in adjustment iterations.
+
+    Returns
+    -------
+    dict with keys:
+        converged : bool
+        n_discarded : int — number of additional samples discarded
+        n_kept : int — samples remaining after burn-in
+        rhat : float — final max R-hat (NaN if stuck)
+        ess_min : float — minimum ESS across dimensions after burn-in
+        n_iterations : int — burn-in adjustment iterations
+        fail_reason : str or None
+    """
+    N = positions.shape[0]
+    n_discarded = 0
+
+    for iteration in range(max_iterations + 1):
+        remaining = N - n_discarded
+        if remaining < min_samples:
+            return {
+                'converged': False,
+                'n_discarded': n_discarded,
+                'n_kept': remaining,
+                'rhat': float('nan'),
+                'ess_min': 0.0,
+                'n_iterations': iteration,
+                'fail_reason': 'rhat_not_converged',
+            }
+
+        current = positions[n_discarded:]
+        rhat = _max_rhat([current])
+
+        if np.isnan(rhat):
+            return {
+                'converged': False,
+                'n_discarded': n_discarded,
+                'n_kept': remaining,
+                'rhat': float('nan'),
+                'ess_min': 0.0,
+                'n_iterations': iteration,
+                'fail_reason': 'nan_rhat',
+            }
+
+        if rhat < rhat_threshold:
+            # Converged — check ESS as final sanity check
+            ess = compute_ess(current)
+            ess_min = float(np.min(ess)) if len(ess) > 0 else 0.0
+
+            if ess_min < min_ess:
+                return {
+                    'converged': False,
+                    'n_discarded': n_discarded,
+                    'n_kept': remaining,
+                    'rhat': float(rhat),
+                    'ess_min': ess_min,
+                    'n_iterations': iteration,
+                    'fail_reason': 'low_ess',
+                }
+
+            return {
+                'converged': True,
+                'n_discarded': n_discarded,
+                'n_kept': remaining,
+                'rhat': float(rhat),
+                'ess_min': ess_min,
+                'n_iterations': iteration,
+                'fail_reason': None,
+            }
+
+        # Not converged — discard more
+        step = max(1, int(burnin_step_frac * remaining))
+        n_discarded += step
+
+    # Exhausted iterations without converging
+    return {
+        'converged': False,
+        'n_discarded': n_discarded,
+        'n_kept': N - n_discarded,
+        'rhat': float(rhat),
+        'ess_min': 0.0,
+        'n_iterations': max_iterations,
+        'fail_reason': 'rhat_not_converged',
+    }
+
 
 def detect_failed_chains(
     chain_results: list[dict],
+    rhat_threshold: float = 1.1,
+    min_samples: int = 500,
     min_ess: float = 10.0,
-    min_accept: float = 0.01,
+    burnin_step_frac: float = 0.1,
+    max_iterations: int = 20,
 ) -> tuple[np.ndarray, dict]:
-    """Flag chains that failed to converge.
+    """Assess per-chain convergence and flag failed chains.
 
-    A chain is considered failed if its minimum ESS (across dimensions)
-    is below ``min_ess`` OR its acceptance rate is below ``min_accept``.
+    For each chain, runs ``assess_within_chain_convergence`` to adaptively
+    select burn-in based on split R-hat. Chains that fail to converge
+    are flagged, and the ``post_burnin`` / ``logdensities`` / ``ess``
+    fields of the chain result dict are updated to reflect the
+    auto-selected burn-in.
+
+    Failure reasons:
+      - 'nan_rhat': within-chain variance is essentially zero (stuck)
+      - 'rhat_not_converged': R-hat stays above threshold after max burn-in
+      - 'low_ess': R-hat passes but ESS < min_ess (near-stuck)
 
     Parameters
     ----------
     chain_results : list of dicts (from run_multi_chain)
+        Each dict is modified in place: 'post_burnin', 'logdensities',
+        'ess' are updated to reflect the auto-selected burn-in.
+    rhat_threshold : float
+    min_samples : int
     min_ess : float
-    min_accept : float
+    burnin_step_frac : float
+    max_iterations : int
 
     Returns
     -------
@@ -228,81 +452,168 @@ def detect_failed_chains(
     per_chain = []
 
     for m, res in enumerate(chain_results):
-        ess = res['ess']
-        acc = res['accept_rate']
-        min_e = float(min(ess)) if len(ess) > 0 else 0.0
+        positions = res['post_burnin']
 
-        is_failed = (min_e < min_ess) or (acc < min_accept)
-        failed[m] = is_failed
+        assessment = assess_within_chain_convergence(
+            positions,
+            rhat_threshold=rhat_threshold,
+            min_samples=min_samples,
+            min_ess=min_ess,
+            burnin_step_frac=burnin_step_frac,
+            max_iterations=max_iterations,
+        )
+
+        # Update chain result to reflect auto-selected burn-in
+        if assessment['n_discarded'] > 0:
+            res['post_burnin'] = positions[assessment['n_discarded']:]
+            if 'logdensities' in res and len(res['logdensities']) >= positions.shape[0]:
+                # logdensities is typically (n_total,) — trim in sync with post_burnin
+                ld = res['logdensities']
+                # Offset from end (post_burnin was last N_post samples of logdensities)
+                N_post = positions.shape[0]
+                ld_post = ld[-N_post:]
+                res['logdensities_post_burnin'] = ld_post[assessment['n_discarded']:]
+            else:
+                res['logdensities_post_burnin'] = None
+
+            # Recompute ESS on kept samples
+            kept = res['post_burnin']
+            res['ess'] = (compute_ess(kept) if kept.shape[0] > 10
+                          else np.zeros(kept.shape[1]))
+        else:
+            # Still set logdensities_post_burnin for consistency
+            if 'logdensities' in res and len(res['logdensities']) >= positions.shape[0]:
+                N_post = positions.shape[0]
+                res['logdensities_post_burnin'] = res['logdensities'][-N_post:]
+            else:
+                res['logdensities_post_burnin'] = None
+
+        # Store assessment in the chain result
+        res['convergence'] = assessment
+
+        failed[m] = not assessment['converged']
 
         per_chain.append({
             'chain_idx': m,
-            'min_ess': min_e,
-            'accept_rate': acc,
-            'failed': bool(is_failed),
-            'reason': (
-                'low ESS' if min_e < min_ess else
-                'low accept' if acc < min_accept else
-                'ok'
-            ),
+            'converged': assessment['converged'],
+            'rhat': assessment['rhat'],
+            'ess_min': assessment['ess_min'],
+            'n_discarded': assessment['n_discarded'],
+            'n_kept': assessment['n_kept'],
+            'fail_reason': assessment['fail_reason'],
         })
 
     n_failed = int(failed.sum())
-    print(f'  Failed chains: {n_failed}/{M}')
+    print(f'  Convergence assessment: {n_failed}/{M} chains failed')
     for info in per_chain:
-        if info['failed']:
-            print(f'    chain {info["chain_idx"]}: {info["reason"]} '
-                  f'(ESS={info["min_ess"]:.1f}, accept={info["accept_rate"]:.4f})')
+        status = 'FAIL' if not info['converged'] else 'ok'
+        rhat_str = (f'{info["rhat"]:.3f}' if not np.isnan(info['rhat'])
+                    else 'NaN')
+        reason_str = f' [{info["fail_reason"]}]' if info['fail_reason'] else ''
+        print(f'    chain {info["chain_idx"]}: {status} '
+              f'rhat={rhat_str}, ess_min={info["ess_min"]:.1f}, '
+              f'discarded={info["n_discarded"]}, kept={info["n_kept"]}'
+              f'{reason_str}')
 
     return failed, {'per_chain': per_chain, 'n_failed': n_failed}
 
 
+# =============================================================================
+# Mode identification via agglomerative R-hat merging
+# =============================================================================
+
 def identify_duplicate_modes(
     chain_results: list[dict],
-    threshold: float = 0.1,
+    rhat_threshold: float = 1.1,
+    failed_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Cluster chains by their mean post-burnin position.
+    """Cluster chains by pairwise cross-chain split R-hat.
 
-    Uses a simple greedy clustering: chains whose mean positions are
-    within ``threshold`` (Euclidean distance, in normalized coordinates)
-    are assigned to the same cluster.
+    Uses agglomerative merging. This function assumes each individual
+    chain has already passed within-chain convergence (typically via
+    ``detect_failed_chains``) — i.e., each chain can be considered a
+    valid local sample. The merging here asks a different question:
+    are two chains sampling from the same distribution?
+
+    Algorithm:
+    1. Start with each non-failed chain as its own cluster.
+    2. For all pairs of clusters, compute cross-chain split R-hat
+       (splitting each chain in the cluster and combining across clusters).
+    3. Find the pair with lowest R-hat. If < ``rhat_threshold``,
+       merge them. Otherwise stop.
+    4. Repeat until no pair can be merged.
+
+    Failed chains (marked by ``failed_mask``) are assigned label=-1
+    and excluded from merging.
 
     Parameters
     ----------
     chain_results : list of dicts (must have 'post_burnin')
-    threshold : float
-        Distance threshold for merging into the same cluster.
+    rhat_threshold : float
+        Threshold below which chains are considered to be sampling
+        from the same distribution.
+    failed_mask : (M,) bool array, optional
+        Chains marked True are excluded from merging (label=-1).
 
     Returns
     -------
-    labels : (M,) int array, cluster label per chain.
+    labels : (M,) int array, cluster label per chain (-1 = failed).
     """
     M = len(chain_results)
-    means = np.array([res['post_burnin'].mean(axis=0) for res in chain_results])
+    if failed_mask is None:
+        failed_mask = np.zeros(M, dtype=bool)
 
-    # Use absolute coordinates for distance (don't normalize when
-    # chains are close together, as normalization would amplify noise)
-    means_norm = means
-
+    # Initialize each non-failed chain as its own cluster
     labels = -np.ones(M, dtype=int)
-    next_label = 0
+    active_chains = [m for m in range(M) if not failed_mask[m]]
 
-    for m in range(M):
-        if labels[m] >= 0:
-            continue
-        labels[m] = next_label
-        for j in range(m + 1, M):
-            if labels[j] >= 0:
-                continue
-            dist = np.linalg.norm(means_norm[m] - means_norm[j])
-            if dist < threshold:
-                labels[j] = next_label
-        next_label += 1
+    if len(active_chains) == 0:
+        print(f'  No non-failed chains to cluster')
+        return labels
 
-    n_modes = len(set(labels))
-    print(f'  Identified {n_modes} distinct modes from {M} chains')
-    for lbl in range(n_modes):
-        members = [m for m in range(M) if labels[m] == lbl]
+    # Each cluster is a list of chain indices
+    clusters = {m: [m] for m in active_chains}
+
+    while len(clusters) > 1:
+        # Compute pairwise R-hat across current clusters
+        cluster_keys = list(clusters.keys())
+        best_pair = None
+        best_rhat = float('inf')
+
+        for i, ki in enumerate(cluster_keys):
+            for kj in cluster_keys[i + 1:]:
+                # Build list of chains from both clusters
+                chains_i = [chain_results[c]['post_burnin']
+                            for c in clusters[ki]]
+                chains_j = [chain_results[c]['post_burnin']
+                            for c in clusters[kj]]
+                rhat = _max_rhat(chains_i + chains_j)
+
+                if np.isnan(rhat):
+                    continue
+                if rhat < best_rhat:
+                    best_rhat = rhat
+                    best_pair = (ki, kj)
+
+        if best_pair is None or best_rhat >= rhat_threshold:
+            break
+
+        # Merge
+        ki, kj = best_pair
+        clusters[ki].extend(clusters[kj])
+        del clusters[kj]
+
+    # Assign final labels
+    for new_label, (key, members) in enumerate(clusters.items()):
+        for c in members:
+            labels[c] = new_label
+
+    n_modes = len(clusters)
+    n_failed = int(failed_mask.sum())
+    n_active = M - n_failed
+    print(f'  Identified {n_modes} distinct modes from {n_active} '
+          f'non-failed chains ({n_failed} failed excluded)')
+    for lbl, (key, members) in enumerate(clusters.items()):
         print(f'    mode {lbl}: chains {members}')
 
     return labels
@@ -486,7 +797,8 @@ def print_multi_chain_summary(
         par_names = [f'u{j}' for j in range(d)]
 
     header = (f'{"chain":>6s} | {"weight":>7s} | {"accept":>7s} | '
-              f'{"min ESS":>8s} | {"failed":>7s} | {"mode":>5s} | '
+              f'{"min ESS":>8s} | {"rhat":>6s} | {"disc.":>6s} | '
+              f'{"failed":>7s} | {"mode":>5s} | '
               + ' '.join(f'mean({p})' for p in par_names))
     print(header)
     print('-' * len(header))
@@ -501,5 +813,12 @@ def print_multi_chain_summary(
         means = res['post_burnin'].mean(axis=0)
         means_str = ' '.join(f'{means[j]:10.4f}' for j in range(d))
 
+        # R-hat and n_discarded from convergence assessment (if available)
+        conv = res.get('convergence', {})
+        rhat = conv.get('rhat', float('nan'))
+        rhat_str = f'{rhat:.3f}' if not np.isnan(rhat) else 'NaN'
+        n_disc = conv.get('n_discarded', 0)
+
         print(f'{m:6d} | {w:7.4f} | {acc:7.4f} | {min_e:8.1f} | '
+              f'{rhat_str:>6s} | {n_disc:6d} | '
               f'{fail:>7s} | {mode:>5s} | {means_str}')
