@@ -4,9 +4,13 @@
 #$ -l h_rt=2:00:00
 #$ -l mem_per_core=8G
 #$ -P robustvb
-#$ -pe omp 1
+#$ -pe omp 4
 #
 # Post-process RKPCN benchmark results: summary table, W2, plots.
+#
+# Uses 4 cores because ott-jax Sinkhorn and scipy gaussian_kde can
+# spawn threads that escape OMP_NUM_THREADS=1 (SCC will terminate
+# jobs that exceed their allocated cores).
 #
 # Usage:
 #   cd experiments/vsem
