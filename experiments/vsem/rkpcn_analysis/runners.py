@@ -318,7 +318,9 @@ def run_rkpcn_multi_chain(
     adaptive: bool = True,
     adapt_interval: int = 50,
     target_accept: float = 0.234,
-    init_method: str = 'high_density_spread',
+    init_method: str = 'ep_direct_sampling',
+    init_n_candidates: int = 500,
+    init_n_trials: int = 100,
     weight_method: str = 'pritchard',
     label: str | None = None,
 ):
@@ -368,11 +370,24 @@ def run_rkpcn_multi_chain(
     if label is None:
         label = f'rho{int(rho*100)}_{n_chains}ch'
 
-    # Select diverse starting positions
+    # Select diverse starting positions.
+    # The EP-aware default samples approximately from the expected
+    # posterior using joint GP trajectories at candidate points. This
+    # requires the surrogate posterior's log-density-from-samples
+    # interface (implemented by both log-density and forward-model
+    # surrogates). We pass ``surrogate_post`` (the SurrogateDistribution)
+    # rather than the prior: chains target the surrogate-induced EP,
+    # and the surrogate's support may be strictly narrower than the
+    # prior's (unbounded priors would leave chains stuck outside).
     print(f'  Selecting {n_chains} initial positions (method={init_method})...')
     init_positions = select_initial_positions(
-        key_init, gp=gp, prior=rep.posterior.prior,
-        n_chains=n_chains, method=init_method)
+        key_init,
+        surrogate_post=surr,
+        n_chains=n_chains,
+        method=init_method,
+        n_candidates=init_n_candidates,
+        n_trials=init_n_trials,
+    )
     init_positions = np.array(init_positions)
     print(f'    positions: {init_positions}')
 

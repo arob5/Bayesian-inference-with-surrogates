@@ -225,11 +225,13 @@ def build_adaptive_rkpcn_kernel(
         new_sample_history = jax.lax.dynamic_update_slice(
             state.sample_history,
             new_base_state.position.reshape(1, -1),
-            (state.step_in_batch, 0))
+            (state.step_in_batch, 0)
+        )
         new_accept_history = jax.lax.dynamic_update_slice(
             state.accept_prob_history,
             info.accept_prob.reshape(-1),
-            (state.step_in_batch,))
+            (state.step_in_batch,)
+        )
 
         next_step_in_batch = state.step_in_batch + 1
         next_global_step = state.global_step + 1
@@ -244,7 +246,8 @@ def build_adaptive_rkpcn_kernel(
             adapt_st, acc_hist, samp_hist = carry
             avg_acc = jnp.mean(acc_hist)
             new_adapt = update_adaptation(
-                adapt_st, samp_hist, avg_acc, adapt_settings)
+                adapt_st, samp_hist, avg_acc, adapt_settings
+            )
             new_L = _proposal_tril_from_adaptation(new_adapt)
             return new_adapt, new_L
 
@@ -298,7 +301,8 @@ def build_adaptive_rkpcn_kernel(
 
         # Initialize adaptation state
         adapt_state = init_adaptation_state(
-            dim=d, initial_cov=prop_cov, n_chains=1)
+            dim=d, initial_cov=prop_cov, n_chains=1
+        )
 
         # Squeeze chain dimension (we run single-chain here)
         adapt_state = AdaptationState(

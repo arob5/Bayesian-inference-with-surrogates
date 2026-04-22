@@ -1,0 +1,17 @@
+# Smoke test for the multi-chain RKPCN + EP-init pipeline.
+# Single variant, small n_total — verifies end-to-end without the
+# runtime of the full sweep. Expect ~1-2 min on a laptop.
+
+common_kwargs:
+  n_total: 5000
+  n_burnin: 4000
+  n_chains: 4
+  adaptive: true
+  adapt_interval: 50
+  target_accept: 0.234
+  weight_method: pritchard
+  init_method: ep_direct_sampling
+
+variants:
+  - label: smoke_rho90_4ch
+    rho: 0.9

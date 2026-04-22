@@ -393,21 +393,88 @@ def test_combine_chains_zero_weight():
 # Test: initial position selection
 # ---------------------------------------------------------------------------
 
-def test_select_positions_prior():
-    """'prior' method should return correct shape within support."""
-    from uncprop.models.vsem.inverse_problem import generate_vsem_inv_prob_rep
+class _MockLogDensSurrogatePost:
+    """Minimal SurrogateDistribution stub for initialization tests.
 
-    key = jr.key(42)
-    posterior = generate_vsem_inv_prob_rep(
-        key=key, par_names=('av', 'veg_init'),
-        n_windows=12, noise_cov_tril=jnp.identity(12),
-        n_days_per_window=30, observed_variable='lai')
+    Implements the three hooks used by select_initial_positions:
+        - .support  : bounded (low, high) box
+        - .sample_surrogate_pred(key, input, n) -> (n, K) GP-like samples
+        - .log_density_from_samples(samp, input) -> (n, K)
+
+    The "surrogate output" here is the log-density itself (as in the
+    log-density GP case), so log_density_from_samples is the identity.
+    The "GP" is just a peaked Gaussian centered at `center` — so
+    EP-direct sampling should pull points toward `center`.
+    """
+    def __init__(self, low, high, center, width=1.0):
+        self._support = (jnp.asarray(low, dtype=jnp.float64),
+                         jnp.asarray(high, dtype=jnp.float64))
+        self._center = jnp.asarray(center, dtype=jnp.float64)
+        self._width = float(width)
+
+    @property
+    def support(self):
+        return self._support
+
+    def sample_surrogate_pred(self, key, input, n):
+        # Mean: -0.5 * ||x - center||^2 / width^2 (peaked log-density)
+        mean = -0.5 * jnp.sum((input - self._center) ** 2, axis=1) / (self._width ** 2)
+        noise = jr.normal(key, shape=(n, input.shape[0])) * 0.1
+        return mean[None, :] + noise
+
+    def log_density_from_samples(self, pred_samples, input):
+        return pred_samples
+
+
+def test_select_positions_uniform_support():
+    """'uniform_support' returns points in the box with correct shape."""
+    low = jnp.array([0.0, 0.0])
+    high = jnp.array([1.0, 2.0])
+    surrogate_post = _MockLogDensSurrogatePost(low, high, center=[0.5, 1.0])
 
     positions = select_initial_positions(
-        jr.key(0), gp=None, prior=posterior.prior,
-        n_chains=4, method='prior')
+        jr.key(0), surrogate_post=surrogate_post,
+        n_chains=4, method='uniform_support')
 
     assert positions.shape == (4, 2)
+    positions_np = np.asarray(positions)
+    assert np.all(positions_np >= np.asarray(low))
+    assert np.all(positions_np <= np.asarray(high))
+
+
+def test_select_positions_ep_direct_sampling():
+    """'ep_direct_sampling' returns points in the box, concentrated near the mode."""
+    low = jnp.array([-5.0, -5.0])
+    high = jnp.array([5.0, 5.0])
+    center = np.array([2.0, -1.0])
+    surrogate_post = _MockLogDensSurrogatePost(
+        low, high, center=center, width=0.5)
+
+    positions = select_initial_positions(
+        jr.key(0), surrogate_post=surrogate_post,
+        n_chains=4, method='ep_direct_sampling',
+        n_candidates=200, n_trials=50)
+
+    assert positions.shape == (4, 2)
+    positions_np = np.asarray(positions)
+    # All inside support
+    assert np.all(positions_np >= np.asarray(low))
+    assert np.all(positions_np <= np.asarray(high))
+    # Mean should be reasonably close to the mode
+    assert np.linalg.norm(positions_np.mean(axis=0) - center) < 2.0
+
+
+def test_select_positions_unbounded_support_raises():
+    """Unbounded supports must raise ValueError for bounded-only methods."""
+    surrogate_post = _MockLogDensSurrogatePost(
+        jnp.array([-jnp.inf, -jnp.inf]),
+        jnp.array([jnp.inf, jnp.inf]),
+        center=[0.0, 0.0])
+
+    with pytest.raises(ValueError, match='unbounded'):
+        select_initial_positions(
+            jr.key(0), surrogate_post=surrogate_post,
+            n_chains=4, method='uniform_support')
 
 
 def test_farthest_point_sampling():

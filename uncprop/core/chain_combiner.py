@@ -747,62 +747,217 @@ def combine_chains(
 
 def select_initial_positions(
     key: PRNGKey,
-    gp,
-    prior,
+    surrogate_post,
     n_chains: int,
-    method: str = 'high_density_spread',
+    method: str = 'ep_direct_sampling',
     n_candidates: int = 500,
-    top_k: int = 50,
+    n_trials: int = 100,
+    candidate_method: str = 'lhc',
 ) -> Array:
     """Select diverse starting positions for multi-chain MCMC.
+
+    These methods initialize chains for **surrogate-based** MCMC — i.e.,
+    the chain target is the expected posterior (EP) or a related
+    surrogate-induced distribution defined over the surrogate's
+    (typically bounded) support. Sampling from the original problem's
+    prior is *not* used here: the prior may be unbounded (e.g. Gaussian),
+    and placing chains outside the surrogate's support would cause them
+    to get stuck. For exact-posterior MCMC where prior sampling is
+    correct, use the prior sampler directly.
 
     Parameters
     ----------
     key : PRNGKey
-    gp : GPJaxSurrogate
-        The GP surrogate (for scoring candidates by predictive mean).
-    prior : Distribution
-        The prior distribution (for sampling candidates and enforcing support).
+    surrogate_post : SurrogateDistribution
+        The surrogate-induced distribution (must expose ``support``,
+        ``sample_surrogate_pred``, and ``log_density_from_samples``).
     n_chains : int
         Number of starting positions to select.
     method : str
-        - ``'prior'``: sample directly from the prior
-        - ``'high_density_spread'``: sample candidates, score by GP
-          predictive mean, then greedily select to maximize spread
+        - ``'ep_direct_sampling'`` (default): approximate EP sampling
+          via direct GP trajectory sampling. See
+          ``select_initial_positions_ep`` for details.
+        - ``'uniform_support'``: uniform samples over the surrogate's
+          bounded support (a diffuse, non-informative initialization).
     n_candidates : int
-        Number of candidate points to generate (for 'high_density_spread').
-    top_k : int
-        Number of top-scoring candidates to consider (for spread selection).
+        Number of candidate points per trajectory
+        (for ``ep_direct_sampling``).
+    n_trials : int
+        Number of GP trajectories (for ``ep_direct_sampling``).
+    candidate_method : str
+        Candidate generation scheme within the support; one of
+        ``'lhc'`` or ``'uniform'``.
 
     Returns
     -------
     positions : (n_chains, d) array of initial positions.
     """
-    key_cand, key_select = jr.split(key)
+    if method == 'uniform_support':
+        return _generate_candidates_in_support(
+            key, surrogate_post.support, n_chains, method='uniform'
+        )
 
-    if method == 'prior':
-        return prior.sample(key_cand, n_chains)
-
-    elif method == 'high_density_spread':
-        # Step 1: Generate candidates from the prior
-        candidates = prior.sample(key_cand, n_candidates)
-
-        # Step 2: Score by GP predictive mean (= plug-in log-density)
-        pred = gp(candidates)
-        scores = np.array(pred.mean.ravel())
-
-        # Step 3: Keep top-K by score
-        if top_k > n_candidates:
-            top_k = n_candidates
-        top_idx = np.argsort(scores)[-top_k:]
-        top_candidates = np.array(candidates[top_idx])
-
-        # Step 4: Greedy farthest-point sampling for diversity
-        selected = _farthest_point_sampling(top_candidates, n_chains)
-        return jnp.array(selected)
+    elif method == 'ep_direct_sampling':
+        return select_initial_positions_ep(
+            key=key,
+            surrogate_post=surrogate_post,
+            n_chains=n_chains,
+            n_candidates=n_candidates,
+            n_trials=n_trials,
+            candidate_method=candidate_method,
+        )
 
     else:
         raise ValueError(f'Unknown init method: {method}')
+
+
+def select_initial_positions_ep(
+    key: PRNGKey,
+    surrogate_post,
+    n_chains: int,
+    n_candidates: int = 500,
+    n_trials: int = 100,
+    candidate_method: str = 'lhc',
+) -> Array:
+    """EP-aware initial positions via direct GP trajectory sampling.
+
+    Approximate samples from the expected posterior (EP) are obtained as:
+
+    1. Generate a candidate set covering the surrogate support.
+    2. Sample ``n_trials`` joint GP trajectories (predictive samples)
+       at the candidates.
+    3. For each trajectory, compute the induced log-density at each
+       candidate and resample a single candidate with probability
+       proportional to ``exp(log-density)`` normalized across the
+       candidate set. This yields one approximate EP draw per trajectory.
+    4. Select ``n_chains`` initial positions from this pool of
+       approximate EP draws via farthest-point sampling for diversity.
+
+    This method works for both log-density surrogates (where the
+    surrogate output *is* the log-density) and forward-model surrogates
+    (where the log-density is obtained by applying the likelihood to
+    the sampled forward-model values). The dispatch is handled by
+    ``SurrogateDistribution.log_density_from_samples``.
+
+    Parameters
+    ----------
+    key : PRNGKey
+    surrogate_post : SurrogateDistribution
+    n_chains : int
+    n_candidates : int
+        Number of candidate points.
+    n_trials : int
+        Number of joint GP trajectories (number of approximate EP draws
+        in the pool).
+    candidate_method : str
+        ``'lhc'`` or ``'uniform'``.
+
+    Returns
+    -------
+    positions : (n_chains, d) array.
+    """
+    key_cand, key_traj, key_resamp = jr.split(key, 3)
+
+    # 1. Candidate set within the surrogate's (bounded) support
+    candidates = _generate_candidates_in_support(
+        key_cand, surrogate_post.support,
+        n_candidates, method=candidate_method,
+    )
+
+    # 2. Sample n_trials joint surrogate trajectories at the candidates
+    pred_samples = surrogate_post.sample_surrogate_pred(
+        key_traj, input=candidates, n=n_trials
+    )
+
+    # 3. Induced log-density at each candidate, per trajectory
+    log_dens = np.asarray(
+        surrogate_post.log_density_from_samples(pred_samples, candidates)
+    )  # shape: (n_trials, n_candidates)
+
+    # Normalize each row into a probability vector (log-sum-exp trick)
+    log_dens_shift = log_dens - log_dens.max(axis=1, keepdims=True)
+    # Guard against non-finite rows (e.g. all -inf)
+    weights = np.exp(log_dens_shift)
+    row_sum = weights.sum(axis=1, keepdims=True)
+    bad_rows = (row_sum <= 0) | ~np.isfinite(row_sum).ravel()[:, None]
+    # Fall back to uniform for degenerate rows
+    weights = np.where(
+        bad_rows, np.full_like(weights, 1.0 / weights.shape[1]),
+        weights / np.where(row_sum > 0, row_sum, 1.0),
+    )
+
+    # Resample one candidate per trajectory
+    cand_np = np.asarray(candidates)
+    trial_keys = jr.split(key_resamp, n_trials)
+    selected = np.empty((n_trials, cand_np.shape[1]))
+    for t in range(n_trials):
+        idx = int(jr.choice(trial_keys[t], n_candidates,
+                            p=jnp.asarray(weights[t])))
+        selected[t] = cand_np[idx]
+
+    # 4. Farthest-point sampling for diversity
+    positions = _farthest_point_sampling(selected, n_chains)
+    return jnp.array(positions)
+
+
+def _generate_candidates_in_support(
+    key: PRNGKey,
+    support: tuple,
+    n: int,
+    method: str = 'lhc',
+) -> Array:
+    """Generate ``n`` candidate points inside a bounded support.
+
+    Parameters
+    ----------
+    key : PRNGKey
+    support : tuple of (low, high)
+        Each either a scalar or a (d,) array. Must be fully finite;
+        unbounded supports raise ValueError.
+    n : int
+        Number of candidates.
+    method : str
+        - ``'uniform'``: i.i.d. uniform over the box.
+        - ``'lhc'``: Latin hypercube over the box.
+
+    Returns
+    -------
+    candidates : (n, d) array.
+    """
+    low = jnp.atleast_1d(jnp.asarray(support[0], dtype=jnp.float64))
+    high = jnp.atleast_1d(jnp.asarray(support[1], dtype=jnp.float64))
+
+    if not (jnp.all(jnp.isfinite(low)) and jnp.all(jnp.isfinite(high))):
+        raise ValueError(
+            'Cannot generate candidates: surrogate support is unbounded. '
+            "Methods 'uniform_support' and 'ep_direct_sampling' require a "
+            'bounded support. Ensure the surrogate posterior is constructed '
+            'with a bounded (truncated) support.'
+        )
+
+    d = low.shape[0]
+    # If one of low/high is scalar-shaped but the other is (d,), broadcast.
+    if high.shape != low.shape:
+        low, high = jnp.broadcast_arrays(low, high)
+        d = low.shape[0]
+
+    if method == 'uniform':
+        u = jr.uniform(key, shape=(n, d))
+        return low + u * (high - low)
+
+    if method == 'lhc':
+        # LHC via scipy.stats.qmc (numpy-based, deterministic from key)
+        from scipy.stats import qmc
+        from numpy.random import default_rng
+        from uncprop.utils.other import _numpy_rng_seed_from_jax_key
+
+        seed = _numpy_rng_seed_from_jax_key(key)
+        rng = default_rng(seed=seed)
+        sampler = qmc.LatinHypercube(d=int(d), rng=rng)
+        u = sampler.random(n=n)  # (n, d), values in [0, 1)
+        return jnp.asarray(low) + jnp.asarray(u) * jnp.asarray(high - low)
+
+    raise ValueError(f'Unknown candidate generation method: {method}')
 
 
 def _farthest_point_sampling(candidates: np.ndarray, n_select: int) -> np.ndarray:

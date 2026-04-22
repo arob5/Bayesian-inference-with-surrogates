@@ -14,7 +14,7 @@ common_kwargs:
   adapt_interval: 50
   target_accept: 0.234
   weight_method: pritchard
-  init_method: high_density_spread
+  init_method: ep_direct_sampling
 
 variants:
   # === 4 chains, 1 u-step ===

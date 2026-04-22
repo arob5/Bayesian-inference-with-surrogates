@@ -77,7 +77,7 @@ variants:
     n_chains: 4
     adaptive: true
     weight_method: pritchard
-    init_method: high_density_spread
+    init_method: ep_direct_sampling
 
   - label: cut_4ch
     rho: 0.0

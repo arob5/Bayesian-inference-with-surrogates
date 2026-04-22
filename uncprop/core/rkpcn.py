@@ -371,7 +371,7 @@ def _single_u_step(
     # Sample g(v) from GP conditioned on all observed points
     gv = _gp_sample_at(key_sample, gp_conditioned, v)
 
-    # MH accept/reject
+    # MH accept/reject (same f trajectory, different u)
     lp_prop = log_density_fn(gv, v)
     u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
         key_mh, state.logdensity, lp_prop, u, v
@@ -403,14 +403,13 @@ def _single_u_step_and_condition(
     """Single MH u-step, then condition GP on the evaluated point.
 
     Used in the multi-u-step loop. After evaluating g(v), conditions
-    the GP on {v, g(v)} regardless of acceptance (the trajectory value
-    is informative either way).
+    the GP on {v, g(v)} regardless of acceptance.
 
     Returns
     -------
     state : RKPCNState
     gp_conditioned : GPJaxSurrogate
-        Further conditioned GP.
+        GP updated with one new conditioning point.
     info : RKPCNInfo
     """
     key_prop, key_sample, key_mh = jr.split(key, 3)
@@ -426,7 +425,7 @@ def _single_u_step_and_condition(
     # Condition GP on {v, g(v)} for subsequent steps
     gp_conditioned = gp_conditioned.condition(given=(v, gv))
 
-    # MH accept/reject
+    # MH accept/reject (same f trajectory, different u)
     lp_prop = log_density_fn(gv, v)
     u_next, lp_next, accept_prob, is_accepted = _mh_accept_reject(
         key_mh, state.logdensity, lp_prop, u, v
@@ -597,7 +596,8 @@ def build_log_density_vsem(posterior, surrogate_post):
             upper = upper_bound(u)
             lp = jnp.clip(f, max=upper)
             lp = jnp.where(
-                jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf)
+                jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf
+            )
             return lp.squeeze()
     else:
         def log_density(f, u):

@@ -140,7 +140,12 @@ class VSEMPosteriorSurrogate(SurrogateDistribution):
     
     def log_density_from_pred(self, pred: PredDist):
         return self.posterior_surrogate.log_density_from_pred(pred)
-    
+
+    def log_density_from_samples(self, pred_samples: Array,
+                                 input: ArrayLike) -> Array:
+        return self.posterior_surrogate.log_density_from_samples(
+            pred_samples, input)
+
     def expected_surrogate_approx(self) -> DistributionFromDensity:
         return self.posterior_surrogate.expected_surrogate_approx()
     

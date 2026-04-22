@@ -137,7 +137,35 @@ class SurrogateDistribution(ABC):
         predictive distribution. `pred` represents surrogate predictions
         at a set of points. This function returns a Distribution representing
         the pushforward of the surrogate predictions through the log density
-        map. 
+        map.
+        """
+        raise NotImplementedError
+
+    def log_density_from_samples(self, pred_samples: Array,
+                                 input: ArrayLike) -> Array:
+        """Push concrete surrogate output samples through the log-density map.
+
+        Array-based analog of ``log_density_from_pred``: where
+        ``log_density_from_pred`` operates on a predictive distribution,
+        this method operates on concrete samples of that distribution.
+        Converts surrogate-output samples at a set of input points into
+        concrete log-density values.
+
+        Subclasses must override.
+
+        Parameters
+        ----------
+        pred_samples : Array
+            Samples from ``sample_surrogate_pred(key, input, n)``.
+            Shape depends on the surrogate type (single- vs. multi-output).
+        input : ArrayLike, shape (K, d)
+            The input points that ``pred_samples`` correspond to.
+
+        Returns
+        -------
+        log_density_samples : Array, shape (n, K)
+            Entry [s, i] is the log unnormalized posterior density at
+            ``input[i]`` for the s-th sample.
         """
         raise NotImplementedError
     
@@ -227,7 +255,12 @@ class LogDensGPSurrogate(SurrogateDistribution):
     def log_density_from_pred(self, pred: PredDist):
         """ Surrogate predictions are log-density predictions """
         return pred
-    
+
+    def log_density_from_samples(self, pred_samples: Array,
+                                 input: ArrayLike) -> Array:
+        """For a log-density GP surrogate, samples ARE log-density values."""
+        return pred_samples
+
     def expected_surrogate_approx(self) -> DistributionFromDensity:
         """ Plug-in surrogate mean as log-density approximation. """
 
@@ -300,7 +333,19 @@ class LogDensClippedGPSurrogate(SurrogateDistribution):
     
     def log_density_from_pred(self, pred: PredDist):
         return pred
-    
+
+    def log_density_from_samples(self, pred_samples: Array,
+                                 input: ArrayLike) -> Array:
+        """Apply the clip to convert GP samples into clipped log-density samples.
+
+        This is idempotent if ``pred_samples`` came from
+        ``self.sample_surrogate_pred`` (which already applies the clip).
+        But it also correctly handles samples drawn from the raw GP
+        (e.g., via ``self.surrogate(input).sample(...)``).
+        """
+        upper_bound = self._log_dens_upper_bound(input).ravel()
+        return jnp.clip(pred_samples, max=upper_bound)
+
     def expected_surrogate_approx(self) -> DistributionFromDensity:
         """ Plug-in surrogate mean as log-density approximation. """
         log_dens_upper_bound = self._log_dens_upper_bound
@@ -388,6 +433,55 @@ class FwdModelGaussianSurrogate(SurrogateDistribution):
     @property
     def noise_cov(self):
         return self.noise_cov_tril @ self.noise_cov_tril.T
+
+    def log_density_from_samples(self, pred_samples: Array,
+                                 input: ArrayLike) -> Array:
+        """Push concrete surrogate (forward-model) samples through the
+        unnormalized log-density map.
+
+        For this surrogate, the log-density at input u is
+            log pi(u; f) = log pi_0(u) + log N(y | f(u), C),
+        so ``pred_samples`` (which are samples of f at the input points)
+        can be fed directly into the Gaussian log-likelihood.
+
+        Parameters
+        ----------
+        pred_samples : Array
+            Samples of the surrogate predictive at ``input`` with shape
+            ``(n, K)`` for single-output GPs or ``(n, p, K)`` for
+            multi-output GPs (p = output dim, K = number of inputs).
+        input : ArrayLike, shape (K, d)
+
+        Returns
+        -------
+        log_density_samples : Array, shape (n, K)
+        """
+        pred_samples = jnp.asarray(pred_samples)
+
+        # Normalize shape to (n, p, K)
+        if pred_samples.ndim == 2:
+            pred_samples = pred_samples[:, None, :]
+        elif pred_samples.ndim != 3:
+            raise ValueError(
+                f'Expected pred_samples with ndim in (2, 3), '
+                f'got ndim={pred_samples.ndim}'
+            )
+
+        n, p, K = pred_samples.shape
+
+        # Stack per-sample, per-input means into (n*K, p)
+        means_flat = jnp.transpose(pred_samples, (0, 2, 1)).reshape(n * K, p)
+
+        # log-likelihood at each (sample, input) pair
+        log_lik_flat = _gaussian_log_density_tril(
+            self.y, m=means_flat, L=self.noise_cov_tril
+        )  # (n*K,)
+        log_lik = log_lik_flat.reshape(n, K)
+
+        # log-prior is constant over samples
+        log_prior_vals = jnp.asarray(self.log_prior(input)).ravel()  # (K,)
+
+        return log_lik + log_prior_vals[None, :]
 
     def expected_surrogate_approx(self) -> Distribution:
         gp = self.surrogate
