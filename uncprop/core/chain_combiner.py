@@ -620,6 +620,76 @@ def identify_duplicate_modes(
 
 
 # =============================================================================
+# Mode-level merging and weighting
+# =============================================================================
+
+def merge_chains_by_mode(
+    chain_results: list[dict],
+    mode_labels: np.ndarray,
+) -> list[dict]:
+    """Concatenate per-chain samples into per-mode sample sets.
+
+    Chains assigned to the same mode (same label) have their
+    ``post_burnin`` samples and ``logdensities_post_burnin`` arrays
+    concatenated. Chains with label -1 (failed) are excluded.
+
+    The resulting per-mode dicts are suitable inputs to
+    ``compute_chain_weights`` — they have the same interface as
+    chain_results (with 'post_burnin' and 'logdensities' keys),
+    but each represents a distinct mode rather than an individual
+    chain.
+
+    Parameters
+    ----------
+    chain_results : list of M dicts with keys 'post_burnin',
+        'logdensities_post_burnin' (preferred) or 'logdensities'.
+    mode_labels : (M,) int array with mode assignment per chain.
+        Value -1 indicates a failed chain (excluded).
+
+    Returns
+    -------
+    mode_results : list of K dicts (K = number of distinct non-failed modes).
+        Each dict has:
+            label : int (the mode label)
+            chain_indices : list[int] of contributing chain indices
+            post_burnin : (N_mode, d) concatenated samples
+            logdensities : (N_mode,) concatenated log-densities
+            n_samples : int
+    """
+    # Get distinct non-failed modes in label order
+    distinct_modes = sorted(set(int(lbl) for lbl in mode_labels if lbl >= 0))
+
+    mode_results = []
+    for lbl in distinct_modes:
+        member_idx = [m for m, l in enumerate(mode_labels) if int(l) == lbl]
+        pb_pieces = []
+        ld_pieces = []
+        for m in member_idx:
+            res = chain_results[m]
+            pb_pieces.append(res['post_burnin'])
+            # Prefer logdensities_post_burnin (trimmed) if available
+            if res.get('logdensities_post_burnin') is not None:
+                ld_pieces.append(res['logdensities_post_burnin'])
+            elif 'logdensities' in res:
+                # Fall back to using last N_post entries
+                N_post = res['post_burnin'].shape[0]
+                ld_pieces.append(res['logdensities'][-N_post:])
+
+        pb_merged = np.concatenate(pb_pieces, axis=0) if pb_pieces else np.empty((0, 2))
+        ld_merged = np.concatenate(ld_pieces) if ld_pieces else np.empty(0)
+
+        mode_results.append({
+            'label': lbl,
+            'chain_indices': member_idx,
+            'post_burnin': pb_merged,
+            'logdensities': ld_merged,
+            'n_samples': pb_merged.shape[0],
+        })
+
+    return mode_results
+
+
+# =============================================================================
 # Combining chains
 # =============================================================================
 
@@ -634,17 +704,24 @@ def combine_chains(
     proportional to the chain weight divided by the number of
     samples in that chain.
 
+    This function operates at the **chain** level — one weight per
+    chain. For mode-level weighting, first build per-mode results
+    via ``merge_chains_by_mode`` and pass those here (where each
+    "chain" dict is actually a merged mode).
+
     Parameters
     ----------
     chain_results : list of dicts (must have 'post_burnin')
-    weights : (M,) array of chain weights (should sum to 1)
+    weights : (M,) array of weights (should sum to 1)
     n_burnin : int
         Ignored if 'post_burnin' already exists in results.
 
     Returns
     -------
     samples : (N_total, d) array of all post-burnin samples
-    sample_weights : (N_total,) array, sums to 1
+    sample_weights : (N_total,) array, sums to 1.
+        Within each input "chain" dict, samples are weighted equally:
+        each gets weight[m] / n_m.
     """
     all_samples = []
     all_weights = []
@@ -776,19 +853,28 @@ def _farthest_point_sampling(candidates: np.ndarray, n_select: int) -> np.ndarra
 
 def print_multi_chain_summary(
     chain_results: list[dict],
-    weights: np.ndarray,
+    mode_results: list[dict] | None = None,
+    mode_weights: np.ndarray | None = None,
     failed_mask: np.ndarray | None = None,
     labels: np.ndarray | None = None,
     par_names: list[str] | None = None,
 ):
     """Print a formatted summary of multi-chain results.
 
+    Shows two sections:
+      1. **Per-chain diagnostics**: individual chain statistics including
+         R-hat, ESS, burn-in discarded, failure status, mode assignment.
+      2. **Per-mode summary**: one row per distinct mode with the Pritchard
+         weight, number of contributing chains, total samples, and mode
+         mean log-density.
+
     Parameters
     ----------
     chain_results : list of per-chain result dicts
-    weights : (M,) chain weights
+    mode_results : list of per-mode dicts (from merge_chains_by_mode)
+    mode_weights : (K,) mode weights
     failed_mask : (M,) boolean, True = failed
-    labels : (M,) int, cluster labels
+    labels : (M,) int, mode label per chain (-1 = failed)
     par_names : parameter names for display
     """
     M = len(chain_results)
@@ -796,29 +882,66 @@ def print_multi_chain_summary(
     if par_names is None:
         par_names = [f'u{j}' for j in range(d)]
 
-    header = (f'{"chain":>6s} | {"weight":>7s} | {"accept":>7s} | '
-              f'{"min ESS":>8s} | {"rhat":>6s} | {"disc.":>6s} | '
-              f'{"failed":>7s} | {"mode":>5s} | '
+    # ---- Per-chain section ----
+    print('\n  Per-chain diagnostics:')
+    header = (f'  {"chain":>6s} | {"accept":>7s} | {"min ESS":>8s} | '
+              f'{"rhat":>6s} | {"disc.":>7s} | {"status":>8s} | '
+              f'{"mode":>5s} | {"n":>7s} | '
               + ' '.join(f'mean({p})' for p in par_names))
     print(header)
-    print('-' * len(header))
+    print('  ' + '-' * (len(header) - 2))
 
     for m, res in enumerate(chain_results):
-        w = weights[m]
         acc = res['accept_rate']
         ess = res['ess']
         min_e = float(min(ess)) if len(ess) > 0 else 0.0
-        fail = 'FAIL' if (failed_mask is not None and failed_mask[m]) else ''
-        mode = str(labels[m]) if labels is not None else ''
+
+        is_failed = (failed_mask is not None and bool(failed_mask[m]))
+        conv = res.get('convergence', {})
+        reason = conv.get('fail_reason')
+        if is_failed:
+            status = reason if reason else 'FAIL'
+        else:
+            status = 'ok'
+
+        mode = str(int(labels[m])) if labels is not None else ''
+        n_samp = res['post_burnin'].shape[0]
         means = res['post_burnin'].mean(axis=0)
         means_str = ' '.join(f'{means[j]:10.4f}' for j in range(d))
 
-        # R-hat and n_discarded from convergence assessment (if available)
-        conv = res.get('convergence', {})
         rhat = conv.get('rhat', float('nan'))
         rhat_str = f'{rhat:.3f}' if not np.isnan(rhat) else 'NaN'
         n_disc = conv.get('n_discarded', 0)
 
-        print(f'{m:6d} | {w:7.4f} | {acc:7.4f} | {min_e:8.1f} | '
-              f'{rhat_str:>6s} | {n_disc:6d} | '
-              f'{fail:>7s} | {mode:>5s} | {means_str}')
+        print(f'  {m:6d} | {acc:7.4f} | {min_e:8.1f} | '
+              f'{rhat_str:>6s} | {n_disc:7d} | {status:>8s} | '
+              f'{mode:>5s} | {n_samp:7d} | {means_str}')
+
+    # ---- Per-mode section ----
+    if mode_results is not None and mode_weights is not None:
+        print('\n  Per-mode summary:')
+        header = (f'  {"mode":>5s} | {"weight":>7s} | {"chains":>15s} | '
+                  f'{"n_samples":>10s} | {"mean_logd":>10s} | '
+                  f'{"std_logd":>9s} | '
+                  + ' '.join(f'mean({p})' for p in par_names))
+        print(header)
+        print('  ' + '-' * (len(header) - 2))
+
+        for k, mr in enumerate(mode_results):
+            lbl = mr['label']
+            chains_str = ','.join(str(c) for c in mr['chain_indices'])
+            n_samp = mr['n_samples']
+            w = mode_weights[k]
+            ld = mr.get('logdensities')
+            if ld is not None and len(ld) > 0:
+                mean_ld = float(np.mean(ld))
+                std_ld = float(np.std(ld))
+            else:
+                mean_ld = float('nan')
+                std_ld = float('nan')
+            means = mr['post_burnin'].mean(axis=0)
+            means_str = ' '.join(f'{means[j]:10.4f}' for j in range(d))
+
+            print(f'  {lbl:5d} | {w:7.4f} | {chains_str:>15s} | '
+                  f'{n_samp:10d} | {mean_ld:10.2f} | '
+                  f'{std_ld:9.3f} | {means_str}')

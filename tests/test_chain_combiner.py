@@ -23,6 +23,7 @@ from uncprop.core.chain_combiner import (
     assess_within_chain_convergence,
     detect_failed_chains,
     identify_duplicate_modes,
+    merge_chains_by_mode,
     combine_chains,
     select_initial_positions,
     _farthest_point_sampling,
@@ -298,6 +299,64 @@ def test_identify_duplicate_modes_excludes_failed():
     labels = identify_duplicate_modes(chains, failed_mask=failed_mask)
     assert labels[1] == -1
     assert labels[0] == labels[2]  # two good chains should merge
+
+
+# ---------------------------------------------------------------------------
+# Test: mode-level merging
+# ---------------------------------------------------------------------------
+
+def test_merge_chains_by_mode_single_mode():
+    """Two chains in the same mode should merge into one combined set."""
+    rng = np.random.default_rng(42)
+    chains = [
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+        _make_chain_result(rng.standard_normal((150, 2)), rng.standard_normal(150)),
+    ]
+    # Ensure logdensities_post_burnin is set
+    for c in chains:
+        c['logdensities_post_burnin'] = c['logdensities']
+
+    labels = np.array([0, 0])
+    mode_results = merge_chains_by_mode(chains, labels)
+    assert len(mode_results) == 1
+    assert mode_results[0]['n_samples'] == 250
+    assert mode_results[0]['chain_indices'] == [0, 1]
+    assert mode_results[0]['logdensities'].shape[0] == 250
+
+
+def test_merge_chains_by_mode_separate_modes():
+    """Two chains in different modes should produce two mode results."""
+    rng = np.random.default_rng(42)
+    chains = [
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+    ]
+    for c in chains:
+        c['logdensities_post_burnin'] = c['logdensities']
+
+    labels = np.array([0, 1])
+    mode_results = merge_chains_by_mode(chains, labels)
+    assert len(mode_results) == 2
+    assert mode_results[0]['chain_indices'] == [0]
+    assert mode_results[1]['chain_indices'] == [1]
+
+
+def test_merge_chains_by_mode_excludes_failed():
+    """Chains with label -1 (failed) should be excluded."""
+    rng = np.random.default_rng(42)
+    chains = [
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+        _make_chain_result(rng.standard_normal((100, 2)), rng.standard_normal(100)),
+    ]
+    for c in chains:
+        c['logdensities_post_burnin'] = c['logdensities']
+
+    labels = np.array([0, -1, 0])
+    mode_results = merge_chains_by_mode(chains, labels)
+    assert len(mode_results) == 1
+    assert mode_results[0]['chain_indices'] == [0, 2]
+    assert mode_results[0]['n_samples'] == 200  # chain 1 excluded
 
 
 # ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ from uncprop.core.chain_combiner import (
     compute_chain_weights,
     detect_failed_chains,
     identify_duplicate_modes,
+    merge_chains_by_mode,
     combine_chains,
     select_initial_positions,
     print_multi_chain_summary,
@@ -406,48 +407,73 @@ def run_rkpcn_multi_chain(
     # Detect failures
     failed_mask, fail_diag = detect_failed_chains(chain_results)
 
-    # Identify modes via pairwise cross-chain R-hat (failed chains excluded)
+    # Identify modes via pairwise cross-chain R-hat (failed chains excluded).
+    # After this, mode_labels[m] is -1 for failed chains or a cluster index
+    # >= 0 for chains merged into the same distribution.
     mode_labels = identify_duplicate_modes(
         chain_results, failed_mask=failed_mask)
 
-    # Compute weights. Note: detect_failed_chains has already trimmed each
-    # chain's post_burnin to reflect the auto-selected burn-in, so we pass
-    # n_burnin=0 here.
-    weights = compute_chain_weights(
-        chain_results, method=weight_method,
-        n_burnin=0, failed_mask=failed_mask)
+    # Merge chains within each mode into a single pooled sample set.
+    # mode_results is a list of K dicts (K = number of distinct non-failed
+    # modes), each containing the concatenated post_burnin + logdensities
+    # across member chains.
+    mode_results = merge_chains_by_mode(chain_results, mode_labels)
 
-    # Print summary
+    # Compute weights AT THE MODE LEVEL — one weight per mode, computed
+    # from the pooled samples within that mode. This avoids the pathological
+    # per-chain weight concentration we saw when chains in the same mode
+    # had similar but non-identical log-density statistics.
+    mode_weights = compute_chain_weights(
+        mode_results, method=weight_method, n_burnin=0)
+
+    # Print summary (per-chain diagnostics + per-mode summary)
     par_names = list(rep.grid.dim_names) if hasattr(rep, 'grid') else None
     print_multi_chain_summary(
-        chain_results, weights, failed_mask, mode_labels, par_names)
+        chain_results, mode_results=mode_results,
+        mode_weights=mode_weights,
+        failed_mask=failed_mask, labels=mode_labels, par_names=par_names)
 
-    # Combine chains (post_burnin fields already trimmed to auto-selected burnin)
-    pooled_samples, sample_weights = combine_chains(
-        chain_results, weights, n_burnin=0)
+    # Combine modes (samples equally weighted within each mode)
+    if len(mode_results) > 0:
+        pooled_samples, sample_weights = combine_chains(
+            mode_results, mode_weights, n_burnin=0)
+    else:
+        # No non-failed chains
+        pooled_samples = np.empty((0, d))
+        sample_weights = np.empty(0)
 
     # Aggregate diagnostics
     total_runtime = sum(r['runtime'] for r in chain_results)
-    pooled_ess = compute_ess(pooled_samples) if pooled_samples.shape[0] > 10 else np.zeros(d)
-    # Weighted mean acceptance rate (over non-failed chains)
-    if weights.sum() > 0:
+    pooled_ess = (compute_ess(pooled_samples)
+                  if pooled_samples.shape[0] > 10 else np.zeros(d))
+
+    # Weighted mean acceptance rate: use per-chain weights derived from
+    # the mode weights (each chain gets its mode's weight divided equally
+    # among chains in that mode).
+    per_chain_weights = np.zeros(n_chains)
+    for k, mr in enumerate(mode_results):
+        n_in_mode = len(mr['chain_indices'])
+        if n_in_mode > 0:
+            for c in mr['chain_indices']:
+                per_chain_weights[c] = mode_weights[k] / n_in_mode
+
+    if per_chain_weights.sum() > 0:
         mean_accept = float(np.average(
-            [r['accept_rate'] for r in chain_results], weights=weights))
+            [r['accept_rate'] for r in chain_results],
+            weights=per_chain_weights))
     else:
         mean_accept = 0.0
 
-    # Build logdensity array (concatenated post-burnin, using trimmed versions)
-    ld_pieces = []
-    for r in chain_results:
-        if r.get('logdensities_post_burnin') is not None:
-            ld_pieces.append(r['logdensities_post_burnin'])
-        else:
-            ld_pieces.append(r['logdensities'][n_burnin:])
-    all_ld = np.concatenate(ld_pieces) if ld_pieces else np.array([])
+    # Build logdensity array by concatenating each mode's logdensities
+    # (already trimmed in detect_failed_chains)
+    if mode_results:
+        all_ld = np.concatenate([mr['logdensities'] for mr in mode_results])
+    else:
+        all_ld = np.empty(0)
 
     n_failed = int(failed_mask.sum())
-    n_modes = len(set(mode_labels[mode_labels >= 0]))
-    print(f'  Pooled: {pooled_samples.shape[0]} samples from '
+    n_modes = len(mode_results)
+    print(f'\n  Pooled: {pooled_samples.shape[0]} samples from '
           f'{n_chains - n_failed} non-failed chains '
           f'({n_modes} distinct modes), '
           f'min_ESS={min(pooled_ess):.1f}, '
@@ -471,7 +497,9 @@ def run_rkpcn_multi_chain(
         'runtime': total_runtime,
         # Multi-chain specific
         'n_chains': n_chains,
-        'chain_weights': weights,
+        'mode_weights': mode_weights,
+        'mode_results': mode_results,
+        'mode_membership': [mr['chain_indices'] for mr in mode_results],
         'per_chain_results': chain_results,
         'failed_mask': failed_mask,
         'mode_labels': mode_labels,

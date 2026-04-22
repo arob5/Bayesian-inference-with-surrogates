@@ -355,20 +355,37 @@ def plot_samples_vs_ep_annotated(results, ep_density, grid, thin=5,
         else:
             res = results[label]
             per_chain = res.get('per_chain_results')
-            weights = res.get('chain_weights')
+            mode_weights = res.get('mode_weights')
+            mode_labels = res.get('mode_labels')
 
             if per_chain is not None and len(per_chain) > 1:
                 n_ch = len(per_chain)
                 chain_colors = plt.cm.Set1(np.linspace(0, 1, min(n_ch, 9)))
 
+                # Map each chain to its effective weight (mode_weight / n_in_mode)
+                # so chain labels can display this. Chains with mode_label == -1
+                # are failed and get zero weight.
+                chain_weights = np.zeros(n_ch)
+                if mode_weights is not None and mode_labels is not None:
+                    mode_labels_arr = np.asarray(mode_labels)
+                    for k, w_k in enumerate(np.asarray(mode_weights)):
+                        members = np.where(mode_labels_arr == k)[0]
+                        if len(members) > 0:
+                            for m in members:
+                                chain_weights[m] = float(w_k) / len(members)
+                else:
+                    chain_weights[:] = 1.0 / n_ch
+
                 for m, cr in enumerate(per_chain):
                     cs = cr['post_burnin'][::thin]
-                    # Scale alpha by weight (min 0.1 so all chains visible)
-                    w = weights[m] if weights is not None else 1.0 / n_ch
+                    w = chain_weights[m]
+                    mode_id = (int(mode_labels[m])
+                               if mode_labels is not None else -1)
+                    mode_str = f'm{mode_id}' if mode_id >= 0 else 'FAIL'
                     alpha = max(0.1, min(0.6, w * n_ch * 0.3))
                     ax.scatter(cs[:, 0], cs[:, 1], alpha=alpha, s=5,
                                c=[chain_colors[m % len(chain_colors)]],
-                               label=f'ch{m} (w={w:.2f})')
+                               label=f'ch{m} [{mode_str}, w={w:.2f}]')
 
                 # Init positions as stars, colored by chain
                 init_pos = res.get('init_positions')

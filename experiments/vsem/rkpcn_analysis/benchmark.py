@@ -171,8 +171,10 @@ def run_benchmark(
             for m, cr in enumerate(per_chain):
                 pb = cr['post_burnin'][::thin]
                 save_dict[f'chain{m}_post_burnin'] = pb
-            if result.get('chain_weights') is not None:
-                save_dict['chain_weights'] = result['chain_weights']
+            if result.get('mode_weights') is not None:
+                save_dict['mode_weights'] = result['mode_weights']
+            if result.get('mode_labels') is not None:
+                save_dict['mode_labels'] = result['mode_labels']
             if result.get('init_positions') is not None:
                 save_dict['init_positions'] = result['init_positions']
 
@@ -204,12 +206,29 @@ def run_benchmark(
             'runtime': result.get('runtime', 0.0),
             'prop_cov_diag': np.diag(np.array(v_prop_cov)).tolist(),
         }
-        if result.get('chain_weights') is not None:
-            summary['chain_weights'] = result['chain_weights'].tolist()
+        if result.get('mode_weights') is not None:
+            summary['mode_weights'] = result['mode_weights'].tolist()
+            summary['mode_membership'] = [list(map(int, members))
+                                           for members in result['mode_membership']]
             summary['n_failed_chains'] = int(result['failed_mask'].sum())
-            summary['n_modes'] = len(set(result['mode_labels']))
+            summary['n_modes'] = len(result['mode_weights'])
             summary['weight_method'] = result.get('weight_method', 'unknown')
             summary['init_positions'] = result['init_positions'].tolist()
+            # Per-chain convergence diagnostics
+            summary['per_chain_convergence'] = [
+                {
+                    'chain_idx': i,
+                    'converged': bool(cr.get('convergence', {}).get('converged', False)),
+                    'rhat': float(cr.get('convergence', {}).get('rhat', float('nan'))),
+                    'n_discarded': int(cr.get('convergence', {}).get('n_discarded', 0)),
+                    'n_kept': int(cr.get('convergence', {}).get('n_kept', 0)),
+                    'fail_reason': cr.get('convergence', {}).get('fail_reason'),
+                    'mode_label': int(result['mode_labels'][i]),
+                    'accept_rate': float(cr['accept_rate']),
+                    'min_ess': float(min(cr['ess'])),
+                }
+                for i, cr in enumerate(result['per_chain_results'])
+            ]
         if result.get('adapted_prop_cov_diag'):
             summary['adapted_prop_cov_diag'] = result['adapted_prop_cov_diag']
         with open(var_dir / 'summary.json', 'w') as f:
@@ -250,7 +269,8 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         samples_path = var_dir / 'samples.npz'
         post_burnin = None
         per_chain_results = None
-        chain_weights = None
+        mode_weights = None
+        mode_labels = None
         init_positions = None
 
         if samples_path.exists():
@@ -258,13 +278,18 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
             post_burnin = data['post_burnin']
 
             # Reconstruct per-chain data if available
-            chain_keys = sorted([k for k in data.files if k.startswith('chain') and k.endswith('_post_burnin')])
+            chain_keys = sorted(
+                [k for k in data.files
+                 if k.startswith('chain') and k.endswith('_post_burnin')],
+                key=lambda s: int(s.replace('chain', '').replace('_post_burnin', '')))
             if chain_keys:
                 per_chain_results = []
                 for ck in chain_keys:
                     per_chain_results.append({'post_burnin': data[ck]})
-                if 'chain_weights' in data.files:
-                    chain_weights = data['chain_weights']
+                if 'mode_weights' in data.files:
+                    mode_weights = data['mode_weights']
+                if 'mode_labels' in data.files:
+                    mode_labels = data['mode_labels']
                 if 'init_positions' in data.files:
                     init_positions = data['init_positions']
 
@@ -279,7 +304,8 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
             'summary': summary,
             'post_burnin': post_burnin,
             'per_chain_results': per_chain_results,
-            'chain_weights': chain_weights,
+            'mode_weights': mode_weights,
+            'mode_labels': mode_labels,
             'init_positions': init_positions,
             'trace': trace,
         }
