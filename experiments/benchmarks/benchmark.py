@@ -60,6 +60,7 @@ Output directory layout
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -90,6 +91,28 @@ from uncprop.core.rkpcn_multichain import (
     run_rkpcn_chain, run_rkpcn_multi_chain,
 )
 from uncprop.core.samplers import get_adapted_proposal
+
+
+def _load_experiment_plots(experiment: str):
+    """Load ``experiments/<experiment>/plots.py`` by absolute path.
+
+    We can't just ``import plots`` from each experiment directory
+    because Python would cache the first ``plots`` module imported and
+    return it for every subsequent import (the benchmark framework
+    itself has a ``plots.py``, so a plain sys.path-based import
+    collides). Load by file path and register under a unique name.
+
+    Returns the loaded module, or ``None`` if the experiment has no
+    plots.py.
+    """
+    path = REPO_ROOT / 'experiments' / experiment / 'plots.py'
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        f'_benchmark_plots_{experiment}', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # =============================================================================
@@ -582,8 +605,9 @@ def analyze_benchmark(output_dir: Path, save_plots: bool = True,
 
         # ---- VSEM-specific 2D plots ----
         if grid is not None and ep_density is not None:
-            sys.path.insert(0, str(REPO_ROOT / 'experiments' / 'vsem'))
-            import plots as vsem_plots
+            vsem_plots = _load_experiment_plots('vsem')
+            if vsem_plots is None:
+                continue
 
             print('\n  ~~ VSEM 2D scatter plots ~~')
             fig, _ = vsem_plots.plot_samples_vs_ep(

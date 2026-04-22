@@ -96,7 +96,18 @@ def summary_table(results: dict, par_names: list[str] | None = None) -> dict:
         ld = res.get('logdensities', np.empty(0))
         n_burnin = res.get('n_burnin', 0)
         ld_post = ld[n_burnin:] if ld.size > 0 else np.empty(0)
-        iat_ld = integrated_autocorrelation_time(ld_post) if ld_post.size > 0 else float('nan')
+
+        # Prefer IAT from the saved summary (computed at run time on
+        # the full trace). Fall back to recomputation from post-burnin
+        # log-densities — only available when full traces were saved.
+        saved_iat = res.get('summary', {}).get('iat_logdensity')
+        if saved_iat is not None and not (isinstance(saved_iat, float)
+                                           and np.isnan(saved_iat)):
+            iat_ld = float(saved_iat)
+        elif ld_post.size > 1:
+            iat_ld = integrated_autocorrelation_time(ld_post)
+        else:
+            iat_ld = float('nan')
 
         ess_str = ''.join(f' {e:10.1f}' for e in ess)
         print(f'{label:>20s} | {res.get("rho", 0):5.2f} | '
