@@ -165,6 +165,17 @@ def run_benchmark(
         thin = max(1, result['post_burnin'].shape[0] // 2000)
         save_dict = {'post_burnin': result['post_burnin'][::thin]}
 
+        # Sample weights: important for multi-chain where modes have
+        # different Pritchard weights. The KDE in W2 computation needs
+        # these to properly weight samples from each mode.
+        if result.get('sample_weights') is not None:
+            sw = np.asarray(result['sample_weights'])[::thin]
+            # Renormalize after thinning
+            total = sw.sum()
+            if total > 0:
+                sw = sw / total
+            save_dict['sample_weights'] = sw
+
         # For multi-chain: also save per-chain samples and metadata
         per_chain = result.get('per_chain_results')
         if per_chain is not None:
@@ -268,6 +279,7 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         # Load samples
         samples_path = var_dir / 'samples.npz'
         post_burnin = None
+        sample_weights = None
         per_chain_results = None
         mode_weights = None
         mode_labels = None
@@ -276,6 +288,8 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         if samples_path.exists():
             data = np.load(samples_path)
             post_burnin = data['post_burnin']
+            if 'sample_weights' in data.files:
+                sample_weights = data['sample_weights']
 
             # Reconstruct per-chain data if available
             chain_keys = sorted(
@@ -303,6 +317,7 @@ def load_benchmark_results(output_dir: str | Path) -> dict:
         results[label] = {
             'summary': summary,
             'post_burnin': post_burnin,
+            'sample_weights': sample_weights,
             'per_chain_results': per_chain_results,
             'mode_weights': mode_weights,
             'mode_labels': mode_labels,
@@ -383,6 +398,7 @@ def compute_benchmark_w2(
         if data['post_burnin'] is not None:
             w2_input[label] = {
                 'post_burnin': data['post_burnin'],
+                'sample_weights': data.get('sample_weights'),
                 'label': label,
             }
 

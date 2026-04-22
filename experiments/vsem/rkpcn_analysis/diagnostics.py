@@ -174,8 +174,21 @@ def w2_table(results, ep_grid_density, grid, par_names=None,
             continue
 
         try:
+            # Sample weights: pass to KDE when available (e.g., for
+            # multi-chain results where mode weights determine per-sample
+            # weights). Without this, the KDE treats all samples equally
+            # regardless of their source mode's Pritchard weight.
+            sample_weights = res.get('sample_weights')
+            if sample_weights is not None:
+                sw = np.asarray(sample_weights)[::thin]
+                # Renormalize after thinning
+                total = sw.sum()
+                sw = sw / total if total > 0 else None
+            else:
+                sw = None
+
             # Fit KDE to samples and evaluate on grid
-            kde = gaussian_kde(samp.T)
+            kde = gaussian_kde(samp.T, weights=sw)
             log_kde = np.log(np.maximum(kde(grid_pts.T), 1e-300))
 
             logp_kde_norm = normalize_density_over_grid(
