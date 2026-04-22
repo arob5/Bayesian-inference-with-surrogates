@@ -1,0 +1,21 @@
+# Smoke test for the multi-replicate benchmark on a PDE replicate.
+# Validates that the FwdModelGaussianSurrogate code path (via
+# log_density_from_samples) runs end-to-end through the multi-chain
+# pipeline. Expect a longer runtime than the VSEM smoke test because
+# the PDE surrogate GP is higher-dimensional.
+
+common_kwargs:
+  n_total: 5000
+  n_burnin: 4000
+  n_chains: 4
+  adaptive: true
+  adapt_interval: 50
+  target_accept: 0.234
+  weight_method: pritchard
+  init_method: ep_direct_sampling
+
+replicates:
+  - {experiment: elliptic_pde, setup: n_design_10, rep: 0}
+
+variants:
+  - {label: smoke_rho90_4ch, rho: 0.9}

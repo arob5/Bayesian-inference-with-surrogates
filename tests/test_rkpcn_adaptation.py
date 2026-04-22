@@ -18,7 +18,7 @@ import jax.random as jr
 import numpy as np
 import pytest
 
-from uncprop.core.rkpcn import RKPCNConfig, build_log_density_vsem
+from uncprop.core.rkpcn import RKPCNConfig, build_log_density_fn
 from uncprop.core.rkpcn_adaptation import (
     AdaptiveRKPCNConfig,
     AdaptiveRKPCNState,
@@ -70,7 +70,7 @@ def simple_gp():
 def test_adaptive_kernel_construction(simple_gp):
     """build_adaptive_rkpcn_kernel returns callable init_fn and kernel_fn."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99)
@@ -86,7 +86,7 @@ def test_adaptive_kernel_construction(simple_gp):
 def test_adaptive_init_returns_valid_state(simple_gp):
     """init_fn returns an AdaptiveRKPCNState with correct shapes."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -115,7 +115,7 @@ def test_adaptive_init_returns_valid_state(simple_gp):
 def test_adaptive_mcmc_loop_compatible(simple_gp):
     """Adaptive kernel works with mcmc_loop."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -145,7 +145,7 @@ def test_adaptive_mcmc_loop_compatible(simple_gp):
 def test_proposal_changes_during_adaptation(simple_gp):
     """Proposal covariance should change during the adaptation window."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -179,7 +179,7 @@ def test_proposal_changes_during_adaptation(simple_gp):
 def test_proposal_freezes_after_adapt_end(simple_gp):
     """Proposal covariance should not change after adapt_end."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -219,7 +219,7 @@ def test_proposal_freezes_after_adapt_end(simple_gp):
 def test_adaptation_from_identity(simple_gp):
     """Starting from identity proposal, adaptation should find a non-trivial covariance."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -250,7 +250,7 @@ def test_adaptation_from_identity(simple_gp):
 def test_extract_base_state(simple_gp):
     """extract_base_state produces a valid RKPCNState."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim
@@ -271,7 +271,7 @@ def test_extract_base_state(simple_gp):
 def test_get_adapted_proposal_cov(simple_gp):
     """get_adapted_proposal_cov returns the full scale^2 * C."""
     posterior, surrogate_post = simple_gp
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     d = posterior.dim

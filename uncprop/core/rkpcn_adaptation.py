@@ -32,7 +32,7 @@ Usage
 -----
 ::
 
-    from uncprop.core.rkpcn import RKPCNConfig, build_log_density_vsem
+    from uncprop.core.rkpcn import RKPCNConfig, build_log_density_fn
     from uncprop.core.rkpcn_adaptation import AdaptiveRKPCNConfig, build_adaptive_rkpcn_kernel
     from uncprop.core.samplers import mcmc_loop
 

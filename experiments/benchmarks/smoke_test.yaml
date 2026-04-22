@@ -1,0 +1,19 @@
+# Smoke test for the multi-replicate benchmark framework.
+# Tiny variant sweep across one VSEM rep — verifies end-to-end
+# plumbing cheaply. Expect ~2 min on a laptop.
+
+common_kwargs:
+  n_total: 5000
+  n_burnin: 4000
+  n_chains: 4
+  adaptive: true
+  adapt_interval: 50
+  target_accept: 0.234
+  weight_method: pritchard
+  init_method: ep_direct_sampling
+
+replicates:
+  - {experiment: vsem, setup: clip_gp_N4, rep: 0}
+
+variants:
+  - {label: smoke_rho90_4ch, rho: 0.9}

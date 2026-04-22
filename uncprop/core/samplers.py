@@ -243,6 +243,57 @@ def sample_distribution_old(key: PRNGKey,
             'initial_state': initial_state}
 
 
+def get_adapted_proposal(
+    key: PRNGKey,
+    posterior: Distribution,
+    n_warmup: int = 5000,
+    n_burnin: int = 5000,
+) -> tuple[Array, Array]:
+    """Run a short exact-posterior MCMC to obtain an adapted proposal cov.
+
+    Targets the exact ``posterior`` with the built-in adaptive MH
+    sampler, discards ``n_burnin`` iterations, then returns the final
+    tuned proposal covariance along with the post-burnin samples.
+
+    This is a useful pre-step before running RKPCN: a proposal
+    covariance tuned to the exact posterior's scale typically works
+    well as the RKPCN u-proposal (or as the initial covariance for
+    adaptive RKPCN).
+
+    Parameters
+    ----------
+    key : PRNGKey
+    posterior : Distribution
+        Exact target (any ``Distribution`` with ``.log_density``,
+        ``.prior``, and a finite-dim ``.dim`` attribute).
+    n_warmup : int
+        Samples drawn after burn-in (used for covariance adaptation).
+    n_burnin : int
+        Initial samples discarded.
+
+    Returns
+    -------
+    prop_cov : (d, d) array
+        Final adapted proposal covariance.
+    exact_samples : (n_warmup, d) array
+        Post-burnin samples from the exact posterior (useful for
+        sanity-checking that the warmup reached a reasonable region).
+    """
+    key_init, key_mcmc = jr.split(key)
+    initial_position = posterior.prior.sample(key_init)
+
+    results = sample_distribution(
+        key=key_mcmc,
+        dist=posterior,
+        initial_position=initial_position,
+        n_samples=n_warmup,
+        n_burnin=n_burnin,
+        thin_window=1,
+    )
+
+    return results['prop_cov'], results['positions'].squeeze(1)
+
+
 def _init_dist_proposal_cov(dist: Distribution):
     """A reasonable initial covariance"""
 

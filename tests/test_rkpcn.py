@@ -146,8 +146,8 @@ def test_kernel_construction(simple_gp):
     """build_rkpcn_kernel returns callable init_fn and kernel_fn."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99)
@@ -161,8 +161,8 @@ def test_init_fn_returns_valid_state(simple_gp):
     """init_fn produces a valid RKPCNState with correct shapes."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99)
@@ -188,8 +188,8 @@ def test_kernel_single_step(simple_gp):
     """kernel_fn produces valid state and info after one step."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99)
@@ -217,8 +217,8 @@ def test_kernel_mcmc_loop_compatible(simple_gp):
     """kernel_fn works with mcmc_loop for multiple steps."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99)
@@ -250,8 +250,8 @@ def test_kernel_multi_u_steps(simple_gp):
     """n_u_steps > 1 runs correctly with iterative GP conditioning."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99, n_u_steps=3)
@@ -275,8 +275,8 @@ def test_multi_u_steps_mcmc_loop(simple_gp):
     """Multi-u-step kernel works with mcmc_loop."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.99, n_u_steps=3)
@@ -302,8 +302,8 @@ def test_f_update_changes_f_position(simple_gp):
     """After one kernel step, f_position should change (pCN perturbation)."""
     posterior, surrogate_post = simple_gp
 
-    from uncprop.core.rkpcn import build_log_density_vsem
-    log_density_fn = build_log_density_vsem(posterior, surrogate_post)
+    from uncprop.core.rkpcn import build_log_density_fn
+    log_density_fn = build_log_density_fn(surrogate_post)
     gp = surrogate_post.surrogate
 
     config = RKPCNConfig(rho=0.5)  # rho=0.5 gives large perturbation

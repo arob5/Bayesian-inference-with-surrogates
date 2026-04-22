@@ -1,0 +1,44 @@
+# Multi-chain adaptive RKPCN: sweep rho with 1 and 20 u-steps.
+# All variants use 4 chains with adaptive proposals, EP-direct-sampling
+# initialization, and Pritchard mode weighting. By default runs over
+# several VSEM replicates plus one PDE replicate for cross-experiment
+# comparison.
+#
+# Usage:
+#   cd experiments/benchmarks
+#   qsub submit_benchmark.sh           # submits with CONFIG=multichain_sweep.yaml
+#   # or
+#   qsub -v CONFIG=multichain_sweep.yaml submit_benchmark.sh
+
+common_kwargs:
+  n_total: 55000
+  n_burnin: 50000
+  n_chains: 4
+  adaptive: true
+  adapt_interval: 50
+  target_accept: 0.234
+  weight_method: pritchard
+  init_method: ep_direct_sampling
+
+replicates:
+  # VSEM replicates (primary — grid EP baseline available)
+  - {experiment: vsem, setup: clip_gp_N4, rep: 0}
+  - {experiment: vsem, setup: clip_gp_N4, rep: 1}
+  - {experiment: vsem, setup: clip_gp_N8, rep: 0}
+  # PDE replicate (secondary — no EP baseline yet, plots only)
+  - {experiment: elliptic_pde, setup: n_design_10, rep: 0}
+
+variants:
+  # === 4 chains, 1 u-step ===
+  - {label: rho0_4ch_u1,  rho: 0.0}
+  - {label: rho50_4ch_u1, rho: 0.5}
+  - {label: rho90_4ch_u1, rho: 0.9}
+  - {label: rho95_4ch_u1, rho: 0.95}
+  - {label: rho99_4ch_u1, rho: 0.99}
+
+  # === 4 chains, 20 u-steps ===
+  - {label: rho0_4ch_u20,  rho: 0.0,  n_u_steps: 20}
+  - {label: rho50_4ch_u20, rho: 0.5,  n_u_steps: 20}
+  - {label: rho90_4ch_u20, rho: 0.9,  n_u_steps: 20}
+  - {label: rho95_4ch_u20, rho: 0.95, n_u_steps: 20}
+  - {label: rho99_4ch_u20, rho: 0.99, n_u_steps: 20}

@@ -563,48 +563,56 @@ def _mh_accept_reject(
 # Log-density builders
 # =============================================================================
 
-def build_log_density_vsem(posterior, surrogate_post):
-    """Build log-density function for VSEM log-posterior emulation.
+def build_log_density_fn(surrogate_post):
+    """Build the ``log_density_fn(f, u)`` required by the RKPCN kernel.
 
-    Handles both clipped and unclipped GP surrogates, enforcing prior
-    support constraints.
+    The RKPCN kernel calls ``log_density_fn(f, u)`` where ``f`` is a
+    single GP output sample at a single point ``u``, and expects a
+    scalar log unnormalized posterior density. This function wires
+    up that interface on top of the generic
+    ``SurrogateDistribution.log_density_from_samples`` protocol and
+    adds hard support-box enforcement (``-inf`` outside the support).
+
+    Because ``log_density_from_samples`` already handles any
+    surrogate-specific transformations (e.g., clipping for
+    ``LogDensClippedGPSurrogate``, Gaussian likelihood evaluation for
+    ``FwdModelGaussianSurrogate``), this builder is surrogate-agnostic.
 
     Parameters
     ----------
-    posterior : Posterior
-        The exact posterior object (for prior and likelihood bounds).
-    surrogate_post : VSEMPosteriorSurrogate
-        The surrogate posterior object.
+    surrogate_post : SurrogateDistribution
+        Must expose ``.support``, ``.surrogate.output_dim``, and
+        ``.log_density_from_samples``.
 
     Returns
     -------
-    log_density_fn : callable
-        ``(f, u) -> scalar`` log-density function compatible with
-        ``build_rkpcn_kernel``.
+    log_density_fn : callable ``(f, u) -> scalar``
+        ``f`` has shape ``(q,)`` where ``q`` is the GP output dim;
+        ``u`` has shape ``(d,)``. Returns a scalar log-density value
+        (``-inf`` if ``u`` lies outside the surrogate's support box).
     """
-    from uncprop.models.vsem.surrogate import LogDensClippedGPSurrogate
-
     low, high = surrogate_post.support
-    upper_bound = (
-        lambda u: posterior.prior.log_density(u)
-              + posterior.likelihood.log_density_upper_bound(u)
-    )
+    q = int(surrogate_post.surrogate.output_dim)
 
-    if isinstance(surrogate_post, LogDensClippedGPSurrogate):
-        def log_density(f, u):
-            u = jnp.atleast_2d(u)
-            upper = upper_bound(u)
-            lp = jnp.clip(f, max=upper)
-            lp = jnp.where(
-                jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf
-            )
-            return lp.squeeze()
-    else:
-        def log_density(f, u):
-            u = jnp.atleast_2d(u)
-            lp = f
-            lp = jnp.where(
-                jnp.all((u >= low) & (u <= high), axis=1), lp, -jnp.inf)
-            return lp.squeeze()
+    def log_density(f, u):
+        u_2d = jnp.atleast_2d(u)  # (K=1, d)
+
+        # Reshape f into the shape expected by log_density_from_samples:
+        #   - single-output (q=1): (n=1, K=1)
+        #   - multi-output (q=p):  (n=1, p, K=1)
+        f = jnp.asarray(f)
+        if q == 1:
+            pred_samples = f.reshape(1, 1)
+        else:
+            pred_samples = f.reshape(1, q, 1)
+
+        lp_arr = surrogate_post.log_density_from_samples(pred_samples, u_2d)
+        lp = lp_arr.reshape(-1)  # (n*K,) == (1,)
+
+        inside = jnp.all((u_2d >= low) & (u_2d <= high), axis=1)
+        lp = jnp.where(inside, lp, -jnp.inf)
+        return lp.squeeze()
+
+    return log_density
 
     return log_density
